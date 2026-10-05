@@ -15,13 +15,11 @@ internal sealed partial class MainWindow
     private StackPanel loginContent = null!;
     private Button loginButton = null!;
     private FrameworkElement loginBrand = null!;
-    private Grid loginBackdrop = null!;
     private TransitionContentControl loginLabelHost = null!;
     private TextBlock loginButtonLabel = null!;
     private ProgressRing loginSpinner = null!;
     private PathShape loginButtonGlyph = null!;
     private LoginButtonState loginButtonState;
-    private static readonly Color LoginBackground = Color.FromRgb(24, 24, 24);
     private static readonly Color LoginOrange = Color.FromRgb(255, 85, 0);
     private static readonly Color LoginPaper = Color.FromRgb(239, 239, 239);
 
@@ -66,10 +64,8 @@ internal sealed partial class MainWindow
                     .FontSize(15).Foreground(Color.FromRgb(195, 195, 195))
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap)),
             loginButton.CenterHorizontal());
-        loginBackdrop = new Grid().Columns("*").Rows("*").IsHitTestVisible(false).Children(
-            new LoginBackdropShade().IsHitTestVisible(false));
-        var composition = new Grid().Columns("*").Rows("*").Children(loginBackdrop, loginContent);
-        loginScreen = new Border().Background(LoginBackground).ClipToBounds().Child(composition);
+        var composition = new Grid().Columns("*").Rows("*").Children(loginContent);
+        loginScreen = new Border().Background(Surface).ClipToBounds().Child(composition);
         loginScreen.IsVisible = false;
         loginScreen.IsHitTestVisible = false;
         loginScreen.Opacity = 0;
@@ -116,7 +112,6 @@ internal sealed partial class MainWindow
         loginContent.Opacity = loginBrand.Opacity = 0;
         // Fade only the upper screen; the lower background must stay opaque throughout the handoff.
         loginScreen.Opacity = fromStartup ? 1 : 0;
-        loginBackdrop.Opacity = 1;
         if (fromStartup)
         {
             await AnimateStartupAsync(StartupBrandFadeDurationMs, Easing.CubicBezier(0.2, 0, 0, 1),

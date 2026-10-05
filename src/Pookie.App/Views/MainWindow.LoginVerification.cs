@@ -41,7 +41,7 @@ internal sealed partial class MainWindow
             loginTransitionFrames++;
             if (startupSplash.IsVisible)
             {
-                if (loginScreen.Opacity != 1 || loginBackdrop.Opacity != 1)
+                if (loginScreen.Opacity != 1)
                     loginTransitionFailure ??= "Startup handoff exposed a translucent background";
                 if (startupPreviewStep < 4 && 1 - startupSplash.Opacity >= startupPreviewStep / 4.0)
                     CaptureUiPreview($"startup-handoff-{startupPreviewStep++}");
@@ -215,8 +215,8 @@ internal sealed partial class MainWindow
             if (bounds.X < 0 || bounds.Y < 0 || bounds.Right > client.Width || bounds.Bottom > client.Height)
                 throw new InvalidOperationException("Login branding or action was clipped by the viewport");
         }
-        if (Math.Abs(loginBackdrop.ActualWidth - client.Width) > 1 ||
-            Math.Abs(loginBackdrop.ActualHeight - client.Height) > 1)
+        if (Math.Abs(loginScreen.ActualWidth - client.Width) > 1 ||
+            Math.Abs(loginScreen.ActualHeight - client.Height) > 1)
             throw new InvalidOperationException("Login backdrop did not fill the viewport");
         if (Math.Abs(loginContent.Bounds.X + loginContent.ActualWidth / 2 - client.Width / 2) > 1 ||
             Math.Abs(loginContent.Bounds.Y + loginContent.ActualHeight / 2 - client.Height / 2) > 1 ||
