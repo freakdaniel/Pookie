@@ -6,9 +6,50 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private const int StartupMinimumVisibleDurationMs = 1000;
+    private Task startupMinimumDisplay = Task.CompletedTask;
+
+    private async Task HoldStartupSplashAsync()
+    {
+        var sizeEasing = Easing.CubicBezier(0.16, 1, 0.3, 1);
+        var fadeEasing = Easing.CubicBezier(0.2, 0, 0, 1);
+        await AnimateStartupAsync(560, Easing.Linear, progress =>
+        {
+            var sizeProgress = sizeEasing(progress);
+            startupLogo.Width = 132 * sizeProgress;
+            startupLogo.Height = 124 * sizeProgress;
+            startupLogo.Opacity = fadeEasing(Math.Clamp(progress * 560 / 360, 0, 1));
+            startupSpinner.Opacity = fadeEasing(Math.Clamp(progress * 560 / 300, 0, 1));
+        });
+        var presented = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnRendered()
+        {
+            if (startupLogo.Width == 132 && startupLogo.Height == 124 &&
+                startupLogo.Opacity == 1 && startupSpinner.Opacity == 1 &&
+                Math.Abs(startupLogo.ActualWidth - 132) < 1 && Math.Abs(startupLogo.ActualHeight - 124) < 1)
+                presented.TrySetResult();
+        }
+        Window.FrameRendered += OnRendered;
+        try
+        {
+            // Start the dwell time on a fully appeared frame, independently of session restoration.
+            Window.InvalidateVisual();
+            await presented.Task.WaitAsync(lifetime.Token);
+        }
+        finally { Window.FrameRendered -= OnRendered; }
+        await Task.Delay(StartupMinimumVisibleDurationMs, lifetime.Token);
+    }
+
     private async Task HideStartupSplashAsync()
     {
         if (disposed) return;
+        await startupMinimumDisplay;
+        if (!CanUseWorkspace)
+        {
+            await ShowLoginScreenAsync();
+            return;
+        }
+        workspace.IsVisible = true;
         try
         {
             // Wait for actual rendered animation completion before changing any curtain geometry.
@@ -39,6 +80,8 @@ internal sealed partial class MainWindow
             });
             if (uiSmoke) StopStartupLayoutProbe();
             startupSplash.IsVisible = false;
+            workspace.IsEnabled = true;
+            workspace.IsHitTestVisible = true;
         }
         catch (OperationCanceledException) { startupSplash.IsVisible = false; }
     }

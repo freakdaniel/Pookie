@@ -117,6 +117,8 @@ internal sealed class WebKitLoginWindow
 
     private nint AddWindow(nint view)
     {
+        // Keep the UA aligned with this WebKitGTK version and platform, including related login popups.
+        Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
         var window = Native.gtk_window_new(0);
         Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
         Native.gtk_window_set_default_size(window, 900, 760);
@@ -293,6 +295,8 @@ internal sealed class WebKitLoginWindow
         [DllImport(WebKit)] public static extern void webkit_cookie_manager_set_persistent_storage(nint manager, [MarshalAs(UnmanagedType.LPUTF8Str)] string filename, int storage);
         [DllImport(WebKit)] public static extern nint webkit_web_view_new_with_context(nint context);
         [DllImport(WebKit)] public static extern nint webkit_web_view_new_with_related_view(nint view);
+        [DllImport(WebKit)] public static extern nint webkit_web_view_get_settings(nint view);
+        [DllImport(WebKit)] public static extern void webkit_settings_set_user_agent(nint settings, [MarshalAs(UnmanagedType.LPUTF8Str)] string? userAgent);
         [DllImport(WebKit)] public static extern nint webkit_web_view_get_user_content_manager(nint view);
         [DllImport(WebKit)] public static extern nint webkit_web_view_get_uri(nint view);
         [DllImport(WebKit)] public static extern void webkit_web_view_load_uri(nint view, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);

@@ -37,6 +37,7 @@ internal sealed partial class MainWindow
 
     private Task NavigateAsync(Page target)
     {
+        if (!CanUseWorkspace) return Task.CompletedTask;
         if (target == Page.Library) return LikesAsync();
         if (target == Page.LibraryTracks) { ShowLibraryTracks(); return Task.CompletedTask; }
         if (target > Page.LibraryTracks) return ShowLibrarySectionAsync(target);

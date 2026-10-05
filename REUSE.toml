@@ -1,0 +1,51 @@
+version = 1
+
+[[annotations]]
+path = [
+  ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
+  "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**",
+  "src/**/*.cs", "src/**/*.csproj", "src/**/*.js", "tests/**",
+  "src/Pookie.App/Assets/logo.svg",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2023 Richard Habitzreuter", "2026 Daniel Freak"]
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileComment = "Pookie is distributed under BSD-3-Clause; the original MIT attribution and permission notice are retained in licenses/MIT.txt."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Icons/*.svg"
+precedence = "closest"
+SPDX-FileCopyrightText = "2023 Phosphor Icons"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Phosphor core commit 2b75f3ad12b420c9504ef05df8d2564a28f8500e; source and asset mappings are documented in LICENSING.md."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Fonts/VelaSans-GX.ttf"
+precedence = "closest"
+SPDX-FileCopyrightText = [
+  "2019 The Manrope Project Authors (https://github.com/sharanda/manrope)",
+  "2021 The Vela Sans Project - Ravid Balaliev",
+]
+SPDX-License-Identifier = "OFL-1.1"
+SPDX-FileComment = "Unmodified variable Vela Sans font from the supplied VelaSans package; original copyright and license are also embedded in the font name table."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Fonts/Bungee-Regular.ttf"
+precedence = "closest"
+SPDX-FileCopyrightText = "2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)"
+SPDX-License-Identifier = "OFL-1.1"
+SPDX-FileComment = "Unmodified Bungee Regular from Google Fonts, used only for the Pookie wordmark. See LICENSING.md."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Branding/soundcloud-mark-white.png"
+precedence = "closest"
+SPDX-FileCopyrightText = "SoundCloud"
+SPDX-License-Identifier = "LicenseRef-SoundCloud-Marks"
+SPDX-FileComment = "Official six-bar white favicon from the SoundCloud Media Kit, losslessly re-encoded as PNG for native image decoding; brand permission and source are documented in LICENSING.md."
+
+[[annotations]]
+path = "src/Pookie.Audio/Drm/CdmAbi.cs"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2012, 2017 The Chromium Authors", "2026 Daniel Freak"]
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileComment = "C# translation of the public Host/CDM v10 declarations from Kodi InputStream Adaptive commit e14d199a5ed7224d1c42a36619ab0a67d3d8f3f6; see LICENSING.md."

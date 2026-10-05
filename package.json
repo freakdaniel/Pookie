@@ -2,7 +2,7 @@
   "name": "pookie",
   "version": "0.1.0",
   "description": "Native SoundCloud client built with .NET and MewUI",
-  "license": "MIT",
+  "license": "BSD-3-Clause",
   "private": true,
   "repository": "https://github.com/freakdaniel/Pookie",
   "scripts": {
@@ -10,6 +10,7 @@
     "build": "dotnet build Pookie.slnx",
     "test": "dotnet test Pookie.slnx && node --test tests/*.test.cjs",
     "lint": "node scripts/check-js.cjs",
+    "license:check": "node scripts/check-licenses.cjs",
     "build-linux": "dotnet publish src/Pookie.App -c Release -r linux-x64 --self-contained true -o artifacts/linux-x64",
     "build-win": "dotnet publish src/Pookie.App -c Release -r win-x64 --self-contained true -o artifacts/win-x64",
     "build-mac": "dotnet publish src/Pookie.App -c Release -r osx-arm64 --self-contained true -o artifacts/osx-arm64"

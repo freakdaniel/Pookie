@@ -3,14 +3,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <None Update="Drm/ABI-LICENSE" Link="licenses/Chromium.Cdm/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Update="Drm/ABI-SOURCE.md" Link="licenses/Chromium.Cdm/SOURCE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="Pookie.Audio.Tests" />
     <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />
     <PackageReference Include="SoundFlow.Codecs.FFMpeg" Version="1.4.0" GeneratePathProperty="true" />
-    <None Include="$(PkgSoundFlow)/LICENSE.md" Link="licenses/SoundFlow/LICENSE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Include="$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" Link="licenses/SoundFlow/THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Include="$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md" Link="licenses/SoundFlow.FFmpeg/LICENSE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Include="$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" Link="licenses/SoundFlow.FFmpeg/THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

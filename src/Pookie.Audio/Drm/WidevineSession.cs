@@ -69,7 +69,8 @@ internal sealed class WidevineSession : IDisposable
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             if (!response.IsSuccessStatusCode)
-                throw new DrmPlaybackException($"SoundCloud не выдал DRM-лицензию (HTTP {(int)response.StatusCode}).");
+                throw new DrmPlaybackException($"SoundCloud не выдал DRM-лицензию (HTTP {(int)response.StatusCode})." +
+                    await DrmLicenseFailure.ReadAsync(response, token));
             var license = await HttpRangeStream.ReadBoundedAsync(response.Content, 2 * 1024 * 1024, token);
             try
             {

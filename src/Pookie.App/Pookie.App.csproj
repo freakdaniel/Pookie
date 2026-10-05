@@ -18,12 +18,13 @@
     <EmbeddedResource Include="Auth/browser-requests.js" />
     <EmbeddedResource Include="Assets/Icons/*.svg" />
     <EmbeddedResource Include="Assets/logo.svg" />
-    <None Include="Assets/Icons/LICENSE" Link="licenses/Phosphor/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets/Branding/*" />
+    <EmbeddedResource Include="Assets/Fonts/VelaSans-GX.ttf" />
+    <EmbeddedResource Include="Assets/Fonts/Bungee-Regular.ttf" />
     <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
     <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />
     <ProjectReference Include="../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <ProjectReference Include="../Pookie.Audio/Pookie.Audio.csproj" />
     <ProjectReference Include="../Pookie.Discord/Pookie.Discord.csproj" />
-    <None Include="../../LICENSE" Link="licenses/Pookie/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

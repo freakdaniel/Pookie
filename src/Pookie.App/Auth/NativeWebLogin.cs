@@ -8,10 +8,11 @@ namespace Pookie.App.Auth;
 
 internal static class NativeWebLogin
 {
-    public static async Task<WebSession> ConnectAsync(CancellationToken token, string? fixtureUri = null, string? profilePath = null)
+    public static async Task<WebSession> ConnectAsync(CancellationToken token, string? fixtureUri = null, string? profilePath = null, bool resetSession = true)
     {
         token.ThrowIfCancellationRequested();
         using var profile = BrowserProfile.Open(fixtureUri, profilePath);
+        if (resetSession) await profile.ResetAsync(token);
         return await RunProcessAsync(token, profile.Path, fixtureUri);
     }
 
@@ -49,6 +50,7 @@ internal static class NativeWebLogin
                 if (fixtureUri != null) Console.Error.WriteLine($"LOGIN_CHILD_EXIT: {child.ExitCode}");
                 throw new InvalidOperationException(child.ExitCode == 2
                     ? "Не удалось открыть окно входа. На Linux нужен libwebkit2gtk-4.1-0, на Windows — WebView2 Runtime."
+                    : child.ExitCode == 3 ? "Не удалось передать сессию SoundCloud в Pookie. Перезапустите окно входа."
                     : child.ExitCode == 1 ? "Окно входа закрыто. Подключение к SoundCloud отменено."
                     : "Окно входа аварийно завершилось.");
             }
@@ -81,6 +83,11 @@ internal static class NativeWebLogin
             var connected = useWebKit ? WebKitLoginWindow.Run(Connected, profilePath, fixtureUri) : InfiniFrameLoginWindow.Run(Connected, profilePath, fixtureUri);
             return connected ? 0 : 1;
         }
+        catch (InfiniFrameLoginWindow.BridgeException error)
+        {
+            if (fixtureUri != null) Console.Error.WriteLine(error);
+            return 3;
+        }
         catch (Exception error)
         {
             if (fixtureUri != null) Console.Error.WriteLine(error);
@@ -93,6 +100,8 @@ internal static class NativeWebLogin
         var buffer = new char[2048];
         int count;
         while ((count = await reader.ReadAsync(buffer)) != 0)
+        {
             if (fixtureDiagnostics) Console.Error.Write(new string(buffer, 0, count));
+        }
     }
 }

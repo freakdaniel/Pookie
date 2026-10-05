@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
     private Border startupCurtain = null!;
     private Grid startupBrandLayer = null!;
     private StackPanel startupBrand = null!;
-    private Image startupLogo = null!;
+    private PathShape startupLogo = null!;
     private ProgressRing startupSpinner = null!;
     private double startupCurtainOffset = -1;
     private readonly Dictionary<Button, LikedTrackTile> libraryTiles = [];
@@ -62,31 +62,29 @@ internal sealed partial class MainWindow
             UpdateLibraryCardSize(e.NewSize.Width);
         };
 
-        var appContent = new Grid().Columns("*").Rows("56,*").Children(
+        workspace = new Grid().Columns("*").Rows("56,*").Children(
             startupHeader.Row(0),
             contentSurface.Row(1),
             PlayerBar().Row(1),
             QueuePanel().Row(1),
             ProfilePanel().Row(0).RowSpan(2),
             SettingsPanel().Row(0).RowSpan(2));
+        workspace.IsVisible = false;
+        workspace.IsEnabled = false;
+        workspace.IsHitTestVisible = false;
 
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
         return new Grid().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), appContent.Row(0), StartupSplash().Row(0));
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0));
     }
 
     private FrameworkElement StartupSplash()
     {
-        startupLogo = Icons.LogoView(0, 0);
+        startupLogo = Icons.LogoMark(0, 0);
         startupLogo.Opacity = 0;
-        startupLogo.Transitions = [
-            Transition.Create(FrameworkElement.WidthProperty, 560, Easing.CubicBezier(0.16, 1, 0.3, 1)),
-            Transition.Create(FrameworkElement.HeightProperty, 560, Easing.CubicBezier(0.16, 1, 0.3, 1)),
-            Transition.Create(UIElement.OpacityProperty, 360, Easing.CubicBezier(0.2, 0, 0, 1))];
         startupSpinner = new ProgressRing().Width(34).Height(34).IsActive(true).CenterHorizontal();
         startupSpinner.Opacity = 0;
-        startupSpinner.Transitions = [Transition.Create(UIElement.OpacityProperty, 300, Easing.CubicBezier(0.2, 0, 0, 1))];
         startupBrand = new StackPanel().Vertical().Spacing(22).CenterHorizontal().CenterVertical().Children(
             new Border().Width(138).Height(130).CenterHorizontal().CenterVertical()
                 .Child(startupLogo.CenterHorizontal().CenterVertical()),

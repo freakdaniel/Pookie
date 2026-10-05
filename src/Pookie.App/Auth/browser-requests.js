@@ -10,7 +10,8 @@
   // Website storage belongs to the browser and the site's tag. A token exported
   // to .NET is NOT a cookie: restoring it loses expiry/domain/context and can
   // revive a rejected session. Never write it back into cookie/localStorage.
-  const send = data => window.infiniframe.host.postData({ id: 'pookie:web-api', version: 1, data });
+  const post = window.__pookiePost || (message => window.infiniframe.host.postData(message));
+  const send = data => post({ id: 'pookie:web-api', version: 1, data });
   let lastProtection = '';
   function persistProtection() {
     try {

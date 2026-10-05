@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Pookie.Audio;
 
-// Chromium Host/CDM v10 ABI. Declaration provenance and BSD notice: ABI-SOURCE.md.
+// Chromium Host/CDM v10 ABI. Provenance and licensing: root LICENSING.md and REUSE.toml.
 // CDM v10 uses single inheritance and passes all structs by pointer/reference.
 // 32-bit C++ thiscall is deliberately excluded. Default unmanaged conventions
 // cover the 64-bit System V, Windows and AArch64 instance-call conventions here.

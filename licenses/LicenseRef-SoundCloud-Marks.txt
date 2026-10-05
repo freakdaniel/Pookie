@@ -1,0 +1,851 @@
+SoundCloud design asset terms
+Sources: https://developers.soundcloud.com/docs/api/terms-of-use
+https://developers.soundcloud.com/docs/api/buttons-logos
+https://community.soundcloud.com/company/media-kit
+Retrieved: 2026-10-05
+
+API Terms of Use
+
+
+
+Use of the SoundCloud API
+
+
+
+Acceptance of Terms of Use
+#
+
+
+
+By registering an app and by accessing the SoundCloud API, you are confirming that you have read and understood these API Terms of Use and the SoundCloud
+Terms of Use
+(the "User Terms") and will respect and abide by them. If your use of the SoundCloud API breaches any of these terms, we reserve the right to revoke your API access without notice.
+
+
+
+Registering Your App
+#
+
+
+
+To access the SoundCloud API, you must register your app through the SoundCloud API registration process. After registration we'll issue you with a client ID and Security Code (defined below). Your client ID is required for all calls to the SoundCloud API.
+
+
+
+Security of Your Security Code
+#
+
+
+
+You will be issued one or more unique I.D.s, client I.Ds, keys, passwords, security codes, or tokens (each a "Security Code") for accessing the SoundCloud API. Make sure you look after your Security Codes. If your Security Code is lost or stolen, or if you believe that your Security Code has been used without your permission, you must
+tell us immediately.
+
+
+
+Revoking Your API Access
+#
+
+
+
+If we have reason to believe that you are acting in breach of these API Terms of Use or the User Terms, or if we object to your use of the SoundCloud API for any other reason, we will revoke your access to the SoundCloud API by invalidating your client ID and Security Code. Any attempt to circumvent this and obtain a new client ID and Security Code is strictly prohibited.
+
+
+
+Changes
+
+
+
+Changes to the API
+#
+
+
+
+We may modify or update the SoundCloud API from time to time, at our absolute and sole discretion. We will make reasonable efforts to ensure that future version(s) of the SoundCloud API are backward compatible with the most recent previous version, but cannot guarantee backward compatibility. You should adapt your app to use the most up-to-date version of the SoundCloud API promptly following release by SoundCloud.
+
+
+
+Changes to API Terms of Use
+#
+
+
+
+We may also change and update these API Terms of Use from time to time, and will publish any changes on this
+developer page.
+You must check this page for any updates. If you are unable to comply with any amended version of these API Terms of Use, you must stop using the SoundCloud API right away.
+
+
+
+Changes to Your App
+#
+
+
+
+SoundCloud reserves the right to require you to make changes to your app. To avoid any need for SoundCloud to revoke your access to the SoundCloud API, You should make these changes promptly.
+
+
+
+Content and Privacy
+
+
+
+User Content
+#
+
+
+
+All content accessed through the API is owned by third parties. All audio, text, images, comments and other data or information associated with user accounts on the SoundCloud platform ("User Content") is owned and/or controlled by the SoundCloud user that created and/or uploaded and/or distributed it (the "Uploader"), and you must respect their rights at all times.
+
+
+
+Misuse of User Content may constitute copyright infringement and result in action being taken against you by the Uploader and/or other rightsholder.
+
+
+
+SoundCloud does not grant you any rights in User Content, and you must not claim or attempt to claim ownership of any User Content, misrepresent yourself, your company or your app as being the source of the User Content, or attempt to use, license or exploit any User Content on your own behalf or on behalf of any third party (other than the Uploader and with their express permission). When displaying or distributing User Content via your app, you must ensure that such User Content is always correctly attributed to the Uploader -- see the Attribution and Branding section below for our rules on attribution.
+
+
+
+You must always respect the usage restrictions set by Uploaders, and in particular, you must not do any of the following things (or authorize or allow others to do them):
+
+
+
+access, distribute, make available or use any User Content for which API access has not been enabled by the Uploader, or any User Content that has not been made publicly available by the Uploader, (other than User Content residing in an account to which your app has authenticated access);
+modify any User Content (including adaptation, editing, excerpting, or creating derivative works) unless the Uploader has specifically and expressly indicated his/her consent to that modification (for example, by selecting a Creative Commons license that permits creation and distribution of derivative works);
+attempt to circumvent any time or territorial restrictions set by the Uploader with respect to any User Content; and
+Copy or reproduce any User Content for the purposes of informing, training, developing (or as input to) artificial intelligence or machine intelligence technologies or services, except wherever the aforementioned acts are explicitly licensed for such use. Further and for the avoidance of doubt, User Content accessed through the API may not be used : (a) to train or otherwise develop any artificial intelligence technology; (b) to create fingerprints or any other identifying digital files of User Content or to exploit such fingerprints and other identifying digital files; and (c) as input to any artificial intelligence technology (for example only, artificial intelligence powered audio source separation).
+
+
+
+You must not use the SoundCloud API to rip, capture, or copy any User Content from any part of the SoundCloud platform, or use the SoundCloud API to circumvent any usage restrictions or content protection measures imposed by any Uploader with respect to User Content on the SoundCloud platform.
+
+
+
+Please also bear in mind that all User Content available over the SoundCloud API has been uploaded by users. We expect all of our users only to upload content to which they own or control the relevant rights, but we cannot give you any guarantee that this will always be the case. This is explained further in the Liability for User Content section below. Regardless of any permissions set by any Uploader with respect to any User Content, you must not use the SoundCloud API, or any User Content accessible via the SoundCloud API, for any of the following purposes:
+
+
+
+to create a page, profile, channel or other online presence dedicated to one or more specific artists or set of repertoire;
+except wherever the aforementioned acts are explicitly licensed for such use, to create any kind of alternative digital content service, including: any service that aggregates and streams User Content from multiple users into an on-demand listening service, or any playback experience which aggregates and streams User Content with content from other services (e.g. SoundCloud with YouTube);
+to incorporate, synchronize or use User Content with or into any advertisement, game, video, film or other audiovisual work, or any other application, unless you've obtained all relevant licenses, including synchronization licenses, from all relevant rightsholders;
+to create any app that uses any User Content in any way that creates or implies any direct association or endorsement between the app and SoundCloud, any Uploader, User Content or other rightsholder;
+to create any webcasting radio app;
+to create, develop, use train or offer any artificial intelligence or machine intelligence technology or services or app that is trained on or otherwise developed using User Content without all relevant licenses, rights and permissions without authorisation from the person(s) who own or control such rights ("Unauthorized AI Tool") on or as part of their service, except wherever the aforementioned acts are explicitly licensed for such use. Further and for the avoidance of doubt, User Content accessed through the API may not be used : (a) to train or otherwise develop any artificial intelligence technology; (b) to create fingerprints or any other identifying digital files of User Content or to exploit such fingerprints and other identifying digital files; and (c) as input to any artificial intelligence technology (for example only, artificial intelligence powered audio source separation);
+to create any app that endorses or supports any political position, candidate for political office or any religion; and
+to create any app that breaches the
+SoundCloud Community Guidelines.
+
+
+
+SoundCloud Go Content
+#
+
+
+
+You must not use the SoundCloud API to access or attempt to access any content that is available only to SoundCloud Go subscribers. Any app intended for use specifically by SoundCloud Go subscribers will require robust authentication, and a separate written agreement with SoundCloud including additional terms, obligations, conditions and restrictions regarding the use of SoundCloud Go content.
+
+
+
+User Data and Privacy
+#
+
+
+
+General
+
+
+
+To the extent that you gain access to, or process any information relating to an identified or identifiable natural person, including a user's username, email address, city and country, and any information or data from the user's profile such as their avatar or profile picture, website or social media URLs, sounds, followers and/or any comments or posts by that user, ("Personal Data") in connection with your use of the SoundCloud API, you do so as an independent controller, as you independently determine the purpose and means of the processing of Personal Data. Consequently, you must have a privacy policy in place which explains how you, through your API-connected product or service utilizing User Content, collect, store, process, transfer and use any Personal Data. Your privacy policy should adopt standards that are consistent with SoundCloud's privacy policy when it comes to storage and use of Personal Data, and you must ensure that you comply with your privacy policy and all applicable privacy and data protection laws, as well as applicable anti-spam laws at all times. In particular, you must not request access to more Personal Data than you actually need for the effective operation of your app, and must not retain Personal Data for longer than is reasonably necessary. You shall also be responsible for any acts or omissions of any third parties with which you share SoundCloud Personal Data.
+
+
+
+Roles
+
+
+
+Each of SoundCloud and you shall be solely responsible for its respective processing of SoundCloud Personal Data, including allowing individuals to exercise their legal rights under applicable laws. You, to the extent that such a request affects SoundCloud's processing of Personal Data, shall comply with all such requests in accordance with applicable laws. If circumstances arise where you are acting on SoundCloud's behalf (i.e., as a data processor), you shall promptly, on request by SoundCloud, execute written contractual commitments which meet the requirements of applicable laws in relation to data processing on behalf.
+
+
+
+Security
+
+
+
+You shall implement and maintain all appropriate technical, administrative and organizational measures required to ensure a level of confidentiality and security appropriate to the risks represented by the processing and the nature of SoundCloud Personal Data, and to prevent unauthorized or unlawful processing of SoundCloud Personal Data, including measures against unauthorized or unlawful processing of SoundCloud Personal Data and against accidental loss, corruption, disclosure or destruction of, or damage to, SoundCloud Personal Data. You must provide reasonable resources to your employees to enable processing of SoundCloud Personal Data in compliance with these API Terms of Use.
+
+
+
+Cooperation
+
+
+
+If requested by SoundCloud, you will keep SoundCloud informed of the contact details of your data protection representative. You shall provide SoundCloud with any information that SoundCloud reasonably requires in order for SoundCloud to comply with its obligations under applicable laws including to inform individuals about your data processing activities and any data transfer solutions utilized by you. You shall notify SoundCloud Party if you become aware of, or suspect, a Personal Data breach immediately (or in any case no later than 24 after becoming aware of, or suspect, such a breach). You shall document all Personal Data breaches in accordance with applicable laws and fully cooperate with SoundCloud to ensure compliance with applicable laws. You shall use reasonable endeavors to mitigate any damage suffered by any individual in connection with such Personal Data breach.
+
+
+
+Account Linking
+
+
+
+If your access to SoundCloud Personal Data is provided in connection with linking or otherwise integrating the user's SoundCloud-provided account with your app, the following shall apply:
+
+
+
+The account linking and / or integration request to users shall include all information required to ensure it is compliant with applicable laws, including sufficient notice: (i) of which SoundCloud Personal Data you will access and the purpose of such processing; and (ii) that you will be responsible for your processing of such data in accordance with your privacy policy.
+
+
+
+You shall allow users to disconnect their SoundCloud-provided account by providing an easily accessible and usable mechanism to disconnect their SoundCloud-provided account from your app at any time, including clear instructions on how to do so.
+
+
+
+If a user disconnects accounts as described above, or if SoundCloud or a user requests such disconnection, you shall discontinue accessing the applicable SoundCloud Personal Data and delete the applicable SoundCloud Personal Data in your possession or control without undue delay, but in any case within 7 days.
+
+
+
+International Data Transfers
+
+
+
+Before transferring Personal Data outside the European Union ("EU") or the European Economic Area ("EEA"), you shall ensure that such transfer is fully compliant with applicable laws. In addition, you shall be solely responsible for procuring that you execute and deliver all such documents and perform all such acts as requested by SoundCloud in this regard.
+
+
+
+To the extent you are receiving Personal Data from SoundCloud as a data importer, you represent and warrant that with respect to such data, you: (i) shall ensure that an equivalent level of protection as offered by EU law will be provided to EU/EEA individuals in the country you are processing Personal Data, and (ii) shall implement supplemental measures consistent with regulatory guidance (and remain consistent as further regulatory guidance is issued).
+
+
+
+The EU standard contractual clauses adopted by decision of 4 June 2021 document number C/2021/3972 (module 1, controllers to controllers) ("SCCs") shall apply to any transfers of SoundCloud Personal Data by SoundCloud under these API Terms of Use from the EU/EEA to you where you are in a third country for the purposes of GDPR.
+
+
+
+You represent and warrant that you can comply with the SCCs and accept the transfer of SoundCloud Personal Data. To the extent you become unable to comply with the SCCs, you shall promptly notify SoundCloud and SoundCloud may terminate your use of the API in its sole discretion.
+
+
+
+For the purposes of the SCCs, the parties agree that SoundCloud is the "data exporter" and you are the "data importer" and that for the purposes of Annex I of the Appendix to the SCCs, the following will apply:
+
+
+
+List of Parties.
+The names and contact details of the parties shall be as set out in the SoundCloud API registration process.
+
+
+
+Description of Transfer.
+
+
+
+Data Subjects. The Personal Data transferred concern the following categories of Data Subjects: SoundCloud users
+Purpose and nature of the transfer(s). The transfer is made for the following purposes: To provide the ability for you to access the SoundCloud API in accordance with the API Terms of Use
+Categories of data. The Personal Data transferred concern the following categories of data: SoundCloud Personal Data
+Recipients. The Personal Data transferred may be disclosed only to the following recipients or categories of recipients: Data processors appointed by you
+Sensitive data. The Personal Data transferred concern the following categories of sensitive data: N/A
+Frequency. Continuous
+Period for which data will be retained. As set out in your privacy policy.
+
+
+
+For purposes of Annex II of the Appendix to the SCCs, the following will apply:
+
+
+
+Data importer shall undertake appropriate technical and organizational security measures to protect personal data against unauthorized or unlawful processing and against accidental loss or destruction or damage. These measures should take into account available encryption technology and the costs of implementing the specific measures and must ensure a level of security appropriate to the harm that might result from a breach of security and the nature of the data to be protected.
+
+
+
+Uploading and Writing Data
+
+
+
+Where your app allows users to create User Content, you need to take all reasonable steps to ensure that any such User Content is created and uploaded in accordance with the User Terms.
+
+
+
+All requests for authenticated access to a user's SoundCloud account (other than your own account) must be made via the "Connect with SoundCloud" webview OAuth process, unless we've made a separate arrangement with you. Documentation for the webview OAuth process is
+available here.
+
+
+
+Apps are not permitted to store Personal Data or User Content from multiple users in a single account. Each user must be able to authenticate and upload User Content from his/her own account.
+
+
+
+You must not use the SoundCloud API to upload User Content, create accounts, play sounds, add followers, like sounds or make comments on behalf of a user, unless those actions are specifically and deliberately initiated by the user via an authenticated use of your app.
+
+
+
+You must not use the SoundCloud API to impersonate any SoundCloud user, or to misrepresent your relationship with any user, or use the SoundCloud API in any other way that is contrary to the User Terms.
+
+
+
+Caching and Downloading
+
+
+
+Your app must not include file-save functionality, or otherwise designed to cache, download or persistently store any User Content. Your app may employ session-based caching, but only to the extent reasonably necessary for the operation of your app during that session, and any cached content must cease to be available, accessible or playable within your app at the end of that session. If any Uploader changes their settings with respect to any item of User Content (for example, by removing that item of User Content from the platform, or by disabling API access), you must ensure that your app reflects and respects such changes as soon as reasonably possible. Except for session-based caching referred to above, your app must not offer offline access to any User Content including, in the case of audio User Content, as permanent downloads or temporary downloads for offline listening, regardless of whether Uploaders have set that User Content as allowed to be downloaded on the SoundCloud platform.
+
+
+
+Unless otherwise permitted by applicable law and/or agreed with the relevant user, when a user revokes access to their SoundCloud account, you must ensure that all Personal Data and User Content pertaining to that user is deleted from your app, networks, systems and servers as soon as reasonably possible. If you stop using the SoundCloud API altogether or if your API access is revoked, you'll need to delete all User Content and Personal Data in the same way.
+
+
+
+Commercial Use
+
+
+
+Use of the SoundCloud API is permitted for some commercial purposes, provided you comply with all other provisions of these API Terms of Use and the User Terms.
+
+
+
+Acceptable Commercial Use
+#
+
+
+
+Only the following commercial uses are acceptable:
+
+
+
+the sale of an app, the primary purpose of which is the creation of User Content and the sharing of that content by the creator in accordance with the User Terms;
+the use of the SoundCloud API to deliver User Content to the Uploader's own ad-enabled website, blog or social media profile;
+services aimed at helping a user to promote his/her User Content via authenticated access to the user's account, provided this does not constitute a breach of the User Terms; and
+other cases that SoundCloud may approve from time to time on a case by case basis in its absolute and sole discretion.
+
+
+
+Unacceptable Commercial Use
+#
+
+
+
+The following commercial uses are not acceptable (this is not an exhaustive list):
+
+
+
+any in-app purchases which allow access to content or features already available via the SoundCloud platform;
+any app that features any advertising, sponsorship or promotion around User Content or enables User Content (other than a user's own User Content) or SoundCloud functionality to be embedded into the third party commercial services. The only exception to this would be an app that allows an Uploader to connect his/her SoundCloud account in order to make his/her own User Content available in a commercial context (for example, an app that allows an Uploader to deliver his/her User Content to an online retail store, or to his/her own ad-supported website, blog or social media profile).
+
+
+
+Notwithstanding the above, SoundCloud shall have the sole right to determine whether or not an app is acceptable, and we reserve the right to revoke API access for any app that we determine is not providing added benefit to SoundCloud users and/or is not in the best interests of SoundCloud or our users.
+
+
+
+Right to Charge
+#
+
+
+
+Access to the SoundCloud API is currently provided free of charge, but SoundCloud reserves the right to charge at some point in the future. We'll use commercially reasonable efforts to let you know in advance if we intend to start charging.
+
+
+
+Usage and Quotas
+
+
+
+We may, at our absolute and sole discretion, impose restrictions and limitations on the number and frequency of calls made by your app to the SoundCloud API. You must not attempt to circumvent any restrictions or limitations that we impose. API calls are limited as per the documentation
+here.
+
+
+
+Attribution and Branding
+
+
+
+Attribution
+#
+
+
+
+When displaying or streaming User Content, you must ensure that your app:
+
+
+
+credits the Uploader as the creator of that User Content;
+credits SoundCloud as the source of that User Content; and
+includes (in the case of web pages and mobile web pages) clearly visible backlinks from the relevant sounds within your app to the URL for the relevant sound on soundcloud.com (permalink_url).
+
+
+
+SoundCloud Marks
+#
+
+
+
+The rights granted by these API Terms of Use do not include any general right to use the SoundCloud name or any SoundCloud logo or trademark (collectively, the "SoundCloud Marks") with respect to your app. Provided you comply with these API Terms of Use and the User Terms, you are permitted to use SoundCloud Marks only as described in the following paragraphs for limited purposes related to your app. These rights apply on a non-exclusive, non-transferable, worldwide, royalty-free basis, without any right to sub-license, and may be revoked by SoundCloud at any time.
+
+
+
+Design Assets
+#
+
+
+
+We may occasionally provide design assets like buttons, logos and other branding elements featuring SoundCloud Marks for use within your app, including for the purposes of some of the attributions required above - these resources will be
+available here.
+You can use these resources as we direct, but must not make any changes or modifications.
+
+
+
+Naming Your App
+#
+
+
+
+You must not use any SoundCloud Marks, or any confusingly similar mark, as the name or part of the name of your app (for example, "SoundClouderiffic"), or as part of any logo, icon or branding for your app.
+
+
+
+Promoting Your App
+#
+
+
+
+Generally, you must not use any SoundCloud Marks in any advertising, promotional or marketing materials for your app. However, you may use the name "SoundCloud" in a written description of your app in order to describe the fact that your app connects to SoundCloud via the SoundCloud API but not in the name of your app. If you do this, you must make sure that "SoundCloud" always appears either in uppercase ("SOUNDCLOUD"), or in lower case with the "S" and the "C" capitalized ("SoundCloud"). You must not use the name in any way that takes unfair advantage of our goodwill or reputation in the SoundCloud Marks, and you must not make any suggestion, directly or indirectly, that your app is an official SoundCloud app or is endorsed by SoundCloud in any way.
+
+
+
+Domain Names
+#
+
+
+
+You must not operate your app from any domain that includes the word "soundcloud" or any obvious derivation or misspelling of the word "soundcloud", or from any domain that is likely to cause an end user to believe that your app originates from, or is endorsed by SoundCloud.
+
+
+
+Updates
+#
+
+
+
+If we amend or update any of the SoundCloud Marks or any of the Resources mentioned above, we reserve the right to require you to use the updated versions, and you shall commence using those updated versions in place of the previous versions promptly following any notification from us to that effect (and in the case of software applications, with effect from your next version release).
+
+
+
+Press and Publicity
+
+
+
+You must not issue any press release or similar public announcement regarding your app that makes any reference to SoundCloud (except as permitted in the "Promoting Your App" section above) without our prior written consent.
+
+
+
+General Prohibitions
+
+
+
+There are a few general rules when it comes to use of the SoundCloud API:
+
+
+
+You must not, and must not attempt to, collect or store the names, usernames, email addresses, or other credentials of SoundCloud users through your use of the SoundCloud API, except to the extent necessary for the proper functioning of your app.
+You must not, and must not attempt to, sell any User Content or any Personal Data under any circumstances.
+You must not attempt to resell any service delivered via the SoundCloud platform or any part of any such service.
+You must not employ scraping or similar techniques to copy, aggregate, repurpose, republish or otherwise make use of any data from the SoundCloud platform, other than User Content and Personal Data that is legitimately accessible to you via the SoundCloud API.
+You must not use the SoundCloud API to distribute spam or other unsolicited advertising or promotional messages, or to send messages, make comments, or initiate any other direct communication or contact with users of the SoundCloud platform. You must also not use the SoundCloud API to permit, encourage, or incentivise other people to do any of these things. This section does not apply to any use of the SoundCloud API to enable users to send messages or make comments in accordance with the User Terms, where these messages and comments are specifically and deliberately initiated by the relevant user via authenticated access, and are not made in response to any encouragement or incentive provided by you or your app.
+You must not remove or attempt to remove or interfere with any advertising delivered via the SoundCloud API.
+You must not use the SoundCloud API to commit or engage in, or encourage, induce, solicit or promote, any conduct that violates any law or regulation, or constitutes a breach of the User Terms, including content piracy, stream ripping, and/or facilitating unauthorized access to third party intellectual property.
+You must not use the SoundCloud API or any User Content for any app that depicts sexually explicit images, promotes violence or discrimination, or engages in the sale or advertisement of pornography, tobacco products, firearms, illegal or prescription drugs.
+You must not use the SoundCloud API to violate, misappropriate or infringe any copyright, trademark rights, rights of privacy or publicity, confidential information or any other right of any third party. You must not use the SoundCloud API to permit, encourage, solicit or facilitate anyone else (for example, users of your app) to do any of these things.
+You must ensure that your app does not replicate a substantial number of features and/or the overall experience of SoundCloud, and must ensure that the visual design of your app is not confusingly similar to the design or look and feel of any part of the SoundCloud platform, including without limitation, any SoundCloud website, the SoundCloud desktop app and/or any SoundCloud mobile app.
+You must not alter or remove any trademark, copyright or other proprietary or legal notices contained in, or appearing on, the SoundCloud platform, any User Content and/or any documentation relating to the SoundCloud API.
+You must not use clips of User Content to create games or other applications to create a separate business.
+You must not use the SoundCloud API for any so-called stream ripping, stream capture or similar applications designed to make permanent copies of User Content.
+Your app must not facilitate upload of audio or video content to any third party site or application.
+You must not, and must not permit any third party to, copy or adapt the object code, or reverse engineer, reverse assemble, decompile, modify or attempt to discover any source or object code of the SoundCloud API or any part of the SoundCloud platform, or circumvent or attempt to circumvent or copy any copy protection mechanism or access any rights management information pertaining to any User Content (but this section shall not prevent you from using any SoundCloud SDKs that we may release under an open source license).
+You must not use the SoundCloud API to violate, circumvent or attempt to violate or circumvent any data security measures employed by SoundCloud or any Uploader; access or attempt to access data or materials which are not intended for your use; log into, or attempt to log into, a server or account which you are not authorized to access; attempt to scan or test the vulnerability of SoundCloud's servers, system or network or attempt to breach SoundCloud's data security or authentication procedures; attempt to interfere with the SoundCloud platform (or any part thereof) by any means including, without limitation, hacking SoundCloud's servers or systems, submitting a virus, overloading, mail-bombing or crashing.
+You must not attempt to obtain more client IDs than you reasonably require for the development, testing and operation of your app.
+You must not rent, sell or lease access to the SoundCloud API or any User Content or Personal Data, and must not sell or transfer, or offer to sell or transfer, your Security Code to any third party without the prior written approval of SoundCloud.
+You must not use or attempt to use another person's client ID and/or Security Code, unless you are working on the same app.
+You must not use the SoundCloud API to distribute any virus, Trojan horse, spyware, adware, malware, bot, time bomb, worm, or other harmful or malicious component, and must not use the SoundCloud API for any purpose which or might overburden, impair or disrupt the SoundCloud platform, servers or networks.
+You must not impose any terms on users of your app that are inconsistent with these API Terms of Use or the User Terms.
+You must ensure that all networks, hardware and software necessary to operate your app (other than the SoundCloud platform or the SoundCloud API) are configured and operate to commercially reasonable standards of security. In the event of any breach of security involving the SoundCloud API or any User Content or Personal Data, you must notify SoundCloud immediately and work diligently to remedy such security breach as soon as practicable. You shall not make any public statement regarding any such security breach without the prior written approval of SoundCloud.
+
+
+
+Other Legal Terms
+
+
+
+Ownership
+#
+
+
+
+Everything related to the SoundCloud API is owned by SoundCloud.
+
+
+
+You hereby acknowledge that, as between you and SoundCloud, all rights, title and interest, excluding User Content, and including without limitation, all intellectual property rights, in and to the SoundCloud API, any and all documentation provided by SoundCloud in connection therewith, the SoundCloud platform and the SoundCloud Marks, are owned by SoundCloud.
+
+
+
+Confidentiality
+#
+
+
+
+Respect our confidential information.
+
+
+
+Through your use of the SoundCloud API, you may come into contact with information, in whatever form, that belongs or relates to SoundCloud or its affiliates, including without limitation, the SoundCloud API itself, and any other software, documentation, processes, know-how, designs, strategies, and data pertaining to the SoundCloud API, User Content, SoundCloud users, the SoundCloud platform and/or any part or parts thereof ("Confidential Information"). As between you and SoundCloud, all Confidential Information remains the property of SoundCloud. You shall not use any of the Confidential Information except as strictly necessary for the development, testing and operation of your app, and you shall not disclose the Confidential Information or any part thereof to any third party. You shall take all reasonable precautions to prevent to unauthorized disclosure or dissemination of the Confidential Information, and if you are a company or other organization, you shall limit distribution of the Confidential Information to those of your employees who need to know the same in connection with the development, testing and operation of your app. Within five days of a request from SoundCloud, and in any event when you stop using the SoundCloud API (for whatever reason), you shall delete and destroy and certify the destruction of the same (which shall include irretrievably deleting such Confidential Information from all of your networks and systems). This provision shall survive any termination of the agreement created by these API Terms of Use.
+
+
+
+Independent Development
+#
+
+
+
+SoundCloud may develop competing apps.
+
+
+
+You hereby acknowledge that SoundCloud may currently or in future develop apps and services that may be similar to or competitive with your app. Nothing in these API Terms of Use shall in any way limit, restrict or preclude SoundCloud from pursuing any of these, or any other, present or future business activities, opportunities or interests or from entering into any agreement or transaction with any person.
+
+
+
+Representations and Warranties
+#
+
+
+
+You are responsible for all things relating to the distribution and use of your app.
+
+
+
+You hereby represent and warrant to SoundCloud as follows:
+
+
+
+You have the right to distribute and make available your app to end users thereof, and your app and end users' use of your app in compliance with your app's terms of service (if any), does not and will not infringe or violate the rights of any third party or any applicable law, rule or regulation.
+You have obtained, and will maintain throughout all periods during which you make use of the SoundCloud API, any and all licenses, consents, permissions and/or clearances necessary in order for you to develop, implement, operate, distribute, make available and support your app, and to enable end users to use your app (e.g. any synchronization licenses that may be necessary if you are combining User Content with visual media output such as video or images, and any public performance licenses with respect to any copyrighted music made available via your app including public performance of User Content).
+You will comply with all applicable laws in connection with your use of the SoundCloud API and all User Content and Personal Data accessed thereby, including without limitation, all applicable intellectual property and data protection laws in all relevant jurisdictions.
+You will not use the SoundCloud API or any User Content or Personal Data for any purpose that is fraudulent, illegal, libelous, defamatory, offensive, discriminatory or in any way that promotes, solicits or condones the infringement of intellectual property rights, or otherwise brings SoundCloud into disrepute.
+
+
+
+Liability for User Content
+#
+
+
+
+SoundCloud is not responsible for User Content.
+
+
+
+You hereby acknowledge and agree that (i) SoundCloud users are solely responsible for User Content that they upload, post or distribute to, on or through the SoundCloud platform, (ii) SoundCloud cannot and does not review the User Content created or uploaded by its users, and SoundCloud has no obligation, and does not undertake or assume any duty, to monitor the SoundCloud platform for User Content that is inappropriate, that does or might infringe any third party rights, or has otherwise been uploaded in breach of the User Terms or applicable law; and (iii) the availability of User Content on the SoundCloud platform and over the SoundCloud API is a matter controlled by the relevant Uploader as the owner of the relevant User Content, and not by SoundCloud (subject to the removal of any item of User Content by SoundCloud in response to any reports of copyright infringement made against the Uploader).
+
+
+
+SoundCloud hereby excludes, to the fullest extent permitted by law, any and all liability which may arise from any User Content uploaded to the SoundCloud platform by SoundCloud users and accessed by you and users of your app, including, but not limited to, any claims for infringement of intellectual property rights, rights of privacy or publicity rights, any claims relating to publication of defamatory, pornographic, obscene or offensive material, or any claims relating to the completeness, accuracy, currency or reliability of any information provided by Users.
+
+
+
+By using the SoundCloud API, you irrevocably waive the right to assert any claim with respect to any of the foregoing, or any other claim related to your use of the SoundCloud API, against SoundCloud or any of its subsidiaries, affiliates, successors, assigns, employees, agents, directors, officers or shareholders.
+
+
+
+Disclaimer
+#
+
+
+
+SoundCloud gives no guarantees regarding the API or other things provided under these terms.
+
+
+
+THE SOUNDCLOUD API, THE SOUNDCLOUD PLATFORM, THE SOUNDCLOUD MARKS AND ALL USER CONTENT AND PERSONAL DATA ACCESSED THROUGH OR VIA THE SOUNDCLOUD API, ARE PROVIDED "AS IS", "AS AVAILABLE", AND "WITH ALL FAULTS".
+
+
+
+WHILST SOUNDCLOUD USES ALL REASONABLE ENDEAVORS TO CORRECT ANY ERRORS OR OMISSIONS ON THE SOUNDCLOUD PLATFORM AS SOON AS PRACTICABLE ONCE THEY HAVE BEEN BROUGHT TO SOUNDCLOUD'S ATTENTION, SOUNDCLOUD MAKES NO PROMISES, GUARANTEES, REPRESENTATIONS OR WARRANTIES OF ANY KIND WHATSOEVER (EXPRESS OR IMPLIED) REGARDING THE SOUNDCLOUD PLATFORM, THE SOUNDCLOUD API OR ANY PART OR PARTS THEREOF, THE SOUNDCLOUD MARKS OR ANY USER CONTENT OR PERSONAL DATA, INCLUDING, WITHOUT LIMITATION, ANY WARRANTY OF NON-INFRINGEMENT, OR ANY GUARANTEE THAT ANY PARTICULAR ITEM(S) OF USER CONTENT IS, ARE OR WILL BE AVAILABLE ON THE SOUNDCLOUD PLATFORM AND/OR WILL BE ACCESSIBLE VIA THE SOUNDCLOUD API AT ANY OR ALL TIMES OR AT ALL. SOUNDCLOUD DOES NOT WARRANT THAT ANY USER CONTENT IS CLEARED FOR THE USE THAT YOU INTEND TO MAKE OF IT VIA YOUR APP AND DOES NOT PROVIDE YOU WITH THE BENEFIT OF ANY LICENSES (ON A PASS THROUGH BASIS OR OTHERWISE) THAT SOUNDCLOUD MAY HAVE OR OBTAIN WITH RESPECT TO ANY USER CONTENT AND ANY SUCH BENEFIT THAT MIGHT OTHERWISE BE GRANTED OR IMPLIED AS A MATTER OF LAW IS HEREBY EXCLUDED SOUNDCLOUD DOES NOT WARRANT THAT YOUR USE OF THE SOUNDCLOUD API WILL BE UNINTERRUPTED, TIMELY, SECURE OR ERROR-FREE, THAT DEFECTS WILL BE CORRECTED, OR THAT THE SOUNDCLOUD PLATFORM, THE SOUNDCLOUD API, THE USER CONTENT OR PERSONAL DATA OR ANY PART OR PARTS THEREOF, OR THE SERVERS ON WHICH THE SOUNDCLOUD PLATFORM OPERATES ARE OR WILL BE FREE OF VIRUSES OR OTHER HARMFUL COMPONENTS. SOUNDCLOUD DOES NOT WARRANT THAT ANY CALLS TO THE SOUNDCLOUD API OR ANY TRANSMISSION OF USER CONTENT WILL BE SECURE OR THAT ANY ELEMENTS OF THE SOUNDCLOUD PLATFORM DESIGNED TO PREVENT UNAUTHORIZED ACCESS, SHARING OR DOWNLOAD OF USER CONTENT WILL BE EFFECTIVE IN ANY AND ALL CASES, AND DOES NOT WARRANT THAT YOUR USE OF THE SOUNDCLOUD PLATFORM OR THE SOUNDCLOUD API IS LAWFUL IN ANY PARTICULAR JURISDICTION.
+
+
+
+SOUNDCLOUD AND ITS SUBSIDIARIES, AFFILIATES, SUCCESSORS, AND ASSIGNS, AND THEIR RESPECTIVE EMPLOYEES, AGENTS, DIRECTORS, OFFICERS AND SHAREHOLDERS, SPECIFICALLY DISCLAIM ALL OF THE FOREGOING WARRANTIES TO THE FULLEST EXTENT PERMITTED BY LAW, TOGETHER WITH ANY EXPRESS OR IMPLIED WARRANTIES REGARDING NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+
+
+WHERE THE LAW OF ANY JURISDICTION LIMITS OR PROHIBITS THE DISCLAIMER OF IMPLIED OR OTHER WARRANTIES AS SET OUT ABOVE, THE ABOVE DISCLAIMERS SHALL NOT APPLY TO THE EXTENT THAT THE LAW OF SUCH JURISDICTION APPLIES TO THESE API TERMS OF USE.
+
+
+
+Limitation of Liability
+#
+
+
+
+Any liability that SoundCloud does have will exclude the things listed below.
+
+
+
+SOUNDCLOUD AND ITS SUBSIDIARIES, AFFILIATES, SUCCESSORS, AND ASSIGNS, AND EACH OF THEIR RESPECTIVE EMPLOYEES, AGENTS, DIRECTORS, OFFICERS AND SHAREHOLDERS, SHALL HAVE NO LIABILITY FOR:
+
+
+
+YOUR INABILITY TO ACCESS OR USE THE SOUNDCLOUD API, OR TO ACCESS ANY USER CONTENT, PERSONAL DATA OR THE SOUNDCLOUD PLATFORM VIA THE SOUNDCLOUD API;
+ANY CHANGES THAT SOUNDCLOUD MAY MAKE TO THE SOUNDCLOUD API OR TO THE SOUNDCLOUD PLATFORM OR ANY PART THEREOF, OR ANY TEMPORARY OR PERMANENT SUSPENSION OR CESSATION OF ACCESS TO THE SOUNDCLOUD PLATFORM, THE SOUNDCLOUD API OR ANY OR ALL USER CONTENT OR PERSONAL DATA IN OR FROM ANY OR ALL TERRITORIES;
+ANY REMOVAL BY THE UPLOADER, SOUNDCLOUD OR ANY AUTHORIZED THIRD PARTY OF ANY PARTICULAR ITEM OF USER CONTENT FROM THE SOUNDCLOUD PLATFORM, OR ANY CHANGES MADE TO THE AVAILABILITY OF SUCH USER CONTENT OR THE USE PERMITTED TO BE MADE OF THAT CONTENT OVER THE SOUNDCLOUD API;
+ANY ACTION TAKEN AGAINST YOU BY ANY USER OR THIRD PARTY RIGHTHOLDERS WITH RESPECT TO YOUR ACCESS TO OR USE OF ANY USER CONTENT OR PERSONAL DATA VIA THE SOUNDCLOUD API, OR ANY ACTION TAKEN AS PART OF AN INVESTIGATION BY SOUNDCLOUD OR ANY RELEVANT LAW ENFORCEMENT AUTHORITY REGARDING YOUR USE OF THE SOUNDCLOUD API OR ANY USER CONTENT OR PERSONAL DATA ACCESSED THEREBY;
+ANY ERRORS OR OMISSIONS IN THE TECHNICAL OPERATION OF THE SOUNDCLOUD PLATFORM OR THE SOUNDCLOUD API, OR FROM ANY INACCURACY OR DEFECT IN ANY USER CONTENT OR PERSONAL DATA;
+YOUR FAILURE TO PROVIDE SOUNDCLOUD WITH ACCURATE OR COMPLETE INFORMATION, OR YOUR FAILURE TO KEEP YOUR USERNAME, PASSWORD OR CLIENT SECRET SUITABLY CONFIDENTIAL;
+ANY LOSS OR DAMAGE TO ANY COMPUTER HARDWARE OR SOFTWARE, ANY LOSS OF DATA, OR ANY LOSS OR DAMAGE FROM ANY SECURITY BREACH; AND/OR
+ANY LOSS OF PROFITS, ANY COST OF FINDING REPLACEMENT GOODS OR SERVICES, OR ANY LOSS YOU SUFFER WHICH IS NOT A FORESEEABLE CONSEQUENCE OF SOUNDCLOUD BREACHING THESE API TERMS OF USE. LOSSES ARE FORESEEABLE WHERE THEY COULD BE CONTEMPLATED BY YOU AND SOUNDCLOUD AT THE TIME YOU AGREE TO THESE API TERMS OF USE, AND THEREFORE DO NOT INCLUDE ANY INDIRECT LOSSES, SUCH AS LOSS OF OPPORTUNITY.
+
+
+
+NOTWITHSTANDING ANY OTHER PROVISION OF THESE API TERMS OF USE, SOUNDCLOUD'S TOTAL LIABILITY TO YOU UNDER THESE API TERMS OF USE, WHETHER IN CONTRACT, TORT OR OTHERWISE, SHALL NOT EXCEED FIFTY EUROS (EUR50) IN AGGREGATE.
+
+
+
+NOTHING IN THESE API TERMS OF USE LIMITS OR EXCLUDES THE LIABILITY OF SOUNDCLOUD, ITS SUBSIDIARIES, AFFILIATES, SUCCESSORS OR ASSIGNS, OR THEIR RESPECTIVE EMPLOYEES, AGENTS, DIRECTORS, OFFICERS AND/OR SHAREHOLDERS FOR ANY DEATH OR PERSONAL INJURY CAUSED BY ITS OR THEIR NEGLIGENCE OR DELIBERATE ACTS OR OMISSIONS, FOR ANY FORM OF FRAUD OR DECEIT, OR FOR ANY FORM OF LIABILITY WHICH CANNOT BE LIMITED OR EXCLUDED BY LAW.
+
+
+
+ADDITIONALLY, APPLICABLE LAW MAY NOT ALLOW THE LIMITATION OR EXCLUSION OF LIABILITY FOR INCIDENTAL OR CONSEQUENTIAL DAMAGES, SO THE ABOVE LIMITATIONS OR EXCLUSIONS MAY NOT APPLY TO YOU. IN SUCH CASES, YOU ACKNOWLEDGE AND AGREE THAT SUCH LIMITATIONS AND EXCLUSIONS REFLECT A REASONABLE AND FAIR ALLOCATION OF RISK BETWEEN YOU AND SOUNDCLOUD AND ARE FUNDAMENTAL ELEMENTS OF THE BARGAIN BETWEEN YOU AND SOUNDCLOUD, AND THAT SOUNDCLOUD'S LIABILITY WILL BE LIMITED TO THE MAXIMUM EXTENT PERMITTED BY LAW.
+
+
+
+Indemnification
+#
+
+
+
+You need to be responsible for any loss that we suffer as the result of your use of our API.
+
+
+
+You hereby agree to indemnify, defend and hold harmless SoundCloud, its successors, assigns, affiliates, agents, directors, officers, employees and shareholders from and against any and all claims, obligations, damages, losses, expenses, and costs, including reasonable attorneys' fees, resulting from (i) any violation by you of these API Terms of Use or the User Terms; (ii) any claim by any third party that your use of the SoundCloud API, the SoundCloud Marks or any User Content or Personal Data represents a violation of the intellectual property rights, rights of privacy or other rights of that third party, or any other claim related to your use of the SoundCloud API; and (iii) any activity related to your Security Code, be it by you or by any other person using your Security Code with or without your consent.
+
+
+
+Termination
+#
+
+
+
+Either party can terminate use of the API as described below.
+
+
+
+You may terminate the agreement created by your acceptance of these API Terms of Use at any time by sending notice in writing to SoundCloud at Karl-Marx-Strasse 101, 12043 Berlin, Germany or by email confirming such termination, whereupon SoundCloud will revoke your access to the API.
+
+
+
+SoundCloud may terminate the agreement created by your acceptance of these API Terms of Use, and may revoke your API access at any time if (i) you are in breach of any of the material provision of these API Terms of Use or the User Terms; (ii) SoundCloud elects at its discretion to cease providing access to the SoundCloud API to any or all users of the SoundCloud API and/or in any or all jurisdictions; (iii) SoundCloud decides in its sole discretion that your app does not provide added value to SoundCloud users and/or is not in the best interests of SoundCloud or our users, including without limitation, in response to complaints from Uploaders or third party rights owners; or (iv) in other reasonable circumstances as determined by SoundCloud at its discretion.
+
+
+
+On termination, all rights granted hereunder shall cease immediately. You shall immediately cease all use of the SoundCloud API, shall remove any and all SoundCloud Marks from your app or any advertising, marketing and promotional materials related thereto, shall destroy all Confidential Information, and shall delete all User Content and Personal Data.
+
+
+
+The provisions of these API Terms of Use that are intended by their nature to survive termination will survive termination.
+
+
+
+Miscellaneous
+#
+
+
+
+These API Terms of Use, together with the User Terms, constitute the entire agreement between you and SoundCloud with respect to your use of the SoundCloud API and any User Content and Personal Data accessed thereby, and supersede any prior agreement between you and SoundCloud with respect thereto. SoundCloud may assign its rights and (where permissible by law) its obligations under these API Terms of Use, in whole or in part, to any third party at any time without notice, including without limitation, to any person or entity acquiring all or substantially all of the assets or business of SoundCloud. You may not assign your rights and duties hereunder, in whole or in part, to any third party without the prior written consent of SoundCloud. Should one or more provisions of these API Terms of Use be found to be unlawful, void or unenforceable, such provision(s) shall be deemed severable and will not affect the validity and/or enforceability of the remaining provisions of the API Terms of Use, which will remain in full force and effect. These API Terms of Use are not intended to give rights to anyone except you and SoundCloud, save that Uploaders shall be entitled to enforce these API Terms of Use as third party beneficiaries insofar as these API Terms of Use apply to any unauthorized use of their User Content, User Data or other proprietary rights. This does not affect our right to transfer our rights or obligations to a third party as described above. The agreement created by your acceptance of these API Terms of Use is subject to the laws of the Federal Republic of Germany, and you and we hereby submit to the exclusive jurisdiction of the courts in Berlin, Germany for resolution of any dispute, action or proceeding arising in connection with these API Terms of Use.
+
+
+
+Effective Date: 30 March 2024
+
+
+
+Buttons & Logos
+
+
+
+It's always nice to give people credit for their work. If you're building an app that uses data provided by SoundCloud and our community it's best to give attribution. It's a way of saying thanks and encourages people to keep creating awesome things.
+
+
+
+Brand Guidelines
+#
+
+
+
+SoundCloud logos and colors must follow the current brand standards. Full guidelines and high-resolution assets are available in the
+SoundCloud Media Kit
+.
+
+
+
+Logo
+#
+
+
+
+The
+7-bar Cloudmark
+is the official SoundCloud symbol.
+Do
+not
+use the previous 13-bar horizontal logo or the legacy orange logo.
+The logo is available in two colors:
+Black
+and
+White
+.
+Black logo
+— primary colorway; use on an
+orange
+background (
+#FF5500
+).
+White logo
+— use on a
+black
+background (
+#121212
+).
+Minimum horizontal logo size:
+30px
+wide.
+
+
+
+Primary Colors
+#
+
+
+
+Color
+Hex
+SoundCloud Orange
+#FF5500
+White
+#FAFAFA
+Black
+#121212
+
+
+
+Use a light logo on a dark background, or a dark logo on a light/orange background. Do not alter, recolor, or distort the logo.
+
+
+
+How to Properly Attribute in Your App
+#
+
+
+
+Apps that use SoundCloud data or API functionality must give attribution to SoundCloud and to content creators. See also the
+Attribution and Branding
+section of the API Terms of Use.
+
+
+
+Easiest Way to Attribute SoundCloud Sounds and Creators
+#
+
+
+
+The recommended approach is to use SoundCloud
+widgets
+, which handle attribution automatically. See
+HTML5 Widget
+for embed and customization options.
+
+
+
+Attributing in Custom Players
+#
+
+
+
+If the widget does not fit your product, attribute in a similar fashion:
+
+
+
+
+
+
+
+When using someone's work, credit the creator and link back to where the creator and original work can be found.
+
+
+
+In cases where exact widget-style attribution is not possible:
+
+
+
+Credit the uploader as the creator of the sound
+Credit SoundCloud as the source by including one of the logos below
+Link to the SoundCloud URL containing the work
+if the sound is private, link to the profile of the creator
+
+
+
+Assets for Attributing SoundCloud Users and Data
+#
+
+
+
+Place these logos where SoundCloud data is displayed. The logo must link back to the data source (e.g. SoundCloud profile, track, or playlist page).
+
+
+
+Right-click (or long-press) a logo to save it. Assets have transparent backgrounds — place them on the correct brand background color.
+
+
+
+Black on Orange
+White on Black
+
+
+
+If a substantial portion of your app or site's functionality depends on the SoundCloud API, include one of these logos on screens where the API is used. The logo should link to
+soundcloud.com
+.
+
+
+
+Black on Orange
+White on Black
+
+
+
+Social icons:
+soundcloud.com/pages/widgets
+
+
+
+Connect with SoundCloud Button
+#
+
+
+
+Apps integrated with SoundCloud can use a Connect with SoundCloud button for registration and sign-in. This indicates that users can register with their SoundCloud account and grants your app access to act on their behalf.
+
+
+
+Right-click (or long-press) a button to save it. Assets have transparent backgrounds. Button heights:
+Small 24px
+,
+Medium 36px
+,
+Large 44px
+.
+
+
+
+Small (24px)
+Medium (36px)
+Large (44px)
+Connect with SoundCloud
+Connect
+Disconnect (dark UI)
+Disconnect (light UI)
+
+

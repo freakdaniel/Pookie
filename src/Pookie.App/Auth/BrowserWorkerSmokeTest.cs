@@ -131,7 +131,7 @@ internal static class BrowserWorkerSmokeTest
         }
         if ((await api.GetMeAsync(timeout.Token)).Id != 42 || pages != 1 || cancelledReads != 1)
             throw new InvalidOperationException("Cancelling a read discarded the live browser");
-        Console.WriteLine($"BROWSER_API_OK: {readRequests} authenticated GETs through WebKit, large Unicode JSON, search/feed/library/resolve/transcoding; cancelled fetch preserved the same page");
+        Console.WriteLine($"BROWSER_API_OK: {readRequests} authenticated GETs through the native WebView, large Unicode JSON, search/feed/library/resolve/transcoding; cancelled fetch preserved the same page");
         await browser.SetLikedAsync(42, 90, true, timeout.Token);
         await browser.SetLikedAsync(42, 90, false, timeout.Token);
         await browser.SetLikedAsync(42, 92, true, timeout.Token);
@@ -139,7 +139,7 @@ internal static class BrowserWorkerSmokeTest
         if (pages != 1 || deviceRequests != 3 || interactiveRequests != 2 ||
             !observed.Any(x => x.Kind == "checking" && !x.Interactive) || !observed.Any(x => x.Kind == "checking" && x.Interactive))
             throw new InvalidOperationException("Контекст не сохранился или проверка не повторила запрос.");
-        Console.WriteLine("BROWSER_WORKER_OK: real WebKit fetch, persistent context, 403 checks, window reveal/hide, automatic retry, PUT and DELETE");
+        Console.WriteLine("BROWSER_WORKER_OK: real WebView fetch, persistent context, 403 checks, window reveal/hide, automatic retry, PUT and DELETE");
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         try { await browser.SetLikedAsync(42, 91, true, cancel.Token); throw new InvalidOperationException("Запрос не отменён."); }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }

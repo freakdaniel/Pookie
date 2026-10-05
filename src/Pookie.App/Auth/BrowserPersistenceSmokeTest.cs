@@ -100,6 +100,26 @@ internal static class BrowserPersistenceSmokeTest
             if (challenges != 1 || requests != 3) throw new InvalidOperationException("Restart requested another browser challenge");
             Console.WriteLine("BROWSER_PERSISTENCE_OK: login-to-worker cookies/localStorage, challenge rotation, graceful process exit, restart with stale login token and protected action without another check");
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { await DeleteFixtureProfileAsync(root); }
+    }
+
+    internal static async Task DeleteFixtureProfileAsync(string root)
+    {
+        var target = Path.GetFullPath(root);
+        var temp = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath()));
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(Path.GetDirectoryName(target), temp, comparison) ||
+            !Path.GetFileName(target).StartsWith("pookie-persistence-test-", StringComparison.Ordinal))
+            throw new InvalidOperationException("Fixture cleanup escaped its temporary directory");
+        for (var attempt = 0; ; attempt++)
+        {
+            try { Directory.Delete(target, recursive: true); return; }
+            catch (Exception error) when (OperatingSystem.IsWindows() && attempt < 19 && error is IOException or UnauthorizedAccessException)
+            {
+                // WebView2 retains its metrics file briefly after the awaited host process exits.
+                // No file-unlock notification is exposed; this bounded I/O backoff only cleans fixture resources.
+                await Task.Delay(100);
+            }
+        }
     }
 }

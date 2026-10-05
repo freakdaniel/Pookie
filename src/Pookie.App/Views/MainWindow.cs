@@ -16,7 +16,8 @@ internal sealed partial class MainWindow : IDisposable
     private readonly bool demo;
     private readonly bool smoke;
     private readonly bool uiSmoke;
-    private readonly bool guest;
+    private readonly bool loginUiSmoke;
+    private readonly bool skipSessionRestore;
     private bool syncingTrackList;
     private readonly CancellationTokenSource lifetime = new();
     private CancellationTokenSource? loading;
@@ -63,11 +64,13 @@ internal sealed partial class MainWindow : IDisposable
     private long playGeneration;
     public Window Window { get; }
 
-    public MainWindow(string[] args)
+    public MainWindow(string[] args, string brandFontFamily)
     {
+        this.brandFontFamily = brandFontFamily;
         uiSmoke = args.Contains("--ui-smoke-test");
-        demo = args.Contains("--demo") || uiSmoke;
-        guest = args.Contains("--guest");
+        loginUiSmoke = args.Contains("--login-ui-smoke-test");
+        demo = args.Contains("--demo") || uiSmoke || loginUiSmoke;
+        skipSessionRestore = args.Contains("--guest");
         smoke = args.Contains("--smoke-test");
         dataPaths = new AppDataPaths(demo || smoke ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
         configuration = new ConfigurationStore(dataPaths);
@@ -144,23 +147,25 @@ internal sealed partial class MainWindow : IDisposable
         UpdateContentFrameWidth(size.Width);
         playerIsland.Width = Math.Min(1160, size.Width - 56);
         UpdateLibraryCardSize(size.Width);
-        startupLogo.Width = 132;
-        startupLogo.Height = 124;
-        startupLogo.Opacity = 1;
-        startupSpinner.Opacity = 1;
         if (uiSmoke) StartStartupLayoutProbe();
+        if (loginUiSmoke) Window.FrameRendered += SampleLoginTransition;
+        startupMinimumDisplay = HoldStartupSplashAsync();
         timer.Start(); closeTimer?.Start(); clipboardTimer?.Start();
         Run(async () =>
         {
-            var splashAnimation = Task.Delay(650, lifetime.Token);
             try { await InitializeAsync(); }
+            catch (SoundCloudException error) when (error.StatusCode == 401)
+            {
+                await LogoutAsync();
+                status.Value = "Сессия SoundCloud истекла. Войди снова, чтобы продолжить.";
+            }
             finally
             {
-                try { await splashAnimation; }
-                catch (OperationCanceledException) { }
                 await HideStartupSplashAsync();
             }
+            if (signedIn.Value) Run(LoadLikedIdsAsync);
             if (uiSmoke) await VerifyUiAsync();
+            if (loginUiSmoke) await VerifyLoginUiAsync();
         });
     }
 
@@ -172,6 +177,8 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task InitializeAsync()
     {
+        status.Value = "Для продолжения войди в свой аккаунт SoundCloud.";
+        if (loginUiSmoke || skipSessionRestore) return;
         if (demo)
         {
             heading.Value = "На твоей волне";
@@ -180,7 +187,6 @@ internal sealed partial class MainWindow : IDisposable
             status.Value = "Демо-режим: реальные локальные WAV, без обращения к SoundCloud.";
             return;
         }
-        if (guest) { await NavigateAsync(Page.Home); return; }
         try
         {
             vault = new LinuxSessionVault();
@@ -203,8 +209,10 @@ internal sealed partial class MainWindow : IDisposable
             }
         }
         catch (Exception error) when (error is InvalidOperationException or JsonException) { audioStatus.Value += " · Сессия: только в памяти"; }
-        if (me != null) Run(LoadLikedIdsAsync);
-        await NavigateAsync(Page.Home);
+        if (me != null)
+        {
+            await NavigateAsync(Page.Home);
+        }
     }
 
     private CancellationToken BeginLoad()
@@ -217,6 +225,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private Task SearchAsync()
     {
+        if (!CanUseWorkspace) return Task.CompletedTask;
         var search = query.Value.Trim();
         if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку на трек."; return Task.CompletedTask; }
         if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return Task.CompletedTask; }
@@ -256,6 +265,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task MoreAsync()
     {
+        if (!CanUseWorkspace) return;
         if (nextHref == null) return;
         likedActionError.Value = "";
         var target = nextHref;
@@ -283,6 +293,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task PlayAsync(SoundCloudTrack track, bool fromHistory = false)
     {
+        if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
         CancelSeek();
         var generation = ++playGeneration;
@@ -379,7 +390,7 @@ internal sealed partial class MainWindow : IDisposable
         if (paused) presence?.Clear();
         return Task.CompletedTask;
     }
-    private async Task LoginAsync()
+    private async Task ConnectSoundCloudAsync()
     {
         if (demo) { status.Value = "Перезапусти Pookie без --demo для входа."; return; }
         login?.Cancel(); login?.Dispose();
@@ -392,12 +403,13 @@ internal sealed partial class MainWindow : IDisposable
         WebSession session;
         try
         {
-            status.Value = "Войди на сайте SoundCloud в отдельном окне. Сессия подключится автоматически.";
+            SetLoginButtonState(LoginButtonState.Waiting);
             session = await NativeWebLogin.ConnectAsync(token);
+            token.ThrowIfCancellationRequested();
+            SetLoginButtonState(LoginButtonState.Connecting);
         }
         catch (OperationCanceledException) when (!lifetime.IsCancellationRequested && login?.Token == token)
         { status.Value = "Подключение отменено или истекло. Нажми «Войти в SoundCloud» ещё раз."; return; }
-        status.Value = "SoundCloud готовит браузерное соединение…";
         var connectedBrowser = new NativeBrowserSession(session);
         SoundCloudUser connectedProfile;
         try { connectedProfile = await connectedBrowser.GetMeAsync(token); token.ThrowIfCancellationRequested(); }
@@ -413,6 +425,7 @@ internal sealed partial class MainWindow : IDisposable
         signedIn.Value = true;
         UpdateProfileAvatar(me);
         profileOpen.Value = false;
+        await ShowWorkspaceAsync();
         Run(LoadLikedIdsAsync);
         var saved = false;
         if (vault != null)
@@ -430,46 +443,57 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task LogoutAsync()
     {
-        CancelSeek();
-        login?.Cancel(); loading?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
-        likedTask = null;
-        var closedBrowser = browser; browser = null; api.BrowserTransport = null;
-        closedBrowser?.Dispose();
-        ++playGeneration;
-        api.Session = null; me = null;
-        ClearLibraryData();
-        ResetNavigationHistory();
-        signedIn.Value = false;
-        ResetProfileAvatar();
-        profile.Value = "SoundCloud: вход не выполнен";
-        current = null; paused = false; isPlaying.Value = false;
-        audioPreparing = audioReady = false; playbackLoading.Value = false;
-        RefreshLikedPlayback();
-        playerVisible.Value = false;
-        likedIds.Clear(); likedIdsReady = false; UpdateLikeState();
-        queueTracks.Clear(); playbackHistory.Clear(); RefreshQueue();
-        presence?.Clear();
-        RunSync(() => player?.Stop());
-        title.Value = "Выбери трек"; artist.Value = "Музыка из SoundCloud";
-        currentTime.Value = "0:00"; totalTime.Value = "0:00";
-        progress.Value = 0; progress.Maximum = 1;
-        artwork.Source = Icons.Source("music-notes");
-        page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
-        ReplaceTracks(new TrackPage([], null));
-        if (closedBrowser != null) await closedBrowser.DisposeAsync();
-        await Task.Run(() => BrowserProfile.Clear(dataPaths), lifetime.Token);
-        if (vault != null)
+        workspace.IsEnabled = false;
+        workspace.IsHitTestVisible = false;
+        loginBusy.Value = true;
+        profileOpen.Value = settingsOpen.Value = queueOpen.Value = false;
+        CloseTopSearch(clear: true);
+        try
         {
-            await sessionWrites.WaitAsync(lifetime.Token);
-            try { await Task.Run(vault.Delete, lifetime.Token); }
-            catch (InvalidOperationException)
+            CancelSeek();
+            login?.Cancel(); loading?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
+            likedTask = null;
+            var closedBrowser = browser; browser = null; api.BrowserTransport = null;
+            closedBrowser?.Dispose();
+            ++playGeneration;
+            api.Session = null; me = null;
+            ClearLibraryData();
+            ResetNavigationHistory();
+            signedIn.Value = false;
+            ResetProfileAvatar();
+            profile.Value = "SoundCloud: вход не выполнен";
+            current = null; paused = false; isPlaying.Value = false;
+            audioPreparing = audioReady = false; playbackLoading.Value = false;
+            RefreshLikedPlayback();
+            playerVisible.Value = false;
+            likedIds.Clear(); likedIdsReady = false; UpdateLikeState();
+            queueTracks.Clear(); playbackHistory.Clear(); RefreshQueue();
+            presence?.Clear();
+            RunSync(() => player?.Stop());
+            title.Value = "Выбери трек"; artist.Value = "Музыка из SoundCloud";
+            currentTime.Value = "0:00"; totalTime.Value = "0:00";
+            progress.Value = 0; progress.Maximum = 1;
+            artwork.Source = Icons.Source("music-notes");
+            page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
+            ReplaceTracks(new TrackPage([], null));
+            status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
+            await ShowLoginScreenAsync();
+            if (closedBrowser != null) await closedBrowser.DisposeAsync();
+            await Task.Run(() => BrowserProfile.Clear(dataPaths), lifetime.Token);
+            if (vault != null)
             {
-                status.Value = "Выход выполнен в Pookie, но сохранённую сессию удалить не удалось: после перезапуска аккаунт может подключиться снова.";
-                return;
+                await sessionWrites.WaitAsync(lifetime.Token);
+                try { await Task.Run(vault.Delete, lifetime.Token); }
+                catch (InvalidOperationException)
+                {
+                    status.Value = "Выход выполнен в Pookie, но сохранённую сессию удалить не удалось: после перезапуска аккаунт может подключиться снова.";
+                    return;
+                }
+                finally { sessionWrites.Release(); }
             }
-            finally { sessionWrites.Release(); }
+            status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
         }
-        status.Value = "Ты вышел из SoundCloud в Pookie. Поиск и публичная музыка доступны без входа. Вход в обычном браузере сохранён.";
+        finally { loginBusy.Value = false; }
     }
 
     private void Poll()
@@ -511,6 +535,12 @@ internal sealed partial class MainWindow : IDisposable
     {
         try { await action(); }
         catch (OperationCanceledException) { }
+        catch (SoundCloudException error) when (error.StatusCode == 401 && signedIn.Value)
+        {
+            try { await LogoutAsync(); }
+            catch (Exception logoutError) when (!disposed) { status.Value = FriendlyError(logoutError); }
+            if (!disposed) status.Value = "Сессия SoundCloud истекла. Войди снова, чтобы продолжить.";
+        }
         catch (Exception error)
         {
             if (!disposed)
@@ -529,6 +559,8 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (disposed) return;
         Window.FrameRendered -= RestoreNavigationScroll;
+        Window.FrameRendered -= SampleLoginTransition;
+        loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
         searchInput?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();

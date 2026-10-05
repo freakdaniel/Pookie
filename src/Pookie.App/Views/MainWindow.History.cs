@@ -66,6 +66,7 @@ internal sealed partial class MainWindow
 
     private async Task NavigateRouteAsync(NavigationRoute route, Func<long, Task> action)
     {
+        if (!CanUseWorkspace) return;
         var generation = BeginNavigation(route, pending: true);
         try { await action(generation); }
         // Late replies/errors from a page we already left cannot replace the new page.
@@ -78,6 +79,7 @@ internal sealed partial class MainWindow
 
     private async Task MoveNavigationAsync(int offset)
     {
+        if (!CanUseWorkspace) return;
         var index = navigationIndex + offset;
         if (index < 0 || index >= navigationHistory.Count) return;
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();

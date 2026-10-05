@@ -1,0 +1,35 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App'">
+    <None Include="$(MSBuildThisFileDirectory)licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)LICENSING.md;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.Audio'">
+    <PookieDependencyLicense Include="$(PkgSoundFlow)/LICENSE.md;$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt;$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md;$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" />
+    <None Include="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="GeneratePookieThirdPartyNotices"
+          BeforeTargets="GetCopyToOutputDirectoryItems;ComputeFilesToPublish"
+          DependsOnTargets="ResolvePackageAssets"
+          Condition="'$(MSBuildProjectName)' == 'Pookie.Audio'">
+    <Error Condition="!Exists('%(PookieDependencyLicense.Identity)')"
+           Text="Missing dependency license: %(PookieDependencyLicense.Identity). Restore packages and check their licensing files before distributing Pookie." />
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <ReadLinesFromFile File="$(PkgSoundFlow)/LICENSE.md">
+      <Output TaskParameter="Lines" ItemName="SoundFlowLicenseLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt">
+      <Output TaskParameter="Lines" ItemName="SoundFlowNoticeLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md">
+      <Output TaskParameter="Lines" ItemName="SoundFlowFfmpegLicenseLines" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt">
+      <Output TaskParameter="Lines" ItemName="SoundFlowFfmpegNoticeLines" />
+    </ReadLinesFromFile>
+    <WriteLinesToFile File="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt"
+                      Lines="SoundFlow LICENSE.md;@(SoundFlowLicenseLines);SoundFlow SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowNoticeLines);SoundFlow.Codecs.FFMpeg LICENSE.md;@(SoundFlowFfmpegLicenseLines);SoundFlow.Codecs.FFMpeg SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowFfmpegNoticeLines)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+  </Target>
+</Project>

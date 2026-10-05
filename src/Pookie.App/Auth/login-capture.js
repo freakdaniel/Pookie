@@ -5,6 +5,7 @@
   const allowedOrigin = 'https://soundcloud.com';
   if (location.origin !== allowedOrigin || window !== window.top || window.__pookieLoginCapture) return;
   window.__pookieLoginCapture = true;
+  const post = window.__pookiePost || (message => window.infiniframe.host.postData(message));
   let clientId = '';
   let accessToken = '';
   let dataDomeClientId = '';
@@ -36,7 +37,7 @@
     websiteContext();
     // Don't close the login window before the site's protection tag supplies its session.
     if ((window.ddoptions?.sessionByHeader || window.dataDomeOptions?.sessionByHeader) && !dataDomeClientId) return;
-    window.infiniframe.host.postData({ id: 'pookie:web-session', command: 'Post', version: 2, data: {
+    post({ id: 'pookie:web-session', command: 'Post', version: 2, data: {
       client_id: clientId, access_token: accessToken, user_agent: navigator.userAgent,
       ...(dataDomeClientId ? { data_dome_client_id: dataDomeClientId } : {}),
       ...(appVersion ? { app_version: appVersion } : {}),

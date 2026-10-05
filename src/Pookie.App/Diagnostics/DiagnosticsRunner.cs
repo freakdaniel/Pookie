@@ -13,16 +13,17 @@ internal static class DiagnosticsRunner
         if (args.Contains("--storage-smoke-test")) { await StorageSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-persistence-smoke-test")) { await BrowserPersistenceSmokeTest.RunAsync(); return true; }
         if (args.Contains("--login-smoke-test")) { await LoginSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--protected-audio-smoke-test"))
         {
             var flag = Array.IndexOf(args, "--protected-audio-smoke-test");
             if (flag + 1 >= args.Length) throw new ArgumentException("После --protected-audio-smoke-test нужна ссылка на трек SoundCloud.");
-            using var vault = new LinuxSessionVault();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            using var vault = OperatingSystem.IsLinux() ? new LinuxSessionVault() : null;
             using var protectedHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
-            var protectedAccount = vault.Load();
-            await using var protectedBrowser = protectedAccount != null ? new NativeBrowserSession(protectedAccount) : null;
+            var protectedAccount = vault?.Load() ?? await NativeWebLogin.ConnectAsync(timeout.Token, resetSession: false);
+            await using var protectedBrowser = new NativeBrowserSession(protectedAccount);
             var protectedApi = new SoundCloudWebClient(protectedHttp)
                 { Session = protectedAccount, BrowserTransport = protectedBrowser, RequireBrowserTransport = true };
             var track = await protectedApi.ResolveAsync(args[flag + 1], timeout.Token);
