@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pookie.App/Pookie.App.csproj" />
+    <Project Path="src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
+    <Project Path="src/Pookie.Audio/Pookie.Audio.csproj" />
+    <Project Path="src/Pookie.Discord/Pookie.Discord.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pookie.SoundCloud.Tests/Pookie.SoundCloud.Tests.csproj" />
+    <Project Path="tests/Pookie.Audio.Tests/Pookie.Audio.Tests.csproj" />
+    <Project Path="tests/Pookie.Discord.Tests/Pookie.Discord.Tests.csproj" />
+  </Folder>
+</Solution>

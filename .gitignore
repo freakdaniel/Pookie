@@ -1,0 +1,9 @@
+node_modules/
+artifacts/
+build/
+**/.DS_Store
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
