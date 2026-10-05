@@ -58,7 +58,7 @@ internal sealed class PlayerBackdrop : Control
             rasterPalette = Current;
             rasterFactory = factory;
         }
-        // Tile vertically at physical pixel resolution: no enlarged grain on HiDPI displays.
+        
         context.FillRectangle(Bounds, new ImageBrush(rasterImage,
             new Rect(0, 0, width, RasterRows),
             new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / context.DpiScale), TileMode.TileY));
@@ -73,15 +73,13 @@ internal sealed class PlayerBackdrop : Control
             var left = position < .38 ? palette.Start : palette.Middle;
             var right = position < .38 ? palette.Middle : palette.End;
             var amount = position < .38 ? position / .38 : (position - .38) / .62;
-            // Smooth the slope around colour stops, retaining fractional channels until quantization.
+
             amount = amount * amount * (3 - 2 * amount);
             var r = left.R + (right.R - left.R) * amount;
             var g = left.G + (right.G - left.G) * amount;
             var b = left.B + (right.B - left.B) * amount;
             for (var y = 0; y < RasterRows; y++)
             {
-                // Stable, unbiased stochastic rounding breaks up 8-bit bands by at most one level.
-                // The same noise in RGB keeps the texture neutral; it never flickers between frames.
                 var hash = unchecked((uint)x * 0x9e3779b9u + (uint)y * 0x85ebca6bu);
                 hash ^= hash >> 16; hash = unchecked(hash * 0x7feb352du);
                 hash ^= hash >> 15; hash = unchecked(hash * 0x846ca68bu); hash ^= hash >> 16;

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Pookie.App.SmokeTests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <Import Project="../../src/Pookie.App/Pookie.App.Shared.props" />
+  <ItemGroup>
+    <!-- Compile production sources unchanged, adding private verification partials only in this host. -->
+    <Compile Include="../../src/Pookie.App/**/*.cs"
+             Exclude="../../src/Pookie.App/Program.cs;../../src/Pookie.App/bin/**;../../src/Pookie.App/obj/**"
+             Link="App/%(RecursiveDir)%(Filename)%(Extension)" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

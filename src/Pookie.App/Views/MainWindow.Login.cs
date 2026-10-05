@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
     private static readonly Color LoginOrange = Color.FromRgb(255, 85, 0);
     private static readonly Color LoginPaper = Color.FromRgb(239, 239, 239);
 
-    private bool CanUseWorkspace => signedIn.Value || (demo && !loginUiSmoke);
+    private bool CanUseWorkspace => signedIn.Value || (demo && !requireSignIn);
 
     private FrameworkElement LoginScreen()
     {

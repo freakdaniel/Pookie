@@ -78,7 +78,7 @@ internal sealed partial class MainWindow
                 startupContent.Opacity = progress;
                 startupSplash.Opacity = 1 - progress;
             });
-            if (uiSmoke) StopStartupLayoutProbe();
+            OnStartupTransitionCompleted();
             startupSplash.IsVisible = false;
             workspace.IsEnabled = true;
             workspace.IsHitTestVisible = true;

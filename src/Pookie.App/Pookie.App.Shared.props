@@ -1,0 +1,29 @@
+<Project>
+  <!-- Both hosts use the same application dependencies and embedded resources. -->
+  <PropertyGroup>
+    <RootNamespace>Pookie.App</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('linux-'))">
+    <DefineConstants>$(DefineConstants);POOKIE_LINUX</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win-'))">
+    <DefineConstants>$(DefineConstants);POOKIE_WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('osx-'))">
+    <DefineConstants>$(DefineConstants);POOKIE_MACOS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Auth/login-capture.js" LogicalName="Pookie.App.Auth.login-capture.js" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Auth/browser-requests.js" LogicalName="Pookie.App.Auth.browser-requests.js" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Icons/*.svg" LogicalName="Pookie.App.Assets.Icons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/logo.svg" LogicalName="Pookie.App.Assets.logo.svg" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Branding/*" LogicalName="Pookie.App.Assets.Branding.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/GoogleSans.ttf" LogicalName="Pookie.App.Assets.Fonts.GoogleSans.ttf" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/Bungee-Regular.ttf" LogicalName="Pookie.App.Assets.Fonts.Bungee-Regular.ttf" />
+    <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
+    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Audio/Pookie.Audio.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Discord/Pookie.Discord.csproj" />
+  </ItemGroup>
+</Project>

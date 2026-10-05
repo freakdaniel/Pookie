@@ -13,8 +13,6 @@ internal sealed partial class MainWindow
     private int startupSlideFrames;
     private double startupMaxCenterError;
 
-    // Inspect arranged geometry throughout startup, including partially visible fade-out frames.
-    // Playback checks alone cannot detect a loader jumping before it disappears.
     private void StartStartupLayoutProbe()
     {
         startupLayoutProbe = new DispatcherTimer(TimeSpan.FromMilliseconds(16));
@@ -70,7 +68,6 @@ internal sealed partial class MainWindow
             startupLayoutFailure ??= $"Curtain finished at {finalOffset:F2} DIP instead of 64";
     }
 
-    // Exercises the same state/actions as the UI with local audio and no SoundCloud account.
     private async Task VerifyUiAsync()
     {
         try
@@ -193,7 +190,6 @@ internal sealed partial class MainWindow
         await NavigateAsync(Page.Home);
     }
 
-    // Holds readiness explicitly, while successful requests still play real local audio.
     private sealed class ControlledAudioPlayer(IAudioPlayer inner) : IAudioPlayer
     {
         private TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -230,7 +226,7 @@ internal sealed partial class MainWindow
         }
         try
         {
-            await ToggleAsync(); // Hold playback still while verifying position previews.
+            await ToggleAsync();
             BeginSeekDrag();
             for (var i = 0; i < 60; i++)
             {
@@ -392,7 +388,7 @@ internal sealed partial class MainWindow
         Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, 160px artwork, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
         likesAsList.Value = false;
         Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
-        // The window manager may clamp or round requested sizes; check the applied layout.
+        
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width < DefaultWindowWidth - 100 && likedTiles.Values
             .Where(tile => tile.Track != null).GroupBy(tile => Math.Round(tile.Root.Bounds.Y)).OrderBy(group => group.Key).FirstOrDefault()?.Count() == 4);
         if (likedGrid.ItemsSource.Count != 30) throw new InvalidOperationException("Resize lost liked tracks");

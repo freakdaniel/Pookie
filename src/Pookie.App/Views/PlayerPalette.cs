@@ -11,7 +11,6 @@ internal readonly record struct PlayerPalette(Color Start, Color Middle, Color E
 
     internal static PlayerPalette FromArtwork(ImageSource source)
     {
-        // Decode away from the UI thread; inspect at most 4096 evenly distributed pixels.
         var width = source.PixelWidth;
         var height = source.PixelHeight;
         if (width <= 0 || height <= 0 || (long)width * height > 4_000_000) return Neutral;
@@ -38,7 +37,6 @@ internal readonly record struct PlayerPalette(Color Start, Color Middle, Color E
             bin.Weight += weight; bin.R += r * weight; bin.G += g * weight; bin.B += b * weight;
         }
 
-        // Neighbouring hue bins belong to one colour family, even across the red boundary.
         var families = new (double Weight, double R, double G, double B)[25];
         for (var i = 0; i < 25; i++)
         {
@@ -67,7 +65,7 @@ internal readonly record struct PlayerPalette(Color Start, Color Middle, Color E
         var maximum = Math.Max(r, Math.Max(g, b));
         r = 12 + r / maximum * 70; g = 12 + g / maximum * 70; b = 12 + b / maximum * 70;
         static double Linear(double channel) => channel <= .04045 ? channel / 12.92 : Math.Pow((channel + .055) / 1.055, 2.4);
-        // Keep secondary text legible, including on bright green/yellow covers.
+
         double Luminance(double scale) => .2126 * Linear(r * scale / 255) + .7152 * Linear(g * scale / 255) + .0722 * Linear(b * scale / 255);
         double low = 0, high = 1;
         if (Luminance(1) <= .027) low = 1;

@@ -1,4 +1,4 @@
-namespace Pookie.App.Diagnostics;
+namespace Pookie.App.Preview;
 
 internal static class DemoAudio
 {

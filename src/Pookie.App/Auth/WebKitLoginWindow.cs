@@ -8,7 +8,7 @@ namespace Pookie.App.Auth;
 
 // Published InfiniFrame 0.62.1 initializes Linux WebKit on a worker thread, which aborts
 // in current JavaScriptCore. This fallback keeps GTK/WebKit on the helper's main thread.
-internal sealed class WebKitLoginWindow
+internal sealed partial class WebKitLoginWindow
 {
     private readonly Action<WebSession> connected;
     private readonly string origin;
@@ -28,7 +28,6 @@ internal sealed class WebKitLoginWindow
     private nint rootWindow;
     private nint rootView;
     private bool done;
-    private bool verificationVisible;
 
     private WebKitLoginWindow(Action<WebSession> connected, string origin, bool background,
         WebSession? account = null, Action<BrowserRequestEvent>? browserEvent = null)
@@ -38,11 +37,12 @@ internal sealed class WebKitLoginWindow
         idleCallback = DrainDispatch;
         messageCallback = MessageReceived; deleteCallback = WindowDeleted;
         uriCallback = UriChanged; createCallback = CreatePopup; closeCallback = ClosePopup;
+        var scriptBody = account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
+        CustomizeScript(ref scriptBody, account == null);
         script = "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) { (()=>{" +
             "const pairing=" + JsonSerializer.Serialize(pairing) + ";" +
             "window.infiniframe={host:{postData:message=>window.webkit.messageHandlers.pookie.postMessage(JSON.stringify({...message,pookie_pairing:pairing}))}};" +
-            (account == null && origin.StartsWith("http:", StringComparison.Ordinal) ? "window.fetch=()=>Promise.resolve(new Response('{}'));" : "") +
-            (account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin)) + "})(); }";
+            scriptBody + "})(); }";
     }
 
     public static bool Run(Action<WebSession> connected, string profilePath, string? fixtureUri)
@@ -75,7 +75,7 @@ internal sealed class WebKitLoginWindow
         Native.g_object_unref(context);
         app.rootWindow = app.AddWindow(view);
         app.rootView = view;
-        app.CheckFixtureVisibility();
+        app.OnBrowserEvent(null);
         Native.webkit_web_view_load_uri(view, startUri);
         if (app.browserEvent != null) _ = Task.Run(app.ReadCommandsAsync);
         Native.gtk_main();
@@ -119,6 +119,7 @@ internal sealed class WebKitLoginWindow
     {
         // Keep the UA aligned with this WebKitGTK version and platform, including related login popups.
         Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
+        ConfigureView(view);
         var window = Native.gtk_window_new(0);
         Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
         Native.gtk_window_set_default_size(window, 900, 760);
@@ -182,16 +183,14 @@ internal sealed class WebKitLoginWindow
                     Native.gtk_widget_show_all(rootWindow);
                     Native.gtk_window_deiconify(rootWindow);
                     Native.gtk_window_present(rootWindow);
-                    verificationVisible = true;
                 }
                 if (message.Kind is "passed" or "challenge-error")
                 {
                     Native.gtk_widget_hide(rootWindow);
                     Native.gtk_window_set_skip_taskbar_hint(rootWindow, 1);
                     Native.gtk_window_set_skip_pager_hint(rootWindow, 1);
-                    verificationVisible = false;
                 }
-                CheckFixtureVisibility();
+                OnBrowserEvent(message);
                 browserEvent(message);
                 return;
             }
@@ -214,13 +213,9 @@ internal sealed class WebKitLoginWindow
         Native.gtk_label_set_text(item.Address, text);
     }
 
-    private void CheckFixtureVisibility()
-    {
-        // The local integration fixture checks GTK's actual mapped state, not a UI flag.
-        if (browserEvent == null || !origin.StartsWith("http:", StringComparison.Ordinal)) return;
-        if ((Native.gtk_widget_get_mapped(rootWindow) != 0) != verificationVisible)
-            throw new InvalidOperationException("Некорректная видимость окна проверки.");
-    }
+    partial void OnBrowserEvent(BrowserRequestEvent? message);
+    partial void CustomizeScript(ref string scriptBody, bool login);
+    partial void ConfigureView(nint view);
 
     private nint CreatePopup(nint view, nint action, nint data)
     {
@@ -277,7 +272,6 @@ internal sealed class WebKitLoginWindow
         [DllImport(Gtk)] public static extern void gtk_widget_show_all(nint widget);
         [DllImport(Gtk)] public static extern void gtk_widget_hide(nint widget);
         [DllImport(Gtk)] public static extern void gtk_widget_realize(nint widget);
-        [DllImport(Gtk)] public static extern int gtk_widget_get_mapped(nint widget);
         [StructLayout(LayoutKind.Sequential)] public struct Allocation { public int X, Y, Width, Height; }
         [DllImport(Gtk)] public static extern void gtk_widget_size_allocate(nint widget, ref Allocation allocation);
         [DllImport(Gtk)] public static extern void gtk_widget_destroy(nint widget);

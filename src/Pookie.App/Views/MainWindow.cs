@@ -4,7 +4,7 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.Audio;
 using Pookie.Discord;
-using Pookie.App.Diagnostics;
+using Pookie.App.Preview;
 using Pookie.App.Auth;
 using Pookie.App.Storage;
 using Pookie.SoundCloud;
@@ -14,9 +14,8 @@ namespace Pookie.App;
 internal sealed partial class MainWindow : IDisposable
 {
     private readonly bool demo;
-    private readonly bool smoke;
-    private readonly bool uiSmoke;
-    private readonly bool loginUiSmoke;
+    private readonly bool isolatedRun;
+    private readonly bool requireSignIn;
     private readonly bool skipSessionRestore;
     private bool syncingTrackList;
     private readonly CancellationTokenSource lifetime = new();
@@ -41,7 +40,6 @@ internal sealed partial class MainWindow : IDisposable
     private readonly List<SoundCloudTrack> tracks = [];
     private readonly List<string> demoFiles = [];
     private readonly DispatcherTimer timer;
-    private readonly DispatcherTimer? closeTimer;
     private readonly ListBox list;
     private readonly Slider progress;
     private readonly Image artwork;
@@ -64,15 +62,14 @@ internal sealed partial class MainWindow : IDisposable
     private long playGeneration;
     public Window Window { get; }
 
-    public MainWindow(string[] args, string brandFontFamily)
+    public MainWindow(AppRunOptions options, string brandFontFamily)
     {
         this.brandFontFamily = brandFontFamily;
-        uiSmoke = args.Contains("--ui-smoke-test");
-        loginUiSmoke = args.Contains("--login-ui-smoke-test");
-        demo = args.Contains("--demo") || uiSmoke || loginUiSmoke;
-        skipSessionRestore = args.Contains("--guest");
-        smoke = args.Contains("--smoke-test");
-        dataPaths = new AppDataPaths(demo || smoke ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
+        demo = options.Preview;
+        requireSignIn = options.RequireSignIn;
+        skipSessionRestore = options.SkipSessionRestore;
+        isolatedRun = options.IsolatedData || demo;
+        dataPaths = new AppDataPaths(isolatedRun ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
         configuration = new ConfigurationStore(dataPaths);
         imageDiskCache = new ImageDiskCache(dataPaths);
         imageDiskCache.Prune();
@@ -85,13 +82,13 @@ internal sealed partial class MainWindow : IDisposable
         if (Environment.GetEnvironmentVariable("POOKIE_PROXY") is { Length: > 0 } proxy) handler.Proxy = new WebProxy(proxy);
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireBrowserTransport = true };
-        if (!args.Contains("--no-audio"))
+        if (options.AudioEnabled)
         {
-            try { player = new SoundFlowPlayer(args.Contains("--silent-audio") || uiSmoke, SoundCloudWebClient.IsMediaUri); audioStatus.Value = "Аудио: SoundFlow"; }
+            try { player = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsMediaUri); audioStatus.Value = "Аудио: SoundFlow"; }
             catch (Exception error) { audioStatus.Value = error.Message; }
         }
         else audioStatus.Value = "Аудио отключено для проверки интерфейса";
-        if (!demo && !smoke)
+        if (options.DiscordPresence)
         {
             try { presence = new PresenceService(); }
             catch (Exception error) when (error is InvalidOperationException or IOException) { }
@@ -116,11 +113,6 @@ internal sealed partial class MainWindow : IDisposable
         profileAvatar = new Image().Width(30).Height(30).StretchMode(Stretch.UniformToFill);
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(350));
         timer.Tick += Poll;
-        if (smoke)
-        {
-            closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
-            closeTimer.Tick += () => Window?.Close();
-        }
 
         Window = new Window().Title("Pookie").Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
             .Padding(0).Background(Color.FromRgb(34, 34, 34))
@@ -145,10 +137,9 @@ internal sealed partial class MainWindow : IDisposable
         var size = Window!.ClientSize;
         UpdateContentFrameWidth(size.Width);
         UpdateLibraryCardSize(size.Width);
-        if (uiSmoke) StartStartupLayoutProbe();
-        if (loginUiSmoke) Window.FrameRendered += SampleLoginTransition;
+        OnWindowReady();
         startupMinimumDisplay = HoldStartupSplashAsync();
-        timer.Start(); closeTimer?.Start(); clipboardTimer?.Start();
+        timer.Start(); clipboardTimer?.Start();
         Run(async () =>
         {
             try { await InitializeAsync(); }
@@ -162,8 +153,7 @@ internal sealed partial class MainWindow : IDisposable
                 await HideStartupSplashAsync();
             }
             if (signedIn.Value) Run(LoadLikedIdsAsync);
-            if (uiSmoke) await VerifyUiAsync();
-            if (loginUiSmoke) await VerifyLoginUiAsync();
+            OnInitialized();
         });
     }
 
@@ -181,7 +171,7 @@ internal sealed partial class MainWindow : IDisposable
     private async Task InitializeAsync()
     {
         status.Value = "Для продолжения войди в свой аккаунт SoundCloud.";
-        if (loginUiSmoke || skipSessionRestore) return;
+        if (skipSessionRestore) return;
         if (demo)
         {
             heading.Value = "На твоей волне";
@@ -563,7 +553,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (disposed) return;
         Window.FrameRendered -= RestoreNavigationScroll;
-        Window.FrameRendered -= SampleLoginTransition;
+        OnDisposed();
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
         searchInput?.Dispose(); clipboardTimer?.Dispose();
@@ -572,7 +562,7 @@ internal sealed partial class MainWindow : IDisposable
         playerBackdrop.Reset();
         disposed = true; avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
         foreach (var session in browserSessions) session.Dispose();
-        timer.Dispose(); closeTimer?.Dispose(); startupLayoutProbe?.Dispose(); player?.Dispose(); presence?.Dispose();
+        timer.Dispose(); player?.Dispose(); presence?.Dispose();
         // An outstanding libsecret operation may still be completing on its worker; process teardown releases it.
         http.Dispose();
     }
@@ -583,7 +573,7 @@ internal sealed partial class MainWindow : IDisposable
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);
         foreach (var file in demoFiles) try { File.Delete(file); } catch (IOException) { }
-        if (demo || smoke)
+        if (isolatedRun)
             try { Directory.Delete(dataPaths.Root, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 

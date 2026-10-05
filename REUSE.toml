@@ -4,7 +4,7 @@ version = 1
 path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
   "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**",
-  "src/**/*.cs", "src/**/*.csproj", "src/**/*.js", "tests/**",
+  "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "tests/**",
   "src/Pookie.App/Assets/logo.svg",
 ]
 precedence = "closest"
