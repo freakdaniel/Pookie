@@ -131,7 +131,6 @@ internal sealed partial class MainWindow : IDisposable
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
-            playerIsland.Width = Math.Max(300, Math.Min(1160, size.Width - 56));
             UpdateLibraryCardSize(size.Width);
         };
         Window.PreviewKeyDown += e =>
@@ -145,7 +144,6 @@ internal sealed partial class MainWindow : IDisposable
     {
         var size = Window!.ClientSize;
         UpdateContentFrameWidth(size.Width);
-        playerIsland.Width = Math.Min(1160, size.Width - 56);
         UpdateLibraryCardSize(size.Width);
         if (uiSmoke) StartStartupLayoutProbe();
         if (loginUiSmoke) Window.FrameRendered += SampleLoginTransition;
@@ -172,7 +170,12 @@ internal sealed partial class MainWindow : IDisposable
     private void UpdateContentFrameWidth(double availableWidth)
     {
         if (availableWidth > 0)
+        {
             contentFrame.Width = Math.Min(1440, availableWidth);
+            playerContentFrame.Width = Math.Min(1440, availableWidth);
+            var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
+            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 12 - 4, 60, 180);
+        }
     }
 
     private async Task InitializeAsync()
@@ -315,7 +318,7 @@ internal sealed partial class MainWindow : IDisposable
         try { progress.Value = 0; progress.Maximum = Math.Max(1, track.DurationSeconds); }
         finally { updatingProgress = false; }
         var cachedArtwork = libraryCoverCache.GetValueOrDefault(track.Id) ?? coverCache.GetValueOrDefault(track.Id);
-        artwork.Source = cachedArtwork != null ? cachedArtwork : Icons.Source("music-notes");
+        SetPlayerArtwork(cachedArtwork, generation);
         playerVisible.Value = true;
         if (queueTracks.Count == 0) SetQueue(track);
         RefreshLikedPlayback(); UpdateLikeState(); RefreshQueue();
@@ -474,6 +477,7 @@ internal sealed partial class MainWindow : IDisposable
             currentTime.Value = "0:00"; totalTime.Value = "0:00";
             progress.Value = 0; progress.Maximum = 1;
             artwork.Source = Icons.Source("music-notes");
+            playerBackdrop.Reset();
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
             ReplaceTracks(new TrackPage([], null));
             status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
@@ -565,6 +569,7 @@ internal sealed partial class MainWindow : IDisposable
         searchInput?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;
+        playerBackdrop.Reset();
         disposed = true; avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
         foreach (var session in browserSessions) session.Dispose();
         timer.Dispose(); closeTimer?.Dispose(); startupLayoutProbe?.Dispose(); player?.Dispose(); presence?.Dispose();

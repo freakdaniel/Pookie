@@ -1,5 +1,4 @@
-Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope)
-Copyright 2021 The Vela Sans Project - Ravid Balaliev
+Copyright 2025 The Google Sans Project Authors (https://github.com/googlefonts/googlesans)
 Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

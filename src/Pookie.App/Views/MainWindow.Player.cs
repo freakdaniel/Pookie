@@ -6,9 +6,15 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private const double PlayerBarHeight = 72;
+    private const int PlayerControlsWidth = 380;
+    private StackPanel playerTrackInfo = null!;
+    private Grid playerTimeline = null!;
     private static readonly Color LikedHeart = Color.FromRgb(184, 51, 78);
+    private static readonly Color PlayerSecondaryText = Color.FromArgb(153, 255, 255, 255);
 
     private readonly LoadingTrack loadingTrack = new();
+    private readonly PlayerBackdrop playerBackdrop = new();
 
     private FrameworkElement PlayerBar()
     {
@@ -41,63 +47,85 @@ internal sealed partial class MainWindow
             .OnClick(() => Run(ToggleLikeAsync));
         RefreshHeart();
 
-        playerIsland = new Border()
-            .Background(Color.FromRgb(42, 42, 42)).CornerRadius(12).BorderThickness(0)
-            .Padding(10, 8).Width(1160).Height(72).CenterHorizontal().Bottom().Margin(28, 0, 28, 24).ClipToBounds()
-            .Child(new Grid().Columns("*,380,*").Rows("*").Spacing(12).Children(
-            new Grid().Columns("48,*,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
+        playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Children(
+            new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
+            new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText).TextTrimming(TextTrimming.CharacterEllipsis));
+        var positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
+            .Margin(0, 0, 4, 2).CenterVertical().Right().Column(0);
+        var durationLabel = new TextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)
+            .Margin(4, 0, 0, 2).CenterVertical().Left().Column(2);
+        foreach (var label in new[] { positionLabel, durationLabel })
+        {
+            label.Opacity = 0;
+            label.Transitions = [Transition.Create(UIElement.OpacityProperty, 200, Easing.CubicBezier(0.2, 0, 0, 1))];
+        }
+        // Fade the labels without removing their fixed columns from the layout.
+        playerTimeline = new Grid().Columns("52,*,52").Rows("*").Spacing(0).Children(
+            positionLabel,
+            new Grid().Columns("*").Rows("*").Height(12).CenterVertical().Column(1).Children(progress, loadingTrack),
+            durationLabel)
+            .OnMouseEnter(() => { positionLabel.Opacity = 1; durationLabel.Opacity = 1; })
+            .OnMouseLeave(() => { positionLabel.Opacity = 0; durationLabel.Opacity = 0; });
+        playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
+            .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
+            new Grid().Columns("48,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
                 new Border().Background(Color.FromRgb(59, 59, 59)).CornerRadius(6).ClipToBounds()
                     .Width(48).Height(48).Child(artwork).Column(0),
-                new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Column(1).Children(
-                    new TextBlock().BindText(title).FontSize(12).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
-                    new TextBlock().BindText(artist).FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis)),
+                playerTrackInfo.Column(1),
                 heartButton.CenterVertical().Column(2)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
                     PlayerButton(Icons.View("skip-back-solid", 18), () => Run(() => SkipAsync(-1))).CenterVertical(),
                     new Button().Content(new Grid().Columns("*").Rows("*").Children(
-                        Icons.View("play-solid", 19, true).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying, value => !value),
-                        Icons.View("pause-solid", 19, true).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying)))
-                        .Padding(0).Width(34).Height(34).CornerRadius(17).Background(Color.FromRgb(232, 232, 232)).BorderThickness(0)
+                        Icons.PlaybackDisc(false, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying, value => !value),
+                        Icons.PlaybackDisc(true, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying)))
+                        .Padding(0).Width(34).Height(34).CornerRadius(17).Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0)
                         .OnClick(() => Run(ToggleAsync)),
                     PlayerButton(Icons.View("skip-forward-solid", 18), () => Run(() => SkipAsync(1))).CenterVertical()),
-            new Grid().Columns("Auto,*,Auto").Rows("*").Spacing(0).Children(
-                    new TextBlock().BindText(currentTime).FontSize(11).Foreground(Muted).Margin(0, 0, 0, 2).CenterVertical().Right().Column(0),
-                    new Grid().Columns("*").Rows("*").Height(12).CenterVertical().Column(1)
-                        .Children(progress, loadingTrack),
-                    new TextBlock().BindText(totalTime).FontSize(11).Foreground(Muted).Margin(0, 0, 0, 2).CenterVertical().Left().Column(2)).Row(1)),
+                playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(
                 PlayerButton(Icons.View("queue", 19), () =>
-                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; })
-                    .Bind(Control.BackgroundProperty, queueOpen, value => value ? Color.FromRgb(66, 66, 66) : Color.Transparent),
-                PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value)
-                    .Bind(Control.BackgroundProperty, shuffle, value => value ? Color.FromRgb(66, 66, 66) : Color.Transparent),
+                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
+                PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value, shuffle),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                     PlayerButton(new Grid().Columns("*").Rows("*").Children(
                         Icons.View("speaker-high", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),
                         Icons.View("speaker-slash", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute),
                     ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
                         .OnValueChanged(value => { muted.Value = value == 0; RunSync(() => player?.Volume(value)); })))));
-        playerIsland.Opacity = 0;
-        playerIsland.Height = 0;
-        playerIsland.Transitions = [
+        // The backdrop is shared with the rounded content corners above the player.
+        playerBackdrop.Height(0).Bottom().BindIsVisible(playerVisible);
+        playerBackdrop.Opacity = 0;
+        playerBackdrop.Transitions = [Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
+        playerBackdrop.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? 1d : 0d);
+        playerChrome = new Border().Background(Color.Transparent).BorderThickness(0).ClipToBounds().Child(playerContentFrame);
+        playerChrome.Opacity = 0;
+        playerChrome.Height = 0;
+        playerChrome.Transitions = [
             Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1)),
             Transition.Create(FrameworkElement.HeightProperty, 420, Easing.CubicBezier(0.16, 1, 0.3, 1))];
-        playerIsland.BindIsVisible(playerVisible);
-        playerIsland.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? 1d : 0d);
-        playerIsland.Bind(FrameworkElement.HeightProperty, playerVisible, visible => visible ? 72d : 0d);
-        return playerIsland;
+        playerChrome.BindIsVisible(playerVisible);
+        playerChrome.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? 1d : 0d);
+        playerChrome.Bind(FrameworkElement.HeightProperty, playerVisible, visible => visible ? PlayerBarHeight : 0d);
+        return playerChrome;
     }
 
-    private static Button PlayerButton(FrameworkElement content, Action action) => new Button()
-        .StyleName("flat-button").Content(new Grid().Columns("*").Rows("*")
+    private static Button PlayerButton(FrameworkElement content, Action action, ObservableValue<bool>? active = null)
+    {
+        bool hovered = false;
+        void Refresh() => content.Opacity = hovered || active?.Value == true ? 1 : .72;
+        Refresh();
+        if (active != null) active.Changed += Refresh;
+        content.Transitions = [Transition.Create(UIElement.OpacityProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1))];
+        return new Button().Background(Color.Transparent).BorderThickness(0).Content(new Grid().Columns("*").Rows("*")
             .Children(content.CenterHorizontal().CenterVertical())).Padding(0).Width(28).Height(28).CenterVertical().CornerRadius(6)
-        .OnClick(action);
+            .OnMouseEnter(() => { hovered = true; Refresh(); }).OnMouseLeave(() => { hovered = false; Refresh(); }).OnClick(action);
+    }
 
     private static Slider ThinSlider()
     {
         var slider = new Slider().Height(12).BorderThickness(0).BorderBrush(Color.Transparent)
-            .Background(Color.FromRgb(64, 64, 64)).ThumbBrush(Color.Transparent).ThumbBorderBrush(Color.Transparent);
+            .Background(LoadingTrack.RailColor).ThumbBrush(Color.Transparent).ThumbBorderBrush(Color.Transparent);
         slider.OnMouseEnter(() => slider.ThumbBrush = Color.FromRgb(208, 208, 208));
         slider.OnMouseLeave(() => slider.ThumbBrush = Color.Transparent);
         return slider;

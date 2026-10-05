@@ -19,7 +19,7 @@
     <EmbeddedResource Include="Assets/Icons/*.svg" />
     <EmbeddedResource Include="Assets/logo.svg" />
     <EmbeddedResource Include="Assets/Branding/*" />
-    <EmbeddedResource Include="Assets/Fonts/VelaSans-GX.ttf" />
+    <EmbeddedResource Include="Assets/Fonts/GoogleSans.ttf" />
     <EmbeddedResource Include="Assets/Fonts/Bungee-Regular.ttf" />
     <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
     <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />

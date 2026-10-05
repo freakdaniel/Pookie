@@ -1,4 +1,5 @@
 using Aprillz.MewUI;
+using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 using Pookie.Audio;
 
@@ -101,6 +102,7 @@ internal sealed partial class MainWindow
             ToggleMute();
             if (volume.Value == 0) throw new InvalidOperationException("Unmute failed");
             await VerifyLikesLayoutAsync();
+            await VerifyPlayerColorsAsync();
             await VerifyNavigationAsync();
             Console.WriteLine("UI_SMOKE_OK: native layout, local playback, pause/resume, next/previous, shuffle, mute and persistent queue across navigation");
             await Task.Delay(5000, lifetime.Token);
@@ -119,6 +121,16 @@ internal sealed partial class MainWindow
         var audio = player ?? throw new InvalidOperationException("No audio player available");
         var controlled = new ControlledAudioPlayer(audio);
         player = controlled;
+        var playerRevealFrames = 0;
+        string? playerLayoutFailure = null;
+        void SamplePlayerReveal()
+        {
+            if (playerChrome.ActualHeight is <= 0 or >= PlayerBarHeight) return;
+            playerRevealFrames++;
+            if (contentSurface.Bounds.Bottom > playerChrome.Bounds.Top + 1)
+                playerLayoutFailure ??= "Player reveal overlapped the content instead of reserving a lower row";
+        }
+        Window.FrameRendered += SamplePlayerReveal;
         ShowLibraryTracks();
         await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == tracks[0].Id));
         void CheckSelected(SoundCloudTrack track)
@@ -138,6 +150,11 @@ internal sealed partial class MainWindow
             var phase = loadingTrack.Phase;
             await Task.Delay(1350, lifetime.Token);
             CheckSelected(tracks[0]);
+            if (playerLayoutFailure != null) throw new InvalidOperationException(playerLayoutFailure);
+            if (playerRevealFrames < 3) throw new InvalidOperationException("Player appearance skipped intermediate layout frames");
+            CheckPlayerRegion();
+            await VerifyPlayerTimelineAsync();
+            CaptureUiPreview("player-loading");
             if (Math.Abs(phase - loadingTrack.Phase) < 0.01 || loadingTrack.ActualWidth < 100 || progress.IsVisible)
                 throw new InvalidOperationException("Loading rail did not animate across a complete loop");
             await ToggleAsync();
@@ -172,7 +189,7 @@ internal sealed partial class MainWindow
             await retry;
             Console.WriteLine("UI_LOADING_OK: immediate first player/card selection, looping gradient, pause during loading, rapid switching, failure and retry");
         }
-        finally { controlled.Release(); player = audio; }
+        finally { Window.FrameRendered -= SamplePlayerReveal; controlled.Release(); player = audio; }
         await NavigateAsync(Page.Home);
     }
 
@@ -385,8 +402,58 @@ internal sealed partial class MainWindow
         CheckLikedRowsGeometry();
         if (likedRows.Values.Any(row => row.Track != null && row.Root.Bounds.Right > likedList.Bounds.Right + 1))
             throw new InvalidOperationException("List rows overflowed the narrow window");
+        CheckPlayerRegion();
         CaptureUiPreview("list-narrow");
         Console.WriteLine("UI_LIKES_OK: six/four responsive columns, caption bounds, offscreen filtering, artist filter, list/grid toggle and empty state");
+    }
+
+    private void CheckPlayerRegion()
+    {
+        var bounds = playerChrome.Bounds;
+        var client = Window.ClientSize;
+        if (Math.Abs(bounds.X) > 1 || Math.Abs(bounds.Width - client.Width) > 1 ||
+            Math.Abs(bounds.Bottom - client.Height) > 1 || Math.Abs(bounds.Height - PlayerBarHeight) > 1 ||
+            contentSurface.Bounds.Bottom > bounds.Top + 1)
+            throw new InvalidOperationException("Player did not occupy its own full-width bottom region");
+        var controls = ((Grid)playerContentFrame.Child!).Children[1] as FrameworkElement;
+        if (controls == null || Math.Abs((controls.Bounds.Top - bounds.Top) - (bounds.Bottom - controls.Bounds.Bottom)) > 1)
+            throw new InvalidOperationException("Player controls have unequal top and bottom spacing");
+        VisualTree.Visit(playerContentFrame, element =>
+        {
+            if (element is FrameworkElement control && control.IsVisible && element is Button or TextBlock &&
+                (control.Bounds.X < bounds.Left - 1 || control.Bounds.Right > bounds.Right + 1 ||
+                 control.Bounds.Y < bounds.Top - 1 || control.Bounds.Bottom > bounds.Bottom + 1))
+                throw new InvalidOperationException("Player text or controls escaped the bottom region after resizing");
+        });
+    }
+
+    private async Task VerifyPlayerTimelineAsync()
+    {
+        var rail = (Grid)playerTimeline.Children[1];
+        var expected = rail.Bounds;
+        var savedPosition = currentTime.Value;
+        var savedDuration = totalTime.Value;
+        try
+        {
+            foreach (var (position, duration) in new[]
+            {
+                ("0:00", "2:33"), ("0:11", "2:33"), ("0:59", "9:59"), ("1:00", "10:00"),
+                ("9:59", "59:59"), ("10:00", "1:00:00"), ("1:00:00", "11:11:11"), ("11:11:11", "88:58:58")
+            })
+            {
+                currentTime.Value = position; totalTime.Value = duration;
+                await WaitForLoginFrameAsync();
+                if (Math.Abs(rail.Bounds.X - expected.X) > .01 || Math.Abs(rail.Bounds.Width - expected.Width) > .01 ||
+                    Math.Abs(loadingTrack.Bounds.X - expected.X) > 1 || Math.Abs(loadingTrack.ActualWidth - expected.Width) > 1)
+                    throw new InvalidOperationException("Playback timeline moved or changed width when time digits changed");
+                foreach (var text in playerTimeline.Children.OfType<TextBlock>())
+                    if (text.Bounds.Left < playerTimeline.Bounds.Left - 1 || text.Bounds.Right > playerTimeline.Bounds.Right + 1)
+                        throw new InvalidOperationException("Playback time escaped its fixed container");
+            }
+        }
+        finally { currentTime.Value = savedPosition; totalTime.Value = savedDuration; }
+        await WaitForLoginFrameAsync();
+        Console.WriteLine("UI_PLAYER_LAYOUT_OK: equal vertical spacing and stable timeline bounds across different digits, minute rollover and hour-long durations");
     }
 
     private void CheckLikedRowsGeometry()

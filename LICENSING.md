@@ -9,7 +9,7 @@ text per license used by repository files.
 | --- | --- | --- |
 | Project code, configuration, tests, documentation, and logo | BSD-3-Clause | Richard Habitzreuter; Daniel Freak |
 | `src/Pookie.App/Assets/Icons/*.svg` | MIT | Phosphor Icons |
-| `src/Pookie.App/Assets/Fonts/VelaSans-GX.ttf` | OFL-1.1 | The Manrope Project Authors; Ravid Balaliev |
+| `src/Pookie.App/Assets/Fonts/GoogleSans.ttf` | OFL-1.1 | The Google Sans Project Authors |
 | `src/Pookie.App/Assets/Fonts/Bungee-Regular.ttf` | OFL-1.1 | The Bungee Project Authors |
 | `src/Pookie.App/Assets/Branding/soundcloud-mark-white.png` | LicenseRef-SoundCloud-Marks | SoundCloud |
 | `src/Pookie.Audio/Drm/CdmAbi.cs` | BSD-3-Clause | The Chromium Authors; Daniel Freak |
@@ -27,11 +27,17 @@ filled heart and playback variants are also included. `squares-four`, `list-bull
 assets; `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
 runtime CDN dependency.
 
-`VelaSans-GX.ttf` is the unmodified variable font from the supplied VelaSans
-package. Its weight axis covers 200–800. It is embedded and registered before
-the UI is created; the MewUI theme applies its family globally. Original
-copyright notices are retained in `REUSE.toml`, `licenses/OFL-1.1.txt`, and the
-font metadata. System installation is not required.
+`GoogleSans.ttf` is the unmodified `GoogleSans[GRAD,opsz,wght].ttf` from
+[Google Fonts](https://github.com/google/fonts/tree/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesans),
+commit `a0e3dbcdc3a3ecfafff3f071159ae0221628922d`. It includes Cyrillic and
+variable weights 400–700. It is embedded and registered before the UI is
+created; the MewUI theme applies its family globally. Its
+[OFL-1.1 license](https://github.com/google/fonts/blob/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesans/OFL.txt)
+and copyright notice are retained in `REUSE.toml`, `licenses/OFL-1.1.txt`, and
+the font metadata. System installation and runtime downloads are not required.
+Google and Google Sans are trademarks of Google LLC; using the font does not
+imply affiliation or sponsorship. See the upstream
+[trademark notice](https://github.com/google/fonts/blob/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesans/TRADEMARKS.md).
 
 `Bungee-Regular.ttf` is the unmodified font from
 [Google Fonts](https://github.com/google/fonts/tree/main/ofl/bungee), used only
@@ -40,7 +46,7 @@ Bungee 2.000, commit `eb03cf69adab5094f6b84e95357789cdf3bfeb99`.
 Its [OFL-1.1 license](https://github.com/google/fonts/blob/main/ofl/bungee/OFL.txt)
 and copyright notice are retained in `REUSE.toml`, `licenses/OFL-1.1.txt`, and
 the embedded font metadata.
-Vela Sans remains the UI font.
+Google Sans is the UI font.
 
 The SoundCloud login button uses the official white six-bar favicon from the
 [SoundCloud Media Kit](https://community.soundcloud.com/company/media-kit):

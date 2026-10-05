@@ -8,10 +8,11 @@ namespace Pookie.App;
 // Matches ThinSlider's four-DIP rail and seven-DIP inset, so readiness does not move the bar.
 internal sealed class LoadingTrack : Control
 {
+    internal static readonly Color RailColor = Color.FromArgb(38, 255, 255, 255);
     private static readonly GradientStop[] Stops = [
-        new(0, Color.FromRgb(64, 64, 64)),
-        new(0.5, Color.FromRgb(154, 154, 154)),
-        new(1, Color.FromRgb(64, 64, 64))];
+        new(0, RailColor),
+        new(0.5, Color.FromArgb(150, 190, 190, 190)),
+        new(1, RailColor)];
     private readonly AnimationClock clock;
     internal double Phase { get; private set; }
     internal bool Running => clock.IsRunning;

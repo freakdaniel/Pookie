@@ -20,14 +20,11 @@ SPDX-License-Identifier = "MIT"
 SPDX-FileComment = "Phosphor core commit 2b75f3ad12b420c9504ef05df8d2564a28f8500e; source and asset mappings are documented in LICENSING.md."
 
 [[annotations]]
-path = "src/Pookie.App/Assets/Fonts/VelaSans-GX.ttf"
+path = "src/Pookie.App/Assets/Fonts/GoogleSans.ttf"
 precedence = "closest"
-SPDX-FileCopyrightText = [
-  "2019 The Manrope Project Authors (https://github.com/sharanda/manrope)",
-  "2021 The Vela Sans Project - Ravid Balaliev",
-]
+SPDX-FileCopyrightText = "2025 The Google Sans Project Authors (https://github.com/googlefonts/googlesans)"
 SPDX-License-Identifier = "OFL-1.1"
-SPDX-FileComment = "Unmodified variable Vela Sans font from the supplied VelaSans package; original copyright and license are also embedded in the font name table."
+SPDX-FileComment = "Unmodified GoogleSans[GRAD,opsz,wght].ttf from google/fonts commit a0e3dbcdc3a3ecfafff3f071159ae0221628922d, stored as GoogleSans.ttf and embedded as the UI font. See LICENSING.md."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Fonts/Bungee-Regular.ttf"

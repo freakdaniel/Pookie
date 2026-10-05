@@ -3,6 +3,7 @@ using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Resources;
 using Aprillz.MewUI.Rendering;
 using System.Xml.Linq;
+using System.Numerics;
 
 namespace Pookie.App;
 
@@ -34,6 +35,24 @@ internal static class Icons
 
     internal static Image View(string name, double size, Color color) =>
         new Image().Source(Source(name, color)).Width(size).Height(size).StretchMode(Stretch.Uniform);
+
+    internal static PathShape PlaybackDisc(bool pause, double size, double glyphSize, Color color)
+    {
+        var name = pause ? "pause-solid" : "play-solid";
+        var assembly = typeof(Icons).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith($".Assets.Icons.{name}.svg", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resource)!;
+        var svg = XDocument.Load(stream);
+        var glyph = PathGeometry.Parse(svg.Descendants().Single(element => element.Name.LocalName == "path").Attribute("d")!.Value);
+        var inset = (float)((size - glyphSize) / 2);
+        var transform = Matrix3x2.CreateScale((float)(glyphSize / 256)) * Matrix3x2.CreateTranslation(inset, inset);
+        // Even-odd filling leaves an actual transparent hole, including along antialiased edges.
+        var geometry = new PathGeometry { FillRule = FillRule.EvenOdd };
+        geometry.AddPath(PathGeometry.FromCircle(size / 2, size / 2, size / 2));
+        geometry.AddPath(glyph.Transform(transform));
+        geometry.Freeze();
+        return new PathShape().Data(geometry).Width(size).Height(size).Stretch(Stretch.Uniform).Fill(color);
+    }
 
     internal static Image LogoView(double width, double height)
     {

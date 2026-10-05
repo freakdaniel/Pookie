@@ -11,6 +11,23 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<string> profileInitial = new("");
     private CancellationTokenSource? avatarLoading;
     private long avatarGeneration;
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, Task<PlayerPalette>> playerPalettes = new();
+
+    private void SetPlayerArtwork(ImageSource? source, long generation)
+    {
+        artwork.Source = source != null ? source : Icons.Source("music-notes");
+        if (source == null) { playerBackdrop.SetPalette(PlayerPalette.Neutral); return; }
+        Run(async () =>
+        {
+            var palette = await playerPalettes.GetValue(source, image => Task.Run(() =>
+            {
+                try { return PlayerPalette.FromArtwork(image); }
+                catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException)
+                { return PlayerPalette.Neutral; }
+            }, lifetime.Token));
+            if (!disposed && generation == playGeneration) playerBackdrop.SetPalette(palette);
+        });
+    }
 
     private void ResetProfileAvatar()
     {
@@ -88,7 +105,12 @@ internal sealed partial class MainWindow
     private async Task LoadArtworkAsync(SoundCloudTrack track, long generation)
     {
         var source = await FetchImageAsync(track.ArtworkUrl ?? track.User?.AvatarUrl, lifetime.Token);
-        if (source != null && generation == playGeneration && !disposed) artwork.Source = source;
+        if (source != null && generation == playGeneration && !disposed)
+        {
+            if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
+            coverCache[track.Id] = source;
+            SetPlayerArtwork(source, generation);
+        }
     }
 
     private async Task LoadRowArtworkAsync(Image image, SoundCloudTrack track)

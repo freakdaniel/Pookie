@@ -11,7 +11,9 @@ internal sealed partial class MainWindow
     private const int StartupBrandFadeDurationMs = 500;
     private const int StartupCurtainSlideDurationMs = 760;
 
-    private Border playerIsland = null!;
+    private Border playerChrome = null!;
+    private Border playerContentFrame = null!;
+    private Border contentSurface = null!;
     private Border startupBackdrop = null!;
     private Border contentFrame = null!;
     private FrameworkElement startupHeader = null!;
@@ -51,8 +53,8 @@ internal sealed partial class MainWindow
         startupContent.Opacity = 0;
         startupContent.IsHitTestVisible = false;
         contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
-            .Padding(36, 30, 36, 110).Child(startupContent);
-        var contentSurface = new Border().Background(Surface).CornerRadius(new CornerRadius(30, 30, 0, 0))
+            .Padding(36, 30).Child(startupContent);
+        contentSurface = new Border().Background(Surface).CornerRadius(new CornerRadius(30, 30, 0, 0))
             .Margin(0, 8, 0, 0).Child(contentFrame);
         // Use the arranged viewport as well as native resize notifications. Some platforms
         // apply programmatic window sizes without delivering ClientSizeChanged first.
@@ -62,13 +64,28 @@ internal sealed partial class MainWindow
             UpdateLibraryCardSize(e.NewSize.Width);
         };
 
-        workspace = new Grid().Columns("*").Rows("56,*").Children(
+        var playerBar = PlayerBar();
+        playerChrome.SizeChanged += e =>
+        {
+            var reveal = Math.Clamp(e.NewSize.Height / PlayerBarHeight, 0, 1);
+            contentSurface.CornerRadius(new CornerRadius(30, 30, 30 * reveal, 30 * reveal));
+            playerBackdrop.Height = e.NewSize.Height + 30 * reveal;
+        };
+        playerVisible.Changed += () =>
+        {
+            if (playerVisible.Value) return;
+            playerBackdrop.Height = 0;
+            contentSurface.CornerRadius(new CornerRadius(30, 30, 0, 0));
+            contentSurface.Margin = new Thickness(0, 8, 0, 0);
+        };
+        workspace = new Grid().Columns("*").Rows("56,*,Auto").Children(
+            playerBackdrop.Row(1).RowSpan(2),
             startupHeader.Row(0),
             contentSurface.Row(1),
-            PlayerBar().Row(1),
+            playerBar.Row(2),
             QueuePanel().Row(1),
-            ProfilePanel().Row(0).RowSpan(2),
-            SettingsPanel().Row(0).RowSpan(2));
+            ProfilePanel().Row(0).RowSpan(3),
+            SettingsPanel().Row(0).RowSpan(3));
         workspace.IsVisible = false;
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
@@ -142,8 +159,7 @@ internal sealed partial class MainWindow
 
         return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 0).Children(
             new StackPanel().Horizontal().Spacing(16).CenterVertical().Column(0).Children(
-                new StackPanel().Horizontal().Spacing(9).CenterVertical().Children(
-                    Icons.LogoView(26, 25).CenterVertical(), new TextBlock().Text("Pookie").FontSize(18).Bold().CenterVertical()),
+                Icons.LogoView(26, 25).CenterVertical(),
                 NavigationPill()),
             new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Column(1).Children(
                 topNavigation.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
@@ -368,7 +384,7 @@ internal sealed partial class MainWindow
                 .OnCheckedChanged(value => { if (presence != null) presence.Enabled = value; })));
 
     private FrameworkElement QueuePanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
-        .CornerRadius(22).Padding(18).Width(380).Height(336).Bottom().Right().Margin(0, 0, 28, 112).BindIsVisible(queueOpen)
+        .CornerRadius(22).Padding(18).Width(380).Height(336).Bottom().Right().Margin(0, 0, 36, 16).BindIsVisible(queueOpen)
         .Child(new DockPanel().LastChildFill().Spacing(12).Children(
             new Grid().Columns("*,Auto").Rows("Auto").DockTop().Children(
                 new StackPanel().Vertical().Spacing(4).Column(0).Children(

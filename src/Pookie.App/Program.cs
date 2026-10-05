@@ -46,9 +46,9 @@ internal static class Program
             Application.Shutdown();
             eventArgs.Handled = true;
         };
-        using var fontStream = typeof(Program).Assembly.GetManifestResourceStream("Pookie.App.Assets.Fonts.VelaSans-GX.ttf")
-            ?? throw new InvalidOperationException("Встроенный шрифт Vela Sans не найден.");
-        using var appFont = FontResources.Register(fontStream, ".ttf", "Vela Sans");
+        using var fontStream = typeof(Program).Assembly.GetManifestResourceStream("Pookie.App.Assets.Fonts.GoogleSans.ttf")
+            ?? throw new InvalidOperationException("Встроенный шрифт Google Sans не найден.");
+        using var appFont = FontResources.Register(fontStream, ".ttf", "Google Sans");
         using var brandStream = typeof(Program).Assembly.GetManifestResourceStream("Pookie.App.Assets.Fonts.Bungee-Regular.ttf")
             ?? throw new InvalidOperationException("Встроенный шрифт Bungee не найден.");
         using var brandFont = FontResources.Register(brandStream, ".ttf", "Bungee");
