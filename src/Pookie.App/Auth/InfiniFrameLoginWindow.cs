@@ -27,7 +27,7 @@ internal static class InfiniFrameLoginWindow
             .SetStartPageUrl(fixtureUri ?? "https://soundcloud.com/").SetMinimized(!OperatingSystem.IsWindows())
             .SetTemporaryFilesPath(profilePath).EnableIgnoreCertificateErrors(false).EnableWebSecurity(true)
             .EnableFileSystemAccess(false).EnableJavascriptClipboardAccess(false).EnableBrowserPermissions(false)
-            .EnableMediaStream(false).EnableMediaAutoplay(false).EnableDevTools(false).AddTrustedOrigin(origin);
+            .EnableMediaStream(false).EnableMediaAutoplay(OperatingSystem.IsWindows()).EnableDevTools(false).AddTrustedOrigin(origin);
         builder.RegisterWebMessagePostHandler(BridgeMessageId, (window, raw) =>
         {
             if (raw == null) return;
@@ -39,7 +39,8 @@ internal static class InfiniFrameLoginWindow
         });
         builder.RegisterWindowCreatedHandler(window =>
         {
-            BrowserWindowVisibility.Set(window, false);
+            if (OperatingSystem.IsWindows()) BrowserWindowVisibility.UseForPlayback(window);
+            else BrowserWindowVisibility.Set(window, false);
             if (OperatingSystem.IsWindows())
             {
                 var scale = window.Features.Monitors.GetMainMonitorScreenDpi() / 96d;

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Pookie.SoundCloud;
+using Pookie.App.Storage;
 
 namespace Pookie.App.Auth;
 
@@ -84,6 +85,12 @@ internal static class BrowserPersistenceSmokeTest
             var login = await NativeWebLogin.ConnectAsync(timeout.Token, uri + "/login", profile);
             if (login.DataDomeClientId != "fixture-initial") throw new InvalidOperationException("Login protection state missing");
             var staleLogin = login with { };
+            var paths = new AppDataPaths(root);
+            if (OperatingSystem.IsWindows())
+            {
+                using var vault = SessionVault.Open(paths);
+                vault.Save(staleLogin);
+            }
             await using (var first = new NativeBrowserSession(login, uri + "/", profile))
             {
                 await first.GetMeAsync(timeout.Token);
@@ -91,6 +98,11 @@ internal static class BrowserPersistenceSmokeTest
                 if (first.Account.DataDomeClientId != "fixture-rotated") throw new InvalidOperationException("Rotated protection session not exported");
             }
             // Deliberately reuse the old login token: durable website state must take precedence.
+            if (OperatingSystem.IsWindows())
+            {
+                using var vault = SessionVault.Open(paths);
+                staleLogin = vault.Load() ?? throw new InvalidOperationException("Windows lost the saved login after worker shutdown.");
+            }
             await using (var restarted = new NativeBrowserSession(staleLogin, uri + "/", profile))
             {
                 await restarted.GetMeAsync(timeout.Token);

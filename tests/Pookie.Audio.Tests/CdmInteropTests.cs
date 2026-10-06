@@ -28,6 +28,11 @@ public unsafe class CdmInteropTests
             cdmThread = timer.Code;
             Assert.NotEqual(Environment.CurrentManagedThreadId, cdmThread);
             GC.Collect(); GC.WaitForPendingFinalizers();
+            Assert.Throws<DrmPlaybackException>(() => instance.SetServerCertificate(40, []));
+            instance.SetServerCertificate(41, [20, 21]);
+            Assert.Equal(41u, Next(instance, 3).Promise);
+            instance.SetServerCertificate(40, [0]);
+            Assert.Equal(40u, Next(instance, 4).Promise);
             instance.Begin(42, [1]);
             Assert.Equal(42u, Next(instance, 3).Promise);
             Assert.Equal(new byte[] { 2, 3 }, instance.Session);
@@ -46,6 +51,7 @@ public unsafe class CdmInteropTests
         Assert.Equal(cdmThread, destroyedOnThread);
         instance.Dispose();
         Assert.Throws<ObjectDisposedException>(() => instance.Begin(44, [1]));
+        Assert.Throws<ObjectDisposedException>(() => instance.SetServerCertificate(45, [20, 21]));
     }
 
     private static CdmEvent Next(NativeWidevine instance, int kind)
@@ -60,6 +66,7 @@ public unsafe class CdmInteropTests
     {
         var methods = new nint[20];
         methods[CdmAbi.Initialize] = (nint)(delegate* unmanaged<nint, byte, byte, byte, void>)&Initialize;
+        methods[CdmAbi.SetServerCertificate] = (nint)(delegate* unmanaged<nint, uint, byte*, uint, void>)&Certificate;
         methods[CdmAbi.CreateSession] = (nint)(delegate* unmanaged<nint, uint, uint, uint, byte*, uint, void>)&Begin;
         methods[CdmAbi.UpdateSession] = (nint)(delegate* unmanaged<nint, uint, byte*, uint, byte*, uint, void>)&Update;
         methods[CdmAbi.TimerExpired] = (nint)(delegate* unmanaged<nint, nint, void>)&Timer;
@@ -90,6 +97,18 @@ public unsafe class CdmInteropTests
     {
         var host = ((FakeObject*)self)->Host;
         ((delegate* unmanaged<nint, uint, uint, void>)CdmAbi.Method(host, 4))(host, (uint)context, (uint)Environment.CurrentManagedThreadId);
+    }
+
+    [UnmanagedCallersOnly]
+    private static void Certificate(nint self, uint promise, byte* data, uint length)
+    {
+        var obj = (FakeObject*)self;
+        if (obj->Thread != Environment.CurrentManagedThreadId || length != 2 || data[0] != 20 || data[1] != 21)
+        {
+            ((delegate* unmanaged<nint, uint, uint, uint, byte*, uint, void>)CdmAbi.Method(obj->Host, 7))(obj->Host, promise, 2, 0, null, 0);
+            return;
+        }
+        ((delegate* unmanaged<nint, uint, void>)CdmAbi.Method(obj->Host, 6))(obj->Host, promise);
     }
 
     [UnmanagedCallersOnly]

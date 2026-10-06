@@ -18,7 +18,7 @@ internal sealed class WidevineSession : IDisposable
     private WidevineSession(NativeWidevine handle, HttpClient http, string authorization)
     { this.handle = handle; this.http = http; this.authorization = authorization; }
 
-    public static async Task<WidevineSession> OpenAsync(HttpClient http, string authorization, byte[] initData, CancellationToken token)
+    public static async Task<WidevineSession> OpenAsync(HttpClient http, string authorization, byte[] initData, CancellationToken token, byte[]? serverCertificate = null)
     {
         if (authorization is not { Length: > 0 and <= 16384 } || authorization.Any(c => c < 32 || c == 127))
             throw new DrmPlaybackException("SoundCloud не предоставил авторизацию DRM-лицензии.");
@@ -32,6 +32,14 @@ internal sealed class WidevineSession : IDisposable
         {
             var initialized = await result.NextAsync(token);
             if (initialized.Kind != 1 || initialized.Code != 0) throw new DrmPlaybackException("Widevine CDM не поддерживает наш нативный интерфейс или отклонил инициализацию.");
+            if (serverCertificate != null)
+            {
+                handle.SetServerCertificate(++result.promise, serverCertificate);
+                var installed = await result.NextAsync(token);
+                if (installed.Kind != 3 || installed.Promise != result.promise || installed.Code != 0)
+                    throw new DrmPlaybackException("Widevine CDM отклонил сертификат сервера.");
+                Console.WriteLine("DRM_SERVICE_CERTIFICATE_INSTALLED: native CDM accepted certificate; payload redacted");
+            }
             handle.Begin(++result.promise, initData);
             await result.LicenseAsync(token);
             return result;

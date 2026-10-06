@@ -12,6 +12,10 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--session-vault-child")
+            { SessionVaultSmokeTest.RunChild(args[1]); return; }
+            if (args.Length == 4 && args[0] == "--drm-transport-child" && args[2] == "--login-profile")
+            { Environment.ExitCode = DrmTransportProbe.RunChild(args[1], args[3]); return; }
             if (args.Length is 4 or 6 && args[2] == "--login-profile")
             {
                 var fixture = args.Length == 6 && args[4] == "--login-fixture" ? args[5] : null;
@@ -21,7 +25,7 @@ internal static class Program
                 { Environment.ExitCode = NativeWebLogin.RunChild(args[1], args[3], fixture); return; }
             }
             if (await DiagnosticsRunner.TryRunAsync(args)) return;
-            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test"))
+            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
             var options = AppRunOptions.FromArgs(args) with
@@ -30,7 +34,10 @@ internal static class Program
                 SilentAudio = true, DiscordPresence = false, IsolatedData = true
             };
             Application.DispatcherUnhandledException += e => Console.Error.WriteLine(e.Exception);
-            await AppHost.RunAsync(options, window => window.ConfigureVerification(args));
+            MainWindow? testedWindow = null;
+            await AppHost.RunAsync(options, window => { testedWindow = window; window.ConfigureVerification(args); });
+            if (args.Contains("--browser-shutdown-smoke-test"))
+                await testedWindow!.VerifyBrowserShutdownAsync();
         }
         catch (Exception error)
         {

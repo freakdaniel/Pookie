@@ -10,7 +10,9 @@ internal static class BrowserRequestScript
     {
         using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream("Pookie.App.Auth.browser-requests.js")!;
         using var reader = new StreamReader(input);
-        return reader.ReadToEnd().Replace("const siteOrigin = 'https://soundcloud.com';", "const siteOrigin = " + JsonSerializer.Serialize(origin) + ";")
+        using var audioInput = Assembly.GetExecutingAssembly().GetManifestResourceStream("Pookie.App.Auth.browser-audio.js")!;
+        using var audioReader = new StreamReader(audioInput);
+        return audioReader.ReadToEnd() + "\n" + reader.ReadToEnd().Replace("const siteOrigin = 'https://soundcloud.com';", "const siteOrigin = " + JsonSerializer.Serialize(origin) + ";")
             .Replace("const apiOrigin = 'https://api-v2.soundcloud.com';", "const apiOrigin = " + JsonSerializer.Serialize(origin == "https://soundcloud.com" ? "https://api-v2.soundcloud.com" : origin) + ";")
             .Replace("__POOKIE_ACCOUNT__", JsonSerializer.Serialize(account with { DataDomeClientId = null }, SoundCloudJson.Default.WebSession));
     }

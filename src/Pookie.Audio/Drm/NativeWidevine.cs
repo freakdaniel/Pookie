@@ -115,6 +115,23 @@ internal sealed unsafe class NativeWidevine : IDisposable
         else if (payload != null) CryptographicOperations.ZeroMemory(payload);
     }
 
+    public void SetServerCertificate(uint promise, byte[] certificate)
+    {
+        if (certificate.Length is < 1 or > 65536) throw new DrmPlaybackException("Некорректный сертификат сервера Widevine.");
+        var bytes = certificate.ToArray();
+        Post(() =>
+        {
+            try
+            {
+                if (cdm == 0) { Emit(4, promise, -2); return; }
+                fixed (byte* data = bytes)
+                    ((delegate* unmanaged<nint, uint, byte*, uint, void>)CdmAbi.Method(cdm, CdmAbi.SetServerCertificate))
+                        (cdm, promise, data, (uint)bytes.Length);
+            }
+            finally { CryptographicOperations.ZeroMemory(bytes); }
+        });
+    }
+
     public void Begin(uint promise, byte[] initData)
     {
         if (initData.Length is < 1 or > 65536) throw new DrmPlaybackException("Некорректные данные инициализации Widevine.");

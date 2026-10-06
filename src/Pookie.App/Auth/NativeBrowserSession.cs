@@ -8,7 +8,7 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Auth;
 
 // One live website per account. Secrets travel through stdin, never through argv or logs.
-internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport
+internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, IBrowserAudioSession
 {
     private readonly SemaphoreSlim requests = new(1);
     private readonly CancellationTokenSource lifetime = new();
@@ -37,6 +37,9 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken token = default) =>
         (await RequestAsync(new(Guid.NewGuid().ToString("N"), "liked-ids"), token)).Ids?.ToHashSet() ?? [];
 
+    public Task<BrowserRequestEvent> SendAudioAsync(BrowserAudioCommand command, CancellationToken token = default) =>
+        RequestAsync(new(Guid.NewGuid().ToString("N"), "audio", Audio: command), token);
+
     public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken);
@@ -49,7 +52,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
-        await requests.WaitAsync(timeout.Token).ConfigureAwait(false);
+        var ordered = command.Operation != "audio";
+        if (ordered) await requests.WaitAsync(timeout.Token).ConfigureAwait(false);
         try
         {
             Worker? stoppedWorker;
@@ -70,7 +74,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             // their fetch, preserving the website and its device-check state.
             using var cancellation = command.Operation == "like" ? timeout.Token.Register(current.Abort) : default;
             await current.Ready.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
-            if (current.Blocked) throw BrowserBlocked();
+            if (current.Blocked && (command.Operation != "audio" || command.Audio?.Action == "start")) throw BrowserBlocked();
             var response = new TaskCompletionSource<BrowserRequestEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
             current.Pending[command.Id] = response;
             try
@@ -94,7 +98,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             finally { current.Pending.TryRemove(command.Id, out _); }
         }
-        finally { requests.Release(); }
+        finally { if (ordered) requests.Release(); }
     }
 
     private static SoundCloudException BrowserBlocked() => new(
@@ -295,7 +299,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         if (bodies.Remove(message.RequestId, out var body)) message = message with { Json = body.Text.ToString() };
                         pending.TrySetResult(message);
                     }
-                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session")
+                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state")
                         try { changed(message); } catch (InvalidOperationException) { }
                 }
             }
@@ -303,6 +307,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             finally
             {
                 Stop();
+                changed(new("audio-closed"));
                 var error = new InvalidOperationException("Окно SoundCloud закрыто или WebView завершился. Повтори действие, чтобы открыть его снова.");
                 Ready.TrySetException(error);
                 foreach (var pending in Pending.Values) pending.TrySetException(error);

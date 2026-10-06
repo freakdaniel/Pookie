@@ -6,12 +6,14 @@ internal sealed partial class MainWindow
 {
     private bool uiSmoke;
     private bool loginUiSmoke;
+    private bool browserShutdownSmoke;
     private DispatcherTimer? closeTimer;
 
     internal void ConfigureVerification(string[] args)
     {
         uiSmoke = args.Contains("--ui-smoke-test");
         loginUiSmoke = args.Contains("--login-ui-smoke-test");
+        browserShutdownSmoke = args.Contains("--browser-shutdown-smoke-test");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
@@ -30,6 +32,7 @@ internal sealed partial class MainWindow
     {
         if (uiSmoke) Run(VerifyUiAsync);
         if (loginUiSmoke) Run(VerifyLoginUiAsync);
+        if (browserShutdownSmoke) Run(StartBrowserShutdownCheckAsync);
     }
 
     partial void OnStartupTransitionCompleted()

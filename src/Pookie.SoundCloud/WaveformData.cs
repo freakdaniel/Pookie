@@ -4,6 +4,26 @@ namespace Pookie.SoundCloud;
 
 public static class WaveformData
 {
+    // Each output bar represents its whole time interval, including quieter samples.
+    // Peak pooling makes dense, mastered tracks look flat at narrow display widths.
+    public static float[] Resample(ReadOnlySpan<float> samples, int count)
+    {
+        if (count is < 1 or > 20000) throw new ArgumentOutOfRangeException(nameof(count));
+        if (samples.IsEmpty) return [];
+        var bars = new float[count];
+        var interval = (double)samples.Length / count;
+        for (var bar = 0; bar < count; bar++)
+        {
+            var start = bar * interval;
+            var end = (bar + 1) * interval;
+            double amplitude = 0;
+            for (var index = (int)start; index < Math.Min(samples.Length, (int)Math.Ceiling(end)); index++)
+                amplitude += samples[index] * (Math.Min(end, index + 1) - Math.Max(start, index));
+            bars[bar] = (float)(amplitude / interval);
+        }
+        return bars;
+    }
+
     public static float[] Parse(JsonElement root)
     {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("samples", out var values) || values.ValueKind != JsonValueKind.Array ||

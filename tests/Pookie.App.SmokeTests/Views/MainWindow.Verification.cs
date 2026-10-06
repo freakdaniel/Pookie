@@ -295,6 +295,7 @@ internal sealed partial class MainWindow
         {
             Id = 1000 + index, Duration = 12000, PlaybackCount = 12345, LikesCount = 321, CommentCount = 7,
             CreatedAt = "2026-09-15T12:00:00Z", Genre = "Ambient",
+            PermalinkUrl = "https://soundcloud.com/fixture/track-" + index,
             Title = index == 19 ? "needle / длинное название для проверки фильтра" : $"Трек {index + 1}",
             User = new SoundCloudUser { Username = $"Исполнитель {index % 3}" }
         }).ToArray();
@@ -361,10 +362,15 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => likedList.ActualWidth > 100);
         await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == 1019 && row.Waveform.ActualWidth > 100));
         var filteredRow = likedRows.Values.Single(row => row.Track?.Id == 1019);
-        if (filteredRow.Cover.ActualWidth != 160 || filteredRow.Cover.ActualHeight != 160 ||
+        var pixelTolerance = 1 / Window.DpiScale;
+        if (Math.Abs(filteredRow.Cover.ActualWidth - 160) > pixelTolerance || Math.Abs(filteredRow.Cover.ActualHeight - 160) > pixelTolerance ||
             filteredRow.Author.Bounds.Y >= filteredRow.Title.Bounds.Y || filteredRow.Waveform.Bounds.X <= filteredRow.Cover.Bounds.Right ||
-            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || filteredRow.PlayButton.ActualHeight != 38)
-            throw new InvalidOperationException("SoundCloud list layout clipped cover, title, waveform or playback controls");
+            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || Math.Abs(filteredRow.PlayButton.ActualHeight - 38) > pixelTolerance)
+            throw new InvalidOperationException($"SoundCloud list layout clipped cover, title, waveform or playback controls: " +
+                $"cover={filteredRow.Cover.ActualWidth:F2}x{filteredRow.Cover.ActualHeight:F2}, " +
+                $"authorY={filteredRow.Author.Bounds.Y:F2}, titleY={filteredRow.Title.Bounds.Y:F2}, " +
+                $"waveX={filteredRow.Waveform.Bounds.X:F2}, coverRight={filteredRow.Cover.Bounds.Right:F2}, " +
+                $"rowRight={filteredRow.Root.Bounds.Right:F2}, listRight={likedList.Bounds.Right:F2}, playHeight={filteredRow.PlayButton.ActualHeight:F2}");
         likedFilter.Text = "нет такого трека";
         if (!likedEmpty.Value || likedGrid.ItemsSource.Count != 0 || likedList.ItemsSource.Count != 0)
             throw new InvalidOperationException("Likes empty filter state failed");
@@ -384,6 +390,7 @@ internal sealed partial class MainWindow
         if (firstListRow.Waveform.Progress < .24) throw new InvalidOperationException("Waveform click did not seek or show playback position");
         foreach (var row in likedRows.Values.Where(row => row.Track != null))
             row.Waveform.SetSamples(Enumerable.Range(0, 1800).Select(index => (float)(.15 + .65 * Math.Abs(Math.Sin(index * .04)))).ToArray());
+        await VerifyLikedActionHoverAsync(firstListRow);
         CaptureUiPreview("list");
         Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, 160px artwork, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
         likesAsList.Value = false;

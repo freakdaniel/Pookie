@@ -1,6 +1,7 @@
 using System.Net;
 using Pookie.App.Preview;
 using Pookie.App.Auth;
+using Pookie.App.Storage;
 using Pookie.Audio;
 using Pookie.SoundCloud;
 
@@ -12,37 +13,125 @@ internal static class DiagnosticsRunner
     {
         if (args.Length == 2 && args[0] == "--clipboard-fixture") { ClipboardFixture.Run(args[1]); return true; }
         if (args.Contains("--storage-smoke-test")) { await StorageSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--session-vault-smoke-test")) { await SessionVaultSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-persistence-smoke-test")) { await BrowserPersistenceSmokeTest.RunAsync(); return true; }
         if (args.Contains("--login-smoke-test")) { await LoginSmokeTest.RunAsync(); return true; }
         if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--drm-webview-capabilities") || args.Contains("--drm-browser-media-smoke-test"))
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This probe uses Windows WebView2.");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            await DrmTransportProbe.CheckCapabilitiesAsync(timeout.Token, args.Contains("--drm-browser-media-smoke-test"));
+            return true;
+        }
         if (args.Contains("--protected-audio-smoke-test"))
         {
             var flag = Array.IndexOf(args, "--protected-audio-smoke-test");
             if (flag + 1 >= args.Length) throw new ArgumentException("После --protected-audio-smoke-test нужна ссылка на трек SoundCloud.");
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-            using var vault = OperatingSystem.IsLinux() ? new LinuxSessionVault() : null;
+            if ((args.Contains("--drm-webview-transport") || args.Contains("--drm-webview-cdm")) && !OperatingSystem.IsWindows())
+                throw new PlatformNotSupportedException("Проверка DRM-транспорта WebView предназначена для Windows.");
+            // A preserved-profile login, browser API resolution and DRM exchange are separate network stages.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var vault = SessionVault.Open(new AppDataPaths());
             using var protectedHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
             var protectedAccount = vault?.Load() ?? await NativeWebLogin.ConnectAsync(timeout.Token, resetSession: false);
             await using var protectedBrowser = new NativeBrowserSession(protectedAccount);
+            string? audioStage = null;
+            if (Environment.GetEnvironmentVariable("POOKIE_DRM_DIAGNOSTICS") == "1")
+                protectedBrowser.Changed += message =>
+                {
+                    if (message.Kind == "audio-state" && message.Audio?.Error is { } error)
+                        Console.WriteLine($"DRM_BROWSER_AUDIO_ERROR: {error}; stage={message.Audio.Stage}; media={message.Audio.MediaError}; ready={message.Audio.ReadyState}; network={message.Audio.NetworkState}; credentials redacted");
+                    else if (message.Kind == "audio-state" && message.Audio is { Stage: { } stage } && stage != audioStage)
+                    {
+                        audioStage = stage;
+                        Console.WriteLine($"DRM_BROWSER_AUDIO_STAGE: {stage}; credentials redacted");
+                    }
+                    else if (message.Kind is not ("json-chunk" or "audio-state"))
+                        Console.WriteLine($"DRM_BROWSER_EVENT: {message.Kind}; http={message.Status}; interactive={message.Interactive}");
+                };
             var protectedApi = new SoundCloudWebClient(protectedHttp)
                 { Session = protectedAccount, BrowserTransport = protectedBrowser, RequireBrowserTransport = true };
             var track = await protectedApi.ResolveAsync(args[flag + 1], timeout.Token);
+            Console.WriteLine($"PROTECTED_TRACK_OK: track {track.Id}; credentials redacted");
             var resolved = await new SoundCloudStreamResolver(protectedApi).ResolveAsync(track.Id, timeout.Token, ["ctr-encrypted-hls"]);
             Console.WriteLine($"PROTECTED_STREAM_OK: track {track.Id}; {resolved.Stream.Protocol}; credentials redacted");
-            await using var player = new SoundFlowPlayer(silent: true, SoundCloudWebClient.IsMediaUri);
-            player.Volume(0);
+            if (args.Contains("--drm-webview-transport") || args.Contains("--drm-webview-cdm") || args.Contains("--drm-service-certificate"))
+            {
+                await protectedBrowser.DisposeAsync();
+                using var manifestResponse = await protectedHttp.GetAsync(resolved.Stream.Uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                manifestResponse.EnsureSuccessStatusCode();
+                var manifest = System.Text.Encoding.UTF8.GetString(await HttpRangeStream.ReadBoundedAsync(manifestResponse.Content, 1024 * 1024, timeout.Token));
+                var playlist = ProtectedHlsPlaylist.Parse(manifest, resolved.Stream.Uri, SoundCloudWebClient.IsMediaUri);
+                if (args.Contains("--drm-service-certificate"))
+                {
+                    using var certificateRequest = new HttpRequestMessage(HttpMethod.Post,
+                        "https://license.media-streaming.soundcloud.cloud/playback/widevine?license_token=" + Uri.EscapeDataString(resolved.Stream.LicenseAuthToken!));
+                    certificateRequest.Headers.Referrer = new("https://soundcloud.com/");
+                    certificateRequest.Headers.TryAddWithoutValidation("Origin", "https://soundcloud.com");
+                    certificateRequest.Headers.TryAddWithoutValidation("X-SC-Application-Id", "46941");
+                    // Widevine's service-certificate request, not a content license or media key.
+                    certificateRequest.Content = new ByteArrayContent([8, 4]);
+                    certificateRequest.Content.Headers.ContentType = new("application/octet-stream");
+                    using var certificateResponse = await protectedHttp.SendAsync(certificateRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                    Console.WriteLine($"DRM_SERVICE_CERTIFICATE_HTTP: http={(int)certificateResponse.StatusCode}; credentials redacted");
+                    certificateResponse.EnsureSuccessStatusCode();
+                    var envelope = await HttpRangeStream.ReadBoundedAsync(certificateResponse.Content, 65536, timeout.Token);
+                    byte[]? certificate = null;
+                    try
+                    {
+                        certificate = UnwrapServiceCertificate(envelope);
+                        using var session = await WidevineSession.OpenAsync(protectedHttp, resolved.Stream.LicenseAuthToken!, playlist.InitData, timeout.Token, certificate);
+                        Console.WriteLine("DRM_NATIVE_CERTIFICATE_LICENSE_OK: native CDM reported usable keys; playback not tested");
+                    }
+                    finally
+                    {
+                        if (certificate != null) System.Security.Cryptography.CryptographicOperations.ZeroMemory(certificate);
+                        System.Security.Cryptography.CryptographicOperations.ZeroMemory(envelope);
+                    }
+                    return true;
+                }
+                using var profile = BrowserProfile.Open();
+                if (args.Contains("--drm-webview-cdm"))
+                {
+                    await DrmTransportProbe.CheckBrowserCdmAsync(profile.Path, resolved.Stream.LicenseAuthToken!, playlist.InitData, timeout.Token);
+                    Console.WriteLine("DRM_BROWSER_CDM_LICENSE_OK: browser CDM reported usable keys; playback not tested");
+                    return true;
+                }
+                using var probeHttp = new HttpClient(new DrmTransportProbe(profile.Path));
+                using var license = await WidevineSession.OpenAsync(probeHttp, resolved.Stream.LicenseAuthToken!, playlist.InitData, timeout.Token);
+                Console.WriteLine("DRM_WEBVIEW_LICENSE_OK: native CDM accepted license through WebView transport; playback not tested");
+                return true;
+            }
+            IAudioPlayer protectedPlayer = new SoundFlowPlayer(silent: true, SoundCloudWebClient.IsMediaUri);
+            if (OperatingSystem.IsWindows() && !args.Contains("--drm-native-cdm"))
+                protectedPlayer = new WindowsAudioPlayer(protectedPlayer, () => protectedBrowser);
+            await using var player = protectedPlayer;
+            player.Volume(args.Contains("--system-audio") ? 15 : 0);
             var protectedSource = new AudioSource(resolved.Stream.Uri.AbsoluteUri, AudioTransport.WidevineHls, resolved.Stream.Duration)
                 { LicenseAuthToken = resolved.Stream.LicenseAuthToken };
             await player.PlayAsync(protectedSource, timeout.Token);
             await WaitForPlaybackAsync(player);
+            Console.WriteLine("PROTECTED_PLAYBACK_OK: decoded audio clock advances");
             if (Math.Abs(player.Poll().Duration - resolved.Stream.Duration) > 2) throw new InvalidOperationException("DRM duration mismatch.");
+            if (player is WindowsAudioPlayer)
+            {
+                using var cancelledSeek = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                var superseded = player.SeekAsync(Math.Min(5, resolved.Stream.Duration / 3), cancelledSeek.Token);
+                cancelledSeek.Cancel();
+                try { await superseded; }
+                catch (OperationCanceledException) when (cancelledSeek.IsCancellationRequested) { Console.WriteLine("PROTECTED_SEEK_CANCELLED_OK"); }
+            }
             await player.SeekAsync(Math.Min(30, resolved.Stream.Duration / 2), timeout.Token);
             await WaitForPlaybackAsync(player);
             if (player.Poll().Position < Math.Min(30, resolved.Stream.Duration / 2) - .2) throw new InvalidOperationException("DRM seek failed.");
+            Console.WriteLine("PROTECTED_SEEK_OK: playback advances after seeking");
             player.Pause(true); await Task.Delay(150, timeout.Token);
             if (player.Poll().Playing) throw new InvalidOperationException("DRM pause failed.");
             player.Pause(false); await WaitForPlaybackAsync(player);
+            Console.WriteLine("PROTECTED_PAUSE_RESUME_OK");
             await player.SeekAsync(Math.Max(0, resolved.Stream.Duration - 1.5), timeout.Token);
             while (!player.Poll().Ended) await Task.Delay(50, timeout.Token);
             if (player.Poll().Ended) throw new InvalidOperationException("DRM end signaled twice.");
@@ -50,12 +139,12 @@ internal static class DiagnosticsRunner
             await WaitForPlaybackAsync(player);
             player.Stop();
             if (player.Poll().Playing || player.Poll().Position != 0) throw new InvalidOperationException("DRM stop failed.");
-            Console.WriteLine("PROTECTED_AUDIO_SMOKE_OK: real SoundCloud license, native CDM decryption, AAC decode, full duration, seek, pause, resume, end, restart and stop; no browser");
+            Console.WriteLine("PROTECTED_AUDIO_SMOKE_OK: real SoundCloud license, audio playback, full duration, seek, pause, resume, end, restart and stop; platform production backend");
             return true;
         }
         if (args.Contains("--session-smoke-test"))
         {
-            using var vault = new LinuxSessionVault();
+            using var vault = SessionVault.Open(new AppDataPaths());
             var account = vault.Load();
             if (account == null)
             {
@@ -133,6 +222,26 @@ internal static class DiagnosticsRunner
             Console.WriteLine("WEB_AUDIO_OK: real SoundCloud stream decoded, playing and seeking with SoundFlow");
         }
         return true;
+    }
+
+    private static byte[] UnwrapServiceCertificate(byte[] envelope)
+    {
+        // The certificate response is a SignedMessage(type=SERVICE_CERTIFICATE,
+        // msg=SignedDrmCertificate). SetServerCertificate accepts the signed certificate itself.
+        if (envelope.Length < 4 || envelope[0] != 8 || envelope[1] != 5 || envelope[2] != 18)
+            throw new InvalidOperationException("Unexpected service-certificate envelope.");
+        var offset = 3;
+        uint length = 0;
+        for (var shift = 0; shift <= 28 && offset < envelope.Length; shift += 7)
+        {
+            var value = envelope[offset++];
+            if (shift == 28 && value > 15) break;
+            length |= (uint)(value & 127) << shift;
+            if ((value & 128) != 0) continue;
+            if (length is < 1 or > 65536 || length > envelope.Length - offset) break;
+            return envelope.AsSpan(offset, (int)length).ToArray();
+        }
+        throw new InvalidOperationException("Invalid service-certificate envelope length.");
     }
 
     private static async Task WaitForPlaybackAsync(IAudioPlayer player)

@@ -258,7 +258,12 @@
 
   window.__pookieRequest = command => {
     if (!command || !/^[a-f0-9]{32}$/.test(command.id || '')) return;
+    if (command.operation === 'audio') {
+      window.__pookieAudioRequest?.(command, send);
+      return;
+    }
     if (command.operation === 'cancel') {
+      window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
       if (context && context.operation !== 'like') {

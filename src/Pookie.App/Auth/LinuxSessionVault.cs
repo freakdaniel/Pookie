@@ -5,7 +5,7 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Auth;
 
 // Store in the desktop's Secret Service (GNOME Keyring/KWallet), never in the legacy config.
-internal sealed class LinuxSessionVault : IDisposable
+internal sealed class LinuxSessionVault : ISessionVault
 {
     private readonly nint library;
     private readonly nint schema;

@@ -10,7 +10,7 @@ namespace Pookie.Audio;
 internal static unsafe class CdmAbi
 {
     public const int Version = 10;
-    public const int Initialize = 0, CreateSession = 3, UpdateSession = 5, TimerExpired = 8, Decrypt = 9,
+    public const int Initialize = 0, SetServerCertificate = 2, CreateSession = 3, UpdateSession = 5, TimerExpired = 8, Decrypt = 9,
         PlatformChallengeResponse = 16, OutputProtectionStatus = 17, StorageId = 18, Destroy = 19;
 
     [StructLayout(LayoutKind.Explicit, Size = 80)]

@@ -47,8 +47,9 @@ internal sealed partial class MainWindow : IDisposable
     private readonly ListBox queueList;
     private IAudioPlayer? player;
     private PresenceService? presence;
-    private LinuxSessionVault? vault;
+    private ISessionVault? vault;
     private NativeBrowserSession? browser;
+    private (NativeBrowserSession Session, Action<BrowserRequestEvent> Handler)? browserNotifications;
     private readonly List<NativeBrowserSession> browserSessions = [];
     private SoundCloudUser? me;
     private SoundCloudTrack? current;
@@ -58,7 +59,7 @@ internal sealed partial class MainWindow : IDisposable
     private bool audioPreparing;
     private bool audioReady;
     private readonly ObservableValue<bool> playbackLoading = new(false);
-    private bool disposed;
+    private volatile bool disposed;
     private long playGeneration;
     public Window Window { get; }
 
@@ -84,7 +85,12 @@ internal sealed partial class MainWindow : IDisposable
         api = new(http) { RequireBrowserTransport = true };
         if (options.AudioEnabled)
         {
-            try { player = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsMediaUri); audioStatus.Value = "Аудио: SoundFlow"; }
+            try
+            {
+                var native = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsMediaUri);
+                player = OperatingSystem.IsWindows() ? new WindowsAudioPlayer(native, () => browser) : native;
+                audioStatus.Value = "Аудио: SoundFlow";
+            }
             catch (Exception error) { audioStatus.Value = error.Message; }
         }
         else audioStatus.Value = "Аудио отключено для проверки интерфейса";
@@ -182,7 +188,7 @@ internal sealed partial class MainWindow : IDisposable
         }
         try
         {
-            vault = new LinuxSessionVault();
+            vault = SessionVault.Open(dataPaths);
             var saved = await Task.Run(vault.Load, lifetime.Token);
             if (saved != null)
             {
@@ -198,7 +204,7 @@ internal sealed partial class MainWindow : IDisposable
                     UpdateProfileAvatar(me);
                 }
                 catch (SoundCloudException error) when (error.StatusCode == 401)
-                { browser?.Dispose(); browser = null; api.BrowserTransport = null; api.Session = null; }
+                { DetachBrowserNotifications(); browser?.Dispose(); browser = null; api.BrowserTransport = null; api.Session = null; }
             }
         }
         catch (Exception error) when (error is InvalidOperationException or JsonException) { audioStatus.Value += " · Сессия: только в памяти"; }
@@ -343,7 +349,7 @@ internal sealed partial class MainWindow : IDisposable
             if (paused) player.Pause(true);
             if (!IsLibrary(page.Value))
                 status.Value = demo ? "Играет локальный тестовый звук." : source.Transport == AudioTransport.WidevineHls
-                    ? "Защищённое воспроизведение через Widevine и SoundFlow." : "Воспроизведение полного доступного потока.";
+                    ? "Воспроизведение защищённого потока." : "Воспроизведение полного доступного потока.";
         }
         catch
         {
@@ -391,6 +397,7 @@ internal sealed partial class MainWindow : IDisposable
         login.CancelAfter(TimeSpan.FromMinutes(10));
         var token = login.Token;
         var oldBrowser = browser;
+        DetachBrowserNotifications();
         browser = null; api.BrowserTransport = null;
         if (oldBrowser != null) await oldBrowser.DisposeAsync();
         WebSession session;
@@ -446,6 +453,7 @@ internal sealed partial class MainWindow : IDisposable
             CancelSeek();
             login?.Cancel(); loading?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
             likedTask = null;
+            DetachBrowserNotifications();
             var closedBrowser = browser; browser = null; api.BrowserTransport = null;
             closedBrowser?.Dispose();
             ++playGeneration;
@@ -552,6 +560,8 @@ internal sealed partial class MainWindow : IDisposable
     public void Dispose()
     {
         if (disposed) return;
+        disposed = true;
+        DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         OnDisposed();
         loginSpinner.IsActive = false;
@@ -560,7 +570,7 @@ internal sealed partial class MainWindow : IDisposable
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;
         playerBackdrop.Reset();
-        disposed = true; avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
+        avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
         foreach (var session in browserSessions) session.Dispose();
         timer.Dispose(); player?.Dispose(); presence?.Dispose();
         // An outstanding libsecret operation may still be completing on its worker; process teardown releases it.
@@ -579,22 +589,39 @@ internal sealed partial class MainWindow : IDisposable
 
     private void AttachBrowser(NativeBrowserSession connected)
     {
+        DetachBrowserNotifications();
         browser?.Dispose();
         browser = connected;
         api.BrowserTransport = connected;
         browserSessions.Add(connected);
-        connected.Changed += message => Application.Current.Dispatcher?.BeginInvoke(() =>
+        // Capture the live UI dispatcher once: worker callbacks can outlive Application.Run.
+        var dispatcher = Application.Current.Dispatcher;
+        void Changed(BrowserRequestEvent message)
         {
-            if (disposed || browser != connected) return;
-            if (message.Kind == "protection-session") Run(() => PersistBrowserSessionAsync(connected));
-            if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ. Капча не предложена; действие остановлено. Подробности — в окне сайта.";
-            if (message.Kind == "checking") status.Value = message.ChallengeType == "hard_block"
-                ? "SoundCloud заблокировал этот браузер. Подробности — в окне сайта."
-                : message.Interactive
-                ? "Пройди проверку в окне SoundCloud. Действие продолжится автоматически."
-                : "SoundCloud проверяет браузер. Ожидаем завершения…";
-            if (message.Kind == "passed") status.Value = likeBusy ? "Проверка пройдена. Выполняем действие…" : "Проверка SoundCloud пройдена.";
-            if (message.Kind == "challenge-error") status.Value = "Не удалось показать проверку SoundCloud. Попробуй действие ещё раз.";
-        });
+            if (disposed || browser != connected || message.Kind is not
+                ("protection-session" or "blocked" or "checking" or "passed" or "challenge-error")) return;
+            dispatcher?.BeginInvoke(() =>
+            {
+                if (disposed || browser != connected) return;
+                if (message.Kind == "protection-session") Run(() => PersistBrowserSessionAsync(connected));
+                if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ. Капча не предложена; действие остановлено. Подробности — в окне сайта.";
+                if (message.Kind == "checking") status.Value = message.ChallengeType == "hard_block"
+                    ? "SoundCloud заблокировал этот браузер. Подробности — в окне сайта."
+                    : message.Interactive
+                    ? "Пройди проверку в окне SoundCloud. Действие продолжится автоматически."
+                    : "SoundCloud проверяет браузер. Ожидаем завершения…";
+                if (message.Kind == "passed") status.Value = likeBusy ? "Проверка пройдена. Выполняем действие…" : "Проверка SoundCloud пройдена.";
+                if (message.Kind == "challenge-error") status.Value = "Не удалось показать проверку SoundCloud. Попробуй действие ещё раз.";
+            });
+        }
+        browserNotifications = (connected, Changed);
+        connected.Changed += Changed;
+    }
+
+    private void DetachBrowserNotifications()
+    {
+        if (browserNotifications is not { } subscription) return;
+        subscription.Session.Changed -= subscription.Handler;
+        browserNotifications = null;
     }
 }

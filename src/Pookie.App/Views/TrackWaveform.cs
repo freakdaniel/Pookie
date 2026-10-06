@@ -1,12 +1,14 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
 internal sealed class TrackWaveform : Control
 {
     private float[] samples = [];
+    private float[] bars = [];
     private double progress;
     private double? hoverPosition;
     public event Action<double>? SeekRequested;
@@ -18,7 +20,7 @@ internal sealed class TrackWaveform : Control
     }
 
     public TrackWaveform() { Background = Color.Transparent; }
-    public void SetSamples(float[] values) { samples = values; InvalidateVisual(); }
+    public void SetSamples(float[] values) { samples = values; bars = []; InvalidateVisual(); }
     protected override Size MeasureContent(Size availableSize) => new(0, 68);
     protected override void OnMouseMove(MouseEventArgs e)
     {
@@ -44,13 +46,10 @@ internal sealed class TrackWaveform : Control
             return;
         }
         var count = Math.Max(1, (int)(bounds.Width / 3));
+        if (bars.Length != count) bars = WaveformData.Resample(samples, count);
         for (var index = 0; index < count; index++)
         {
-            var start = Math.Min(samples.Length - 1, index * samples.Length / count);
-            var end = Math.Min(samples.Length, Math.Max(start + 1, (index + 1) * samples.Length / count));
-            float peak = 0;
-            for (var sample = start; sample < end; sample++) peak = Math.Max(peak, samples[sample]);
-            var height = Math.Max(1, peak * bounds.Height * .64);
+            var height = Math.Max(1, bars[index] * bounds.Height * .64);
             var x = bounds.X + index * bounds.Width / count;
             var fraction = (index + .5) / count;
             var color = fraction <= progress ? Color.FromRgb(235, 235, 235) :

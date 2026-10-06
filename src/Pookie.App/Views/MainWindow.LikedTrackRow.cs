@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
         private readonly Image play = Icons.View("play-solid", 21, true).CenterHorizontal().CenterVertical();
         private readonly Image pause = Icons.View("pause-solid", 20, true).CenterHorizontal().CenterVertical().IsVisible(false);
         private readonly Image heart = Icons.View("heart-filled", 15, Muted);
-        private readonly TextBlock likeCount = new TextBlock().FontSize(11).CenterVertical();
+        private readonly TextBlock likeCount = new TextBlock().FontSize(12).Bold().CenterVertical();
         private readonly TextBlock playsCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
         private readonly TextBlock commentsCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
         private readonly StackPanel playsStat;
@@ -40,10 +40,11 @@ internal sealed partial class MainWindow
             PlayButton = new Button().Width(38).Height(38).CornerRadius(19).Background(Color.White).BorderThickness(0).Padding(0)
                 .Content(new Grid().Columns("*").Rows("*").Children(play, pause))
                 .OnClick(() => { if (Track is { } track) select(track); });
-            likeButton = new Button().Background(Raised).BorderThickness(0).CornerRadius(4).Padding(8, 4)
+            likeButton = new Button().StyleName("track-action").CornerRadius(4).Height(28).Padding(8, 3)
                 .Content(new StackPanel().Horizontal().Spacing(5).Children(heart.CenterVertical(), likeCount))
                 .OnClick(() => { if (Track is { } track) like(track); });
-            copyButton = new Button().Background(Raised).BorderThickness(0).CornerRadius(4).Width(30).Height(28).Padding(6)
+            copyButton = new Button().StyleName("track-action").CornerRadius(4).Width(30).Height(28).Padding(5)
+                .ToolTip("Скопировать ссылку")
                 .Content(Icons.View("copy", 16).CenterHorizontal().CenterVertical())
                 .OnClick(() => { if (Track is { } track) copy(track); });
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
@@ -53,7 +54,7 @@ internal sealed partial class MainWindow
             genreBadge = new Border().Background(Raised).CornerRadius(9).Padding(8, 2).Right().Child(genre);
             positionLabel = new Border().Background(Surface).Padding(3, 1).Left().Bottom().Child(position).IsVisible(false);
             Waveform.SeekRequested += fraction => { if (Track is { } track) seek(track, fraction); };
-            Root = new Grid().Columns("160,*").Rows("*").Spacing(20).Height(160).Children(
+            Root = new Grid().StyleSheet(ActionStyles()).Columns("160,*").Rows("*").Spacing(20).Height(160).Children(
                 new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0)
                     .Content(new Border().CornerRadius(6).ClipToBounds().Width(160).Height(160).Child(Cover))
                     .OnClick(() => { if (Track is { } track) select(track); }),
@@ -95,6 +96,8 @@ internal sealed partial class MainWindow
             play.IsVisible = !selected || !playing;
             pause.IsVisible = selected && playing;
             heart.Source = Icons.Source("heart-filled", liked ? LikedHeart : Muted);
+            likeCount.Foreground = liked ? LikedHeart : Color.FromRgb(230, 230, 230);
+            likeButton.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
             likeButton.IsEnabled = canLike;
             positionLabel.IsVisible = selected;
             position.Text = FormatTime(selected ? seconds : 0);
@@ -102,6 +105,37 @@ internal sealed partial class MainWindow
         }
 
         public void Reset() { Track = null; Waveform.SetSamples([]); Waveform.Progress = 0; positionLabel.IsVisible = false; }
+
+        private static StyleSheet ActionStyles()
+        {
+            var sheet = new StyleSheet();
+            sheet.Define("track-action", () => Style.DeriveFromDefault<Button>(
+                setters: [
+                    Setter.Create(Control.BackgroundProperty, Raised),
+                    Setter.Create(Control.BorderBrushProperty, Color.FromRgb(58, 58, 58)),
+                    Setter.Create(Control.BorderThicknessProperty, 1d),
+                    Setter.Create(UIElement.CursorProperty, (CursorType?)CursorType.Hand)
+                ],
+                triggers: [
+                    new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Hot, Setters = [
+                        Setter.Create(Control.BackgroundProperty, Color.FromRgb(64, 64, 64)),
+                        Setter.Create(Control.BorderBrushProperty, Color.FromRgb(112, 112, 112))
+                    ] },
+                    new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Focused, Setters = [
+                        Setter.Create(Control.BorderBrushProperty, Color.FromRgb(164, 164, 164))
+                    ] },
+                    new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Pressed, Setters = [
+                        Setter.Create(Control.BackgroundProperty, Color.FromRgb(86, 86, 86))
+                    ] },
+                    new StateTrigger { Exclude = VisualStateFlags.Enabled, Setters = [
+                        Setter.Create(UIElement.OpacityProperty, .45),
+                        Setter.Create(UIElement.CursorProperty, (CursorType?)CursorType.Arrow)
+                    ] }
+                ],
+                transitions: [Transition.Create(Control.BackgroundProperty, 120, value => value),
+                    Transition.Create(Control.BorderBrushProperty, 120, value => value)]));
+            return sheet;
+        }
 
         private static string ShortCount(long value) => value switch {
             >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.InvariantCulture) + "M",

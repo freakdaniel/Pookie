@@ -100,4 +100,41 @@ public sealed class BrowserRequestProtocolTests
         Assert.DoesNotContain("parent-only", Raw(value));
     }
 
+    [Fact]
+    public void AudioCommandsRestrictCredentialsAndMediaOrigin()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var audio = new BrowserAudioCommand("start", id, "https://cf-hls-media.sndcdn.com/track.m3u8", "private-license-token");
+        bool Valid(BrowserAudioCommand value) => new BrowserRequestCommand(id, "audio", Audio: value).IsValid();
+        Assert.True(Valid(audio));
+        foreach (var source in new[] { "https://sndcdn.com.evil.test/file", "http://sndcdn.com/file", "https://user@sndcdn.com/file", "https://sndcdn.com:8443/file", "https://sndcdn.com/file#fragment" })
+            Assert.False(Valid(audio with { Source = source }));
+        Assert.False(Valid(audio with { Authorization = "token\nheader" }));
+        Assert.False(Valid(audio with { Authorization = new string('a', 16385) }));
+        Assert.False(Valid(audio with { Position = double.NaN }));
+        Assert.False(Valid(audio with { Volume = 101 }));
+        Assert.False(Valid(audio with { PlaybackId = "bad" }));
+        Assert.False(Valid(audio with { Action = "execute" }));
+        Assert.False(Valid(audio with { Action = "stop" }));
+        Assert.True(Valid(new("seek", id, Position: 25)));
+        Assert.False(new BrowserRequestCommand(id, "me", Audio: audio).IsValid());
+        Assert.DoesNotContain("private-license-token", audio.ToString());
+    }
+
+    [Fact]
+    public void AudioStateRequiresTrustedSourceAndBoundedFiniteValues()
+    {
+        var value = new BrowserRequestEvent("audio-state", Guid.NewGuid().ToString("N"), 200,
+            Audio: new(10, 200, true, false, false));
+        string Raw(BrowserRequestEvent message) => Message(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
+        Assert.NotNull(BrowserRequestProtocol.Parse(Raw(value), Origin, Origin, "pair"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value), "https://evil.test", Origin, "pair"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value), Origin, Origin, "wrong"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { RequestId = "bad" }), Origin, Origin));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Audio = null }), Origin, Origin));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Audio = value.Audio! with { Position = -1 } }), Origin, Origin));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Audio = value.Audio! with { Error = "https://secret-token" } }), Origin, Origin));
+        Assert.False(new BrowserAudioState(double.NaN, 2, false, false, false).IsValid());
+    }
+
 }
