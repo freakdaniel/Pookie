@@ -27,7 +27,15 @@ internal sealed partial class MainWindow
         const string url = "https://i1.sndcdn.com/search-fixture-large.jpg";
         artworkRequests[url] = artGate.Task;
         var pixels = new byte[32 * 32 * 4];
-        for (var i = 0; i < pixels.Length; i += 4) { pixels[i] = 130; pixels[i + 1] = 100; pixels[i + 2] = 50; pixels[i + 3] = 255; }
+        for (var y = 0; y < 32; y++)
+        for (var x = 0; x < 32; x++)
+        {
+            var i = (y * 32 + x) * 4;
+            pixels[i] = (byte)(x < 16 ? 220 : 40);
+            pixels[i + 1] = (byte)(y < 16 ? 120 : 40);
+            pixels[i + 2] = (byte)(x < 16 ? 40 : 220);
+            pixels[i + 3] = 255;
+        }
         var art = ImageSource.FromBgraPixels(32, 32, pixels);
         var track = new SoundCloudTrack { Id = 70001, Title = "Кис — поиск", Duration = 126000, ArtworkUrl = url, User = new() { Id = 70, Username = "Исполнитель" } };
         var prepared = PrepareTrackArtworkAsync([track], lifetime.Token);
@@ -56,6 +64,7 @@ internal sealed partial class MainWindow
         await SearchFixture(SearchSection.All, results);
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero && view.Hero.Card.ActualWidth > 100));
         var hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero;
+        await WaitForLikedLayoutAsync(() => hero.Backdrop.Source != null && hero.Backdrop.Opacity > .999);
         if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || hero.Tracks[0].Root.ActualHeight != 64 ||
             !SearchBlocks().Any(block => block.Title == "Исполнители") || !SearchBlocks().Any(block => block.Title == "Альбомы") || !SearchBlocks().Any(block => block.Title == "Плейлисты"))
             throw new InvalidOperationException("Search did not show a best result, compact songs and grouped entity cards");
