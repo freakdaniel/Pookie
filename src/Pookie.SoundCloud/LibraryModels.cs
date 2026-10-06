@@ -25,7 +25,7 @@ public sealed record LibraryItem(string Key, string Title, string Subtitle, stri
     SoundCloudTrack? Track = null, SoundCloudPlaylist? Playlist = null, SoundCloudUser? User = null)
 {
     public bool IsAlbum => Playlist is { IsAlbum: true } || Playlist?.PlaylistType?.ToLowerInvariant() is "album" or "ep" or "single" or "compilation";
-    public static LibraryItem FromTrack(SoundCloudTrack track) => new("track:" + track.Id, track.Title, track.Author, track.ArtworkUrl, Track: track);
+    public static LibraryItem FromTrack(SoundCloudTrack track) => new("track:" + track.Id, track.Title, track.Author, track.ArtworkUrl ?? track.User?.AvatarUrl, Track: track);
 }
 public sealed record LibraryPage(LibraryItem[] Items, string? NextHref);
 
@@ -46,7 +46,8 @@ public static class LibraryData
         var item = entry;
         var kind = Text(entry, "kind");
         foreach (var name in new[] { "context", "origin", "system_playlist", "playlist", "track", "user" })
-            if (item.TryGetProperty(name, out var nested) && nested.ValueKind == JsonValueKind.Object)
+            if (item.TryGetProperty(name, out var nested) && nested.ValueKind == JsonValueKind.Object &&
+                (name != "user" || !item.TryGetProperty("title", out _)))
             {
                 item = nested;
                 if (name is "system_playlist" or "playlist" or "track" or "user") kind = name.Replace('_', '-');

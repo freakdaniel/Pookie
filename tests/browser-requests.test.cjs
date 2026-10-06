@@ -200,6 +200,16 @@ test('invalid protection session does not leave the WebView', () => {
 });
 
 const apiRead = (n, path = '/search/tracks?q=музыка') => ({ ...command(n, 'api-get'), url: 'https://api-v2.soundcloud.com' + path });
+test('search categories use only the five read-only endpoints', async () => {
+  const h=harness(()=>response(200,{collection:[]}));
+  const paths=['/search','/search/tracks','/search/users','/search/albums','/search/playlists_without_albums'];
+  for (const [index,path] of paths.entries()) h.window.__pookieRequest(apiRead(index+1,path+'?q=кис'));
+  await tick();
+  assert.deepEqual(h.calls.map(call=>new URL(call[0]).pathname),paths);
+  for (const [index,path] of ['/search/delete','/search/users/42','/search/tracks/privacy'].entries())
+    h.window.__pookieRequest(apiRead(index+10,path));
+  await tick();assert.equal(h.calls.length,5);
+});
 test('generic browser reads transfer large Unicode JSON through ordered bounded chunks', async () => {
   const body = {collection:Array.from({length:30}, (_,i)=>({id:i+1,title:'Привет 🎵 '.repeat(120)})),next_href:null};
   const h=harness(()=>response(200,body));

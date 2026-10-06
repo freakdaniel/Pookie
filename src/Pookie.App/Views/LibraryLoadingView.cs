@@ -58,6 +58,9 @@ internal sealed class LibrarySkeleton : Control
 {
     public bool Preview { get; set; }
     public bool ListView { get; set; }
+    public bool CompactList { get; set; }
+    public bool ArtworkOnly { get; set; }
+    private LoadingRowStyle? loadingRowStyle;
     private double artworkSize = 176;
     private int columns = 6;
     private double phase;
@@ -75,8 +78,18 @@ internal sealed class LibrarySkeleton : Control
 
     public void SetGeometry(double size, int count, bool listView)
     {
+        if (artworkSize == size && columns == count && ListView == listView) return;
         artworkSize = size; columns = count; ListView = listView;
         InvalidateMeasure(); InvalidateVisual();
+    }
+
+    public void ConfigureLoadingRow(double size, int count, LoadingRowStyle style)
+    {
+        var rowColumns = style == LoadingRowStyle.Card ? 1 : count;
+        if (loadingRowStyle == style && artworkSize == size && columns == rowColumns && !double.IsNaN(Height)) return;
+        loadingRowStyle = style;
+        SetGeometry(size, rowColumns, style == LoadingRowStyle.Waveform);
+        Height = style switch { LoadingRowStyle.Compact => 64, LoadingRowStyle.Waveform => 196, _ => size + 90 };
     }
 
     public void SetActive(bool active) { if (active) shimmer.Start(); else shimmer.Stop(); }
@@ -90,10 +103,21 @@ internal sealed class LibrarySkeleton : Control
         var x = bounds.X - band + phase * (bounds.Width + 2 * band);
         var brush = new LinearGradientBrush(new Point(x, bounds.Y), new Point(x + band, bounds.Y + 80), [
             new(0, Color.FromRgb(37, 37, 37)), new(.5, Color.FromRgb(53, 53, 53)), new(1, Color.FromRgb(37, 37, 37))]);
+        if (ArtworkOnly) { context.FillRectangle(bounds, brush); return; }
         void Block(double left, double top, double width, double height, double radius = 4)
         {
             var rect = new Rect(bounds.X + left, bounds.Y + top, Math.Max(0, width), Math.Min(height, bounds.Height - top));
             if (rect.Width > 0 && rect.Height > 0) context.FillRoundedRectangle(rect, radius, radius, brush);
+        }
+        if (loadingRowStyle == LoadingRowStyle.Compact || CompactList && ListView)
+        {
+            for (var y = 0d; y < bounds.Height; y += 64)
+            {
+                Block(8, y + 10, 44, 44, 5); Block(64, y + 17, Math.Min(240, bounds.Width * .45), 12);
+                Block(64, y + 38, Math.Min(130, bounds.Width * .3), 10);
+                Block(bounds.Width - 50, y + 26, 38, 10);
+            }
+            return;
         }
         var rowHeight = ListView ? 196 : artworkSize + 90;
         var rows = Preview ? (int)Math.Ceiling(6d / columns) : (int)Math.Ceiling(bounds.Height / rowHeight);

@@ -4,23 +4,15 @@ namespace Pookie.SoundCloud;
 
 public static class WaveformData
 {
-    // Each output bar represents its whole time interval, including quieter samples.
-    // Peak pooling makes dense, mastered tracks look flat at narrow display widths.
+    // SoundCloud draws one source sample at each bar's time position. Averaging
+    // an interval removes the short peaks and dips that define its silhouette.
     public static float[] Resample(ReadOnlySpan<float> samples, int count)
     {
         if (count is < 1 or > 20000) throw new ArgumentOutOfRangeException(nameof(count));
         if (samples.IsEmpty) return [];
         var bars = new float[count];
-        var interval = (double)samples.Length / count;
         for (var bar = 0; bar < count; bar++)
-        {
-            var start = bar * interval;
-            var end = (bar + 1) * interval;
-            double amplitude = 0;
-            for (var index = (int)start; index < Math.Min(samples.Length, (int)Math.Ceiling(end)); index++)
-                amplitude += samples[index] * (Math.Min(end, index + 1) - Math.Max(start, index));
-            bars[bar] = (float)(amplitude / interval);
-        }
+            bars[bar] = samples[(int)((long)bar * samples.Length / count)];
         return bars;
     }
 
@@ -40,7 +32,14 @@ public static class WaveformData
         }
         var scale = root.TryGetProperty("height", out var height) && height.ValueKind == JsonValueKind.Number && height.TryGetSingle(out var declared) &&
             float.IsFinite(declared) && declared > 0 ? Math.Max(peak, declared) : Math.Max(peak, 1);
-        for (index = 0; index < samples.Length; index++) samples[index] /= scale;
+        // The website first curves the distance from the top of the waveform,
+        // then draws the remaining height. Keep its quantization as well as the
+        // nonlinear curve; linear normalization flattens loud, mastered tracks.
+        for (index = 0; index < samples.Length; index++)
+        {
+            var top = Math.Floor(Math.Pow(1 - samples[index] / scale, 2d / 3) * scale + .5);
+            samples[index] = (float)Math.Clamp(1 - top / scale, 0, 1);
+        }
         return samples;
     }
 }

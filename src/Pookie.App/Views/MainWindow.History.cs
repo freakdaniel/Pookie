@@ -8,13 +8,13 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     // A collection's identity and a search's query belong to the route, not just its page type.
-    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null)
+    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All)
     {
-        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key;
+        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
-        string Filter, bool ListView, double Scroll);
+        string Filter, bool ListView, double Scroll, LibraryPage? SearchResults);
     private sealed class NavigationEntry(NavigationRoute route)
     {
         public NavigationRoute Route { get; } = route;
@@ -31,11 +31,12 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
-        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0);
+        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0, searchResults);
 
     private ScrollViewer? NavigationScroll() => page.Value switch
     {
         Page.Library => overviewScroll,
+        Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
         > Page.LibraryTracks => (ScrollViewer?)collectionGrid.FindVisualChild<ScrollViewer>(),
         _ => (ScrollViewer?)list.FindVisualChild<ScrollViewer>()
@@ -54,8 +55,9 @@ internal sealed partial class MainWindow
             if (navigationHistory.Count > 100) { navigationHistory.RemoveAt(0); navigationIndex--; }
         }
         navigationHistory[navigationIndex].Pending = pending;
-        loading?.Cancel();
-        SetLikesLoading(false); collectionLoadingView.SetLoading(false);
+        RenewLoadToken();
+        ResetPageScrolling(); searchLoading.Value = false;
+        SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         profileOpen.Value = settingsOpen.Value = false;
         CloseTopSearch(clear: false);
@@ -75,6 +77,7 @@ internal sealed partial class MainWindow
         catch (Exception error)
         {
             if (route.Page > Page.LibraryTracks) librarySectionStatus.Value = FriendlyError(error);
+            if (route.Page == Page.Search) searchStatus.Value = "";
             throw;
         }
         finally
@@ -82,7 +85,8 @@ internal sealed partial class MainWindow
             if (generation == navigationGeneration && !disposed)
             {
                 navigationHistory[navigationIndex].Pending = false;
-                SetLikesLoading(false); collectionLoadingView.SetLoading(false);
+                SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
+                if (route.Page == Page.Search) searchLoading.Value = false;
             }
         }
     }
@@ -93,8 +97,9 @@ internal sealed partial class MainWindow
         var index = navigationIndex + offset;
         if (index < 0 || index >= navigationHistory.Count) return;
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();
-        loading?.Cancel();
-        SetLikesLoading(false); collectionLoadingView.SetLoading(false);
+        RenewLoadToken();
+        ResetPageScrolling(); searchLoading.Value = false;
+        SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         navigationIndex = index;
         var entry = navigationHistory[index];
@@ -106,7 +111,7 @@ internal sealed partial class MainWindow
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
             if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
-            else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(); }
+            else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }
             else if (entry.Route.Page > Page.LibraryTracks) await ShowLibrarySectionAsync(entry.Route.Page);
             else if (entry.Route.Page == Page.LibraryTracks) await LikesAsync(true);
             else await NavigateAsync(entry.Route.Page);
@@ -117,6 +122,10 @@ internal sealed partial class MainWindow
         activeCollection = state.Collection; activeLibrarySource = state.Source;
         librarySectionTitle.Value = state.CollectionTitle; librarySectionStatus.Value = state.CollectionStatus;
         query.Value = entry.Route.Search ?? "";
+        searchSection.Value = entry.Route.Section;
+        searchResults = state.SearchResults;
+        searchHeading.Value = $"Результаты для «{entry.Route.Search}»";
+        RefreshSearchViews();
         likedFilter.Text = state.Filter; likesAsList.Value = state.ListView;
         likedActionError.Value = "";
         ReplaceTracks((entry.Route.Page is Page.Library or Page.LibraryTracks) && libraryLikes != null ? libraryLikes : state.Tracks);
@@ -138,6 +147,7 @@ internal sealed partial class MainWindow
     private void ResetNavigationHistory()
     {
         loading?.Cancel(); ++navigationGeneration;
+        ResetPageScrolling(); searchLoading.Value = false; searchResults = null; RefreshSearchViews();
         navigationHistory.Clear(); navigationHistory.Add(new(new(Page.Home))); navigationIndex = 0;
         page.Value = Page.Home;
         query.Value = ""; likedFilter.Text = "";

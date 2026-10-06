@@ -6,6 +6,7 @@
   </PropertyGroup>
   <Import Project="../../src/Pookie.App/Pookie.App.Shared.props" />
   <ItemGroup>
+    <EmbeddedResource Include="../Fixtures/SoundCloud/malchik-waveform.json" LogicalName="Pookie.TestFixtures.MalchikWaveform.json" />
     <!-- Compile production sources unchanged, adding private verification partials only in this host. -->
     <Compile Include="../../src/Pookie.App/**/*.cs"
              Exclude="../../src/Pookie.App/Program.cs;../../src/Pookie.App/bin/**;../../src/Pookie.App/obj/**"

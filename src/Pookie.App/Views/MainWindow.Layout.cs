@@ -122,7 +122,7 @@ internal sealed partial class MainWindow
         topNavigation = new StackPanel().Horizontal().Spacing(5).CenterHorizontal().CenterVertical().Width(390).Height(44).Children(
             Nav("house-simple", "Главная", Page.Home), Nav("broadcast", "Лента", Page.Feed), Nav("books", "Библиотека", Page.Library),
             NavAction("magnifying-glass", "Поиск", OpenTopSearch));
-        topSearchInput = new TextBox().BindText(query).Placeholder("Найти трек или исполнителя")
+        topSearchInput = new TextBox().BindText(query).Placeholder("Треки, люди, альбомы, плейлисты")
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
@@ -195,11 +195,13 @@ internal sealed partial class MainWindow
         }
         Refresh();
         navVisualRefreshers.Add(Refresh);
-        return new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Padding(11, 8).CornerRadius(13)
+        return new Button().StyleSheet(sectionButtonStyles).StyleName("section-button")
+            .Background(Color.Transparent).BorderThickness(0).Padding(11, 8).CornerRadius(13)
+            .BindIsEnabled(page, value => value != target)
             .Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(glyph.CenterVertical(), text))
             .OnMouseEnter(() => { hovered = true; Refresh(); })
             .OnMouseLeave(() => { hovered = false; Refresh(); })
-            .OnClick(() => Run(() => NavigateAsync(target)));
+            .OnClick(() => { if (page.Value != target) Run(() => NavigateAsync(target)); });
     }
 
     private Button NavAction(string icon, string label, Action action)
@@ -260,29 +262,25 @@ internal sealed partial class MainWindow
             new Border().Background(Raised).CornerRadius(18).Padding(16, 10).CenterVertical().Column(1)
                 .Child(new StackPanel().Horizontal().Spacing(8).Children(Icons.View("headphones", 18),
                     new TextBlock().Text("Твоя музыка. Твой ритм.").Foreground(Muted).FontSize(12).CenterVertical())))
-            .BindIsVisible(page, value => !IsLibrary(value));
+            .BindIsVisible(page, value => !IsLibrary(value) && value != Page.Search);
         var chips = new StackPanel().Horizontal().Spacing(8).BindIsVisible(page, value => value == Page.Home).Children(
             SearchChip("Для спокойного вечера", "ambient"), SearchChip("Электроника", "electronic"),
             SearchChip("Хип-хоп", "hip hop"), SearchChip("В ритме джаза", "jazz"));
         var listHead = new StackPanel().Vertical().Spacing(10).Children(
-            new TextBlock().BindText(status).Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap)
-                .BindIsVisible(page, value => value is Page.Home or Page.Feed),
             new Grid().Columns("44,48,*,64").Rows("Auto").Spacing(12).Padding(12, 0).Children(
                 new TextBlock().Text("#").FontSize(11).Foreground(Muted).Column(0),
                 new TextBlock().Text("ТРЕК / ИСПОЛНИТЕЛЬ").FontSize(11).Foreground(Muted).Column(2),
                 new TextBlock().Text("ВРЕМЯ").FontSize(11).Foreground(Muted).Right().Column(3)))
             .BindIsVisible(page, value => value is Page.Home or Page.Feed);
         var listBody = new Grid().Columns("*").Rows("*").Children(
-            list.BindIsVisible(page, value => value is Page.Home or Page.Feed),
+            CreateHomeLoadingView().BindIsVisible(page, value => value is Page.Home or Page.Feed),
+            SearchPage().BindIsVisible(page, value => value == Page.Search),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
             CollectionPage().BindIsVisible(page, value => value > Page.LibraryTracks));
         return new DockPanel().LastChildFill().Spacing(18).Children(
-            new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading, chips, listHead),
-            new Grid().Columns("*,Auto").Rows("Auto").DockBottom().Children(
-                new TextBlock().BindText(listStatus).Foreground(Muted).FontSize(12).CenterVertical().Column(0),
-                new Button().StyleName("flat-button").Content("Показать ещё").BindIsVisible(hasMore).OnClick(() => Run(MoreAsync)).Column(1))
-                .BindIsVisible(page, value => value is Page.Home or Page.Feed),
+            new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading, chips, listHead)
+                .BindIsVisible(page, value => value != Page.Search),
             listBody);
     }
 
@@ -297,7 +295,7 @@ internal sealed partial class MainWindow
             OverviewSection("Недавно прослушанное", "recent", Page.LibraryHistory),
             new StackPanel().Vertical().Spacing(18).Children(
                 SectionHeader("Понравившиеся треки", ShowLibraryTracks), overviewLikesLoadingView.Root,
-                overviewLikesEmpty = new TextBlock().BindText(status, value => value.StartsWith("Воспроизведение полного доступного потока", StringComparison.Ordinal) ? "" : value)
+                overviewLikesEmpty = new TextBlock().Text("Здесь пока ничего нет.")
                     .Foreground(Muted).FontSize(13).TextWrapping(TextWrapping.Wrap).BindIsVisible(hasLibraryTracks, value => !value && !likesLoading)),
             OverviewSection("Плейлисты", "playlists", Page.LibraryPlaylists),
             OverviewSection("Альбомы", "albums", Page.LibraryAlbums),
@@ -329,18 +327,10 @@ internal sealed partial class MainWindow
     {
         if (!libraryCoverCache.TryGetValue(track.Id, out var source))
         {
-            await coverGate.WaitAsync(lifetime.Token);
-            try
-            {
-                if (!libraryCoverCache.TryGetValue(track.Id, out source))
-                {
-                    source = await FetchLargeArtworkAsync(track, lifetime.Token);
-                    if (source == null) return null;
-                    if (libraryCoverCache.Count >= 256) libraryCoverCache.Remove(libraryCoverCache.Keys.First());
-                    libraryCoverCache[track.Id] = source;
-                }
-            }
-            finally { coverGate.Release(); }
+            source = await SharedArtworkAsync(track.ArtworkUrl ?? track.User?.AvatarUrl);
+            if (source == null || disposed) return null;
+            if (libraryCoverCache.Count >= 256) libraryCoverCache.Remove(libraryCoverCache.Keys.First());
+            libraryCoverCache[track.Id] = source;
         }
         return source;
     }

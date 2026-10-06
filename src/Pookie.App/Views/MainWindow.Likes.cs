@@ -1,5 +1,4 @@
 using Aprillz.MewUI;
-using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
@@ -9,7 +8,6 @@ internal sealed partial class MainWindow
 {
     private readonly ObservableValue<bool> likesAsList = new(false);
     private readonly ObservableValue<bool> likedEmpty = new(false);
-    private readonly ObservableValue<string> likedCount = new("");
     private readonly ObservableValue<string> likedActionError = new("");
     private readonly Dictionary<Button, LikedTrackTile> likedTiles = [];
     private readonly Dictionary<Image, long> likedArtworkTracks = [];
@@ -39,22 +37,7 @@ internal sealed partial class MainWindow
             LibraryTab("Подписки", Page.LibraryFollowing, () => Run(() => ShowLibrarySectionAsync(Page.LibraryFollowing))),
             LibraryTab("История", Page.LibraryHistory, () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory))));
 
-    private Button LibraryTab(string label, Page target, Action action)
-    {
-        var hover = new ObservableValue<bool>(false);
-        var normal = new TextBlock().Text(label).FontSize(16).SemiBold()
-            .Bind(TextElement.ForegroundProperty, page, value => value == target ? Color.White : Muted);
-        var highlighted = new TextBlock().Text(label).FontSize(16).SemiBold().Foreground(Color.White)
-            .Bind(UIElement.OpacityProperty, hover, value => value ? 1d : 0d);
-        highlighted.Transitions = [Transition.Create(UIElement.OpacityProperty, 180)];
-        var underline = new Border().Height(2).Background(Color.White)
-            .Bind(UIElement.OpacityProperty, page, value => value == target ? 1d : 0d);
-        underline.Transitions = [Transition.Create(UIElement.OpacityProperty, 180)];
-        return new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Left()
-            .Content(new StackPanel().Vertical().Spacing(9).Children(
-                new Grid().Columns("*").Rows("Auto").Children(normal, highlighted), underline))
-            .OnMouseEnter(() => hover.Value = true).OnMouseLeave(() => hover.Value = false).OnClick(action);
-    }
+    private Button LibraryTab(string label, Page target, Action action) => SectionTab(label, page, target, action);
 
     private ItemsControl CreateLikedGrid(Dictionary<Button, LikedTrackTile> tiles)
     {
@@ -63,7 +46,7 @@ internal sealed partial class MainWindow
             .ItemPadding(new Thickness(0, 0, 24, 0)).WrapPresenter(likedArtworkSize + 24, likedArtworkSize + 90);
         grid.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var tile = new LikedTrackTile(SelectLibraryTrack);
+            var tile = new LikedTrackTile(SelectLibraryTrack, ArtworkLayer);
             tile.SetSize(likedArtworkSize);
             context.Register("tile", tile.Root);
             tiles.Add(tile.Root, tile);
@@ -76,7 +59,7 @@ internal sealed partial class MainWindow
             tile.Author.Text = track.Author;
             tile.SetSize(likedArtworkSize);
             tile.SetPlaying(current?.Id == track.Id, isPlaying.Value, animate: false);
-            tile.Cover.Source = libraryCoverCache.TryGetValue(track.Id, out var cached) ? cached : Icons.Source("music-notes");
+            SetCardArtwork(tile.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
             likedArtworkTracks[tile.Cover] = track.Id;
             Run(() => LoadLikedArtworkAsync(tile.Cover, track));
         }, (_, _, _, context) =>
@@ -84,6 +67,7 @@ internal sealed partial class MainWindow
             var tile = tiles[context.Get<Button>("tile")];
             tile.Track = null;
             tile.Reset();
+            StopCardArtwork(tile.Cover);
             likedArtworkTracks.Remove(tile.Cover);
         });
         grid.SizeChanged += e => UpdateLikedGridSize(e.NewSize.Width);
@@ -96,7 +80,11 @@ internal sealed partial class MainWindow
         likedList = CreateLikedList();
         likesLoadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(
             likedGrid.BindIsVisible(likesAsList, value => !value), likedList.BindIsVisible(likesAsList)));
-        likesAsList.Changed += () => likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesAsList.Value);
+        likesAsList.Changed += () =>
+        {
+            likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesAsList.Value);
+            if (paginationLoading.Value && page.Value == Page.LibraryTracks) RefreshPaginationSkeletons(true);
+        };
         likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").FontSize(12)
             .Background(Raised).BorderThickness(0).Padding(12, 8).CornerRadius(6)
             .OnTextChanged(value => { likedFilterText = value; RefreshLikedViews(); });
@@ -107,16 +95,9 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,Auto,280").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
                 tools.Column(1), likedFilter.Column(2)),
-            new StackPanel().Vertical().Spacing(6).DockBottom().Children(
-                new Grid().Columns("*,Auto").Rows("Auto").Children(
-                    new TextBlock().BindText(likedCount).FontSize(12).Foreground(Muted).CenterVertical().Column(0),
-                    new Button().StyleName("flat-button").Content("Показать ещё").BindIsVisible(hasMore)
-                        .OnClick(() => Run(MoreAsync)).Column(1)),
-                new TextBlock().BindText(likedActionError).FontSize(12).Foreground(Muted)
-                    .TextWrapping(TextWrapping.Wrap).BindIsVisible(likedActionError, value => value.Length > 0)),
             new Grid().Columns("*").Rows("*").Children(
                 likesLoadingView.Root,
-                new TextBlock().BindText(status, value => tracks.Count == 0 ? value : "По этому фильтру ничего не найдено.")
+                new TextBlock().Text("По этому фильтру ничего не найдено.")
                     .Foreground(Muted).FontSize(14)
                     .TextWrapping(TextWrapping.Wrap).Top().Margin(0, 24).BindIsVisible(likedEmpty)));
     }
@@ -136,10 +117,9 @@ internal sealed partial class MainWindow
         var visible = tracks.Where(track => filter.Length == 0 ||
             track.Title.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
-        likedGrid.Items(visible, track => track.Title);
-        likedList.Items(visible, track => track.Title);
+        SetPageItems(likedGrid, visible, LoadingRowStyle.Card);
+        SetPageItems(likedList, visible, LoadingRowStyle.Waveform);
         likedEmpty.Value = !likesLoading && visible.Length == 0;
-        likedCount.Value = filter.Length == 0 ? $"{tracks.Count} треков" : $"Найдено {visible.Length} из {tracks.Count}";
     }
 
     private void UpdateLikedGridSize(double width)
@@ -148,13 +128,14 @@ internal sealed partial class MainWindow
         // Reserve the scrollbar gutter before it appears so additional rows cannot change column count.
         var available = Math.Max(200, width - 18);
         var columns = Math.Clamp((int)Math.Floor((available + 24) / (170 + 24)), 1, 6);
+        if (libraryColumns != columns) searchLayoutPending = true;
         libraryColumns = columns;
         var cellWidth = Math.Floor(available / columns);
         var artworkSize = cellWidth - 24;
         if (Math.Abs(artworkSize - likedArtworkSize) < 0.1) return;
         likedArtworkSize = artworkSize;
         foreach (var view in libraryLoadingViews)
-            view.Skeleton.SetGeometry(artworkSize, columns, view == likesLoadingView && likesAsList.Value);
+            view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : view == likesLoadingView && likesAsList.Value));
         foreach (var grid in new[] { libraryGrid, likedGrid })
             if (grid != null) { grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure(); }
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetSize(artworkSize);
@@ -170,13 +151,15 @@ internal sealed partial class MainWindow
     private void RefreshLikedPlayback()
     {
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id, isPlaying.Value);
+        foreach (var card in collectionCards.Values)
+            card.Playback.SetPlaying(card.Item.Track != null && card.Item.Track.Id == current?.Id, isPlaying.Value);
         RefreshLikedRows();
     }
 
     private async Task LoadLikedArtworkAsync(Image image, SoundCloudTrack track)
     {
         var source = await GetLibraryArtworkAsync(track);
-        if (source != null && !disposed && likedArtworkTracks.TryGetValue(image, out var id) && id == track.Id)
-            image.Source = source;
+        if (!disposed && likedArtworkTracks.TryGetValue(image, out var id) && id == track.Id)
+            SetCardArtwork(image, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true);
     }
 }

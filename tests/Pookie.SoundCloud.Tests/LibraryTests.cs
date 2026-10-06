@@ -27,6 +27,18 @@ public sealed class LibraryTests
         Assert.NotNull(page.NextHref);
     }
 
+    [Fact]
+    public void HistoryTrackWithoutArtworkRetainsItsAuthorAvatarAsFallback()
+    {
+        using var json = JsonDocument.Parse("""
+            {"collection":[{"track":{"id":8,"title":"Track","artwork_url":null,
+              "user":{"username":"Artist","avatar_url":"https://i1.sndcdn.com/avatar-large.jpg"}}}]}
+            """);
+        var item = Assert.Single(LibraryData.Parse(json.RootElement).Items);
+        Assert.Equal("https://i1.sndcdn.com/avatar-large.jpg", item.ArtworkUrl);
+        Assert.Null(item.Track!.ArtworkUrl);
+    }
+
     [Theory]
     [InlineData("me/library/all")]
     [InlineData("me/library/stations")]

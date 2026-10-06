@@ -18,7 +18,7 @@ public sealed record BrowserRequestCommand(string Id, string Operation, long Use
         if (value is not { Length: > 0 and <= 8192 } || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             !SoundCloudWebClient.IsApiUri(uri) || uri.Fragment != "") return false;
         var path = uri.AbsolutePath;
-        return path is "/me" or "/me/track_likes/ids" or "/search/tracks" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
+        return path is "/me" or "/me/track_likes/ids" or "/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
             path.StartsWith("/media/", StringComparison.Ordinal) ||
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/system-playlists/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/((tracks|playlists)/[1-9][0-9]*|users/[1-9][0-9]*/(likes|followings|tracks))$");

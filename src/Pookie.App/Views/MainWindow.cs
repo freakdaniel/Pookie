@@ -34,8 +34,6 @@ internal sealed partial class MainWindow : IDisposable
     private readonly ObservableValue<string> currentTime = new("0:00");
     private readonly ObservableValue<string> totalTime = new("0:00");
     private readonly ObservableValue<string> audioStatus = new("");
-    private readonly ObservableValue<string> listStatus = new("");
-    private readonly ObservableValue<bool> hasMore = new(false);
     private readonly ObservableValue<bool> discordEnabled = new(true);
     private readonly List<SoundCloudTrack> tracks = [];
     private readonly List<string> demoFiles = [];
@@ -126,6 +124,7 @@ internal sealed partial class MainWindow : IDisposable
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
         Window.FrameRendered += RestoreNavigationScroll;
+        Window.FrameRendered += ObservePageScrolling;
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
@@ -216,29 +215,40 @@ internal sealed partial class MainWindow : IDisposable
 
     private CancellationToken BeginLoad()
     {
+        if (page.Value is Page.Home or Page.Feed) homeLoadingView.SetLoading(true);
+        status.Value = "Загрузка…";
+        return RenewLoadToken();
+    }
+
+    private CancellationToken RenewLoadToken()
+    {
         loading?.Cancel(); loading?.Dispose();
         loading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        status.Value = "Загрузка…";
         return loading.Token;
     }
 
-    private Task SearchAsync()
+    private Task SearchAsync() => SearchAsync(SearchSection.All);
+
+    private Task SearchAsync(SearchSection section)
     {
         if (!CanUseWorkspace) return Task.CompletedTask;
         var search = query.Value.Trim();
         if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку на трек."; return Task.CompletedTask; }
         if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return Task.CompletedTask; }
-        return NavigateRouteAsync(new(Page.Home, Search: search), async _ =>
+        return NavigateRouteAsync(new(Page.Search, Search: search, Section: section), async generation =>
         {
             var token = BeginLoad();
-            eyebrow.Value = "ПОИСК"; heading.Value = "Результаты поиска";
-            ReplaceTracks(new([], null));
+            searchSection.Value = section; searchHeading.Value = $"Результаты для «{search}»";
+            searchStatus.Value = "Ничего не найдено. Попробуй изменить запрос.";
+            searchLoading.Value = true;
+            SetSearchResults(new([], null));
             var result = search.StartsWith("https://soundcloud.com/", StringComparison.OrdinalIgnoreCase)
-                ? new TrackPage([await api.ResolveAsync(search, token)], null)
-                : await api.SearchAsync(search, token);
+                ? new LibraryPage([LibraryItem.FromTrack(await api.ResolveAsync(search, token))], null)
+                : await api.SearchResultsAsync(search, section, token);
+            await PrepareCollectionArtworkAsync(result.Items, token, rows: true);
             token.ThrowIfCancellationRequested();
-            ReplaceTracks(result);
-            status.Value = "Нажми на трек для воспроизведения.";
+            if (generation != navigationGeneration || disposed) return;
+            SetSearchResults(result);
         });
     }
 
@@ -254,6 +264,7 @@ internal sealed partial class MainWindow : IDisposable
         else ReplaceTracks(new([], null));
         RefreshLibraryCards();
         var result = await api.GetLikesAsync(me.Id, token);
+        await PrepareTrackArtworkAsync(result.Tracks, token, preview: !showAll);
         token.ThrowIfCancellationRequested();
         libraryLikes = result;
         ReplaceTracks(result);
@@ -270,24 +281,24 @@ internal sealed partial class MainWindow : IDisposable
         if (nextHref == null) return;
         likedActionError.Value = "";
         var target = nextHref;
-        var token = BeginLoad();
-        var page = await api.GetNextPageAsync(target, token);
+        var generation = navigationGeneration;
+        var session = api.Session;
+        var token = loading?.Token ?? lifetime.Token;
+        var result = await api.GetNextPageAsync(target, token);
         token.ThrowIfCancellationRequested();
+        if (disposed || generation != navigationGeneration || api.Session != session || nextHref != target) return;
         var ids = tracks.Select(t => t.Id).ToHashSet();
-        tracks.AddRange(page.Tracks.Where(t => ids.Add(t.Id)));
-        nextHref = page.NextHref;
+        tracks.AddRange(result.Tracks.Where(t => ids.Add(t.Id)));
+        nextHref = result.NextHref;
         RefreshList();
-        status.Value = "Следующая страница загружена.";
     }
 
     private void ReplaceTracks(TrackPage page) { tracks.Clear(); tracks.AddRange(page.Tracks); nextHref = page.NextHref; RefreshList(); }
     private void RefreshList()
     {
         syncingTrackList = true;
-        try { list.Items(tracks.ToArray(), t => $"{t.Title}   ·   {t.Author}   ·   {FormatTime(t.DurationSeconds)}" + (t.Access is "preview" or "blocked" ? "   [ограничен]" : ""), t => t.Id); }
+        try { SetPageItems(list, tracks, LoadingRowStyle.Compact); }
         finally { syncingTrackList = false; }
-        hasMore.Value = nextHref != null;
-        listStatus.Value = $"{tracks.Count} треков";
         if (!likesLoading && page.Value is (Page.Library or Page.LibraryTracks)) libraryLikes = new(tracks.ToArray(), nextHref);
         RefreshLikedViews();
     }
@@ -565,6 +576,7 @@ internal sealed partial class MainWindow : IDisposable
         disposed = true;
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
+        DisposePageScrolling();
         OnDisposed();
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();

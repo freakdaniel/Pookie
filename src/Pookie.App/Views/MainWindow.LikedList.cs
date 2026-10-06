@@ -20,27 +20,37 @@ internal sealed partial class MainWindow
             .ItemPadding(new Thickness(0, 0, 18, 36));
         result.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => ToggleTrackLikeAsync(track)),
-                CopyTrackLink, (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)));
+            var row = CreateLibraryTrackRow();
             context.Register("row", row.Root);
-            likedRows.Add(row.Root, row);
             return row.Root;
-        }, (_, track, _, context) =>
-        {
-            var row = likedRows[context.Get<Grid>("row")];
-            row.Bind(track);
-            if (libraryCoverCache.TryGetValue(track.Id, out var cover)) row.Cover.Source = cover;
-            likedArtworkTracks[row.Cover] = track.Id;
-            Run(() => LoadLikedArtworkAsync(row.Cover, track));
-            Run(() => LoadLikedWaveformAsync(row, track));
-            RefreshLikedRow(row);
-        }, (_, _, _, context) =>
-        {
-            var row = likedRows[context.Get<Grid>("row")];
-            likedArtworkTracks.Remove(row.Cover);
-            row.Reset();
-        });
+        }, (_, track, _, context) => BindLibraryTrackRow(likedRows[context.Get<Grid>("row")], track),
+            (_, _, _, context) => ClearLibraryTrackRow(likedRows[context.Get<Grid>("row")]));
         return result;
+    }
+
+    private LikedTrackRow CreateLibraryTrackRow()
+    {
+        var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => ToggleTrackLikeAsync(track)),
+            CopyTrackLink, (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
+        likedRows.Add(row.Root, row);
+        return row;
+    }
+
+    private void BindLibraryTrackRow(LikedTrackRow row, SoundCloudTrack track)
+    {
+        row.Bind(track);
+        SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
+        likedArtworkTracks[row.Cover] = track.Id;
+        Run(() => LoadLikedArtworkAsync(row.Cover, track));
+        Run(() => LoadLikedWaveformAsync(row, track));
+        RefreshLikedRow(row);
+    }
+
+    private void ClearLibraryTrackRow(LikedTrackRow row)
+    {
+        likedArtworkTracks.Remove(row.Cover);
+        StopCardArtwork(row.Cover);
+        row.Reset();
     }
 
     private void RefreshLikedRow(LikedTrackRow row)
@@ -55,6 +65,7 @@ internal sealed partial class MainWindow
     {
         if (seconds is { } value) likedPlaybackPosition = value;
         foreach (var row in likedRows.Values) RefreshLikedRow(row);
+        RefreshSearchPlayback();
     }
 
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)

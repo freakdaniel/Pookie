@@ -1,5 +1,4 @@
 using Aprillz.MewUI;
-using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
@@ -17,31 +16,21 @@ internal sealed partial class MainWindow
         public TextBlock Author { get; } = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).Height(19)
             .TextTrimming(TextTrimming.CharacterEllipsis);
         private readonly Border artworkFrame;
-        private readonly Border overlay;
-        private readonly Image play;
-        private readonly Image pause;
-        private bool hovered, active;
-        internal bool ShowsPause => pause.IsVisible && !play.IsVisible;
+        private readonly TrackArtworkOverlay overlay = new();
+        internal bool ShowsPause => overlay.ShowsPause;
 
-        public LikedTrackTile(Action<SoundCloudTrack> select)
+        public LikedTrackTile(Action<SoundCloudTrack> select, Func<Image, Grid> artworkLayer)
         {
-            play = Icons.View("play-solid", 23, true).CenterHorizontal().CenterVertical();
-            pause = Icons.View("pause-solid", 22, true).CenterHorizontal().CenterVertical().IsVisible(false);
-            overlay = new Border().Background(Color.FromArgb(64, 0, 0, 0))
-                .Child(new Border().Width(46).Height(46).CornerRadius(23).Background(Color.White)
-                    .CenterHorizontal().CenterVertical().Child(new Grid().Columns("*").Rows("*").Children(play, pause)));
-            overlay.Opacity = 0;
-            overlay.Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(0.2, 0, 0, 1))];
             artworkFrame = new Border().CornerRadius(6).ClipToBounds()
-                .Child(new Grid().Columns("*").Rows("*").Children(Cover, overlay));
+                .Child(artworkLayer(Cover).Children(overlay));
             Root = new Button().Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0).Padding(0).Top()
                 .Content(new StackPanel().Vertical().Spacing(1).Children(
                     artworkFrame,
                     new Grid().Columns("14,*").Rows("20").Spacing(4).Margin(0, 7, 0, 0).Children(
                         Icons.View("heart-filled", 13, Muted).CenterVertical().Column(0), Title.Column(1)),
                     Author))
-                .OnMouseEnter(() => { hovered = true; RefreshOverlay(); })
-                .OnMouseLeave(() => { hovered = false; RefreshOverlay(); })
+                .OnMouseEnter(() => overlay.SetHovered(true))
+                .OnMouseLeave(() => overlay.SetHovered(false))
                 .OnClick(() => { if (Track is { } track) select(track); });
         }
 
@@ -53,32 +42,8 @@ internal sealed partial class MainWindow
             Author.Width = size;
         }
 
-        public void SetPlaying(bool selected, bool playing, bool animate = true)
-        {
-            active = selected;
-            play.IsVisible = !selected || !playing;
-            pause.IsVisible = selected && playing;
-            if (animate) RefreshOverlay();
-            else SetOverlayImmediately(hovered || active ? 1 : 0);
-        }
-
+        public void SetPlaying(bool selected, bool playing, bool animate = true) => overlay.SetPlaying(selected, playing, animate);
         internal double OverlayOpacity => overlay.Opacity;
-
-        private void SetOverlayImmediately(double opacity)
-        {
-            var transitions = overlay.Transitions;
-            overlay.Transitions = null;
-            overlay.Opacity = opacity;
-            overlay.Transitions = transitions;
-        }
-
-        public void Reset()
-        {
-            hovered = active = false;
-            SetOverlayImmediately(0);
-            play.IsVisible = true; pause.IsVisible = false;
-        }
-
-        private void RefreshOverlay() => overlay.Opacity = hovered || active ? 1 : 0;
+        public void Reset() => overlay.Reset();
     }
 }

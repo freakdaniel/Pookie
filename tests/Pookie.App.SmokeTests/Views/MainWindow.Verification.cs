@@ -101,6 +101,8 @@ internal sealed partial class MainWindow
             await VerifyLikesLayoutAsync();
             await VerifyPlayerColorsAsync();
             await VerifyNavigationAsync();
+            await VerifySearchScrollingAsync();
+            await VerifySectionTabsAsync();
             Console.WriteLine("UI_SMOKE_OK: native layout, local playback, pause/resume, next/previous, shuffle, mute and persistent queue across navigation");
             await Task.Delay(5000, lifetime.Token);
         }
@@ -350,6 +352,8 @@ internal sealed partial class MainWindow
             if (collectionGrid.ItemsSource.Count != expected || librarySectionTitle.Value != SectionTitle(target))
                 throw new InvalidOperationException("Library section loaded the wrong resource type or title");
         }
+        await VerifyHistoryTrackCardsAsync(fixtures);
+        await VerifyHistoryArtworkAsync(fixtures);
         page.Value = Page.Library; RefreshOverviewSections();
         if (overviewSections["recent"].Grid.ItemsSource.Count == 0) throw new InvalidOperationException("Recently played was not updated after playback");
         ShowLibraryTracks();
@@ -391,6 +395,7 @@ internal sealed partial class MainWindow
         if (firstListRow.Waveform.Progress < .24) throw new InvalidOperationException("Waveform click did not seek or show playback position");
         foreach (var row in likedRows.Values.Where(row => row.Track != null))
             row.Waveform.SetSamples(Enumerable.Range(0, 1800).Select(index => (float)(.15 + .65 * Math.Abs(Math.Sin(index * .04)))).ToArray());
+        await VerifyWaveformMotionAsync(firstListRow);
         await VerifyLikedActionHoverAsync(firstListRow);
         await VerifyPlayerHoverAsync();
         CaptureUiPreview("list");

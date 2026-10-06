@@ -35,7 +35,7 @@ internal sealed partial class MainWindow
         public bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
         public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> like,
-            Action<SoundCloudTrack> copy, Action<SoundCloudTrack, double> seek)
+            Action<SoundCloudTrack> copy, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer)
         {
             PlayButton = new Button().Width(38).Height(38).CornerRadius(19).Background(Color.White).BorderThickness(0).Padding(0)
                 .Content(new Grid().Columns("*").Rows("*").Children(play, pause))
@@ -56,7 +56,7 @@ internal sealed partial class MainWindow
             Waveform.SeekRequested += fraction => { if (Track is { } track) seek(track, fraction); };
             Root = new Grid().StyleSheet(ActionStyles()).Columns("160,*").Rows("*").Spacing(20).Height(160).Children(
                 new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0)
-                    .Content(new Border().CornerRadius(6).ClipToBounds().Width(160).Height(160).Child(Cover))
+                    .Content(new Border().CornerRadius(6).ClipToBounds().Width(160).Height(160).Child(artworkLayer(Cover)))
                     .OnClick(() => { if (Track is { } track) select(track); }),
                 new Grid().Columns("*").Rows("40,68,28").Spacing(12).Column(1).Children(
                     new Grid().Columns("38,*,Auto").Rows("*").Spacing(10).Row(0).Children(
@@ -88,6 +88,7 @@ internal sealed partial class MainWindow
             duration.Text = FormatTime(track.DurationSeconds);
             Cover.Source = Icons.Source("music-notes");
             Waveform.SetSamples([]);
+            Waveform.IsPlaying = false;
             Waveform.Progress = 0;
         }
 
@@ -101,10 +102,11 @@ internal sealed partial class MainWindow
             likeButton.IsEnabled = canLike;
             positionLabel.IsVisible = selected;
             position.Text = FormatTime(selected ? seconds : 0);
+            Waveform.IsPlaying = selected && playing;
             Waveform.Progress = selected && Track is { DurationSeconds: > 0 } track ? seconds / track.DurationSeconds : 0;
         }
 
-        public void Reset() { Track = null; Waveform.SetSamples([]); Waveform.Progress = 0; positionLabel.IsVisible = false; }
+        public void Reset() { Track = null; Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }
 
         private static StyleSheet ActionStyles()
         {
