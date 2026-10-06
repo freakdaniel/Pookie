@@ -248,8 +248,11 @@ internal sealed partial class MainWindow : IDisposable
         if (demo) { RefreshLibraryCards(); status.Value = "В демо-режиме библиотека показывает локальные тестовые звуки."; return; }
         if (me == null) { BeginLoad(); ReplaceTracks(new([], null)); RefreshLibraryCards(); status.Value = "Войди в SoundCloud через профиль справа сверху, чтобы открыть свои лайки."; return; }
         var token = BeginLoad();
+        SetLikesLoading(libraryLikes == null);
+        if (!showAll) Run(RefreshOverviewDataAsync);
         if (libraryLikes != null) ReplaceTracks(libraryLikes);
         else ReplaceTracks(new([], null));
+        RefreshLibraryCards();
         var result = await api.GetLikesAsync(me.Id, token);
         token.ThrowIfCancellationRequested();
         libraryLikes = result;
@@ -259,7 +262,6 @@ internal sealed partial class MainWindow : IDisposable
         RefreshLibraryCards();
         status.Value = "Музыка, которую ты сохранил в SoundCloud.";
         RefreshOverviewSections();
-        if (!showAll) Run(RefreshOverviewDataAsync);
     });
 
     private async Task MoreAsync()
@@ -286,7 +288,7 @@ internal sealed partial class MainWindow : IDisposable
         finally { syncingTrackList = false; }
         hasMore.Value = nextHref != null;
         listStatus.Value = $"{tracks.Count} треков";
-        if (page.Value is Page.Library or Page.LibraryTracks) libraryLikes = new(tracks.ToArray(), nextHref);
+        if (!likesLoading && page.Value is (Page.Library or Page.LibraryTracks)) libraryLikes = new(tracks.ToArray(), nextHref);
         RefreshLikedViews();
     }
 
@@ -566,6 +568,8 @@ internal sealed partial class MainWindow : IDisposable
         OnDisposed();
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
+        foreach (var hover in hoverReveals) hover.Dispose();
+        foreach (var view in libraryLoadingViews) view.Dispose();
         searchInput?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;

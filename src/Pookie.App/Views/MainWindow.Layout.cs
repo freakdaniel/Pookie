@@ -292,12 +292,13 @@ internal sealed partial class MainWindow
     {
         libraryGrid = CreateLikedGrid(libraryTiles);
         libraryGrid.Height = likedArtworkSize + 90;
+        overviewLikesLoadingView = CreateLibraryLoadingView(libraryGrid, preview: true);
         var overview = new StackPanel().Vertical().Spacing(32).Padding(0, 14).Children(
             OverviewSection("Недавно прослушанное", "recent", Page.LibraryHistory),
             new StackPanel().Vertical().Spacing(18).Children(
-                SectionHeader("Понравившиеся треки", ShowLibraryTracks), libraryGrid,
-                new TextBlock().BindText(status, value => value.StartsWith("Воспроизведение полного доступного потока", StringComparison.Ordinal) ? "" : value)
-                    .Foreground(Muted).FontSize(13).TextWrapping(TextWrapping.Wrap).BindIsVisible(hasLibraryTracks, value => !value)),
+                SectionHeader("Понравившиеся треки", ShowLibraryTracks), overviewLikesLoadingView.Root,
+                overviewLikesEmpty = new TextBlock().BindText(status, value => value.StartsWith("Воспроизведение полного доступного потока", StringComparison.Ordinal) ? "" : value)
+                    .Foreground(Muted).FontSize(13).TextWrapping(TextWrapping.Wrap).BindIsVisible(hasLibraryTracks, value => !value && !likesLoading)),
             OverviewSection("Плейлисты", "playlists", Page.LibraryPlaylists),
             OverviewSection("Альбомы", "albums", Page.LibraryAlbums),
             OverviewSection("Понравившиеся станции", "stations", Page.LibraryStations),

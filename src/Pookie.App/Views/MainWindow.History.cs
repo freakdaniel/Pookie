@@ -55,6 +55,7 @@ internal sealed partial class MainWindow
         }
         navigationHistory[navigationIndex].Pending = pending;
         loading?.Cancel();
+        SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         profileOpen.Value = settingsOpen.Value = false;
         CloseTopSearch(clear: false);
@@ -71,9 +72,18 @@ internal sealed partial class MainWindow
         try { await action(generation); }
         // Late replies/errors from a page we already left cannot replace the new page.
         catch (Exception) when (generation != navigationGeneration || disposed) { }
+        catch (Exception error)
+        {
+            if (route.Page > Page.LibraryTracks) librarySectionStatus.Value = FriendlyError(error);
+            throw;
+        }
         finally
         {
-            if (generation == navigationGeneration) navigationHistory[navigationIndex].Pending = false;
+            if (generation == navigationGeneration && !disposed)
+            {
+                navigationHistory[navigationIndex].Pending = false;
+                SetLikesLoading(false); collectionLoadingView.SetLoading(false);
+            }
         }
     }
 
@@ -84,6 +94,7 @@ internal sealed partial class MainWindow
         if (index < 0 || index >= navigationHistory.Count) return;
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();
         loading?.Cancel();
+        SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         navigationIndex = index;
         var entry = navigationHistory[index];

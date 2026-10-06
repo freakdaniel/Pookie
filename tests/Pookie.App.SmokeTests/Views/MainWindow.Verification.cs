@@ -108,7 +108,7 @@ internal sealed partial class MainWindow
         catch (Exception error)
         {
             Environment.ExitCode = 1;
-            Console.Error.WriteLine($"UI_SMOKE_FAILED: {error.GetType().Name}: {error.Message}");
+            Console.Error.WriteLine($"UI_SMOKE_FAILED: {error}");
         }
         finally { Window.Close(); }
     }
@@ -303,6 +303,7 @@ internal sealed partial class MainWindow
         ReplaceTracks(new TrackPage(fixtures, null));
         ShowLibraryTracks();
         await WaitForLikedLayoutAsync(() => likedTiles.Values.Count(tile => tile.Track != null && tile.Root.ActualWidth > 100) >= 12);
+        await VerifyLibraryLoadingAsync();
         var visible = likedTiles.Values.Where(tile => tile.Track != null).ToArray();
         var firstRow = visible.GroupBy(tile => Math.Round(tile.Root.Bounds.Y)).OrderBy(group => group.Key).First().ToArray();
         if (firstRow.Length != 6) throw new InvalidOperationException($"Expected six likes columns, got {firstRow.Length}");
@@ -391,6 +392,7 @@ internal sealed partial class MainWindow
         foreach (var row in likedRows.Values.Where(row => row.Track != null))
             row.Waveform.SetSamples(Enumerable.Range(0, 1800).Select(index => (float)(.15 + .65 * Math.Abs(Math.Sin(index * .04)))).ToArray());
         await VerifyLikedActionHoverAsync(firstListRow);
+        await VerifyPlayerHoverAsync();
         CaptureUiPreview("list");
         Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, 160px artwork, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
         likesAsList.Value = false;

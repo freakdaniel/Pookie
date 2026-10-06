@@ -20,6 +20,13 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<string> librarySectionStatus = new("");
     private readonly ObservableValue<bool> librarySectionMore = new(false);
     private readonly List<LibraryItem> localRecent = [];
+    private long overviewRefreshGeneration;
+    private readonly HashSet<string> overviewPending = [];
+    private readonly Dictionary<string, LibraryLoadingView> overviewLoadingViews = [];
+    private LibraryLoadingView collectionLoadingView = null!;
+    private LibraryLoadingView likesLoadingView = null!, overviewLikesLoadingView = null!;
+    private bool likesLoading;
+    private TextBlock overviewLikesEmpty = null!;
     private ItemsControl collectionGrid = null!;
     private TrackPage? libraryLikes;
     private LibraryPage? activeCollection;
@@ -48,19 +55,22 @@ internal sealed partial class MainWindow
         var grid = CreateCollectionGrid(true);
         var empty = new TextBlock().Text("Загрузка…").FontSize(13).Foreground(Muted).Margin(0, 8);
         overviewSections[source] = (grid, empty);
+        var loadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("Auto").Children(grid, empty), preview: true);
+        overviewLoadingViews[source] = loadingView;
         return new StackPanel().Vertical().Spacing(18).Children(
-            SectionHeader(title, () => Run(() => ShowLibrarySectionAsync(target))), grid, empty);
+            SectionHeader(title, () => Run(() => ShowLibrarySectionAsync(target))), loadingView.Root);
     }
 
     private FrameworkElement CollectionPage()
     {
         collectionGrid = CreateCollectionGrid(false);
+        collectionLoadingView = CreateLibraryLoadingView(collectionGrid);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14).Children(
             new TextBlock().BindText(librarySectionTitle).FontSize(22).Bold().DockTop(),
             new StackPanel().Vertical().Spacing(8).DockBottom().Children(
                 new TextBlock().BindText(librarySectionStatus).FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap),
                 new Button().StyleName("flat-button").Content("Показать ещё").BindIsVisible(librarySectionMore)
-                    .Left().OnClick(() => Run(LoadMoreLibraryAsync))), collectionGrid);
+                    .Left().OnClick(() => Run(LoadMoreLibraryAsync))), collectionLoadingView.Root);
     }
 
     private ItemsControl CreateCollectionGrid(bool preview)
@@ -149,27 +159,42 @@ internal sealed partial class MainWindow
 
     private async Task RefreshOverviewDataAsync()
     {
-        foreach (var source in new[] { "recent", "collections", "stations", "following" })
+        var generation = ++overviewRefreshGeneration;
+        var session = api.Session;
+        bool Current() => !disposed && generation == overviewRefreshGeneration && api.Session == session;
+        overviewPending.UnionWith(["recent", "collections", "stations", "following"]);
+        RefreshOverviewSections();
+        try
         {
-            try { await LoadLibrarySourceAsync(source); }
-            catch (OperationCanceledException) { return; }
-            catch (SoundCloudException error)
+            foreach (var source in new[] { "recent", "collections", "stations", "following" })
             {
-                SetOverviewStatus(source, error.Message);
-                // A protection block must not trigger a chain of further requests.
-                if (error.StatusCode is 401 or 403 or 429 || error.RequiresBrowserVerification) return;
-                continue;
+                if (!Current()) return;
+                try { await LoadLibrarySourceAsync(source); }
+                catch (OperationCanceledException) { return; }
+                catch (SoundCloudException error)
+                {
+                    if (!Current()) return;
+                    SetOverviewStatus(source, error.Message);
+                    // A protection block must not trigger a chain of further requests.
+                    if (error.StatusCode is 401 or 403 or 429 || error.RequiresBrowserVerification) return;
+                    continue;
+                }
+                catch (Exception error) when (error is System.Text.Json.JsonException or InvalidOperationException or HttpRequestException)
+                { if (!Current()) return; SetOverviewStatus(source, FriendlyError(error)); continue; }
+                if (!Current()) return;
+                overviewPending.Remove(source);
+                RefreshOverviewSections();
             }
-            catch (Exception error) when (error is System.Text.Json.JsonException or InvalidOperationException or HttpRequestException)
-            { SetOverviewStatus(source, FriendlyError(error)); continue; }
-            RefreshOverviewSections();
         }
+        finally { if (Current()) { overviewPending.Clear(); RefreshOverviewSections(); } }
     }
 
     private void SetOverviewStatus(string source, string message)
     {
+        overviewPending.Remove(source);
         foreach (var key in source == "collections" ? new[] { "playlists", "albums" } : new[] { source })
             if (overviewSections.TryGetValue(key, out var section)) { overviewErrors[key] = message; section.Empty.Text = message; }
+        RefreshOverviewSections();
     }
 
     private LibraryItem[] LibraryItems(string key)
@@ -189,6 +214,8 @@ internal sealed partial class MainWindow
         foreach (var (key, section) in overviewSections)
         {
             var items = LibraryItems(key).Take(6).ToArray();
+            var source = key is "playlists" or "albums" ? "collections" : key;
+            overviewLoadingViews[key].SetLoading(overviewPending.Contains(source) && !libraryPages.ContainsKey(source) && items.Length == 0);
             section.Grid.Items(items, item => item.Title);
             section.Grid.Height = Math.Max(1, Math.Ceiling(items.Length / (double)libraryColumns)) * (likedArtworkSize + 90);
             section.Grid.IsVisible = items.Length > 0;
@@ -202,8 +229,10 @@ internal sealed partial class MainWindow
         librarySectionTitle.Value = SectionTitle(target); librarySectionStatus.Value = "Загрузка…";
         librarySectionMore.Value = false;
         activeLibrarySource = SectionSource(target);
-        activeCollection = null;
-        collectionGrid.Items(Array.Empty<LibraryItem>(), item => item.Title);
+        activeCollection = libraryPages.GetValueOrDefault(activeLibrarySource);
+        if (activeCollection != null) RenderLibrarySection();
+        else collectionGrid.Items(Array.Empty<LibraryItem>(), item => item.Title);
+        collectionLoadingView.SetLoading(!libraryPages.ContainsKey(activeLibrarySource) && !demo && me != null);
         var session = api.Session;
         var result = await LoadLibrarySourceAsync(activeLibrarySource);
         if (generation != navigationGeneration || disposed || api.Session != session) return;
@@ -250,6 +279,7 @@ internal sealed partial class MainWindow
         {
             librarySectionTitle.Value = item.Title; librarySectionStatus.Value = "Загрузка…"; librarySectionMore.Value = false;
             activeCollection = null; collectionGrid.Items(Array.Empty<LibraryItem>(), i => i.Title);
+            collectionLoadingView.SetLoading(!demo && me != null);
             var token = BeginLoad(); var session = api.Session;
             if (demo) { librarySectionStatus.Value = "В демо-режиме подборки не загружаются."; return; }
             var result = await api.GetCollectionTracksAsync(item, token);
@@ -261,7 +291,28 @@ internal sealed partial class MainWindow
 
     private void ClearLibraryData()
     {
+        ++overviewRefreshGeneration;
         libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
+        overviewPending.Clear(); SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         RefreshOverviewSections();
+    }
+
+    private readonly List<LibraryLoadingView> libraryLoadingViews = [];
+
+    private LibraryLoadingView CreateLibraryLoadingView(FrameworkElement content, bool preview = false)
+    {
+        var view = new LibraryLoadingView(content, preview);
+        view.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, false);
+        libraryLoadingViews.Add(view);
+        return view;
+    }
+
+    private void SetLikesLoading(bool loading)
+    {
+        if (likesLoading == loading) return;
+        likesLoading = loading;
+        likesLoadingView.SetLoading(loading); overviewLikesLoadingView.SetLoading(loading);
+        overviewLikesEmpty.IsVisible = !loading && !hasLibraryTracks.Value;
+        RefreshLikedViews();
     }
 }

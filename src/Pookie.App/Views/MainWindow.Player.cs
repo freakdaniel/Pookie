@@ -13,6 +13,10 @@ internal sealed partial class MainWindow
     private static readonly Color LikedHeart = Color.FromRgb(184, 51, 78);
     private static readonly Color PlayerSecondaryText = Color.FromArgb(153, 255, 255, 255);
 
+    private readonly List<HoverReveal> hoverReveals = [];
+    private TextBlock positionLabel = null!, durationLabel = null!;
+    private Slider volumeSlider = null!;
+
     private readonly LoadingTrack loadingTrack = new();
     private readonly PlayerBackdrop playerBackdrop = new();
 
@@ -50,9 +54,9 @@ internal sealed partial class MainWindow
         playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Children(
             new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
             new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText).TextTrimming(TextTrimming.CharacterEllipsis));
-        var positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
+        positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(0, 0, 4, 2).CenterVertical().Right().Column(0);
-        var durationLabel = new TextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)
+        durationLabel = new TextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(4, 0, 0, 2).CenterVertical().Left().Column(2);
         foreach (var label in new[] { positionLabel, durationLabel })
         {
@@ -63,9 +67,11 @@ internal sealed partial class MainWindow
         playerTimeline = new Grid().Columns("52,*,52").Rows("*").Spacing(0).Children(
             positionLabel,
             new Grid().Columns("*").Rows("*").Height(12).CenterVertical().Column(1).Children(progress, loadingTrack),
-            durationLabel)
-            .OnMouseEnter(() => { positionLabel.Opacity = 1; durationLabel.Opacity = 1; })
-            .OnMouseLeave(() => { positionLabel.Opacity = 0; durationLabel.Opacity = 0; });
+            durationLabel);
+        hoverReveals.Add(new HoverReveal(playerTimeline, visible =>
+            { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));
+        volumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
+            .OnValueChanged(value => { muted.Value = value == 0; RunSync(() => player?.Volume(value)); });
         playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
             .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
@@ -91,8 +97,7 @@ internal sealed partial class MainWindow
                     PlayerButton(new Grid().Columns("*").Rows("*").Children(
                         Icons.View("speaker-high", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),
                         Icons.View("speaker-slash", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute),
-                    ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
-                        .OnValueChanged(value => { muted.Value = value == 0; RunSync(() => player?.Volume(value)); })))));
+                    volumeSlider))));
         // The backdrop is shared with the rounded content corners above the player.
         playerBackdrop.Height(0).Bottom().BindIsVisible(playerVisible);
         playerBackdrop.Opacity = 0;
@@ -122,12 +127,13 @@ internal sealed partial class MainWindow
             .OnMouseEnter(() => { hovered = true; Refresh(); }).OnMouseLeave(() => { hovered = false; Refresh(); }).OnClick(action);
     }
 
-    private static Slider ThinSlider()
+    private Slider ThinSlider()
     {
         var slider = new Slider().Height(12).BorderThickness(0).BorderBrush(Color.Transparent)
-            .Background(LoadingTrack.RailColor).ThumbBrush(Color.Transparent).ThumbBorderBrush(Color.Transparent);
-        slider.OnMouseEnter(() => slider.ThumbBrush = Color.FromRgb(208, 208, 208));
-        slider.OnMouseLeave(() => slider.ThumbBrush = Color.Transparent);
+            .Background(LoadingTrack.RailColor).ThumbBrush(Color.FromArgb(0, 208, 208, 208)).ThumbBorderBrush(Color.Transparent);
+        slider.Transitions = [Transition.Create(Slider.ThumbBrushProperty, 180, Easing.CubicBezier(.2, 0, 0, 1))];
+        hoverReveals.Add(new HoverReveal(slider, visible =>
+            slider.ThumbBrush = Color.FromArgb((byte)(visible ? 255 : 0), 208, 208, 208)));
         return slider;
     }
 }

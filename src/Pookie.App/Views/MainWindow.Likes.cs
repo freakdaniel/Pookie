@@ -94,6 +94,9 @@ internal sealed partial class MainWindow
     {
         likedGrid = CreateLikedGrid(likedTiles);
         likedList = CreateLikedList();
+        likesLoadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(
+            likedGrid.BindIsVisible(likesAsList, value => !value), likedList.BindIsVisible(likesAsList)));
+        likesAsList.Changed += () => likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesAsList.Value);
         likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").FontSize(12)
             .Background(Raised).BorderThickness(0).Padding(12, 8).CornerRadius(6)
             .OnTextChanged(value => { likedFilterText = value; RefreshLikedViews(); });
@@ -112,8 +115,7 @@ internal sealed partial class MainWindow
                 new TextBlock().BindText(likedActionError).FontSize(12).Foreground(Muted)
                     .TextWrapping(TextWrapping.Wrap).BindIsVisible(likedActionError, value => value.Length > 0)),
             new Grid().Columns("*").Rows("*").Children(
-                likedGrid.BindIsVisible(likesAsList, value => !value),
-                likedList.BindIsVisible(likesAsList),
+                likesLoadingView.Root,
                 new TextBlock().BindText(status, value => tracks.Count == 0 ? value : "По этому фильтру ничего не найдено.")
                     .Foreground(Muted).FontSize(14)
                     .TextWrapping(TextWrapping.Wrap).Top().Margin(0, 24).BindIsVisible(likedEmpty)));
@@ -136,7 +138,7 @@ internal sealed partial class MainWindow
             track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
         likedGrid.Items(visible, track => track.Title);
         likedList.Items(visible, track => track.Title);
-        likedEmpty.Value = visible.Length == 0;
+        likedEmpty.Value = !likesLoading && visible.Length == 0;
         likedCount.Value = filter.Length == 0 ? $"{tracks.Count} треков" : $"Найдено {visible.Length} из {tracks.Count}";
     }
 
@@ -151,6 +153,8 @@ internal sealed partial class MainWindow
         var artworkSize = cellWidth - 24;
         if (Math.Abs(artworkSize - likedArtworkSize) < 0.1) return;
         likedArtworkSize = artworkSize;
+        foreach (var view in libraryLoadingViews)
+            view.Skeleton.SetGeometry(artworkSize, columns, view == likesLoadingView && likesAsList.Value);
         foreach (var grid in new[] { libraryGrid, likedGrid })
             if (grid != null) { grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure(); }
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetSize(artworkSize);

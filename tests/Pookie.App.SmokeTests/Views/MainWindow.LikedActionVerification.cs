@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
         if (!OperatingSystem.IsWindows()) return;
         if (!GetLikedActionCursor(out var originalCursor)) throw new InvalidOperationException("Could not save cursor position.");
         CaptureUiPreview("list-before-actions");
+        Window.Activate();
         timer.Stop();
         Button? active = null;
         try
@@ -34,8 +35,8 @@ internal sealed partial class MainWindow
                     MoveLikedActionCursor(center);
                     SendLikedActionMouse(0x200, 0, center);
                     await WaitForLikedLayoutAsync(() => button.IsMouseOver && button.Background == Color.FromRgb(64, 64, 64));
-                    if (button.BorderBrush != Color.FromRgb(112, 112, 112) || button.Cursor != CursorType.Hand)
-                        throw new InvalidOperationException("Action hover did not show its border or hand cursor.");
+                    if (button.BorderThickness != 0 || button.BorderBrush != Color.Transparent || button.Cursor != CursorType.Hand)
+                        throw new InvalidOperationException("Action hover gained an outline or lost its hand cursor.");
                     CaptureUiPreview(button == buttons[0] ? "like-hover" : "copy-hover");
                     SendLikedActionMouse(0x201, 1, center);
                     await WaitForLikedLayoutAsync(() => button.IsPressed && button.Background == Color.FromRgb(86, 86, 86));
@@ -47,7 +48,7 @@ internal sealed partial class MainWindow
                 }
                 finally { button.IsEnabled = enabled; }
             }
-            Console.WriteLine("UI_LIKED_ACTIONS_OK: bold counter; native mouse hover/press/release, animated backgrounds, border and hand cursor for like/copy");
+            Console.WriteLine("UI_LIKED_ACTIONS_OK: bold counter; native mouse hover/press/release, animated backgrounds, no outline and hand cursor for like/copy");
         }
         catch (Exception error)
         {

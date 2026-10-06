@@ -112,17 +112,17 @@ internal sealed partial class MainWindow
             sheet.Define("track-action", () => Style.DeriveFromDefault<Button>(
                 setters: [
                     Setter.Create(Control.BackgroundProperty, Raised),
-                    Setter.Create(Control.BorderBrushProperty, Color.FromRgb(58, 58, 58)),
-                    Setter.Create(Control.BorderThicknessProperty, 1d),
+                    Setter.Create(Control.BorderBrushProperty, Color.Transparent),
+                    Setter.Create(Control.BorderThicknessProperty, 0d),
                     Setter.Create(UIElement.CursorProperty, (CursorType?)CursorType.Hand)
                 ],
                 triggers: [
                     new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Hot, Setters = [
                         Setter.Create(Control.BackgroundProperty, Color.FromRgb(64, 64, 64)),
-                        Setter.Create(Control.BorderBrushProperty, Color.FromRgb(112, 112, 112))
+                        Setter.Create(Control.BorderBrushProperty, Color.Transparent)
                     ] },
                     new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Focused, Setters = [
-                        Setter.Create(Control.BorderBrushProperty, Color.FromRgb(164, 164, 164))
+                        Setter.Create(Control.BorderBrushProperty, Color.Transparent)
                     ] },
                     new StateTrigger { Match = VisualStateFlags.Enabled | VisualStateFlags.Pressed, Setters = [
                         Setter.Create(Control.BackgroundProperty, Color.FromRgb(86, 86, 86))
@@ -132,8 +132,7 @@ internal sealed partial class MainWindow
                         Setter.Create(UIElement.CursorProperty, (CursorType?)CursorType.Arrow)
                     ] }
                 ],
-                transitions: [Transition.Create(Control.BackgroundProperty, 120, value => value),
-                    Transition.Create(Control.BorderBrushProperty, 120, value => value)]));
+                transitions: [Transition.Create(Control.BackgroundProperty, 120, value => value)]));
             return sheet;
         }
 
