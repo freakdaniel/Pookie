@@ -8,6 +8,7 @@ internal sealed partial class MainWindow
     private bool loginUiSmoke;
     private bool browserShutdownSmoke;
     private bool mediaUiSmoke;
+    private bool bufferUiSmoke;
     private DispatcherTimer? closeTimer;
 
     internal void ConfigureVerification(string[] args)
@@ -16,6 +17,7 @@ internal sealed partial class MainWindow
         loginUiSmoke = args.Contains("--login-ui-smoke-test");
         browserShutdownSmoke = args.Contains("--browser-shutdown-smoke-test");
         mediaUiSmoke = args.Contains("--media-ui-smoke-test");
+        bufferUiSmoke = args.Contains("--buffer-ui-smoke-test");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
@@ -36,6 +38,7 @@ internal sealed partial class MainWindow
         if (loginUiSmoke) Run(VerifyLoginUiAsync);
         if (browserShutdownSmoke) Run(StartBrowserShutdownCheckAsync);
         if (mediaUiSmoke) Run(VerifySystemMediaAsync);
+        if (bufferUiSmoke) Run(VerifyBufferUiAsync);
     }
 
     partial void OnStartupTransitionCompleted()

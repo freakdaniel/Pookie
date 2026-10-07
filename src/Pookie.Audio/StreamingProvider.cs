@@ -21,7 +21,10 @@ internal sealed class StreamingProvider : ISoundDataProvider
     private float[]? chunk;
     private int chunkOffset;
     private long samplesPlayed;
+    private long samplesPrepared;
     private long startingSample;
+    private double downloadedEnd;
+    private Func<double>? cachedEnd;
     private volatile bool buffering = true;
     private volatile bool ended;
     private Exception? error;
@@ -30,6 +33,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
     public Task Completion { get; }
     public double Duration { get; private set; }
     public double Seconds => Format.SampleRate == 0 ? 0 : (Interlocked.Read(ref samplesPlayed) + startingSample) / (double)(Format.SampleRate * Format.Channels);
+    public double BufferedEnd => Format.SampleRate == 0 ? 0 : Math.Min(Duration > 0 ? Duration : double.MaxValue,
+        Math.Max(Math.Max(Volatile.Read(ref downloadedEnd), cachedEnd?.Invoke() ?? 0), (Interlocked.Read(ref samplesPrepared) + startingSample) / (double)(Format.SampleRate * Format.Channels)));
     public bool Buffering => buffering;
     public bool Ended => ended;
     public Exception? Error => error;
@@ -44,7 +49,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
     public event EventHandler<EventArgs>? EndOfStreamReached;
     public event EventHandler<PositionChangedEventArgs>? PositionChanged;
 
-    public StreamingProvider(HttpClient http, AudioSource source, double offset, Func<Uri, bool> allowed, CancellationToken token)
+    public StreamingProvider(HttpClient http, AudioSource source, double offset, Func<Uri, bool> allowed, CancellationToken token,
+        EncodedTrackCache? cache = null)
     {
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         Duration = source.Duration;
@@ -61,12 +67,18 @@ internal sealed class StreamingProvider : ISoundDataProvider
                     var init = CencAudioInitialization.Parse(await FetchAsync(http, playlist.Initialization, 1024 * 1024, stop));
                     using var session = await WidevineSession.OpenAsync(http, source.LicenseAuthToken ?? "", playlist.InitData, stop);
                     Duration = playlist.Duration;
+                    var cacheSegments = playlist.Segments.Select(segment =>
+                        (segment.Start, segment.Duration, Request: new EncodedTrackCache.Request(segment.Uri, 16 * 1024 * 1024))).ToArray();
+                    if (cache != null) cachedEnd = () => CachedSegmentEnd(cache, cacheSegments, Seconds);
                     foreach (var segment in playlist.Segments.Where(segment => segment.Start + segment.Duration > offset))
                     {
                         stop.ThrowIfCancellationRequested();
                         await session.RenewAsync(stop);
-                        var encrypted = await FetchAsync(http, segment.Uri, 16 * 1024 * 1024, stop);
+                        PrefetchSegments(cache, cacheSegments, segment.Start, stop);
+                        var encrypted = cache == null ? await FetchAsync(http, segment.Uri, 16 * 1024 * 1024, stop)
+                            : await cache.ReadAsync(new(segment.Uri, 16 * 1024 * 1024), stop);
                         var audio = CencAudioFragment.DecryptAdts(encrypted, init, session, stop);
+                        Volatile.Write(ref downloadedEnd, segment.Start + segment.Duration);
                         try
                         {
                             using var stream = new MemoryStream(audio, writable: false);
@@ -83,19 +95,30 @@ internal sealed class StreamingProvider : ISoundDataProvider
                     var bytes = await HttpRangeStream.ReadBoundedAsync(response.Content, 1024 * 1024, stop);
                     var playlist = HlsPlaylist.Parse(Encoding.UTF8.GetString(bytes), uri, allowed);
                     Duration = playlist.Duration;
+                    var cacheSegments = playlist.Segments.Select(segment =>
+                        (segment.Start, segment.Duration, Request: new EncodedTrackCache.Request(segment.Uri, 16 * 1024 * 1024, segment.Offset, segment.Length))).ToArray();
+                    if (cache != null) cachedEnd = () => CachedSegmentEnd(cache, cacheSegments, Seconds);
                     foreach (var segment in playlist.Segments.Where(segment => segment.Start + segment.Duration > offset))
                     {
                         stop.ThrowIfCancellationRequested();
-                        using var request = new HttpRequestMessage(HttpMethod.Get, segment.Uri);
-                        if (segment.Length != null) request.Headers.Range = new RangeHeaderValue(segment.Offset, checked(segment.Offset!.Value + segment.Length.Value - 1));
-                        using var media = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
-                        media.EnsureSuccessStatusCode();
-                        if (segment.Length != null && (media.StatusCode != HttpStatusCode.PartialContent
-                            || media.Content.Headers.ContentRange?.From != segment.Offset
-                            || media.Content.Headers.ContentRange?.To != segment.Offset + segment.Length - 1))
-                            throw new IOException("Server did not honor the HLS byte range.");
-                        var data = await HttpRangeStream.ReadBoundedAsync(media.Content, 16 * 1024 * 1024, stop);
-                        if (segment.Length != null && data.Length != segment.Length) throw new IOException("Incomplete HLS segment.");
+                        PrefetchSegments(cache, cacheSegments, segment.Start, stop);
+                        byte[] data;
+                        if (cache != null)
+                            data = await cache.ReadAsync(new(segment.Uri, 16 * 1024 * 1024, segment.Offset, segment.Length), stop);
+                        else
+                        {
+                            using var request = new HttpRequestMessage(HttpMethod.Get, segment.Uri);
+                            if (segment.Length != null) request.Headers.Range = new RangeHeaderValue(segment.Offset, checked(segment.Offset!.Value + segment.Length.Value - 1));
+                            using var media = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stop);
+                            media.EnsureSuccessStatusCode();
+                            if (segment.Length != null && (media.StatusCode != HttpStatusCode.PartialContent
+                                || media.Content.Headers.ContentRange?.From != segment.Offset
+                                || media.Content.Headers.ContentRange?.To != segment.Offset + segment.Length - 1))
+                                throw new IOException("Server did not honor the HLS byte range.");
+                            data = await HttpRangeStream.ReadBoundedAsync(media.Content, 16 * 1024 * 1024, stop);
+                            if (segment.Length != null && data.Length != segment.Length) throw new IOException("Incomplete HLS segment.");
+                        }
+                        Volatile.Write(ref downloadedEnd, segment.Start + segment.Duration);
                         using var stream = new MemoryStream(data, writable: false);
                         await DecodeAsync(stream, Math.Max(0, offset - segment.Start), offset, stop);
                     }
@@ -103,7 +126,9 @@ internal sealed class StreamingProvider : ISoundDataProvider
                 else
                 {
                     using var stream = source.Transport == AudioTransport.File ? File.OpenRead(source.Location)
-                        : await HttpRangeStream.OpenAsync(http, MediaUri(source.Location, allowed), stop);
+                        : await HttpRangeStream.OpenAsync(http, MediaUri(source.Location, allowed), stop, cache, Duration);
+                    if (cache != null && stream is HttpRangeStream range)
+                        cachedEnd = () => range.BufferedFraction * Duration;
                     await DecodeAsync(stream, offset, offset, stop);
                 }
                 if (!ready.Task.IsCompleted) throw new InvalidOperationException("Аудиопоток пуст.");
@@ -116,6 +141,23 @@ internal sealed class StreamingProvider : ISoundDataProvider
             }
             finally { chunks.Writer.TryComplete(); }
         });
+    }
+
+    private static void PrefetchSegments(EncodedTrackCache? cache,
+        (double Start, double Duration, EncodedTrackCache.Request Request)[] segments, double position, CancellationToken token) =>
+        cache?.Prefetch(segments.Where(segment => segment.Start + segment.Duration > position && segment.Start < position + 45)
+            .Select(segment => segment.Request).ToArray(), token);
+
+    private static double CachedSegmentEnd(EncodedTrackCache cache,
+        (double Start, double Duration, EncodedTrackCache.Request Request)[] segments, double position)
+    {
+        var end = 0d;
+        foreach (var segment in segments.Where(segment => segment.Start + segment.Duration > position))
+        {
+            if (!cache.Contains(segment.Request)) break;
+            end = segment.Start + segment.Duration;
+        }
+        return end;
     }
 
     private static async Task<byte[]> FetchAsync(HttpClient http, Uri uri, int maximum, CancellationToken token)
@@ -140,6 +182,7 @@ internal sealed class StreamingProvider : ISoundDataProvider
             Format = format;
             startingSample = (long)(offset * format.SampleRate) * format.Channels;
             if (Duration <= 0 && decoder.Length > 0) Duration = decoder.Length / (double)(format.SampleRate * format.Channels);
+            if (stream is HttpRangeStream progressive) progressive.SetDuration(Duration);
             ready.TrySetResult(format);
         }
         else if (Format.Channels != format.Channels || Format.SampleRate != format.SampleRate)
@@ -156,9 +199,21 @@ internal sealed class StreamingProvider : ISoundDataProvider
             if (stream is HttpRangeStream { ReadError: { } rangeError }) throw rangeError;
             if (stream is HttpRangeStream.ResponseStream { ReadError: { } responseError }) throw responseError;
             if (count <= 0) break;
+            // The PCM queue is intentionally small. Progressive downloads retain
+            // encoded HTTP blocks too; estimate their time boundary by file size.
+            // This is approximate for variable-bitrate files, unlike HLS timestamps.
+            var fraction = stream switch
+            {
+                HttpRangeStream range => range.BufferedFraction,
+                HttpRangeStream.ResponseStream response => response.BufferedFraction,
+                _ => 0
+            };
+            if (fraction > 0 && Duration > 0)
+                Volatile.Write(ref downloadedEnd, fraction * Duration);
             var discard = (int)Math.Min(skip, count);
             skip -= discard;
             if (discard < count) await chunks.Writer.WriteAsync(buffer[discard..count], token);
+            Interlocked.Add(ref samplesPrepared, count - discard);
         }
     }
 

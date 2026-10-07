@@ -71,6 +71,7 @@ internal sealed partial class MainWindow
             case MediaAction.Next: return queueTracks.Count > 1 ? SkipAsync(1) : Task.CompletedTask;
             case MediaAction.Previous: return queueTracks.Count > 1 ? SkipAsync(-1) : Task.CompletedTask;
             case MediaAction.Stop:
+                bufferedTrack.Reset();
                 ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();
                 audioPreparing = audioReady = paused = false;
                 isPlaying.Value = playbackLoading.Value = false;

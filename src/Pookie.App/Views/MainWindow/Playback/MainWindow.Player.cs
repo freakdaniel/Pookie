@@ -18,13 +18,18 @@ internal sealed partial class MainWindow
     private Slider volumeSlider = null!;
 
     private readonly LoadingTrack loadingTrack = new();
+    private readonly BufferedTrack bufferedTrack = new();
     private readonly PlayerBackdrop playerBackdrop = new();
 
     private FrameworkElement PlayerBar()
     {
-        playbackLoading.Changed += () => loadingTrack.SetLoading(playbackLoading.Value);
-        loadingTrack.Height(12).BindIsVisible(playbackLoading);
-        progress.BindIsVisible(playbackLoading, loading => !loading);
+        playbackLoading.Changed += RefreshPlayerTimeline;
+        loadingTrack.Height(12);
+        bufferedTrack.Height(12);
+        progressAnimation.TickCallback = AdvancePlaybackProgress;
+        progress.Background = Color.Transparent;
+        progress.Padding = new Thickness(0);
+        RefreshPlayerTimeline();
         var idleHeart = Icons.View("heart", 19, Color.FromRgb(190, 190, 190));
         var likedHeart = Icons.View("heart-filled", 19, LikedHeart);
         var hoverHeart = Icons.View("heart-filled", 19, Color.FromRgb(255, 255, 255));
@@ -66,7 +71,7 @@ internal sealed partial class MainWindow
         // Fade the labels without removing their fixed columns from the layout.
         playerTimeline = new Grid().Columns("52,*,52").Rows("*").Spacing(0).Children(
             positionLabel,
-            new Grid().Columns("*").Rows("*").Height(12).CenterVertical().Column(1).Children(progress, loadingTrack),
+            new Grid().Columns("*").Rows("*").Height(12).CenterVertical().Column(1).Children(bufferedTrack, progress, loadingTrack),
             durationLabel);
         hoverReveals.Add(new HoverReveal(playerTimeline, visible =>
             { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));

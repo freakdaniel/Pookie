@@ -64,7 +64,8 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
                 error = new InvalidOperationException("Браузерный проигрыватель закрыт. Включи трек ещё раз.");
             else if (message.Kind == "audio-state" && message.RequestId == playbackId && message.Audio is { } audio && audio.IsValid())
             {
-                state = new(audio.Position, audio.Duration, audio.Playing, audio.Buffering, audio.Ended);
+                state = new(audio.Position, audio.Duration, audio.Playing, audio.Buffering, audio.Ended)
+                    { BufferedStart = audio.BufferedStart, BufferedEnd = audio.BufferedEnd };
                 if (audio.Error != null) error = PlaybackError(audio.Error);
             }
         }

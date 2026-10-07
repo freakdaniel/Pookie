@@ -42,8 +42,12 @@ public sealed record BrowserAudioCommand(string Action, string PlaybackId, strin
 public sealed record BrowserAudioState(double Position, double Duration, bool Playing, bool Buffering, bool Ended, string? Error = null, string? Stage = null,
     int MediaError = 0, int ReadyState = 0, int NetworkState = 0)
 {
+    public double BufferedStart { get; init; }
+    public double BufferedEnd { get; init; }
     public bool IsValid() => double.IsFinite(Position) && Position is >= 0 and <= 86400 &&
         double.IsFinite(Duration) && Duration is >= 0 and <= 86400 &&
+        double.IsFinite(BufferedStart) && double.IsFinite(BufferedEnd) &&
+        BufferedStart >= 0 && BufferedEnd >= BufferedStart && BufferedEnd <= Duration &&
         (Error == null || Error is "unsupported" or "network" or "playlist" or "decode" or "license" or "expired" or "autoplay" or "closed") &&
         (Stage == null || Stage is "manifest" or "initialization" or "eme" or "license" or "source" or "buffer" or "segment" or "play" or "ready") &&
         MediaError is >= 0 and <= 4 && ReadyState is >= 0 and <= 4 && NetworkState is >= 0 and <= 3;

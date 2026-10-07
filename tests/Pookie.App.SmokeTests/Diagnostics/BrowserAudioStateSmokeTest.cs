@@ -18,8 +18,11 @@ internal static class BrowserAudioStateSmokeTest
         await player.PlayAsync(source);
         var first = browser.Commands.Last(c => c.Action == "start");
         Require(native.Played == null && first.Volume == 0, "Protected audio must use browser EME with configured volume.");
-        browser.State(first.PlaybackId, new(3, 120, true, false, false));
+        browser.State(first.PlaybackId, new(3, 120, true, false, false) { BufferedStart = 0, BufferedEnd = 45 });
         Require(player.Poll().Playing && player.Poll().Position == 3, "Browser state must reach the player.");
+        Require(player.Poll().BufferedEnd == 45, "The real browser buffer must reach the player.");
+        browser.State(first.PlaybackId, new(3, 120, true, false, false) { BufferedEnd = 121 });
+        Require(player.Poll().BufferedEnd == 45, "Invalid buffer events must not alter playback.");
         await player.SeekAsync(35);
         Require(browser.Commands.Last().Action == "seek" && browser.Commands.Last().Position == 35, "Seek must target the current browser session.");
         player.Pause(true);
@@ -29,7 +32,7 @@ internal static class BrowserAudioStateSmokeTest
         await player.PlayAsync(source);
         var second = browser.Commands.Last(c => c.Action == "start");
         browser.State(first.PlaybackId, new(100, 120, true, false, true));
-        Require(player.Poll().Position == 0 && !player.Poll().Ended, "Old-track events must not alter a new track.");
+        Require(player.Poll().Position == 0 && !player.Poll().Ended && player.Poll().BufferedEnd == 0, "Old-track events must not alter a new track or its buffer.");
         browser.State(second.PlaybackId, new(2, 120, true, false, false));
         browser.Closed();
         var failed = false;

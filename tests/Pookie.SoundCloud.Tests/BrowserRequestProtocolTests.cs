@@ -135,6 +135,12 @@ public sealed class BrowserRequestProtocolTests
         Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Audio = value.Audio! with { Position = -1 } }), Origin, Origin));
         Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Audio = value.Audio! with { Error = "https://secret-token" } }), Origin, Origin));
         Assert.False(new BrowserAudioState(double.NaN, 2, false, false, false).IsValid());
+        var buffered = value.Audio! with { BufferedStart = 10, BufferedEnd = 45 };
+        Assert.Equal(buffered, BrowserRequestProtocol.Parse(Raw(value with { Audio = buffered }), Origin, Origin)!.Audio);
+        foreach (var invalid in new[] {
+            buffered with { BufferedStart = -1 }, buffered with { BufferedEnd = 9 },
+            buffered with { BufferedEnd = 201 }, buffered with { BufferedEnd = double.PositiveInfinity } })
+            Assert.False(invalid.IsValid());
     }
 
 }

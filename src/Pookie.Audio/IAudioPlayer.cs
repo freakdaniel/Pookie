@@ -8,7 +8,13 @@ public sealed record AudioSource(string Location, AudioTransport Transport, doub
     public override string ToString() => $"Audio source ({Transport}, location redacted)";
 }
 
-public sealed record AudioState(double Position, double Duration, bool Playing, bool Buffering, bool Ended);
+public sealed record AudioState(double Position, double Duration, bool Playing, bool Buffering, bool Ended)
+{
+    // The available interval around the current position, in track seconds.
+    // Seeking may discard earlier data; the interval need not begin at zero.
+    public double BufferedStart { get; init; }
+    public double BufferedEnd { get; init; }
+}
 
 public interface IAudioPlayer : IDisposable, IAsyncDisposable
 {

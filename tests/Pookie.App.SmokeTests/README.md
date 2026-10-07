@@ -9,6 +9,7 @@ Run from the repository root:
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --buffer-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --startup-log-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --content-blocker-smoke-test
@@ -35,6 +36,15 @@ SMTC discovery, metadata/status and an OS Play/Pause round trip.
 checks commands against real local audio. Windows uses OS session requests for
 play/pause, seek, next and stop/resume; duplicate play/pause commands are idempotent.
 Other UI tests keep system integration disabled to avoid taking over media keys.
+
+`--buffer-ui-smoke-test` renders and samples the played, buffered and empty parts
+of the timeline, then checks seek previews, buffer replacement after seeking,
+continuous filling from the start, loading shimmer visibility and track changes
+with an isolated audio fixture. It also samples intermediate rendered frames for
+playback/buffer growth and contraction, checks that animation never issues seek
+commands, and keeps the timeline visible during a seek or temporary underrun.
+Audio unit tests also exercise encoded MP3/HLS
+lookahead, reuse across seeks, sparse byte ranges and temporary-file cleanup.
 
 `--content-blocker-smoke-test` checks host/path boundaries and parity between the
 Windows matcher and generated WebKit rules. An isolated native browser fixture

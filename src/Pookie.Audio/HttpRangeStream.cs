@@ -5,7 +5,8 @@ namespace Pookie.Audio;
 
 // FFmpeg reads synchronously on the decoder worker, never on the UI or audio callback.
 // Keep a few HTTP ranges in memory instead of downloading a whole progressive track.
-internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byte[] firstBlock, CancellationToken token) : Stream
+internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byte[] firstBlock, CancellationToken token,
+    EncodedTrackCache? cache = null, double duration = 0) : Stream
 {
     private const int BlockSize = 256 * 1024;
     private readonly Dictionary<long, byte[]> blocks = new() { [0] = firstBlock };
@@ -16,9 +17,31 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
     public override bool CanWrite => false;
     public override long Length => length;
     public override long Position { get => position; set => Seek(value, SeekOrigin.Begin); }
+    public void SetDuration(double seconds) => duration = seconds;
 
-    public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken token)
+    // Decoder-worker only. A cached metadata block at EOF must not imply that
+    // the intervening audio was downloaded: walk only adjacent cached blocks.
+    public double BufferedFraction
     {
+        get
+        {
+            if (cache != null) return cache.ContiguousEnd(uri, Volatile.Read(ref position), length, BlockSize) / (double)length;
+            var start = Math.Max(0, position - 1) / BlockSize * BlockSize;
+            if (!blocks.TryGetValue(start, out var block)) return 0;
+            var end = start + block.Length;
+            while (end < length && end % BlockSize == 0 && blocks.TryGetValue(end, out block))
+                end += block.Length;
+            return end / (double)length;
+        }
+    }
+
+    public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken token, EncodedTrackCache? cache = null, double duration = 0)
+    {
+        if (cache != null && await cache.ReadFirstAsync(uri, BlockSize, token) is { } saved)
+        {
+            cache.PrefetchRanges(uri, 0, saved.Total, BlockSize, duration, token);
+            return new HttpRangeStream(http, uri, saved.Total, saved.Data, token, cache, duration);
+        }
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Range = new RangeHeaderValue(0, BlockSize - 1);
         var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
@@ -32,7 +55,12 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
                 throw new IOException("Invalid HTTP byte range.");
             var first = await ReadBoundedAsync(response.Content, BlockSize, token);
             if (first.Length != range.To + 1) throw new IOException("Incomplete HTTP byte range.");
-            return new HttpRangeStream(http, uri, range.Length.Value, first, token);
+            if (cache != null)
+            {
+                await cache.StoreFirstAsync(uri, range.Length.Value, first, token);
+                cache.PrefetchRanges(uri, 0, range.Length.Value, BlockSize, duration, token);
+            }
+            return new HttpRangeStream(http, uri, range.Length.Value, first, token, cache, duration);
         }
         catch { response.Dispose(); throw; }
         finally { if (response.StatusCode == HttpStatusCode.PartialContent) response.Dispose(); }
@@ -64,16 +92,21 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
                 var start = position / BlockSize * BlockSize;
                 if (!blocks.TryGetValue(start, out var block))
                 {
-                    using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                    var end = Math.Min(length - 1, start + BlockSize - 1);
-                    request.Headers.Range = new RangeHeaderValue(start, end);
-                    using var response = http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).GetAwaiter().GetResult();
-                    response.EnsureSuccessStatusCode();
-                    var range = response.Content.Headers.ContentRange;
-                    if (response.StatusCode != HttpStatusCode.PartialContent || range?.From != start || range.To != end || range.Length != length)
-                        throw new IOException("Server did not honor the HTTP byte range.");
-                    block = ReadBoundedAsync(response.Content, BlockSize, token).GetAwaiter().GetResult();
-                    if (block.Length != end - start + 1) throw new IOException("Incomplete HTTP byte range.");
+                    if (cache != null)
+                        block = cache.ReadAsync(new(uri, BlockSize, start, Math.Min(BlockSize, length - start), length), token).GetAwaiter().GetResult();
+                    else
+                    {
+                        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                        var end = Math.Min(length - 1, start + BlockSize - 1);
+                        request.Headers.Range = new RangeHeaderValue(start, end);
+                        using var response = http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).GetAwaiter().GetResult();
+                        response.EnsureSuccessStatusCode();
+                        var range = response.Content.Headers.ContentRange;
+                        if (response.StatusCode != HttpStatusCode.PartialContent || range?.From != start || range.To != end || range.Length != length)
+                            throw new IOException("Server did not honor the HTTP byte range.");
+                        block = ReadBoundedAsync(response.Content, BlockSize, token).GetAwaiter().GetResult();
+                        if (block.Length != end - start + 1) throw new IOException("Incomplete HTTP byte range.");
+                    }
                     if (blocks.Count == 8) blocks.Remove(blocks.Keys.First());
                     blocks[start] = block;
                 }
@@ -83,6 +116,7 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
                 block.AsSpan(offset, count).CopyTo(buffer[read..]);
                 read += count; position += count;
             }
+            if (read > 0) cache?.PrefetchRanges(uri, position, length, BlockSize, duration, token);
             return read;
         }
         catch (Exception error) { ReadError = error; throw; }
@@ -101,6 +135,9 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
 
     internal sealed class ResponseStream(Stream stream, HttpResponseMessage response, CancellationToken token) : Stream
     {
+        private long bytesRead;
+        public double BufferedFraction => response.Content.Headers.ContentLength is > 0 and var total
+            ? Math.Min(1, bytesRead / (double)total) : 0;
         public Exception? ReadError { get; private set; }
         public override bool CanRead => true;
         public override bool CanSeek => false;
@@ -113,6 +150,7 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
             {
                 var bytes = new byte[buffer.Length];
                 var count = stream.ReadAsync(bytes, token).AsTask().GetAwaiter().GetResult();
+                bytesRead += count;
                 bytes.AsSpan(0, count).CopyTo(buffer);
                 return count;
             }

@@ -27,7 +27,17 @@
       : ['stop','pause','volume','seek'].includes(c.action) && c.source == null && c.authorization == null);
   }
   function state(st) {
+    let bufferedStart = 0, bufferedEnd = 0;
+    const ranges = st.audio.buffered;
+    for (let i = 0; i < ranges.length; i++) {
+      if (ranges.start(i) <= st.audio.currentTime && ranges.end(i) >= st.audio.currentTime) {
+        bufferedStart = Math.min(st.duration || 0, Math.max(0, ranges.start(i)));
+        bufferedEnd = Math.min(st.duration || 0, Math.max(bufferedStart, ranges.end(i)));
+        break;
+      }
+    }
     return {position: Math.max(0, st.audio.currentTime || 0), duration: st.duration || 0,
+      buffered_start:bufferedStart, buffered_end:bufferedEnd,
       playing: !st.paused && !st.audio.paused && !st.audio.ended && st.audio.readyState >= 3 && !st.error,
       buffering: !st.paused && !st.audio.ended && st.audio.readyState < 3 && !st.error,
       ended: st.audio.ended, error: st.error, stage:st.stage,

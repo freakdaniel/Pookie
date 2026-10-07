@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SoundFlow.Codecs.FFMpeg;
+using SoundFlow.Enums;
+using SoundFlow.Structs;
 using Xunit;
 
 namespace Pookie.Audio.Tests;
@@ -43,6 +46,56 @@ public sealed class PlaybackTests
         await WaitAsync(player, state => state.Playing && state.Position > .1);
     }
 
+    [Fact]
+    public async Task ProgressiveDownloadRunsAheadOfPcmAndSeeksReuseTheTrackCache()
+    {
+        await using var server = await MediaServer.StartAsync(2, 48000);
+        await using var player = new SoundFlowPlayer(silent: true);
+        await player.PlayAsync(new(server.Url + "/track.mp3", AudioTransport.Progressive, 60));
+        await WaitAsync(player, state => state.Playing && state.BufferedEnd >= 40);
+        player.Pause(true);
+        Assert.InRange(player.Poll().Position, 0, 10);
+        var downloaded = server.Ranges.ToArray();
+        await player.SeekAsync(20);
+        Assert.InRange(player.Poll().BufferedEnd, 40, 60);
+        await player.SeekAsync(2);
+        // The cache may prefetch new ranges, but no previously downloaded range is fetched twice.
+        Assert.All(server.Ranges.GroupBy(range => range), group => Assert.Single(group));
+        Assert.Contains("bytes=0-262143", downloaded);
+    }
+
+    [Fact]
+    public async Task CachedBytesAreReusedAndFilesAreRemovedOnDisposal()
+    {
+        await using var server = await MediaServer.StartAsync(2, 48000);
+        using var http = new HttpClient();
+        using var cache = new EncodedTrackCache(http);
+        var uri = new Uri(server.Url + "/track.wav");
+        using (var first = await HttpRangeStream.OpenAsync(http, uri, default, cache, 12))
+            Assert.True(first.ReadByte() >= 0);
+        var requestsBefore = server.Ranges.Count;
+        using (var reopened = await HttpRangeStream.OpenAsync(http, uri, default, cache, 12))
+            Assert.True(reopened.ReadByte() >= 0);
+        Assert.Equal(1, server.Ranges.Count(range => range == "bytes=0-262143"));
+        Assert.True(requestsBefore >= 1);
+        Assert.True(Directory.Exists(cache.DirectoryPath));
+        cache.Dispose();
+        await cache.Completion;
+        Assert.False(Directory.Exists(cache.DirectoryPath));
+    }
+
+    [Fact]
+    public async Task ADownloadedFooterDoesNotFillAFileWithMissingMiddleBlocks()
+    {
+        await using var server = await MediaServer.StartAsync(2, 48000);
+        using var http = new HttpClient();
+        using var stream = (HttpRangeStream)await HttpRangeStream.OpenAsync(http, new(server.Url + "/track.wav"), default);
+        stream.Position = stream.Length - 1;
+        Assert.True(stream.ReadByte() >= 0);
+        stream.Position = 1;
+        Assert.InRange(stream.BufferedFraction, .1, .2);
+    }
+
     [Theory]
     [InlineData(1, 22050)]
     [InlineData(2, 48000)]
@@ -53,6 +106,9 @@ public sealed class PlaybackTests
         await player.PlayAsync(new(server.Url + "/track.wav", AudioTransport.Progressive));
         await WaitAsync(player, state => state.Playing && state.Position > .1);
         Assert.InRange(player.Poll().Duration, 11.9, 12.1);
+        var buffered = player.Poll();
+        Assert.InRange(buffered.BufferedEnd, buffered.Position, buffered.Duration);
+        Assert.True(buffered.BufferedEnd > buffered.Position);
         player.Pause(true);
         var paused = player.Poll().Position;
         await Task.Delay(150);
@@ -63,10 +119,13 @@ public sealed class PlaybackTests
         player.Pause(false);
         await WaitAsync(player, state => state.Playing && state.Position > 8.1);
         Assert.InRange(player.Poll().Position, 8, 9.5);
+        Assert.InRange(player.Poll().BufferedStart, 8, 9.5);
+        Assert.InRange(player.Poll().BufferedEnd, 8.1, 12.1);
         Assert.Contains(server.Ranges, range => range != null);
         player.Stop();
         Assert.False(player.Poll().Playing);
         Assert.Equal(0, player.Poll().Position);
+        Assert.Equal(0, player.Poll().BufferedEnd);
     }
 
     [Theory]
@@ -79,11 +138,15 @@ public sealed class PlaybackTests
         await player.PlayAsync(new(server.Url + (byteRanges ? "/ranges.m3u8" : "/playlist.m3u8"), AudioTransport.Hls));
         await WaitAsync(player, state => state.Playing && state.Position > .1);
         Assert.Equal(6, player.Poll().Duration);
+        Assert.InRange(player.Poll().BufferedEnd, 2, 6);
         await player.SeekAsync(4.5);
         await WaitAsync(player, state => state.Playing && state.Position > 4.6);
         Assert.InRange(player.Poll().Position, 4.5, 5.5);
+        Assert.InRange(player.Poll().BufferedStart, 4.5, 5.5);
+        Assert.Equal(6, player.Poll().BufferedEnd);
         await WaitAsync(player, state => state.Ended);
         Assert.False(player.Poll().Ended); // queue advancement receives end only once
+        Assert.Equal(byteRanges ? 3 : 1, server.SegmentRequests.Count);
     }
 
     [Fact]
@@ -113,10 +176,11 @@ public sealed class PlaybackTests
         while (!condition(player.Poll())) await Task.Delay(30, timeout.Token);
     }
 
-    private sealed class MediaServer(WebApplication app, string url, ConcurrentBag<string?> ranges) : IAsyncDisposable
+    private sealed class MediaServer(WebApplication app, string url, ConcurrentBag<string?> ranges, ConcurrentBag<string> segments) : IAsyncDisposable
     {
         public string Url => url;
         public ConcurrentBag<string?> Ranges => ranges;
+        public ConcurrentBag<string> SegmentRequests => segments;
         public static async Task<MediaServer> StartAsync(int channels, int rate)
         {
             var builder = WebApplication.CreateSlimBuilder();
@@ -124,19 +188,41 @@ public sealed class PlaybackTests
             builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
             var app = builder.Build();
             var ranges = new ConcurrentBag<string?>();
+            var segments = new ConcurrentBag<string>();
             var track = Wav(channels, rate, 12);
+            var mp3 = new Lazy<byte[]>(() => Mp3(60));
             var segment = Wav(channels, rate, 2);
             app.MapGet("/track.wav", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(track, "audio/wav", enableRangeProcessing: true); });
-            app.MapGet("/segment.wav", () => Results.File(segment, "audio/wav"));
-            app.MapGet("/combined.wav", () => Results.File(segment.Concat(segment).Concat(segment).ToArray(), "audio/wav", enableRangeProcessing: true));
+            app.MapGet("/track.mp3", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(mp3.Value, "audio/mpeg", enableRangeProcessing: true); });
+            app.MapGet("/segment.wav", () => { segments.Add("segment"); return Results.File(segment, "audio/wav"); });
+            app.MapGet("/combined.wav", (HttpContext context) => { segments.Add(context.Request.Headers.Range.ToString()); return Results.File(segment.Concat(segment).Concat(segment).ToArray(), "audio/wav", enableRangeProcessing: true); });
             app.MapGet("/playlist.m3u8", () => Results.Text("#EXTM3U\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/ranges.m3u8", () => Results.Text($"#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}@0\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/slow", async (HttpContext context) => { try { await Task.Delay(10000, context.RequestAborted); } catch (OperationCanceledException) { } });
             await app.StartAsync();
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            return new(app, address, ranges);
+            return new(app, address, ranges, segments);
         }
         public async ValueTask DisposeAsync() { await app.StopAsync(); await app.DisposeAsync(); }
+    }
+
+    private static byte[] Mp3(int seconds)
+    {
+        var format = AudioFormat.Dvd with { Format = SampleFormat.F32 };
+        using var stream = new MemoryStream();
+        using (var encoder = new FFmpegCodecFactory().CreateEncoder(stream, "mp3", format)
+            ?? throw new InvalidOperationException("The fixture MP3 encoder is unavailable."))
+        {
+            var samples = new float[8192];
+            var total = seconds * format.SampleRate * format.Channels;
+            for (var offset = 0; offset < total; offset += samples.Length)
+            {
+                var count = Math.Min(samples.Length, total - offset);
+                for (var i = 0; i < count; i++) samples[i] = (float)(Math.Sin(2 * Math.PI * 440 * ((offset + i) / format.Channels) / format.SampleRate) * .04);
+                encoder.Encode(samples.AsSpan(0, count));
+            }
+        }
+        return stream.ToArray();
     }
 
     private static byte[] Wav(int channels, int rate, int seconds)

@@ -27,7 +27,7 @@ internal static class Program
                 { Environment.ExitCode = NativeWebLogin.RunChild(args[1], args[3], fixture); return; }
             }
             if (await DiagnosticsRunner.TryRunAsync(args)) return;
-            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test"))
+            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
             var options = AppRunOptions.FromArgs(args) with

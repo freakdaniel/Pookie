@@ -15,6 +15,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private AudioPlaybackDevice? device;
     private SoundPlayer? player;
     private StreamingProvider? provider;
+    private EncodedTrackCache? cache;
     private CancellationTokenSource? pending;
     private AudioSource? source;
     private long generation;
@@ -40,7 +41,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
 
     public Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default) => StartAsync(source, 0, false, cancellationToken);
 
-    private async Task StartAsync(AudioSource target, double position, bool startPaused, CancellationToken token)
+    private async Task StartAsync(AudioSource target, double position, bool startPaused, CancellationToken token, bool reuseCache = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var request = Interlocked.Increment(ref generation);
@@ -50,12 +51,13 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         try
         {
             if (request != generation) throw new OperationCanceledException();
-            StopCore();
+            StopCore(keepCache: reuseCache && target == source);
             source = target;
+            if (target.Transport != AudioTransport.File) cache ??= new EncodedTrackCache(http);
             paused = startPaused;
             pending = CancellationTokenSource.CreateLinkedTokenSource(token);
             var operationToken = pending.Token;
-            next = new StreamingProvider(http, target, position, allowed, operationToken);
+            next = new StreamingProvider(http, target, position, allowed, operationToken, cache);
             decoding.RemoveAll(task => task.IsCompleted);
             decoding.Add(next.Completion);
             var format = await next.Ready.WaitAsync(operationToken);
@@ -80,7 +82,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         if (!double.IsFinite(seconds)) throw new ArgumentOutOfRangeException(nameof(seconds));
         var duration = provider?.Duration ?? source.Duration;
         var position = Math.Max(0, duration > 0 ? Math.Min(seconds, Math.Max(0, duration - .01)) : seconds);
-        return StartAsync(source, position, paused, cancellationToken);
+        return StartAsync(source, position, paused, cancellationToken, reuseCache: true);
     }
 
     public void Pause(bool value)
@@ -101,10 +103,14 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         var notifyEnd = ended && !endedReported;
         if (ended) { endedReported = true; player?.Pause(); }
         return new(provider?.Seconds ?? 0, provider?.Duration ?? 0, provider != null && !paused && !ended && !provider.Buffering,
-            provider?.Buffering == true && !paused, notifyEnd);
+            provider?.Buffering == true && !paused, notifyEnd)
+        {
+            BufferedStart = source?.Transport == AudioTransport.File ? 0 : provider?.Seconds ?? 0,
+            BufferedEnd = source?.Transport == AudioTransport.File ? provider?.Duration ?? 0 : provider?.BufferedEnd ?? 0
+        };
     }
     public void Stop() { Interlocked.Increment(ref generation); pending?.Cancel(); StopCore(); }
-    private void StopCore()
+    private void StopCore(bool keepCache = false)
     {
         // Stop the callback before disposing the provider. Decoders finish cancellation on their worker.
         device?.Stop();
@@ -113,6 +119,12 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         player?.Dispose(); provider?.Dispose(); device?.Dispose();
         player = null; provider = null; device = null; source = null;
         pending?.Cancel(); pending?.Dispose(); pending = null;
+        if (!keepCache && cache != null)
+        {
+            cache.Dispose();
+            decoding.Add(cache.Completion);
+            cache = null;
+        }
     }
     public void Dispose()
     {

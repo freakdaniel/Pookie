@@ -125,7 +125,7 @@ internal sealed partial class MainWindow : IDisposable
         seekTimer.Tick += FlushSeek;
         artwork = Icons.View("music-notes", 48).StretchMode(Stretch.UniformToFill);
         profileAvatar = new Image().Width(30).Height(30).StretchMode(Stretch.UniformToFill);
-        timer = new DispatcherTimer(TimeSpan.FromMilliseconds(350));
+        timer = new DispatcherTimer(TimeSpan.FromMilliseconds(PlaybackPollIntervalMs));
         timer.Tick += Poll;
 
         Window = new Window().Title("Pookie").Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
@@ -334,10 +334,12 @@ internal sealed partial class MainWindow : IDisposable
         current = track;
         audioPreparing = true; audioReady = false;
         paused = false; isPlaying.Value = true; playbackLoading.Value = true;
+        RefreshPlayerTimeline();
         advancing = false;
         title.Value = track.Title; artist.Value = track.Author;
         likedPlaybackPosition = 0;
         currentTime.Value = "0:00"; totalTime.Value = FormatTime(track.DurationSeconds);
+        bufferedTrack.Reset();
         updatingProgress = true;
         try { progress.Value = 0; progress.Maximum = Math.Max(1, track.DurationSeconds); }
         finally { updatingProgress = false; }
@@ -507,6 +509,7 @@ internal sealed partial class MainWindow : IDisposable
             title.Value = "Выбери трек"; artist.Value = "Музыка из SoundCloud";
             currentTime.Value = "0:00"; totalTime.Value = "0:00";
             progress.Value = 0; progress.Maximum = 1;
+            bufferedTrack.Reset();
             artwork.Source = Icons.Source("music-notes");
             playerBackdrop.Reset();
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
@@ -538,16 +541,20 @@ internal sealed partial class MainWindow : IDisposable
         {
             var state = player.Poll();
             UpdateSystemMedia(state);
-            playbackLoading.Value = state.Buffering;
-            if (!seekDragging && pendingSeek == null && !seeking)
+            var seekPreview = seekDragging || pendingSeek != null || seeking;
+            if (!seekPreview)
             {
+                playbackLoading.Value = state.Buffering;
                 updatingProgress = true;
-                try { progress.Maximum = Math.Max(1, state.Duration > 0 ? state.Duration : current.DurationSeconds); progress.Value = state.Position; }
+                try { progress.Maximum = Math.Max(1, state.Duration > 0 ? state.Duration : current.DurationSeconds); }
                 finally { updatingProgress = false; }
+                AnimatePlaybackProgress(state);
                 currentTime.Value = FormatTime(state.Position);
                 RefreshLikedRows(state.Position);
             }
             totalTime.Value = FormatTime(progress.Maximum);
+            if (!seekPreview && (state.BufferedEnd > 0 || !state.Buffering))
+                bufferedTrack.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
             presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
                 state.Position, progress.Maximum, state.Playing));
             if (state.Ended && !advancing)
@@ -616,6 +623,7 @@ internal sealed partial class MainWindow : IDisposable
         searchInput?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;
+        bufferedTrack.Reset();
         playerBackdrop.Reset();
         avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
         foreach (var session in browserSessions) session.Dispose();

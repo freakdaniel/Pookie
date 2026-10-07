@@ -13,14 +13,15 @@ internal sealed partial class MainWindow
     private void BeginSeekDrag()
     {
         if (!audioReady || current == null) return;
+        progressAnimation.Stop();
         seekDragging = true;
         seekTimer.Stop();
     }
 
     private void QueueSeek(double position)
     {
-        if (updatingProgress || !audioReady || current == null || !double.IsFinite(position) ||
-            playbackLoading.Value && !seeking) return;
+        if (updatingProgress || !audioReady || current == null || !double.IsFinite(position)) return;
+        progressAnimation.Stop();
         pendingSeek = Math.Clamp(position, 0, progress.Maximum);
         currentTime.Value = FormatTime(pendingSeek.Value);
         RefreshLikedRows(pendingSeek.Value);
@@ -66,6 +67,7 @@ internal sealed partial class MainWindow
 
     private void CancelSeek()
     {
+        progressAnimation.Stop();
         seekTimer.Stop();
         pendingSeek = null;
         seekDragging = false;
