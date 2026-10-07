@@ -115,3 +115,14 @@ Serilog.Sinks.File 7.0.0 from NuGet. These unmodified libraries use Apache-2.0.
 Their attribution is shipped as `SERILOG-NOTICES.txt` and the complete license
 is included in `licenses/Apache-2.0.txt`. Pookie's logging integration remains
 BSD-3-Clause.
+
+The system-media integration restores LibSMTC 1.1.0 (Windows SMTC) and
+Tmds.DBus 0.95.1 (Linux MPRIS) as unmodified NuGet dependencies, both MIT.
+Their copyright notices and complete shared terms are included in
+`licenses/MIT.txt`, which accompanies builds and published distributions.
+Package sources are [LibSMTC](https://github.com/itsAbhi650/LibSMTC/tree/687133e3e8fdc55103a0502f4c6640bb5fe934bc)
+and [Tmds.DBus](https://github.com/tmds/Tmds.DBus/tree/491bde2c16d65a7904397933cffa24e15e45eb2a).
+Windows builds also use the Windows SDK's .NET targeting pack and WinRT
+projections, under Microsoft's SDK redistribution terms. macOS uses the
+system MediaPlayer/AppKit frameworks; no Apple framework binary is bundled.
+Pookie's platform adapters remain BSD-3-Clause.

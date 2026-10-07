@@ -74,6 +74,7 @@ internal sealed partial class MainWindow : IDisposable
         requireSignIn = options.RequireSignIn;
         skipSessionRestore = options.SkipSessionRestore;
         isolatedRun = options.IsolatedData || demo;
+        enableSystemMedia = options.SystemMediaSession;
         dataPaths = new AppDataPaths(isolatedRun ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
         StartupLog.Initialize(dataPaths);
         StartupLog.Event(OperatingSystem.IsWindows() ? "platform.windows.webview2" : OperatingSystem.IsLinux() ? "platform.linux.webkit" : "platform.macos");
@@ -149,6 +150,7 @@ internal sealed partial class MainWindow : IDisposable
     private void OnWindowLoaded()
     {
         StartupLog.Event("app.window-loaded");
+        if (enableSystemMedia && player != null) Run(InitializeSystemMediaAsync);
         var size = Window!.ClientSize;
         UpdateContentFrameWidth(size.Width);
         UpdateLibraryCardSize(size.Width);
@@ -345,6 +347,7 @@ internal sealed partial class MainWindow : IDisposable
         if (queueTracks.Count == 0) SetQueue(track);
         RefreshLikedPlayback(); UpdateLikeState(); RefreshQueue();
         if (cachedArtwork == null) Run(() => LoadArtworkAsync(track, generation));
+        UpdateSystemMedia();
         if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
 
         try
@@ -390,6 +393,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 audioPreparing = false;
                 playbackLoading.Value = false;
+                UpdateSystemMedia();
             }
         }
     }
@@ -413,6 +417,7 @@ internal sealed partial class MainWindow : IDisposable
         isPlaying.Value = !paused;
         RefreshLikedPlayback();
         if (paused) presence?.Clear();
+        UpdateSystemMedia();
         return Task.CompletedTask;
     }
     private async Task ConnectSoundCloudAsync()
@@ -491,6 +496,7 @@ internal sealed partial class MainWindow : IDisposable
             ResetProfileAvatar();
             profile.Value = "SoundCloud: вход не выполнен";
             current = null; paused = false; isPlaying.Value = false;
+            UpdateSystemMedia();
             audioPreparing = audioReady = false; playbackLoading.Value = false;
             RefreshLikedPlayback();
             playerVisible.Value = false;
@@ -531,6 +537,7 @@ internal sealed partial class MainWindow : IDisposable
         RunSync(() =>
         {
             var state = player.Poll();
+            UpdateSystemMedia(state);
             playbackLoading.Value = state.Buffering;
             if (!seekDragging && pendingSeek == null && !seeking)
             {
@@ -597,6 +604,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        DisposeSystemMedia();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();
@@ -621,13 +629,17 @@ internal sealed partial class MainWindow : IDisposable
         Dispose();
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);
-        foreach (var file in demoFiles) try { File.Delete(file); } catch (IOException) { }
+        foreach (var file in demoFiles)
+            try { File.Delete(file); }
+            catch (IOException error) { AppLog.Failure("Pookie.Storage", "Не удалось удалить временное аудио", error, LogEventLevel.Debug); }
     }
 
     internal void CleanupIsolatedData()
     {
         if (isolatedRun)
-            try { Directory.Delete(dataPaths.Root, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            try { Directory.Delete(dataPaths.Root, recursive: true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { AppLog.Failure("Pookie.Storage", "Не удалось удалить временные данные", error, LogEventLevel.Debug); }
     }
 
     private void AttachBrowser(NativeBrowserSession connected)

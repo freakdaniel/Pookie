@@ -2,6 +2,10 @@ MIT License
 
 Copyright (c) 2023 Richard Habitzreuter
 Copyright (c) 2023 Phosphor Icons
+Copyright (c) 2026 Abhinav Pandey (LibSMTC)
+Copyright 2006 Alp Toker <alp@atoker.com> (Tmds.DBus)
+Copyright 2010 Other Contributors (Tmds.DBus)
+Copyright 2016 Tom Deseyn <tom.deseyn@gmail.com> (Tmds.DBus)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

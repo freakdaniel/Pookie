@@ -3,6 +3,10 @@
   <PropertyGroup>
     <RootNamespace>Pookie.App</RootNamespace>
   </PropertyGroup>
+  <PropertyGroup Condition="('$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))) or ('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win-')))">
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('linux-'))">
     <DefineConstants>$(DefineConstants);POOKIE_LINUX</DefineConstants>
   </PropertyGroup>

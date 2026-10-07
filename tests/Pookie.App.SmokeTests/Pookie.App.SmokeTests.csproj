@@ -8,9 +8,10 @@
   <ItemGroup>
     <EmbeddedResource Include="../Fixtures/SoundCloud/malchik-waveform.json" LogicalName="Pookie.TestFixtures.MalchikWaveform.json" />
     <!-- Compile production sources unchanged, adding private verification partials only in this host. -->
-    <Compile Include="../../src/Pookie.App/**/*.cs"
-             Exclude="../../src/Pookie.App/Program.cs;../../src/Pookie.App/bin/**;../../src/Pookie.App/obj/**"
-             Link="App/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/Pookie.App/**/*.cs" Exclude="../../src/Pookie.App/Program.cs;../../src/Pookie.App/bin/**;../../src/Pookie.App/obj/**" Link="App/%(RecursiveDir)%(Filename)%(Extension)" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Pookie.Media\Pookie.Media.csproj" />
   </ItemGroup>
 </Project>

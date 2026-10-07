@@ -7,6 +7,8 @@ Run from the repository root:
 
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --startup-log-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --content-blocker-smoke-test
@@ -23,6 +25,16 @@ dotnet run --project tests/Pookie.App.SmokeTests -- --browser-shutdown-smoke-tes
 `--startup-log-smoke-test` checks default/explicit console and file thresholds,
 worker file output, console fallback when files are unavailable, stage timings,
 exception propagation and filtering of private text, using isolated temporary data.
+
+`--system-media-smoke-test` exports the real MPRIS interfaces through a private
+D-Bus TCP peer, checking wire serialization, metadata, properties, change signals,
+command routing, stale track-ID rejection and clearing. On Windows it also checks
+SMTC discovery, metadata/status and an OS Play/Pause round trip.
+
+`--media-ui-smoke-test` enables the system session in an isolated demo host and
+checks commands against real local audio. Windows uses OS session requests for
+play/pause, seek, next and stop/resume; duplicate play/pause commands are idempotent.
+Other UI tests keep system integration disabled to avoid taking over media keys.
 
 `--content-blocker-smoke-test` checks host/path boundaries and parity between the
 Windows matcher and generated WebKit rules. An isolated native browser fixture
