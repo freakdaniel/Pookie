@@ -23,11 +23,12 @@ internal sealed partial class MainWindow
     private TextBlock expandedPositionLabel = null!, expandedDurationLabel = null!;
     private Border expandedVolume = null!;
     private Slider expandedVolumeSlider = null!;
-    private ListBox expandedQueue = null!;
+    private ItemsControl expandedQueue = null!;
+    private readonly Dictionary<Grid, CompactTrackRow> expandedQueueRows = [];
     private SoundCloudTrack[] expandedUpcoming = [];
     private TransitionContentControl expandedPanel = null!;
     private FrameworkElement expandedQueueContent = null!, expandedLyricsContent = null!;
-    private bool expandedOpen, syncingExpandedProgress, syncingExpandedQueue;
+    private bool expandedOpen, syncingExpandedProgress;
     private PlayerPanel expandedPanelMode;
     private WindowState expandedPreviousState;
     private double expandedReveal, expandedFrom, expandedTo, panelFrom, panelTo;
@@ -38,6 +39,7 @@ internal sealed partial class MainWindow
         expandedArtwork = new Image().Source(artwork.Source).StretchMode(Stretch.UniformToFill);
         var transport = new Grid().Columns("*").Rows("*");
         transport.Opacity = 0;
+        transport.IsHitTestVisible = false;
         transport.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
         var coverControls = new StackPanel().Horizontal().Spacing(22).CenterHorizontal().CenterVertical().Children(
             ExpandedIconButton("skip-back-solid", () => Run(() => SkipAsync(-1)), 42),
@@ -61,7 +63,8 @@ internal sealed partial class MainWindow
                     () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).Right().Column(2)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
-        hoverReveals.Add(new HoverReveal(expandedCover, visible => transport.Opacity = visible ? 1 : 0,
+        hoverReveals.Add(new HoverReveal(expandedCover, visible =>
+            { transport.IsHitTestVisible = visible; transport.Opacity = visible ? 1 : 0; },
             () => expandedVolumeSlider.IsMouseCaptured));
 
         expandedProgress = ThinSlider().Background(Color.Transparent).Minimum(0).Maximum(1)
@@ -93,7 +96,7 @@ internal sealed partial class MainWindow
             { expandedPositionLabel.Opacity = expandedDurationLabel.Opacity = visible ? 1 : 0; },
             () => expandedProgress.IsMouseCaptured));
 
-        expandedQueueContent = ExpandedQueuePanel().Cached();
+        expandedQueueContent = ExpandedQueuePanel();
         expandedLyricsContent = new StackPanel().Vertical().Spacing(16).CenterVertical().Children(
             Icons.View("text-align-left", 34, PlayerSecondaryText),
             new TextBlock().Text("Текст песни").FontSize(32).Bold().Foreground(Color.White),
@@ -200,34 +203,6 @@ internal sealed partial class MainWindow
         Refresh();
         return button.OnMouseEnter(() => { hovered = true; Refresh(); })
             .OnMouseLeave(() => { hovered = false; Refresh(); });
-    }
-
-    private FrameworkElement ExpandedQueuePanel()
-    {
-        expandedQueue = CreateTrackList(true).OnSelectionChanged(item =>
-        {
-            if (!syncingExpandedQueue && item is SoundCloudTrack track) Run(() => PlayAsync(track));
-        });
-        return new DockPanel().LastChildFill().Spacing(20).Children(
-            new TextBlock().Text("Далее в очереди").FontSize(20).Bold().DockTop(),
-            new Grid().Columns("*").Rows("*").Children(expandedQueue,
-                new TextBlock().Text("Следующих треков пока нет").FontSize(14).Foreground(PlayerSecondaryText)
-                    .Top().Margin(0, 12).Ref(out expandedQueueEmpty)));
-    }
-
-    private TextBlock expandedQueueEmpty = null!;
-
-    private void RefreshExpandedQueue()
-    {
-        if (expandedQueue == null) return;
-        var index = current == null ? -1 : queueTracks.FindIndex(track => track.Id == current.Id);
-        var upcoming = queueTracks.Skip(index + 1).ToArray();
-        if (expandedUpcoming.SequenceEqual(upcoming)) return;
-        expandedUpcoming = upcoming;
-        syncingExpandedQueue = true;
-        try { expandedQueue.Items(upcoming, track => track.Title, track => track.Id); expandedQueue.SelectedIndex = -1; }
-        finally { syncingExpandedQueue = false; }
-        expandedQueueEmpty.IsVisible = upcoming.Length == 0;
     }
 
     private void SetExpandedPlayer(bool open)

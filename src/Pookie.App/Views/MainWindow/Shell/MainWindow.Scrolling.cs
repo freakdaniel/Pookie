@@ -77,6 +77,8 @@ internal sealed partial class MainWindow
     private void ObservePageScrolling()
     {
         if (disposed) return;
+        ClearUnboundExpandedQueueRows();
+        if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
         if (page.Value == Page.Search && searchLayoutPending)
         {
             searchLayoutPending = false;

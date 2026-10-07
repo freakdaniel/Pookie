@@ -13,12 +13,15 @@ internal sealed partial class MainWindow
     private long avatarGeneration;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, Task<PlayerPalette>> playerPalettes = new();
 
-    private void SetPlayerArtwork(ImageSource? source, long generation)
+    private void SetPlayerArtwork(ImageSource? source, long generation, bool pending = false)
     {
         artwork.Source = source != null ? source : Icons.Source("music-notes");
         expandedArtwork.Source = artwork.Source;
         if (source == null)
         {
+            // Keep the previous hue until the new cover is available. Fading to
+            // neutral here would reverse the colour transition when it arrives.
+            if (pending) return;
             playerBackdrop.SetPalette(PlayerPalette.Neutral);
             expandedBackdrop.SetPalette(PlayerPalette.Neutral);
             return;
@@ -117,10 +120,13 @@ internal sealed partial class MainWindow
     private async Task LoadArtworkAsync(SoundCloudTrack track, long generation)
     {
         var source = await FetchImageAsync(track.ArtworkUrl ?? track.User?.AvatarUrl, lifetime.Token);
-        if (source != null && generation == playGeneration && !disposed)
+        if (generation == playGeneration && !disposed)
         {
-            if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
-            coverCache[track.Id] = source;
+            if (source != null)
+            {
+                if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
+                coverCache[track.Id] = source;
+            }
             SetPlayerArtwork(source, generation);
         }
     }

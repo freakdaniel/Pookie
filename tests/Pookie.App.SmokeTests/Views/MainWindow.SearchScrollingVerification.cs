@@ -68,6 +68,11 @@ internal sealed partial class MainWindow
         if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || hero.Tracks[0].Root.ActualHeight != 64 ||
             !SearchBlocks().Any(block => block.Title == "Исполнители") || !SearchBlocks().Any(block => block.Title == "Альбомы") || !SearchBlocks().Any(block => block.Title == "Плейлисты"))
             throw new InvalidOperationException("Search did not show a best result, compact songs and grouped entity cards");
+        var songsHeading = hero.SongsSection.Children.OfType<TextBlock>().Single();
+        if (Math.Abs(hero.Tracks[0].Cover.Bounds.X - songsHeading.Bounds.X) > 1 ||
+            hero.Tracks[0].HoverFill.Bounds.X >= songsHeading.Bounds.X ||
+            !hero.SongsSection.Bounds.Contains(hero.Tracks[0].HoverFill.Bounds))
+            throw new InvalidOperationException("Search compact song hover background clips or no longer aligns its cover with the heading.");
         var searchTitle = (TextBlock)VisualTree.Find(Window.Content, element => element is TextBlock title && title.Text == searchHeading.Value)!;
         if (searchTitle.Bounds.Y - contentFrame.Bounds.Y > contentFrame.Padding.Top + 1 ||
             ((DockPanel)searchLoadingView.Root.Parent!.Parent!).Bounds.Bottom - searchList.Bounds.Bottom > 1)
@@ -166,7 +171,7 @@ internal sealed partial class MainWindow
             await Task.Delay(150, lifetime.Token);
             searchList.ScrollIntoView(40);
             await Task.Delay(150, lifetime.Token);
-            var anchor = searchTrackRows.Where(row => row.Track?.Id is >= 73000 and < 73060 &&
+            var anchor = compactTrackRows.Where(row => row.Track?.Id is >= 73000 and < 73060 &&
                 row.Root.Bounds.Y >= groupedScroll.Bounds.Y && row.Root.Bounds.Y < groupedScroll.Bounds.Bottom).OrderBy(row => row.Root.Bounds.Y).First();
             var anchorId = anchor.Track!.Id; var anchorY = anchor.Root.Bounds.Y;
             var newArtists = Enumerable.Range(71, 4).Select(id => (object)new { kind = "user", id, username = "New artist " + id });
@@ -174,8 +179,8 @@ internal sealed partial class MainWindow
             browser.Reply.SetResult(JsonSerializer.Serialize(new { collection = newArtists.Concat(newTracks).ToArray(), next_href = (string?)null }));
             await WaitForLikedLayoutAsync(() => !paginationLoading.Value && searchResults?.NextHref == null);
             await Task.Delay(200, lifetime.Token);
-            var retained = searchTrackRows.FirstOrDefault(row => row.Track?.Id == anchorId && Math.Abs(row.Root.Bounds.Y - anchorY) < 2);
-            if (retained == null) throw new InvalidOperationException($"Grouped pagination moved track {anchorId} from Y={anchorY}: now={string.Join(';', searchTrackRows.Where(row => row.Track?.Id == anchorId).Select(row => row.Root.Bounds.Y))}, offset={groupedScroll.VerticalOffset}");
+            var retained = compactTrackRows.FirstOrDefault(row => row.Track?.Id == anchorId && Math.Abs(row.Root.Bounds.Y - anchorY) < 2);
+            if (retained == null) throw new InvalidOperationException($"Grouped pagination moved track {anchorId} from Y={anchorY}: now={string.Join(';', compactTrackRows.Where(row => row.Track?.Id == anchorId).Select(row => row.Root.Bounds.Y))}, offset={groupedScroll.VerticalOffset}");
             browser = new PaginationBrowser(); api.BrowserTransport = browser;
             likedFilter.Text = ""; likesAsList.Value = true;
             var fixtures = Enumerable.Range(1, 30).Select(id => new SoundCloudTrack { Id = 80000 + id, Title = "Трек " + id, Duration = 120000 }).ToArray();

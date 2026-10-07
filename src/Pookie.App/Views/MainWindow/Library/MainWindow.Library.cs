@@ -287,6 +287,7 @@ internal sealed partial class MainWindow
         if (item.Track is { } track)
         {
             if (current?.Id == track.Id) { await ToggleAsync(); return; }
+            CaptureQueueOrigin(recent: page.Value == Page.Library);
             queueTracks.Clear(); queueTracks.AddRange((activeCollection?.Items ?? LibraryItems("recent")).Where(i => i.Track != null).Select(i => i.Track!));
             if (!queueTracks.Any(t => t.Id == track.Id)) queueTracks.Add(track);
             playbackHistory.Clear(); shuffleBag.Clear(); RefreshQueue();

@@ -52,6 +52,22 @@ and MediaSessionService disabled; Pookie owns the system session and queue.
 restore, rendered intermediate animation frames, centered/split composition,
 lyrics/queue panel changes, queue selection, shared seeking and buffered progress,
 interrupted close/reopen and reset. Lyrics are an interface placeholder.
+It also repeats fullscreen entry/exit while paused and simulates a resize viewport
+that misses the retained motion layer. Cover hover must produce intermediate and
+final native frames without clicking or hovering the progress bar; an opacity
+change alone is insufficient.
+Queue checks cover the retained playback source/current track, row backgrounds
+extending beyond heading edges, hidden scrollbars, native wheel interpolation,
+animated movement of earlier tracks and a stable now-playing source heading while
+playback advances, including after scrolling away and selecting a distant track.
+Native edge fade frames follow the player's artwork palette throughout a color
+transition with fractional channel precision, including when another transition interrupts it. Gradient textures
+are retained across those frames; rebinding the same queue item must not cancel
+its movement. Hover backgrounds remain inside the viewport, with their rounded
+corners verified in rendered pixels and covers aligned to section headings.
+`--ui-smoke-test` also checks that pending artwork keeps the previous palette until
+the new cover arrives, failed/missing covers fall back to neutral, and a one-level
+colour change produces at least 90 distinct dithered frames without a channel jump.
 The queue fixture contains 1,000 tracks. Motion translates retained layers without
 remeasuring or arranging their rows; closing slides the panel toward the cover
 and fades it while the cover returns to the center. The check verifies that

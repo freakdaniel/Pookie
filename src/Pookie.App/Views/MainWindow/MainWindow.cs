@@ -346,7 +346,7 @@ internal sealed partial class MainWindow : IDisposable
         try { progress.Value = 0; progress.Maximum = Math.Max(1, track.DurationSeconds); }
         finally { updatingProgress = false; }
         var cachedArtwork = libraryCoverCache.GetValueOrDefault(track.Id) ?? coverCache.GetValueOrDefault(track.Id);
-        SetPlayerArtwork(cachedArtwork, generation);
+        SetPlayerArtwork(cachedArtwork, generation, pending: cachedArtwork == null);
         playerVisible.Value = true;
         if (queueTracks.Count == 0) SetQueue(track);
         RefreshLikedPlayback(); UpdateLikeState(); RefreshQueue();
@@ -623,6 +623,8 @@ internal sealed partial class MainWindow : IDisposable
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();
+        foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
+        expandedQueueFade.Dispose();
         OnDisposed();
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();

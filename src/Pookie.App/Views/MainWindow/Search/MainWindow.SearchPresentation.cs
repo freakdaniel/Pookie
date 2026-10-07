@@ -8,17 +8,10 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly Dictionary<StackPanel, SearchResultView> searchViews = [];
-    private readonly List<CompactSearchTrack> searchTrackRows = [];
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, Task<ImageSource?>> searchBackdrops = new();
 
-    private sealed record CompactSearchTrack(Grid Root, Image Cover, Image Play, Border Overlay, Button Like,
-        Image Heart, TextBlock Title, TextBlock Author, TextBlock Duration)
-    {
-        public SoundCloudTrack? Track { get; set; }
-        public bool Hovered { get; set; }
-    }
     private sealed record SearchHero(Grid Root, StackPanel BestSection, StackPanel SongsSection, Border Card,
-        Image Cover, Image Backdrop, Border Frame, TextBlock Title, TextBlock Subtitle, Image Play, CompactSearchTrack[] Tracks)
+        Image Cover, Image Backdrop, Border Frame, TextBlock Title, TextBlock Subtitle, Image Play, CompactTrackRow[] Tracks)
     {
         public LibraryItem? Item { get; set; }
         public ImageSource? BackgroundArtwork { get; set; }
@@ -26,7 +19,7 @@ internal sealed partial class MainWindow
         public long BindingGeneration { get; set; }
     }
     private sealed record SearchResultView(StackPanel Root, SearchHero Hero, StackPanel Cards, TextBlock CardsTitle,
-        ItemsControl CardGrid, CompactSearchTrack Track, TextBlock Heading, StackPanel LibraryTrackHost)
+        ItemsControl CardGrid, CompactTrackRow Track, TextBlock Heading, StackPanel LibraryTrackHost)
     {
         public SearchBlock? Block { get; set; }
         public LikedTrackRow? LibraryTrack { get; set; }
@@ -35,7 +28,8 @@ internal sealed partial class MainWindow
     private IDataTemplate SearchResultTemplate() => new DelegateTemplate<SearchBlock>(context =>
     {
         var hero = CreateSearchHero();
-        var track = CreateCompactSearchTrack();
+        var track = CreateCompactTrackRow();
+        track.Root.Margin = new Thickness(-8, 0, -8, 0);
         var cardsTitle = new TextBlock().FontSize(22).Bold();
         var cardGrid = CreateCollectionGrid(true);
         var cards = new StackPanel().Vertical().Spacing(16).Margin(0, 0, 0, 24).Children(cardsTitle, cardGrid);
@@ -64,7 +58,7 @@ internal sealed partial class MainWindow
             BindLibraryTrackRow(view.LibraryTrack, libraryTrack);
         }
         else if (view.LibraryTrack != null) ClearLibraryTrackRow(view.LibraryTrack);
-        BindCompactSearchTrack(view.Track, block.Kind == SearchBlockKind.Track ? block.Item?.Track : null);
+        BindCompactTrackRow(view.Track, block.Kind == SearchBlockKind.Track ? block.Item?.Track : null);
         if (block.Kind == SearchBlockKind.Hero) BindSearchHero(view.Hero, block);
         else ClearSearchHero(view.Hero);
         view.CardsTitle.Text = block.Title; view.CardsTitle.IsVisible = block.Title.Length > 0;
@@ -75,69 +69,10 @@ internal sealed partial class MainWindow
     }, (_, _, _, context) =>
     {
         var view = searchViews[context.Get<StackPanel>("root")]; view.Block = null;
-        BindCompactSearchTrack(view.Track, null); ClearSearchHero(view.Hero);
+        BindCompactTrackRow(view.Track, null); ClearSearchHero(view.Hero);
         if (view.LibraryTrack != null) ClearLibraryTrackRow(view.LibraryTrack);
         view.CardGrid.Items(Array.Empty<LibraryItem>(), item => item.Title);
     });
-
-    private CompactSearchTrack CreateCompactSearchTrack()
-    {
-        var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
-        var play = Icons.View("play-solid", 18).CenterHorizontal().CenterVertical();
-        var overlay = new Border().Background(Color.FromArgb(170, 0, 0, 0)).Child(play);
-        overlay.Opacity = 0;
-        overlay.Transitions = [Transition.Create(UIElement.OpacityProperty, 150)];
-        var frame = new Border().Width(44).Height(44).CornerRadius(5).ClipToBounds()
-            .Child(ArtworkLayer(cover).Children(overlay));
-        var title = new TextBlock().FontSize(14).SemiBold().Height(21).TextTrimming(TextTrimming.CharacterEllipsis);
-        var author = new TextBlock().FontSize(12).Foreground(Muted).Height(19).TextTrimming(TextTrimming.CharacterEllipsis);
-        var duration = new TextBlock().FontSize(12).Foreground(Muted).Width(48).Right().CenterVertical();
-        var heart = Icons.View("heart", 17, Muted).CenterHorizontal().CenterVertical();
-        var like = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Width(28).Height(32)
-            .CenterVertical().Content(heart);
-        var action = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .Content(new Grid().Columns("44,*").Rows("*").Spacing(12).Children(frame.Column(0).CenterVertical(),
-                new StackPanel().Vertical().CenterVertical().Column(1).Children(title, author)));
-        var root = new Grid().Columns("*,28,48").Rows("*").Spacing(12).Padding(8, 6).Height(64);
-        var hoverFill = new Border().CornerRadius(6).Background(Raised).Column(0).ColumnSpan(3);
-        hoverFill.Opacity = 0;
-        hoverFill.Transitions = [Transition.Create(UIElement.OpacityProperty, 150)];
-        hoverFill.IsHitTestVisible = false;
-        root.Children(hoverFill, action.Column(0), like.Column(1), duration.Column(2));
-        var row = new CompactSearchTrack(root, cover, play, overlay, like, heart, title, author, duration);
-        searchTrackRows.Add(row);
-        action.Click += () => { if (row.Track is { } item) SelectLibraryTrack(item); };
-        like.Click += () => { if (row.Track is { } item) Run(() => ToggleTrackLikeAsync(item)); };
-        root.MouseEnter += () => { row.Hovered = true; hoverFill.Opacity = 1; RefreshCompactSearchTrack(row); };
-        root.MouseLeave += () => { row.Hovered = false; hoverFill.Opacity = 0; RefreshCompactSearchTrack(row); };
-        return row;
-    }
-
-    private void BindCompactSearchTrack(CompactSearchTrack row, SoundCloudTrack? track)
-    {
-        row.Track = track;
-        if (track == null) { StopCardArtwork(row.Cover); return; }
-        row.Title.Text = track.Title; row.Author.Text = track.Author; row.Duration.Text = FormatTime(track.DurationSeconds);
-        SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
-        Run(async () =>
-        {
-            var source = await GetLibraryArtworkAsync(track);
-            if (!disposed && row.Track?.Id == track.Id)
-                SetCardArtwork(row.Cover, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true);
-        });
-        RefreshCompactSearchTrack(row);
-    }
-
-    private void RefreshCompactSearchTrack(CompactSearchTrack row)
-    {
-        if (row.Track is not { } track) return;
-        var selected = current?.Id == track.Id;
-        row.Play.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid");
-        row.Overlay.Opacity = selected || row.Hovered ? 1 : 0;
-        var liked = likedIds.Contains(track.Id);
-        row.Heart.Source = Icons.Source(liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : Muted);
-        row.Like.IsEnabled = me != null && !likeBusy && !demo;
-    }
 
     private SearchHero CreateSearchHero()
     {
@@ -166,9 +101,9 @@ internal sealed partial class MainWindow
             .CornerRadius(12).Margin(-14, -9, -14, -19).Child(button);
         var bestSection = new StackPanel().Vertical().Spacing(16).Children(
             new TextBlock().Text("Лучший результат").FontSize(22).Bold(), shadow);
-        var rows = Enumerable.Range(0, 4).Select(_ => CreateCompactSearchTrack()).ToArray();
-        var songsSection = new StackPanel().Vertical().Spacing(16).Children(
-            new TextBlock().Text("Треки").FontSize(22).Bold(),
+        var rows = Enumerable.Range(0, 4).Select(_ => CreateCompactTrackRow()).ToArray();
+        var songsSection = new StackPanel().Vertical().Spacing(16).Margin(-8, 0, -8, 0).Children(
+            new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0),
             new StackPanel().Vertical().Children(rows.Select(row => (Element)row.Root).ToArray()));
         var root = new Grid().Columns("*,1.5*").Rows("Auto").Spacing(28).Margin(0, 0, 0, 32)
             .Children(bestSection.Column(0), songsSection.Column(1));
@@ -210,7 +145,7 @@ internal sealed partial class MainWindow
         {
             var track = block.Items?.ElementAtOrDefault(i)?.Track;
             hero.Tracks[i].Root.IsVisible = track != null;
-            BindCompactSearchTrack(hero.Tracks[i], track);
+            BindCompactTrackRow(hero.Tracks[i], track);
         }
         hero.SongsSection.IsVisible = block.Items?.Length > 0;
         RefreshSearchHeroPlayback(hero);
@@ -221,7 +156,7 @@ internal sealed partial class MainWindow
         ++hero.BindingGeneration;
         hero.Item = null; StopCardArtwork(hero.Cover);
         SetSearchHeroBackdrop(hero, null);
-        foreach (var row in hero.Tracks) BindCompactSearchTrack(row, null);
+        foreach (var row in hero.Tracks) BindCompactTrackRow(row, null);
     }
 
     private void SetSearchHeroBackdrop(SearchHero hero, ImageSource? source)
@@ -251,7 +186,7 @@ internal sealed partial class MainWindow
 
     private void RefreshSearchPlayback()
     {
-        foreach (var row in searchTrackRows) RefreshCompactSearchTrack(row);
+        foreach (var row in compactTrackRows) RefreshCompactTrackRow(row);
         foreach (var view in searchViews.Values) if (view.Hero.Item != null) RefreshSearchHeroPlayback(view.Hero);
     }
 

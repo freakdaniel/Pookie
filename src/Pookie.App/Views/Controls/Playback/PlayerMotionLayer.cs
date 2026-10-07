@@ -14,6 +14,7 @@ internal sealed class PlayerMotionLayer : Panel
 
     internal PlayerMotionLayer(FrameworkElement child)
     {
+        SkipViewportCull = true;
         Add(child);
     }
 

@@ -63,6 +63,7 @@ internal sealed partial class MainWindow
 
     private void SetQueue(SoundCloudTrack first)
     {
+        CaptureQueueOrigin();
         queueTracks.Clear(); queueTracks.AddRange(tracks);
         if (!queueTracks.Any(t => t.Id == first.Id)) queueTracks.Add(first);
         playbackHistory.Clear(); shuffleBag.Clear();

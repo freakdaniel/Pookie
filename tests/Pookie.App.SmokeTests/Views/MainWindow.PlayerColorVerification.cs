@@ -22,6 +22,22 @@ internal sealed partial class MainWindow
             if (raster[i] != raster[i + 1] || raster[i] != raster[i + 2] || raster[i + 3] != 255)
                 throw new InvalidOperationException("Gradient noise introduced colour or transparency artifacts");
 
+        // A one-level colour change must flow through fractional frames rather
+        // than switching every pixel together at a rounded channel boundary.
+        var dim = PlayerGradient.FromPalette(PlayerPalette.Neutral);
+        var bright = PlayerGradient.FromPalette(new(Color.FromRgb(35, 35, 35), Color.FromRgb(35, 35, 35), Color.FromRgb(35, 35, 35)));
+        var means = new HashSet<double>();
+        double previousMean = 34;
+        for (var step = 0; step <= 100; step++)
+        {
+            var frame = PlayerBackdrop.CreateRaster(dim.Lerp(bright, step / 100d), 64);
+            var mean = Enumerable.Range(0, 64 * 64).Average(i => (double)frame[i * 4]);
+            if (mean < previousMean || mean - previousMean > .025)
+                throw new InvalidOperationException("Fractional background colours changed in visible steps");
+            previousMean = mean; means.Add(mean);
+        }
+        if (means.Count < 90) throw new InvalidOperationException("Background colour precision was lost between animation frames");
+
         static ImageSource Cover(Color color, bool transparent = false)
         {
             var pixels = new byte[64 * 64 * 4];
@@ -75,6 +91,11 @@ internal sealed partial class MainWindow
         await WaitForLoginFrameAsync();
         CheckPlayerRegion(); CaptureUiPreview("player-cover-red");
 
+        SetPlayerArtwork(null, playGeneration, pending: true);
+        await Task.Delay(200, lifetime.Token);
+        if (playerBackdrop.Target != redPalette || playerBackdrop.Current != redPalette || expandedBackdrop.Target != redPalette)
+            throw new InvalidOperationException("Loading the next cover introduced an intermediate gray colour transition");
+
         // An old cover finishing after the next selection must not recolour the current track.
         var lateCover = Cover(Color.FromRgb(218, 45, 37));
         var latePalette = new TaskCompletionSource<PlayerPalette>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -83,8 +104,10 @@ internal sealed partial class MainWindow
         SetPlayerArtwork(blue, playGeneration);
         await WaitForLikedLayoutAsync(() => playerBackdrop.Target == bluePalette && playerBackdrop.Current != redPalette);
         var intermediate = playerBackdrop.Current;
+        var preciseIntermediate = playerBackdrop.CurrentGradient;
         playerBackdrop.SetPalette(redPalette);
-        if (playerBackdrop.Current != intermediate) throw new InvalidOperationException("Interrupted colour transition jumped");
+        if (playerBackdrop.Current != intermediate || playerBackdrop.CurrentGradient != preciseIntermediate)
+            throw new InvalidOperationException("Interrupted colour transition jumped or lost fractional colour precision");
         playerBackdrop.SetPalette(bluePalette);
         await WaitForLikedLayoutAsync(() => !playerBackdrop.Running);
         latePalette.SetResult(redPalette);
@@ -96,6 +119,6 @@ internal sealed partial class MainWindow
         SetPlayerArtwork(null, playGeneration);
         await WaitForLikedLayoutAsync(() => !playerBackdrop.Running);
         if (playerBackdrop.Current != PlayerPalette.Neutral) throw new InvalidOperationException("Missing artwork kept the old cover colour");
-        Console.WriteLine("UI_PLAYER_COLORS_OK: stable one-level dithering, cover hues, grayscale/transparent fallback, text contrast, animated transition, interruption and stale-cover protection");
+        Console.WriteLine("UI_PLAYER_COLORS_OK: stable dithering, 100 fractional colour frames, cover hues, pending artwork without gray detour, grayscale/transparent fallback, text contrast, continuous interruption and stale-cover protection");
     }
 }

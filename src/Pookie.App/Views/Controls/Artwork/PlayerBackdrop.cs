@@ -12,19 +12,25 @@ internal sealed class PlayerBackdrop : Control
     private ImageSource? rasterSource;
     private IImage? rasterImage;
     private IGraphicsFactory? rasterFactory;
-    private PlayerPalette rasterPalette;
-    private PlayerPalette from = PlayerPalette.Neutral;
-    internal PlayerPalette Current { get; private set; } = PlayerPalette.Neutral;
+    private PlayerGradient rasterPalette;
+    private ImageSource? targetSource;
+    private IImage? targetImage;
+    private PlayerPalette targetPalette;
+    private double blendAmount;
+    private PlayerGradient from = PlayerGradient.FromPalette(PlayerPalette.Neutral);
+    internal PlayerGradient CurrentGradient { get; private set; } = PlayerGradient.FromPalette(PlayerPalette.Neutral);
+    internal PlayerPalette Current => CurrentGradient.ToPalette();
     internal PlayerPalette Target { get; private set; } = PlayerPalette.Neutral;
     internal bool Running => clock.IsRunning;
+    internal event Action? PaletteChanged;
 
     internal PlayerBackdrop()
     {
         IsHitTestVisible = false;
-        clock = new AnimationClock(TimeSpan.FromMilliseconds(950), Easing.CubicBezier(.22, 0, .18, 1))
+        clock = new AnimationClock(TimeSpan.FromMilliseconds(950), Easing.CubicBezier(.42, 0, .58, 1))
         {
-            TickCallback = amount => { Current = from.Lerp(Target, amount); InvalidateVisual(); },
-            CompletedCallback = () => { Current = Target; InvalidateVisual(); }
+            TickCallback = amount => { blendAmount = amount; CurrentGradient = from.Lerp(PlayerGradient.FromPalette(Target), amount); RefreshPalette(); },
+            CompletedCallback = () => { CurrentGradient = PlayerGradient.FromPalette(Target); RefreshPalette(); }
         };
     }
 
@@ -32,17 +38,25 @@ internal sealed class PlayerBackdrop : Control
     {
         if (Target == palette) return;
         clock.Stop();
-        from = Current;
+        from = CurrentGradient;
         Target = palette;
+        blendAmount = 0;
         clock.Start();
     }
 
     internal void Reset()
     {
         clock.Stop();
-        Current = Target = from = PlayerPalette.Neutral;
+        Target = PlayerPalette.Neutral;
+        CurrentGradient = from = PlayerGradient.FromPalette(Target);
         ClearRaster();
+        RefreshPalette();
+    }
+
+    private void RefreshPalette()
+    {
         InvalidateVisual();
+        PaletteChanged?.Invoke();
     }
 
     protected override void OnRender(IGraphicsContext context)
@@ -50,44 +64,48 @@ internal sealed class PlayerBackdrop : Control
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
         var width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * context.DpiScale));
         var factory = Application.IsRunning ? Application.Current.GraphicsFactory : Application.DefaultGraphicsFactory;
-        if (rasterImage == null || rasterImage.PixelWidth != width || rasterPalette != Current || rasterFactory != factory)
+        var basePalette = Running ? from : CurrentGradient;
+        if (rasterImage == null || rasterImage.PixelWidth != width || rasterPalette != basePalette || rasterFactory != factory)
         {
             ClearRaster();
-            rasterSource = ImageSource.FromBgraPixels(width, RasterRows, CreateRaster(Current, width), hasAlpha: false);
+            rasterSource = ImageSource.FromBgraPixels(width, RasterRows, CreateRaster(basePalette, width), hasAlpha: false);
             rasterImage = rasterSource.CreateImage(factory);
-            rasterPalette = Current;
+            rasterPalette = basePalette;
             rasterFactory = factory;
         }
-        
-        context.FillRectangle(Bounds, new ImageBrush(rasterImage,
-            new Rect(0, 0, width, RasterRows),
-            new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / context.DpiScale), TileMode.TileY));
+        DrawRaster(context, rasterImage, width);
+        if (!Running || blendAmount <= 0) return;
+        // Blend two retained textures instead of generating/uploading a full-width
+        // dithered texture on every animation tick. The grain stays stationary.
+        if (targetImage == null || targetPalette != Target)
+        {
+            targetImage?.Dispose(); targetSource?.Dispose();
+            targetSource = ImageSource.FromBgraPixels(width, RasterRows, CreateRaster(Target, width), hasAlpha: false);
+            targetImage = targetSource.CreateImage(factory);
+            targetPalette = Target;
+        }
+        DrawRaster(context, targetImage, width, blendAmount);
     }
 
-    internal static byte[] CreateRaster(PlayerPalette palette, int width)
+    private void DrawRaster(IGraphicsContext context, IImage image, int width, double opacity = 1) =>
+        context.FillRectangle(Bounds, new ImageBrush(image, new Rect(0, 0, width, RasterRows),
+            new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / context.DpiScale), TileMode.TileY, opacity));
+
+    internal static byte[] CreateRaster(PlayerPalette palette, int width) => CreateRaster(PlayerGradient.FromPalette(palette), width);
+
+    internal static byte[] CreateRaster(PlayerGradient gradient, int width)
     {
         var pixels = new byte[checked(width * RasterRows * 4)];
         for (var x = 0; x < width; x++)
         {
-            var position = (x + .5) / width;
-            var left = position < .38 ? palette.Start : palette.Middle;
-            var right = position < .38 ? palette.Middle : palette.End;
-            var amount = position < .38 ? position / .38 : (position - .38) / .62;
-
-            amount = amount * amount * (3 - 2 * amount);
-            var r = left.R + (right.R - left.R) * amount;
-            var g = left.G + (right.G - left.G) * amount;
-            var b = left.B + (right.B - left.B) * amount;
+            var color = gradient.Sample((x + .5) / width);
             for (var y = 0; y < RasterRows; y++)
             {
-                var hash = unchecked((uint)x * 0x9e3779b9u + (uint)y * 0x85ebca6bu);
-                hash ^= hash >> 16; hash = unchecked(hash * 0x7feb352du);
-                hash ^= hash >> 15; hash = unchecked(hash * 0x846ca68bu); hash ^= hash >> 16;
-                var noise = (hash & 0xffffff) / 16777216d;
+                var noise = PlayerGradient.Noise(x, y);
                 var offset = (y * width + x) * 4;
-                pixels[offset] = (byte)(b + noise);
-                pixels[offset + 1] = (byte)(g + noise);
-                pixels[offset + 2] = (byte)(r + noise);
+                pixels[offset] = (byte)(color.Z + noise);
+                pixels[offset + 1] = (byte)(color.Y + noise);
+                pixels[offset + 2] = (byte)(color.X + noise);
                 pixels[offset + 3] = 255;
             }
         }
@@ -98,6 +116,8 @@ internal sealed class PlayerBackdrop : Control
     {
         rasterImage?.Dispose(); rasterImage = null;
         rasterSource?.Dispose(); rasterSource = null;
+        targetImage?.Dispose(); targetImage = null;
+        targetSource?.Dispose(); targetSource = null;
         rasterFactory = null;
     }
 
