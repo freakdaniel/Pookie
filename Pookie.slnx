@@ -8,6 +8,7 @@
     <Project Path="src/Pookie.Discord/Pookie.Discord.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Pookie.Playback.Tests/Pookie.Playback.Tests.csproj" />
     <Project Path="tests/Pookie.App.SmokeTests/Pookie.App.SmokeTests.csproj" />
     <Project Path="tests/Pookie.SoundCloud.Tests/Pookie.SoundCloud.Tests.csproj" />
     <Project Path="tests/Pookie.Audio.Tests/Pookie.Audio.Tests.csproj" />

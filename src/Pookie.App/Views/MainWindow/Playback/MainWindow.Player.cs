@@ -113,6 +113,7 @@ internal sealed partial class MainWindow
                 PlayerButton(Icons.View("queue", 19), () =>
                     { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
                 PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value, shuffle),
+                PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                     PlayerButton(new Grid().Columns("*").Rows("*").Children(
                         Icons.View("speaker-high", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),

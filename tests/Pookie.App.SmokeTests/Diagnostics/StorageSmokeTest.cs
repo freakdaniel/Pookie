@@ -1,5 +1,6 @@
 using Pookie.App.Browser;
 using Pookie.App.Storage;
+using Pookie.App.Playback;
 using Pookie.SoundCloud;
 
 namespace Pookie.App.Diagnostics;
@@ -19,9 +20,11 @@ internal static class StorageSmokeTest
                 AppDataPaths.ResolveRoot("windows", "/ignored", "/LocalAppData", null) != Path.Combine("/LocalAppData", "Pookie"))
                 throw new InvalidOperationException("Platform-specific path resolution failed");
             var store = new ConfigurationStore(paths);
-            var saved = new AppConfiguration(34, 86, false, true, true);
+            var saved = new AppConfiguration(34, 86, false, true, true, RepeatMode.Track);
             store.Save(saved);
             if (new ConfigurationStore(paths).Load() != saved) throw new InvalidOperationException("Settings did not survive reopening");
+            store.Save(saved with { Repeat = (RepeatMode)999 });
+            if (store.Load().Repeat != RepeatMode.Off) throw new InvalidOperationException("Invalid repeat mode survived normalization");
             File.WriteAllText(Path.Combine(paths.Config, "settings.json"), "invalid-json");
             if (store.Load() != new AppConfiguration()) throw new InvalidOperationException("Corrupt configuration did not fall back to defaults");
             var cache = new ImageDiskCache(paths);

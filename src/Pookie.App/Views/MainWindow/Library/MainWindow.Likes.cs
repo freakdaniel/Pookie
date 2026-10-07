@@ -48,6 +48,7 @@ internal sealed partial class MainWindow
         {
             var tile = new LikedTrackTile(SelectLibraryTrack, ArtworkLayer);
             tile.SetSize(likedArtworkSize);
+            AttachTrackQueueMenu(tile.Root, () => tile.Track);
             context.Register("tile", tile.Root);
             tiles.Add(tile.Root, tile);
             return tile.Root;

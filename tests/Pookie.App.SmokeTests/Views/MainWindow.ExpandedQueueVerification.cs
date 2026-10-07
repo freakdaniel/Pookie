@@ -1,6 +1,8 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
+using Pookie.App.Playback;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
@@ -90,6 +92,8 @@ internal sealed partial class MainWindow
         VerifyNowPlayingAnchor();
         CaptureExpandedPanelPreview("expanded-queue-scrolled");
         await VerifyQueuePaletteTransitionAsync();
+        await VerifyExpandedManualQueueAsync();
+        SetQueue(tracks[0]);
         await PlayAsync(tracks[0]);
         await Task.Delay(550, lifetime.Token);
         expandedQueueAnchor = null;
@@ -144,6 +148,40 @@ internal sealed partial class MainWindow
             await Task.Delay(1100, lifetime.Token);
         }
         Console.WriteLine($"EXPANDED_QUEUE_PALETTE_OK: native edge fade frames match the artwork palette, including an interrupted color transition; retained gradient textures: base={baseTextures.Count}, target={targetTextures.Count}, color frames={rendered.Count}");
+    }
+
+    private async Task VerifyExpandedManualQueueAsync()
+    {
+        var first = playbackQueue.Enqueue(tracks[1]);
+        var second = playbackQueue.Enqueue(tracks[1]);
+        RefreshQueue();
+        await WaitForLikedLayoutAsync(() => expandedQueueRows.Values.Any(row => row.EntryId == first.EntryId && row.Root.ActualHeight > 0) &&
+            expandedQueueRows.Values.Any(row => row.EntryId == second.EntryId && row.Root.ActualHeight > 0));
+        if (expandedQueueData.Select(block => block.Key).Distinct().Count() != expandedQueueData.Length)
+            throw new InvalidOperationException("Manual duplicate rows shared keys.");
+        var offset = expandedQueueScroll.VerticalOffset;
+        var selected = playbackQueue.Current!.EntryId;
+        await Task.Delay(500, lifetime.Token);
+        CaptureExpandedPanelPreview("expanded-manual-queue");
+        ChangeManualQueue(playbackQueue.ClearManual);
+        await WaitForLikedLayoutAsync(() => playbackQueue.Snapshot.ManualUpcoming.Count == 0);
+        if (playbackQueue.Current.EntryId != selected || Math.Abs(expandedQueueScroll.VerticalOffset - offset) > 2)
+            throw new InvalidOperationException("Clearing manual entries changed the current track or viewport.");
+
+        var origin = playbackQueue.Context!;
+        StartQueueContext(origin with { NextHref = "fixture-page" }, tracks.ToArray(), current!);
+        await PlayAsync(current!);
+        await WaitForLikedLayoutAsync(() => expandedQueueScroll.VerticalOffset < 1);
+        smoothScrolls[expandedQueueScroll].Stop();
+        expandedQueueScroll.SetScrollOffsets(0, 400);
+        await WaitForLoginFrameAsync();
+        offset = expandedQueueScroll.VerticalOffset;
+        playbackQueue.Append(playbackQueue.SourceVersion, "fixture-page", new([tracks[0]], null));
+        RefreshQueue();
+        await WaitForLoginFrameAsync();
+        if (Math.Abs(expandedQueueScroll.VerticalOffset - offset) > 2)
+            throw new InvalidOperationException("Appending a source page pulled the expanded queue back to now-playing.");
+        Console.WriteLine("EXPANDED_MANUAL_QUEUE_OK: duplicate occurrence keys, edits preserve current/viewport, and source pagination preserves a scrolled viewport");
     }
 
     private void VerifyCompactTrackCorners(CompactTrackRow row)

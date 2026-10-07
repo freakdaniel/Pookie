@@ -90,9 +90,9 @@ internal sealed partial class MainWindow
             if (current?.Id == 1) throw new InvalidOperationException("Shuffle repeated current track");
             await ToggleAsync();
             queueOpen.Value = true;
-            var ids = queueTracks.Select(t => t.Id).ToArray();
+            var ids = playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).ToArray();
             await NavigateAsync(Page.Feed);
-            if (!ids.SequenceEqual(queueTracks.Select(t => t.Id))) throw new InvalidOperationException("Navigation changed playback queue");
+            if (!ids.SequenceEqual(playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id))) throw new InvalidOperationException("Navigation changed playback queue");
             await NavigateAsync(Page.Library);
             await NavigateAsync(Page.Home);
             volume.Value = 0;
@@ -103,6 +103,7 @@ internal sealed partial class MainWindow
             await VerifyNavigationAsync();
             await VerifySearchScrollingAsync();
             await VerifySectionTabsAsync();
+            await VerifyPlaybackQueueAsync();
             Console.WriteLine("UI_SMOKE_OK: native layout, local playback, pause/resume, next/previous, shuffle, mute and persistent queue across navigation");
             await Task.Delay(5000, lifetime.Token);
         }
@@ -143,6 +144,7 @@ internal sealed partial class MainWindow
         try
         {
             if (playerVisible.Value) throw new InvalidOperationException("Player appeared before selecting a track");
+            SetQueue(tracks[0]);
             var first = PlayAsync(tracks[0]);
             CheckSelected(tracks[0]);
             await Task.Delay(300, lifetime.Token);
@@ -260,6 +262,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Track switch retained an old seek");
             var beforeSwitch = recording.Seeks.Count;
             progress.Value = 2;
+            SetQueue(tracks[0]);
             await PlayAsync(tracks[0]);
             await Task.Delay(220, lifetime.Token);
             if (recording.Seeks.Count != beforeSwitch) throw new InvalidOperationException("Debounced seek was applied to the new track");

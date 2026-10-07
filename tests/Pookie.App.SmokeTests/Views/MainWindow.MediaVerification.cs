@@ -11,6 +11,8 @@ internal sealed partial class MainWindow
     {
         try
         {
+            SetQueue(tracks[0]);
+            playbackQueue.SetRepeat(Pookie.App.Playback.RepeatMode.Context);
             await PlayAsync(tracks[0]);
             await WaitForLikedLayoutAsync(() => systemMedia != null && audioReady);
 #if WINDOWS

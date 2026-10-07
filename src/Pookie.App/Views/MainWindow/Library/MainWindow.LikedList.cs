@@ -33,6 +33,7 @@ internal sealed partial class MainWindow
         var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => ToggleTrackLikeAsync(track)),
             CopyTrackLink, (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
         likedRows.Add(row.Root, row);
+        AttachTrackQueueMenu(row.Root, () => row.Track);
         return row;
     }
 

@@ -2,6 +2,7 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
+using Pookie.App.Playback;
 
 namespace Pookie.App;
 
@@ -15,6 +16,7 @@ internal sealed partial class MainWindow
     private readonly List<(ItemsControl Grid, bool Preview)> collectionGrids = [];
     private readonly Dictionary<string, (ItemsControl Grid, TextBlock Empty)> overviewSections = [];
     private readonly Dictionary<Button, (LibraryItem Item, Image Cover, Border Frame, TextBlock Title, TextBlock Author, TrackArtworkOverlay Playback)> collectionCards = [];
+    private readonly Dictionary<Button, int> collectionCardPositions = [];
     private readonly Dictionary<string, ImageSource> collectionImages = [];
     private readonly ObservableValue<string> librarySectionTitle = new("");
     private readonly ObservableValue<string> librarySectionStatus = new("");
@@ -88,7 +90,8 @@ internal sealed partial class MainWindow
             var subtitle = new StackPanel().Horizontal().Spacing(4).Children(followersIcon, author.CenterVertical());
             var root = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Top()
                 .Content(new StackPanel().Vertical().Spacing(1).Children(frame, title.Margin(0, 7, 0, 0), subtitle));
-            root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryItemAsync(card.Item)); };
+            AttachTrackQueueMenu(root, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
+            root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryItemAsync(card.Item, collectionCardPositions.GetValueOrDefault(root))); };
             root.MouseEnter += () => { if (collectionCards.TryGetValue(root, out var card) && card.Item.Track != null) card.Playback.SetHovered(true); };
             root.MouseLeave += () => playback.SetHovered(false);
             context.Register("root", root); context.Register("cover", image); context.Register("frame", frame);
@@ -96,7 +99,7 @@ internal sealed partial class MainWindow
             context.Register("title", title); context.Register("author", author);
             context.Register("subtitle", subtitle); context.Register("followers", followersIcon);
             return root;
-        }, (_, item, _, context) =>
+        }, (_, item, index, context) =>
         {
             var root = context.Get<Button>("root"); var image = context.Get<Image>("cover"); var frame = context.Get<Border>("frame");
             var title = context.Get<TextBlock>("title"); var author = context.Get<TextBlock>("author");
@@ -106,6 +109,7 @@ internal sealed partial class MainWindow
             playback.SetHovered(root.IsMouseOver);
             playback.SetPlaying(item.Track != null && item.Track.Id == current?.Id, isPlaying.Value, animate: false);
             collectionCards[root] = (item, image, frame, title, author, playback);
+            collectionCardPositions[root] = index;
             var subtitle = context.Get<StackPanel>("subtitle");
             title.Text = item.Title; author.Text = item.Subtitle;
             var artist = item.User != null;
@@ -122,6 +126,7 @@ internal sealed partial class MainWindow
             StopCardArtwork(context.Get<Image>("cover"));
             context.Get<TrackArtworkOverlay>("playback").Reset();
             collectionCards.Remove(context.Get<Button>("root"));
+            collectionCardPositions.Remove(context.Get<Button>("root"));
         });
         return grid;
     }
@@ -282,15 +287,18 @@ internal sealed partial class MainWindow
         RenderLibrarySection(); RefreshOverviewSections();
     }
 
-    private async Task OpenLibraryItemAsync(LibraryItem item)
+    private async Task OpenLibraryItemAsync(LibraryItem item, int? selectedIndex = null)
     {
         if (item.Track is { } track)
         {
             if (current?.Id == track.Id) { await ToggleAsync(); return; }
+            if (page.Value is Page.Search or Page.LibraryCollection) { SetQueue(track, selectedIndex); await PlayAsync(track); return; }
             CaptureQueueOrigin(recent: page.Value == Page.Library);
-            queueTracks.Clear(); queueTracks.AddRange((activeCollection?.Items ?? LibraryItems("recent")).Where(i => i.Track != null).Select(i => i.Track!));
-            if (!queueTracks.Any(t => t.Id == track.Id)) queueTracks.Add(track);
-            playbackHistory.Clear(); shuffleBag.Clear(); RefreshQueue();
+            var source = activeCollection ?? libraryPages.GetValueOrDefault(page.Value == Page.LibraryHistory ? "history" : "recent");
+            var data = (source?.Items ?? LibraryItems("recent")).Where(item => item.Track != null).Select(item => item.Track!).ToArray();
+            var trackIndex = selectedIndex is { } cardIndex && source != null ? source.Items.Take(cardIndex).Count(item => item.Track != null) : (int?)null;
+            StartQueueContext(new(page.Value == Page.LibraryHistory ? "history" : "recent", queueOriginTitle, queueOriginKind,
+                source?.NextHref, LibraryCursor: true, Kind: page.Value == Page.LibraryHistory ? PlaybackContextKind.History : PlaybackContextKind.Recent), data, track, trackIndex);
             await PlayAsync(track); return;
         }
         await NavigateRouteAsync(new(Page.LibraryCollection, Item: item), async _ =>
@@ -311,7 +319,7 @@ internal sealed partial class MainWindow
     private void ClearLibraryData()
     {
         ++overviewRefreshGeneration;
-        libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
+        libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); collectionCardPositions.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
         overviewPending.Clear(); overviewReady.Clear(); SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         RefreshOverviewSections();
     }

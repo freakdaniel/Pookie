@@ -1,5 +1,6 @@
 using System.Globalization;
 using Pookie.Audio;
+using Pookie.App.Playback;
 using Pookie.Logging;
 using Pookie.Media;
 using Serilog.Events;
@@ -46,7 +47,7 @@ internal sealed partial class MainWindow
                 (audio?.Playing ?? !paused) ? MediaPlayback.Playing : MediaPlayback.Paused;
             systemMedia.Update(new(current.Id.ToString(CultureInfo.InvariantCulture), current.Title, current.Author,
                 current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl, position, duration, state,
-                audioReady && !audioPreparing && duration > 0, queueTracks.Count > 1, queueTracks.Count > 1,
+                audioReady && !audioPreparing && duration > 0, playbackQueue.Snapshot.CanNext, playbackQueue.Snapshot.CanPrevious,
                 volume.Value / 100, shuffle.Value));
         }
         catch (Exception error)
@@ -68,9 +69,10 @@ internal sealed partial class MainWindow
             case MediaAction.Pause:
                 return current != null && !paused && (audioReady || audioPreparing) ? ToggleAsync() : Task.CompletedTask;
             case MediaAction.Toggle: return ToggleAsync();
-            case MediaAction.Next: return queueTracks.Count > 1 ? SkipAsync(1) : Task.CompletedTask;
-            case MediaAction.Previous: return queueTracks.Count > 1 ? SkipAsync(-1) : Task.CompletedTask;
+            case MediaAction.Next: return playbackQueue.Snapshot.CanNext ? SkipAsync(1) : Task.CompletedTask;
+            case MediaAction.Previous: return playbackQueue.Snapshot.CanPrevious ? SkipAsync(-1) : Task.CompletedTask;
             case MediaAction.Stop:
+                if (playbackQueue.Current is { } entry) playbackQueue.SetPreparation(entry.EntryId, PlaybackPreparation.Stopped);
                 bufferedTrack.Reset();
                 expandedBuffer.Reset();
                 ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();

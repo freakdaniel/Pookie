@@ -16,6 +16,7 @@ internal sealed partial class MainWindow
     {
         var saved = configuration.Load();
         volume.Value = saved.Volume; previousVolume = saved.PreviousVolume; muted.Value = saved.Volume == 0;
+        playbackQueue.SetRepeat(saved.Repeat);
         discordEnabled.Value = saved.DiscordEnabled; shuffle.Value = saved.Shuffle; likesAsList.Value = saved.LikesAsList;
     }
 
@@ -28,7 +29,7 @@ internal sealed partial class MainWindow
     private void SaveConfiguration()
     {
         configurationTimer.Stop();
-        try { configuration.Save(new(volume.Value, previousVolume, discordEnabled.Value, shuffle.Value, likesAsList.Value)); }
+        try { configuration.Save(new(volume.Value, previousVolume, discordEnabled.Value, shuffle.Value, likesAsList.Value, playbackQueue.Repeat)); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { if (!disposed) status.Value = "Не удалось сохранить настройки Pookie."; }
     }

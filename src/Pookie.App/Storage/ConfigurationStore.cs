@@ -1,13 +1,15 @@
 using System.Text.Json;
+using Pookie.App.Playback;
 using System.Text.Json.Serialization;
 
 namespace Pookie.App.Storage;
 
 internal sealed record AppConfiguration(double Volume = 70, double PreviousVolume = 70,
-    bool DiscordEnabled = true, bool Shuffle = false, bool LikesAsList = false)
+    bool DiscordEnabled = true, bool Shuffle = false, bool LikesAsList = false, RepeatMode Repeat = RepeatMode.Off)
 {
     public AppConfiguration Normalize() => this with
     {
+        Repeat = Enum.IsDefined(Repeat) ? Repeat : RepeatMode.Off,
         Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, 100) : 70,
         PreviousVolume = double.IsFinite(PreviousVolume) && PreviousVolume > 0 ? Math.Clamp(PreviousVolume, 1, 100) : 70
     };

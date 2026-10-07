@@ -14,8 +14,9 @@ internal sealed partial class MainWindow
     {
         public SoundCloudTrack? Track { get; set; }
         public bool Hovered { get; set; }
+        public long? EntryId { get; set; }
     }
-    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null)
+    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false)
     {
         var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
         var play = Icons.View("play-solid", 18).CenterHorizontal().CenterVertical();
@@ -42,6 +43,7 @@ internal sealed partial class MainWindow
         root.Children(hoverFill, action.Column(0), like.Column(1), duration.Column(2));
         var row = new CompactTrackRow(root, cover, play, overlay, like, heart, title, author, duration, hoverFill);
         compactTrackRows.Add(row);
+        if (!queueRow) AttachTrackQueueMenu(root, () => row.Track);
         action.Click += () => { if (row.Track is { } item) (select ?? SelectLibraryTrack)(item); };
         like.Click += () => { if (row.Track is { } item) Run(() => ToggleTrackLikeAsync(item)); };
         root.MouseEnter += () => { row.Hovered = true; RefreshCompactTrackRow(row); };
@@ -53,7 +55,7 @@ internal sealed partial class MainWindow
     {
         if (track != null && Equals(row.Track, track)) { RefreshCompactTrackRow(row); return; }
         row.Track = track;
-        if (track == null) { row.Hovered = false; row.Overlay.Opacity = row.HoverFill.Opacity = 0; StopCardArtwork(row.Cover); return; }
+        if (track == null) { row.EntryId = null; row.Hovered = false; row.Overlay.Opacity = row.HoverFill.Opacity = 0; StopCardArtwork(row.Cover); return; }
         row.Title.Text = track.Title; row.Author.Text = track.Author; row.Duration.Text = FormatTime(track.DurationSeconds);
         SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
         Run(async () =>
@@ -68,7 +70,7 @@ internal sealed partial class MainWindow
     private void RefreshCompactTrackRow(CompactTrackRow row)
     {
         if (row.Track is not { } track) return;
-        var selected = current?.Id == track.Id;
+        var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId : current?.Id == track.Id;
         row.HoverFill.Opacity = selected || row.Hovered ? 1 : 0;
         row.Play.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid");
         row.Overlay.Opacity = selected || row.Hovered ? 1 : 0;

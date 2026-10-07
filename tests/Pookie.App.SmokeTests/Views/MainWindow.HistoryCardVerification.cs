@@ -39,7 +39,7 @@ internal sealed partial class MainWindow
         RouteWaveformClick(point);
         await WaitForLikedLayoutAsync(() => current?.Id == fixtures[1].Id && isPlaying.Value && !playbackLoading.Value &&
             next.Playback.ShowsPause && next.Playback.Opacity > .999 && active.Playback.Opacity < .001);
-        if (!queueTracks.Select(track => track.Id).SequenceEqual(activeCollection!.Items.Where(item => item.Track != null).Select(item => item.Track!.Id)))
+        if (!playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(activeCollection!.Items.Where(item => item.Track != null).Select(item => item.Track!.Id)))
             throw new InvalidOperationException("Clicking history did not preserve the history playback queue");
         RouteWaveformClick(point);
         await WaitForLikedLayoutAsync(() => !isPlaying.Value && !next.Playback.ShowsPause);
@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Any(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100));
         var restored = collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).First(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100);
         if (!restored.Playback.ShowsPause || restored.Playback.Opacity < .999)
-            throw new InvalidOperationException("Returning to history restarted the current card's overlay fade");
+            throw new InvalidOperationException($"Returning to history changed its active overlay: current={current?.Id}, expected={fixtures[1].Id}, playing={isPlaying.Value}, paused={paused}, showsPause={restored.Playback.ShowsPause}, opacity={restored.Playback.Opacity}");
         Console.WriteLine("UI_HISTORY_CARDS_OK: shared likes playback overlay, current track on entry, animated centered hover, immediate track selection, play/pause, history queue, recycled non-track cards and stable overlay on return");
     }
 }

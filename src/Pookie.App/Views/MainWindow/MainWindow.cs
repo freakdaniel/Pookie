@@ -48,7 +48,7 @@ internal sealed partial class MainWindow : IDisposable
     private readonly Slider progress;
     private readonly Image artwork;
     private readonly Image profileAvatar;
-    private readonly ListBox queueList;
+    private readonly ItemsControl queueList;
     private IAudioPlayer? player;
     private PresenceService? presence;
     private ISessionVault? vault;
@@ -90,6 +90,7 @@ internal sealed partial class MainWindow : IDisposable
         if (Environment.GetEnvironmentVariable("POOKIE_PROXY") is { Length: > 0 } proxy) handler.Proxy = new WebProxy(proxy);
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireBrowserTransport = true };
+        InitializePlaybackQueue();
         if (options.AudioEnabled)
         {
             try
@@ -114,10 +115,7 @@ internal sealed partial class MainWindow : IDisposable
         {
             if (!syncingTrackList && item is SoundCloudTrack track) { SetQueue(track); Run(() => PlayAsync(track)); }
         });
-        queueList = CreateTrackList(true).OnSelectionChanged(item =>
-        {
-            if (!syncingQueue && item is SoundCloudTrack track) Run(() => PlayAsync(track));
-        });
+        queueList = CreatePlaybackQueueList();
         progress = ThinSlider().Minimum(0).Maximum(1).Value(0).OnValueChanged(QueueSeek)
             .OnMouseDown(e => { if (e.Button == MouseButton.Left) BeginSeekDrag(); })
             .OnMouseUp(e => { if (e.Button == MouseButton.Left) EndSeekDrag(); });
@@ -319,7 +317,7 @@ internal sealed partial class MainWindow : IDisposable
         RefreshLikedViews();
     }
 
-    private async Task PlayAsync(SoundCloudTrack track, bool fromHistory = false)
+    private async Task PlayAsync(SoundCloudTrack track)
     {
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
@@ -330,8 +328,8 @@ internal sealed partial class MainWindow : IDisposable
         var token = playLoading.Token;
 
         // Selection is immediate; resolving and preparing audio must not hold back the UI.
-        if (current != null && current.Id != track.Id && !fromHistory && queueTracks.Any(t => t.Id == current.Id))
-            playbackHistory.Push(current);
+        var queueEntry = SelectPlaybackTrack(track);
+        playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
         current = track;
         audioPreparing = true; audioReady = false;
         paused = false; isPlaying.Value = true; playbackLoading.Value = true;
@@ -348,10 +346,10 @@ internal sealed partial class MainWindow : IDisposable
         var cachedArtwork = libraryCoverCache.GetValueOrDefault(track.Id) ?? coverCache.GetValueOrDefault(track.Id);
         SetPlayerArtwork(cachedArtwork, generation, pending: cachedArtwork == null);
         playerVisible.Value = true;
-        if (queueTracks.Count == 0) SetQueue(track);
         RefreshLikedPlayback(); UpdateLikeState(); RefreshQueue();
         if (cachedArtwork == null) Run(() => LoadArtworkAsync(track, generation));
         UpdateSystemMedia();
+        Run(() => queueLoader.EnsureAheadAsync());
         if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
 
         try
@@ -372,6 +370,8 @@ internal sealed partial class MainWindow : IDisposable
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
             current = track;
+            playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
+            RefreshQueue();
             title.Value = track.Title; artist.Value = track.Author;
             localRecent.RemoveAll(item => item.Key == "track:" + track.Id);
             localRecent.Insert(0, LibraryItem.FromTrack(track));
@@ -388,6 +388,7 @@ internal sealed partial class MainWindow : IDisposable
         {
             // A superseded request must not reset the newly selected track or report its error.
             if (generation != playGeneration || disposed) return;
+            playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Failed);
             audioReady = false; isPlaying.Value = false; RefreshLikedPlayback();
             throw;
         }
@@ -412,6 +413,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (current == null)
         {
+            if (playbackQueue.Snapshot.CanNext) return SkipAsync(1);
             if (tracks.Count == 0) return Task.CompletedTask;
             SetQueue(tracks[0]); return PlayAsync(tracks[0]);
         }
@@ -505,7 +507,7 @@ internal sealed partial class MainWindow : IDisposable
             RefreshLikedPlayback();
             playerVisible.Value = false;
             likedIds.Clear(); likedIdsReady = false; UpdateLikeState();
-            queueTracks.Clear(); playbackHistory.Clear(); RefreshQueue();
+            playbackQueue.Clear(); queueLoader.ContextChanged(); RefreshQueue();
             presence?.Clear();
             RunSync(() => player?.Stop());
             title.Value = "Выбери трек"; artist.Value = "Музыка из SoundCloud";
@@ -569,7 +571,7 @@ internal sealed partial class MainWindow : IDisposable
                 advancing = true;
                 Run(async () =>
                 {
-                    try { await SkipAsync(1); }
+                    try { await SkipAsync(1, naturalEnd: true); }
                     catch { isPlaying.Value = false; throw; }
                 });
             }
@@ -620,6 +622,7 @@ internal sealed partial class MainWindow : IDisposable
         disposed = true;
         ResetExpandedPlayer();
         DisposeSystemMedia();
+        queueLoader.Dispose();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();

@@ -401,11 +401,13 @@ internal sealed partial class MainWindow
             var duration = new TextBlock().FontSize(12).Foreground(Muted).CenterVertical().Right();
             context.Register("number", number); context.Register("cover", cover); context.Register("title", trackTitle);
             context.Register("author", author); context.Register("duration", duration);
-            return new Grid().Columns(compact ? "40,*,44" : "44,48,*,64").Rows("*").Spacing(12).Padding(12, 8).Children(
+            var root = new Grid().Columns(compact ? "40,*,44" : "44,48,*,64").Rows("*").Spacing(12).Padding(12, 8).Children(
                 number.IsVisible(!compact).Column(0),
                 new Border().Background(Raised).CornerRadius(8).Width(compact ? 30 : 38).Height(compact ? 30 : 38).Child(cover).CenterVertical().Left().Column(compact ? 0 : 1),
                 new StackPanel().Vertical().Spacing(4).CenterVertical().Column(compact ? 1 : 2).Children(trackTitle, author),
                 duration.Column(compact ? 2 : 3));
+            AttachTrackQueueMenu(root, () => rowTracks.TryGetValue(cover, out var id) ? tracks.FirstOrDefault(track => track.Id == id) : null);
+            return root;
         }, (_, track, index, context) =>
         {
             context.Get<TextBlock>("number").Text = (index + 1).ToString("00");

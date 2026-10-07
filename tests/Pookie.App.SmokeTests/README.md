@@ -3,6 +3,11 @@
 This executable contains native UI checks, local browser fixtures, and storage/audio
 integration scenarios. It is separate from the production `Pookie` executable
 
+Pure queue model checks live in `tests/Pookie.Playback.Tests` and run without a
+native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entry
+priority/editing/duplicates, actual history and forward traversal, stable shuffle,
+repeat/end behavior, immutable snapshots and independent cancellable pagination.
+
 Run from the repository root:
 
 ```bash
@@ -68,6 +73,10 @@ corners verified in rendered pixels and covers aligned to section headings.
 `--ui-smoke-test` also checks that pending artwork keeps the previous palette until
 the new cover arrives, failed/missing covers fall back to neutral, and a one-level
 colour change produces at least 90 distinct dithered frames without a channel jump.
+`--ui-smoke-test` checks occurrence-specific active rows and queue menus, the
+three-second Previous rule, system command order, single-result search playback,
+all repeat modes, a finite source ending, and source pagination across navigation.
+A delayed Next cannot replace a newer selection.
 The queue fixture contains 1,000 tracks. Motion translates retained layers without
 remeasuring or arranging their rows; closing slides the panel toward the cover
 and fades it while the cover returns to the center. The check verifies that

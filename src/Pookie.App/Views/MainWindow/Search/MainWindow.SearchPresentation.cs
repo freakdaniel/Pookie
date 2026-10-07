@@ -108,6 +108,7 @@ internal sealed partial class MainWindow
         var root = new Grid().Columns("*,1.5*").Rows("Auto").Spacing(28).Margin(0, 0, 0, 32)
             .Children(bestSection.Column(0), songsSection.Column(1));
         var hero = new SearchHero(root, bestSection, songsSection, card, cover, backdrop, frame, title, subtitle, play, rows);
+        AttachTrackQueueMenu(button, () => hero.Item?.Track);
         card.SizeChanged += e => subtitle.MaxWidth = Math.Max(0, e.NewSize.Width - 96);
         button.Click += () =>
         {

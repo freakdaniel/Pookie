@@ -52,6 +52,7 @@ internal sealed partial class MainWindow
             new Border().Background(Color.FromArgb(100, 0, 0, 0)).IsHitTestVisible(false),
             coverControls,
             ExpandedVolumeControl().Left().Top().Margin(14),
+            ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive).CenterHorizontal().Top().Margin(14),
             ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), 38, expandedQueueActive)
                 .Right().Top().Margin(14),
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(

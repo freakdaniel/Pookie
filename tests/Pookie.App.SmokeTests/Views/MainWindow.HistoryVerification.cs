@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
     {
         var fixtures = tracks.ToArray();
         var playing = current?.Id;
-        var queue = queueTracks.Select(track => track.Id).ToArray();
+        var queue = playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).ToArray();
         ResetNavigationHistory();
         ReplaceTracks(new(fixtures, null));
         if (backButton.IsEnabled || forwardButton.IsEnabled) throw new InvalidOperationException("Initial navigation arrows are enabled");
@@ -94,7 +94,7 @@ internal sealed partial class MainWindow
         await MoveNavigationAsync(1);
         if (page.Value != Page.Feed || navigationHistory[navigationIndex].Pending)
             throw new InvalidOperationException("Incomplete page could not be reopened from history");
-        if (current?.Id != playing || !queue.SequenceEqual(queueTracks.Select(track => track.Id)))
+        if (current?.Id != playing || !queue.SequenceEqual(playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id)))
             throw new InvalidOperationException("Navigation history changed playback or the queue");
         ResetNavigationHistory();
         if (navigationHistory.Count != 1 || canGoBack.Value || canGoForward.Value || tracks.Count != 0)

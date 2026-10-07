@@ -23,9 +23,6 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> muted = new(false);
     private readonly ObservableValue<double> volume = new(70);
     private readonly ObservableValue<string> queueStatus = new("Выбери трек, чтобы собрать очередь");
-    private readonly List<SoundCloudTrack> queueTracks = [];
-    private readonly Stack<SoundCloudTrack> playbackHistory = [];
-    private readonly List<SoundCloudTrack> shuffleBag = [];
     private readonly HashSet<long> likedIds = [];
     private readonly Dictionary<Image, long> rowTracks = [];
     private readonly Dictionary<long, ImageSource> coverCache = [];
@@ -33,7 +30,7 @@ internal sealed partial class MainWindow
     private readonly SemaphoreSlim coverGate = new(4);
     private CancellationTokenSource? likedLoading;
     private Task? likedTask;
-    private bool likedIdsReady, likeBusy, syncingQueue, advancing;
+    private bool likedIdsReady, likeBusy, advancing;
     private double previousVolume = 70;
 
     private Task NavigateAsync(Page target)
@@ -59,48 +56,6 @@ internal sealed partial class MainWindow
             ReplaceTracks(result);
             status.Value = target == Page.Home ? "Начни с ambient или найди музыку под своё настроение." : "Треки и репосты из твоей ленты SoundCloud.";
         });
-    }
-
-    private void SetQueue(SoundCloudTrack first)
-    {
-        CaptureQueueOrigin();
-        queueTracks.Clear(); queueTracks.AddRange(tracks);
-        if (!queueTracks.Any(t => t.Id == first.Id)) queueTracks.Add(first);
-        playbackHistory.Clear(); shuffleBag.Clear();
-        RefreshQueue();
-    }
-
-    private void RefreshQueue()
-    {
-        syncingQueue = true;
-        try
-        {
-            queueList.Items(queueTracks.ToArray(), t => t.Title, t => t.Id);
-            queueList.SelectedIndex = current == null ? -1 : queueTracks.FindIndex(t => t.Id == current.Id);
-        }
-        finally { syncingQueue = false; }
-        queueStatus.Value = queueTracks.Count == 0 ? "Выбери трек, чтобы собрать очередь" : $"{queueTracks.Count} треков · нажми, чтобы включить";
-        RefreshExpandedQueue();
-    }
-
-    private Task SkipAsync(int offset)
-    {
-        if (queueTracks.Count == 0) return ToggleAsync();
-        if (current == null) return PlayAsync(queueTracks[0]);
-        if (offset < 0 && playbackHistory.TryPop(out var previous))
-        {
-            return PlayAsync(previous, fromHistory: true);
-        }
-        if (shuffle.Value && offset > 0 && queueTracks.Count > 1)
-        {
-            if (shuffleBag.Count == 0) shuffleBag.AddRange(queueTracks.Where(t => t.Id != current.Id).OrderBy(_ => Random.Shared.Next()));
-            shuffleBag.RemoveAll(t => t.Id == current.Id);
-            if (shuffleBag.Count == 0) shuffleBag.AddRange(queueTracks.Where(t => t.Id != current.Id).OrderBy(_ => Random.Shared.Next()));
-            var next = shuffleBag[0]; shuffleBag.RemoveAt(0);
-            return PlayAsync(next);
-        }
-        var index = queueTracks.FindIndex(t => t.Id == current.Id);
-        return PlayAsync(queueTracks[(index + offset + queueTracks.Count) % queueTracks.Count]);
     }
 
     private void ToggleMute()

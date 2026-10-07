@@ -1,21 +1,26 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
+using Pookie.App.Playback;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum QueueBlockKind { Track, Source, Upcoming }
-    private sealed record QueueBlock(string Key, QueueBlockKind Kind, SoundCloudTrack? Track = null, string Title = "", string Subtitle = "");
+    private enum QueueBlockKind { Track, Source, Upcoming, Context }
+    private sealed record QueueBlock(string Key, QueueBlockKind Kind, SoundCloudTrack? Track = null, string Title = "", string Subtitle = "", long? EntryId = null);
     private readonly PaginationItems expandedQueueSource = new(LoadingRowStyle.Compact, item => ((QueueBlock)item).Key);
     private readonly Dictionary<QueueRowMotion, QueueBlock?> expandedQueueBlocks = [];
     private readonly Dictionary<string, double> expandedQueuePositions = [];
     private QueueBlock[] expandedQueueData = [];
+    private HashSet<string> expandedNewKeys = [];
+    private long expandedQueueChangedAt;
     private ScrollViewer expandedQueueScroll = null!;
     private QueueEdgeFade expandedQueueFade = null!;
     private (string Key, double Y)? expandedQueueAnchor;
     private bool expandedQueueStartPending = true;
+    private long? expandedCurrentEntry;
+    private long expandedSourceVersion = -1;
     private string queueOriginTitle = "Очередь воспроизведения", queueOriginKind = "Сейчас играет";
 
     private void CaptureQueueOrigin(bool recent = false)
@@ -52,8 +57,10 @@ internal sealed partial class MainWindow
         expandedQueue.ItemsSource = expandedQueueSource.View;
         expandedQueue.ItemTemplate = new DelegateTemplate<QueueBlock>(context =>
         {
-            var row = CreateCompactTrackRow(track =>
-                { if (current?.Id == track.Id) Run(ToggleAsync); else Run(() => PlayAsync(track)); }, PlayerSecondaryText);
+            CompactTrackRow row = null!;
+            row = CreateCompactTrackRow(_ =>
+                { if (row.EntryId is { } id) Run(() => PlayQueueEntryAsync(id)); }, PlayerSecondaryText, queueRow: true);
+            AttachTrackQueueMenu(row.Root, () => row.Track, () => row.EntryId);
             var label = new TextBlock().FontSize(12).SemiBold().Foreground(PlayerSecondaryText);
             var title = new TextBlock().FontSize(22).Bold().Foreground(Color.White).TextTrimming(TextTrimming.CharacterEllipsis);
             var heading = new StackPanel().Vertical().Spacing(5).Margin(8, 26, 8, 18).Children(label, title);
@@ -70,10 +77,11 @@ internal sealed partial class MainWindow
             // Layout/binding refreshes for the same retained item must not stop
             // an in-flight translation (for example when its artwork arrives).
             if (motion.RetainedKey != block.Key)
-                motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null);
+                motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null, QueueEntryIsNew(block));
             motion.RetainedKey = block.Key;
             var row = expandedQueueRows[context.Get<Grid>("row")];
             row.Root.IsVisible = block.Kind == QueueBlockKind.Track;
+            row.EntryId = block.EntryId;
             BindCompactTrackRow(row, block.Track);
             context.Get<StackPanel>("heading").IsVisible = block.Kind != QueueBlockKind.Track;
             context.Get<TextBlock>("label").Text = block.Subtitle;
@@ -135,18 +143,28 @@ internal sealed partial class MainWindow
         return true;
     }
 
+    private bool QueueEntryIsNew(QueueBlock block) => expandedOpen && expandedPanelMode == PlayerPanel.Queue && panelReveal > .999 &&
+        Environment.TickCount64 - expandedQueueChangedAt < 500 && expandedNewKeys.Contains(block.Key);
+
     private void RefreshExpandedQueue()
     {
         if (expandedQueue == null) return;
-        var index = current == null ? -1 : queueTracks.FindIndex(track => track.Id == current.Id);
-        expandedUpcoming = queueTracks.Skip(index + 1).ToArray();
-        var past = queueTracks.Take(Math.Max(0, index));
-        var next = past.Select(track => new QueueBlock($"track:{track.Id}", QueueBlockKind.Track, track)).ToList();
-        next.Add(new("source", QueueBlockKind.Source, Title: queueOriginTitle, Subtitle: queueOriginKind));
-        if (current is { } playing) next.Add(new($"track:{playing.Id}", QueueBlockKind.Track, playing));
+        var state = playbackQueue.Snapshot;
+        expandedUpcoming = state.Upcoming.Select(entry => entry.Track).ToArray();
+        static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
+        var next = state.History.Select(TrackBlock).ToList();
+        var manualCurrent = state.Current?.Origin == PlaybackEntryOrigin.Manual;
+        next.Add(new("source", QueueBlockKind.Source,
+            Title: manualCurrent ? "Сейчас играет" : state.Context?.Title ?? queueOriginTitle,
+            Subtitle: manualCurrent ? "" : state.Context?.Subtitle ?? queueOriginKind));
+        if (state.Current is { } playing) next.Add(TrackBlock(playing));
         next.Add(new("upcoming", QueueBlockKind.Upcoming,
-            Title: expandedUpcoming.Length > 0 ? "Далее в очереди" : "Следующих треков пока нет"));
-        next.AddRange(expandedUpcoming.Select(track => new QueueBlock($"track:{track.Id}", QueueBlockKind.Track, track)));
+            Title: expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
+        next.AddRange(state.ManualUpcoming.Select(TrackBlock));
+        if (state.ManualUpcoming.Count > 0 && state.ContextUpcoming.Count + state.Forward.Count > 0)
+            next.Add(new("context", QueueBlockKind.Context, Title: "Очередь воспроизведения"));
+        next.AddRange(state.Forward.Select(TrackBlock));
+        next.AddRange(state.ContextUpcoming.Select(TrackBlock));
         var data = next.ToArray();
         if (expandedQueueData.SequenceEqual(data)) return;
         expandedQueuePositions.Clear();
@@ -155,15 +173,28 @@ internal sealed partial class MainWindow
             foreach (var (motion, block) in expandedQueueBlocks)
                 if (block != null) expandedQueuePositions[block.Key] = motion.VisualY;
         }
-        // Playback follows the source heading, not whichever upcoming track the
-        // user happened to scroll to. Keep played rows above this fixed anchor.
-        smoothScrolls[expandedQueueScroll].Stop();
-        expandedQueueAnchor = ("source", 0);
+        var followCurrent = expandedQueueStartPending || expandedCurrentEntry != state.Current?.EntryId || expandedSourceVersion != state.SourceVersion;
+        if (followCurrent)
+        {
+            // Advancing playback follows the source heading. Appending a page or
+            // editing upcoming entries instead preserves the user's viewport.
+            smoothScrolls[expandedQueueScroll].Stop();
+            expandedQueueAnchor = ("source", 0);
+        }
+        else
+        {
+            var visible = expandedQueueBlocks.Where(pair => pair.Value != null && pair.Key.Bounds.Bottom > expandedQueueScroll.Bounds.Y)
+                .OrderBy(pair => pair.Key.Bounds.Y).FirstOrDefault();
+            if (visible.Key != null) expandedQueueAnchor = (visible.Value!.Key, visible.Key.Bounds.Y - expandedQueueScroll.Bounds.Y);
+        }
+        expandedNewKeys = data.Select(block => block.Key).Except(expandedQueueData.Select(block => block.Key)).ToHashSet();
+        expandedQueueChangedAt = Environment.TickCount64;
+        expandedCurrentEntry = state.Current?.EntryId; expandedSourceVersion = state.SourceVersion;
         expandedQueueData = data;
         expandedQueueSource.SetData(data);
-        expandedQueue.ScrollIntoView(Array.FindIndex(data, block => block.Kind == QueueBlockKind.Source));
+        if (followCurrent) expandedQueue.ScrollIntoView(Array.FindIndex(data, block => block.Kind == QueueBlockKind.Source));
         foreach (var (motion, block) in expandedQueueBlocks)
-            if (block != null) motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null);
+            if (block != null) motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null, QueueEntryIsNew(block));
         expandedQueue.InvalidateMeasure();
     }
 }
