@@ -24,7 +24,8 @@ Phosphor icons come from [phosphor-icons/core](https://github.com/phosphor-icons
 at commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`. Most assets are duotone SVGs;
 filled heart and playback variants are also included. `squares-four`, `list-bullets`,
 `copy`, `chat-circle`, and `arrow-left` use the corresponding upstream duotone
-assets; `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
+assets; `arrows-out` and `text-align-left` are also upstream duotone
+assets for the expanded player. `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
 runtime CDN dependency.
 
 `GoogleSans.ttf` is the unmodified `GoogleSans[GRAD,opsz,wght].ttf` from

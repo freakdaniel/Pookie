@@ -142,6 +142,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeSearchInput();
@@ -340,6 +341,7 @@ internal sealed partial class MainWindow : IDisposable
         likedPlaybackPosition = 0;
         currentTime.Value = "0:00"; totalTime.Value = FormatTime(track.DurationSeconds);
         bufferedTrack.Reset();
+        expandedBuffer.Reset();
         updatingProgress = true;
         try { progress.Value = 0; progress.Maximum = Math.Max(1, track.DurationSeconds); }
         finally { updatingProgress = false; }
@@ -510,6 +512,7 @@ internal sealed partial class MainWindow : IDisposable
             currentTime.Value = "0:00"; totalTime.Value = "0:00";
             progress.Value = 0; progress.Maximum = 1;
             bufferedTrack.Reset();
+            expandedBuffer.Reset();
             artwork.Source = Icons.Source("music-notes");
             playerBackdrop.Reset();
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
@@ -554,7 +557,11 @@ internal sealed partial class MainWindow : IDisposable
             }
             totalTime.Value = FormatTime(progress.Maximum);
             if (!seekPreview && (state.BufferedEnd > 0 || !state.Buffering))
+            {
                 bufferedTrack.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
+                expandedBuffer.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
+            }
+            SyncExpandedTimeline();
             presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
                 state.Position, progress.Maximum, state.Playing));
             if (state.Ended && !advancing)
@@ -611,6 +618,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        ResetExpandedPlayer();
         DisposeSystemMedia();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;

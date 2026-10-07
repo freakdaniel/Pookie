@@ -12,6 +12,13 @@ namespace Pookie.App.Browser;
 internal static class InfiniFrameLoginWindow
 {
     private const string BridgeMessageId = "pookie:browser-message";
+    // Pookie owns SMTC and the queue. Chromium must not create a second OS session
+    // from the hidden SoundCloud document or route media keys to its website player.
+    private static void DisableSystemMedia(IInfiniFrameWindowBuilder builder)
+    {
+        if (OperatingSystem.IsWindows())
+            builder.SetBrowserControlInitParameters("--disable-features=HardwareMediaKeyHandling,MediaSessionService");
+    }
     public static void RunRequests(WebSession account, Action<BrowserRequestEvent> received, string profilePath, string? fixtureUri)
     {
         var origin = fixtureUri == null ? "https://soundcloud.com" : new Uri(fixtureUri).GetLeftPart(UriPartial.Authority);
@@ -29,6 +36,7 @@ internal static class InfiniFrameLoginWindow
             .SetTemporaryFilesPath(profilePath).EnableIgnoreCertificateErrors(false).EnableWebSecurity(true)
             .EnableFileSystemAccess(false).EnableJavascriptClipboardAccess(false).EnableBrowserPermissions(false)
             .EnableMediaStream(false).EnableMediaAutoplay(OperatingSystem.IsWindows()).EnableDevTools(false).AddTrustedOrigin(origin);
+        DisableSystemMedia(builder);
         // Explicit, local-only diagnostic runs may observe startup traffic through CDP.
         if (OperatingSystem.IsWindows() && int.TryParse(Environment.GetEnvironmentVariable("POOKIE_STARTUP_DEBUG_PORT"), out var debugPort) &&
             debugPort is >= 1024 and <= 65535) builder.SetRemoteDebuggingPort(debugPort);
@@ -112,6 +120,7 @@ internal static class InfiniFrameLoginWindow
             .EnableMediaAutoplay(false)
             .EnableDevTools(false)
             .AddTrustedOrigin(origin);
+        DisableSystemMedia(builder);
         builder.RegisterWebMessagePostHandler(BridgeMessageId, (window, raw) =>
         {
             if (done || raw == null) return;

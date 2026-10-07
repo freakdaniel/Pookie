@@ -79,6 +79,7 @@ internal sealed partial class MainWindow
         }
         finally { syncingQueue = false; }
         queueStatus.Value = queueTracks.Count == 0 ? "Выбери трек, чтобы собрать очередь" : $"{queueTracks.Count} треков · нажми, чтобы включить";
+        RefreshExpandedQueue();
     }
 
     private Task SkipAsync(int offset)

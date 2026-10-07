@@ -20,6 +20,8 @@ internal sealed partial class MainWindow
     private readonly LoadingTrack loadingTrack = new();
     private readonly BufferedTrack bufferedTrack = new();
     private readonly PlayerBackdrop playerBackdrop = new();
+    private Border playerArtworkOverlay = null!;
+    private Button playerArtworkButton = null!;
 
     private FrameworkElement PlayerBar()
     {
@@ -56,6 +58,20 @@ internal sealed partial class MainWindow
             .OnClick(() => Run(ToggleLikeAsync));
         RefreshHeart();
 
+        playerArtworkOverlay = new Border().Background(Color.FromArgb(140, 0, 0, 0))
+            .Child(Icons.View("arrows-out", 23, Color.White).Center());
+        playerArtworkOverlay.Opacity = 0;
+        playerArtworkOverlay.Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(.2, 0, 0, 1))];
+        playerArtworkButton = new Button().Background(Color.FromRgb(59, 59, 59)).BorderThickness(0).Padding(0)
+            .CornerRadius(6).Width(48).Height(48)
+            .Content(new Border().CornerRadius(6).ClipToBounds()
+                .Child(new Grid().Columns("*").Rows("*").Children(artwork, playerArtworkOverlay)))
+            .OnMouseEnter(() => playerArtworkOverlay.Opacity = 1)
+            .OnMouseLeave(() => playerArtworkOverlay.Opacity = 0)
+            .OnGotFocus(() => playerArtworkOverlay.Opacity = 1)
+            .OnLostFocus(() => playerArtworkOverlay.Opacity = 0)
+            .OnClick(() => SetExpandedPlayer(true));
+
         playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Children(
             new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
             new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText).TextTrimming(TextTrimming.CharacterEllipsis));
@@ -80,8 +96,7 @@ internal sealed partial class MainWindow
         playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
             .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
-                new Border().Background(Color.FromRgb(59, 59, 59)).CornerRadius(6).ClipToBounds()
-                    .Width(48).Height(48).Child(artwork).Column(0),
+                playerArtworkButton.Column(0),
                 playerTrackInfo.Column(1),
                 heartButton.CenterVertical().Column(2)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(

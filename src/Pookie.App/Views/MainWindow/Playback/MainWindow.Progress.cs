@@ -47,5 +47,6 @@ internal sealed partial class MainWindow
         loadingTrack.IsVisible = loading;
         bufferedTrack.IsVisible = progress.IsVisible = !loading;
         loadingTrack.SetLoading(loading);
+        SyncExpandedTimeline();
     }
 }

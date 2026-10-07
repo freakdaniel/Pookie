@@ -16,7 +16,13 @@ internal sealed partial class MainWindow
     private void SetPlayerArtwork(ImageSource? source, long generation)
     {
         artwork.Source = source != null ? source : Icons.Source("music-notes");
-        if (source == null) { playerBackdrop.SetPalette(PlayerPalette.Neutral); return; }
+        expandedArtwork.Source = artwork.Source;
+        if (source == null)
+        {
+            playerBackdrop.SetPalette(PlayerPalette.Neutral);
+            expandedBackdrop.SetPalette(PlayerPalette.Neutral);
+            return;
+        }
         Run(async () =>
         {
             var palette = await playerPalettes.GetValue(source, image => Task.Run(() =>
@@ -25,7 +31,11 @@ internal sealed partial class MainWindow
                 catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException)
                 { return PlayerPalette.Neutral; }
             }, lifetime.Token));
-            if (!disposed && generation == playGeneration) playerBackdrop.SetPalette(palette);
+            if (!disposed && generation == playGeneration)
+            {
+                playerBackdrop.SetPalette(palette);
+                expandedBackdrop.SetPalette(palette);
+            }
         });
     }
 
@@ -60,7 +70,9 @@ internal sealed partial class MainWindow
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !SoundCloudWebClient.IsMediaUri(uri)) return null;
         var cached = await imageDiskCache.ReadAsync(uri.AbsoluteUri, token);
         if (cached != null)
-            try { return ImageSource.FromBytes(cached); } catch (ArgumentException) { }
+            try { return ImageSource.FromBytes(cached); }
+            catch (ArgumentException error)
+            { Pookie.Logging.AppLog.Failure("Pookie.Artwork", "Повреждённая обложка в кеше; загружаем заново", error, Serilog.Events.LogEventLevel.Debug); }
         try
         {
             using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, token);

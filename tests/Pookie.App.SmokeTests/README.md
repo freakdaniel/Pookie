@@ -9,6 +9,8 @@ Run from the repository root:
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --browser-media-isolation-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --expanded-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --buffer-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --startup-log-smoke-test
@@ -35,7 +37,32 @@ SMTC discovery, metadata/status and an OS Play/Pause round trip.
 `--media-ui-smoke-test` enables the system session in an isolated demo host and
 checks commands against real local audio. Windows uses OS session requests for
 play/pause, seek, next and stop/resume; duplicate play/pause commands are idempotent.
+It also advances through three real audio endings, then requests Next through
+Windows, checking track metadata against both player views after each change.
 Other UI tests keep system integration disabled to avoid taking over media keys.
+
+`--browser-media-isolation-smoke-test` runs a Windows WebView worker against a
+local audio page that repeatedly publishes website metadata and registers Next.
+It verifies audio progress, absence of a competing SMTC session, and routing of
+OS Next to Pookie with an updated track title. The fixture has an isolated profile
+and does not use the real account. WebView2 starts with HardwareMediaKeyHandling
+and MediaSessionService disabled; Pookie owns the system session and queue.
+
+`--expanded-ui-smoke-test` checks cover hover, native fullscreen and window-state
+restore, rendered intermediate animation frames, centered/split composition,
+lyrics/queue panel changes, queue selection, shared seeking and buffered progress,
+interrupted close/reopen and reset. Lyrics are an interface placeholder.
+The queue fixture contains 1,000 tracks. Motion translates retained layers without
+remeasuring or arranging their rows; closing slides the panel toward the cover
+and fades it while the cover returns to the center. The check verifies that
+visible panels never overlap the cover on closing
+and reports observed frame intervals. Each rendered motion frame also checks
+that translated content stays within its host's repaint bounds, including after
+the renderer switches from recorded commands to live drawing. Cover volume uses native mouse events to
+check unfolding, binding, delayed hiding, reentry and smooth collapse. Progress
+time labels are hidden initially and fade on native hover, remain visible during
+dragging, and hide after a debounce without changing layout. Closing fullscreen
+restores keyboard focus without leaving the small cover's hover overlay visible.
 
 `--buffer-ui-smoke-test` renders and samples the played, buffered and empty parts
 of the timeline, then checks seek previews, buffer replacement after seeking,
