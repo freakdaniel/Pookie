@@ -1,11 +1,13 @@
+using Pookie.App.Diagnostics;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using Pookie.SoundCloud;
+using Pookie.Logging;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // One live website per account. Secrets travel through stdin, never through argv or logs.
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, IBrowserAudioSession
@@ -14,6 +16,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
     private Worker? worker;
+    private long requestNumber;
     private readonly List<Worker> workers = [];
     public event Action<BrowserRequestEvent>? Changed;
     public WebSession Account { get { lock (sync) return account; } }
@@ -52,8 +55,9 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        var stage = $"browser.request.{Interlocked.Increment(ref requestNumber)}.{command.Operation}";
         var ordered = command.Operation != "audio";
-        if (ordered) await requests.WaitAsync(timeout.Token).ConfigureAwait(false);
+        if (ordered) await StartupLog.RunAsync(stage + ".queue", () => requests.WaitAsync(timeout.Token)).ConfigureAwait(false);
         try
         {
             Worker? stoppedWorker;
@@ -65,7 +69,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 lifetime.Token.ThrowIfCancellationRequested();
                 if (worker == null || worker.Stopped)
                 {
-                    worker = new Worker(account, fixtureUri, profilePath, BrowserChanged);
+                    worker = StartupLog.Run("browser.worker-start", () => new Worker(account, fixtureUri, profilePath, BrowserChanged));
                     workers.Add(worker);
                 }
                 current = worker;
@@ -73,17 +77,21 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
             using var cancellation = command.Operation == "like" ? timeout.Token.Register(current.Abort) : default;
-            await current.Ready.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+            await (ordered ? StartupLog.RunAsync(stage + ".site-ready", () => current.Ready.Task.WaitAsync(timeout.Token))
+                : current.Ready.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
             if (current.Blocked && (command.Operation != "audio" || command.Audio?.Action == "start")) throw BrowserBlocked();
             var response = new TaskCompletionSource<BrowserRequestEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
             current.Pending[command.Id] = response;
             try
             {
                 timeout.Token.ThrowIfCancellationRequested();
-                await current.SendAsync(command, timeout.Token).ConfigureAwait(false);
+                await (ordered ? StartupLog.RunAsync(stage + ".send", () => current.SendAsync(command, timeout.Token))
+                    : current.SendAsync(command, timeout.Token)).ConfigureAwait(false);
                 using var readCancellation = command.Operation != "like"
                     ? timeout.Token.Register(() => _ = current.CancelReadAsync(command.Id)) : default;
-                var result = await response.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+                var result = await (ordered ? StartupLog.RunAsync(stage + ".response", () => response.Task.WaitAsync(timeout.Token))
+                    : response.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
+                if (ordered) StartupLog.HttpStatus(stage, result.Status);
                 if (result.Status is >= 200 and < 300) return result;
                 throw result.Status switch
                 {
@@ -124,6 +132,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     public static int RunChild(string handle, string profile, string? fixture)
     {
+        StartupLog.UseChildOutput();
+        StartupLog.Event("browser.child-start");
         try
         {
             ValidateFixture(fixture);
@@ -133,6 +143,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             var session = JsonSerializer.Deserialize(line, SoundCloudJson.Default.WebSession);
             if (session?.IsValid() != true) return 2;
             using var pipe = new AnonymousPipeClientStream(PipeDirection.Out, handle);
+            StartupLog.Event("browser.child-input-ready");
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
             void Received(BrowserRequestEvent message) => writer.WriteLine(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
             if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe")
@@ -142,7 +153,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         }
         catch (Exception error)
         {
-            if (fixture != null) Console.Error.WriteLine(error.GetType().Name);
+            AppLog.Failure("Pookie.Browser", "Браузерный процесс завершился с ошибкой", error);
             return 2;
         }
     }
@@ -169,9 +180,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
         public Worker(WebSession account, string? fixture, string? profilePath, Action<BrowserRequestEvent> changed)
         {
+            StartupLog.EnsureInitialized();
             ValidateFixture(fixture);
             if (!account.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.");
-            var profile = BrowserProfile.Open(fixture, profilePath);
+            var profile = StartupLog.Run("browser.profile-open", () => BrowserProfile.Open(fixture, profilePath));
             this.account = account;
             protection = new BrowserProtectionStore(profile.Path);
             // The persistent native profile restores website state with its
@@ -184,7 +196,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet") start.ArgumentList.Add(typeof(NativeBrowserSession).Assembly.Location);
                 foreach (var argument in new[] { "--web-requests", pipe.GetClientHandleAsString(), "--login-profile", profile.Path }) start.ArgumentList.Add(argument);
                 if (fixture != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixture); }
-                Process = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView.");
+                AppLog.ConfigureChild(start);
+                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView."));
                 pipe.DisposeLocalCopyOfClientHandle();
                 Process.StandardInput.WriteLine(JsonSerializer.Serialize(account, SoundCloudJson.Default.WebSession));
                 Process.StandardInput.Flush();
@@ -257,7 +270,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         {
             var batches = new Dictionary<string, List<long>>();
             var bodies = new Dictionary<string, (StringBuilder Text, int Next)>();
-            var stdout = DrainAsync(Process.StandardOutput);
+            var stdout = DrainAsync(Process.StandardOutput, Process.Id);
             var stderr = DrainAsync(Process.StandardError);
             try
             {
@@ -269,7 +282,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                     if (message == null) continue;
                     if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
                         protection.Save(account, value);
-                    if (message.Kind == "ready") Ready.TrySetResult();
+                    if (message.Kind == "ready") { StartupLog.Event("browser.site-ready"); Ready.TrySetResult(); }
+                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error") StartupLog.Event("browser.site." + message.Kind);
                     if (message.Kind == "blocked")
                     {
                         Interlocked.Exchange(ref blocked, 1);
@@ -318,10 +332,25 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
         }
 
-        private static async Task DrainAsync(StreamReader reader)
+        private static async Task DrainAsync(StreamReader reader, int? childPid = null)
         {
             var buffer = new char[2048];
-            while (await reader.ReadAsync(buffer).ConfigureAwait(false) != 0) { }
+            var line = new StringBuilder();
+            int count;
+            while ((count = await reader.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+            {
+                if (childPid == null) continue;
+                for (var index = 0; index < count; index++)
+                {
+                    var character = buffer[index];
+                    if (character == '\n')
+                    {
+                        StartupLog.ForwardChild(line.ToString().TrimEnd('\r'), childPid.Value);
+                        line.Clear();
+                    }
+                    else if (line.Length < 4096) line.Append(character);
+                }
+            }
         }
     }
 }

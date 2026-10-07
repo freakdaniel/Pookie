@@ -1,4 +1,5 @@
 using System.Net;
+using Pookie.App.Auth;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -6,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Pookie.SoundCloud;
 using Pookie.App.Storage;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class BrowserPersistenceSmokeTest
 {

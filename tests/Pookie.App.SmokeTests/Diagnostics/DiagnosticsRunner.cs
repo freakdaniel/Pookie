@@ -1,3 +1,5 @@
+using Pookie.App.Playback;
+using Pookie.App.Browser;
 using System.Net;
 using Pookie.App.Preview;
 using Pookie.App.Auth;
@@ -12,6 +14,19 @@ internal static class DiagnosticsRunner
     public static async Task<bool> TryRunAsync(string[] args)
     {
         if (args.Length == 2 && args[0] == "--clipboard-fixture") { ClipboardFixture.Run(args[1]); return true; }
+        if (args.Contains("--content-blocker-smoke-test")) { await ContentBlockerSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--startup-network-probe"))
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This probe uses Windows WebView2.");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            using var sessionVault = SessionVault.Open(new AppDataPaths());
+            var saved = sessionVault.Load() ?? throw new InvalidOperationException("No saved SoundCloud session for the startup probe.");
+            await using var session = new NativeBrowserSession(saved);
+            await session.GetMeAsync(timeout.Token);
+            Console.WriteLine("STARTUP_NETWORK_PROFILE_OK: saved session validated; account details omitted");
+            return true;
+        }
+        if (args.Contains("--startup-log-smoke-test")) { await StartupLogSmokeTest.RunAsync(); return true; }
         if (args.Contains("--storage-smoke-test")) { await StorageSmokeTest.RunAsync(); return true; }
         if (args.Contains("--session-vault-smoke-test")) { await SessionVaultSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-persistence-smoke-test")) { await BrowserPersistenceSmokeTest.RunAsync(); return true; }

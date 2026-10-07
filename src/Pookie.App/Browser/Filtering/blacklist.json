@@ -1,0 +1,20 @@
+[
+  { "host": "quantserve.com" },
+  { "host": "doubleclick.net" },
+  { "host": "doubleclick.com" },
+  { "host": "googlesyndication.com", "pathPrefix": "/pagead/" },
+  { "host": "googlesyndication.com", "pathPrefix": "/safeframe/" },
+  { "host": "googleadservices.com" },
+  { "host": "google-analytics.com" },
+  { "host": "googletagmanager.com" },
+  { "host": "scorecardresearch.com" },
+  { "host": "adnxs.com" },
+  { "host": "amazon-adsystem.com" },
+  { "host": "pubmatic.com" },
+  { "host": "rubiconproject.com" },
+  { "host": "openx.net" },
+  { "host": "eventgateway.soundcloud.com" },
+  { "host": "telemetry.soundcloud.com" },
+  { "host": "no9pldds1lmn3.soundcloud.com" },
+  { "host": "soundcloud.com", "pathPrefix": "/audio-ads?" }
+]

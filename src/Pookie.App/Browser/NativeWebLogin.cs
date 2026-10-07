@@ -1,10 +1,12 @@
+using Pookie.App.Diagnostics;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using Pookie.SoundCloud;
+using Pookie.Logging;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class NativeWebLogin
 {
@@ -27,6 +29,8 @@ internal static class NativeWebLogin
         start.ArgumentList.Add("--login-profile");
         start.ArgumentList.Add(profilePath);
         if (fixtureUri != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixtureUri); }
+        StartupLog.EnsureInitialized();
+        AppLog.ConfigureChild(start);
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить окно входа.");
         pipe.DisposeLocalCopyOfClientHandle();
         // Drain browser-engine diagnostics without exposing login headers/cookies in application logs.
@@ -71,6 +75,7 @@ internal static class NativeWebLogin
 
     public static int RunChild(string handle, string profilePath, string? fixtureUri)
     {
+        AppLog.Initialize(Pookie.App.Storage.AppDataPaths.DefaultRoot(), worker: true);
         try
         {
             using var pipe = new AnonymousPipeClientStream(PipeDirection.Out, handle);
@@ -85,12 +90,12 @@ internal static class NativeWebLogin
         }
         catch (InfiniFrameLoginWindow.BridgeException error)
         {
-            if (fixtureUri != null) Console.Error.WriteLine(error);
+            AppLog.Failure("Pookie.Login", "Ошибка обмена с окном входа", error);
             return 3;
         }
         catch (Exception error)
         {
-            if (fixtureUri != null) Console.Error.WriteLine(error);
+            AppLog.Failure("Pookie.Login", "Не удалось открыть окно входа", error);
             return 2;
         }
     }

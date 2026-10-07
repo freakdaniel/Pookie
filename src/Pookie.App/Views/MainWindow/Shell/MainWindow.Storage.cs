@@ -1,5 +1,5 @@
+using Pookie.App.Browser;
 using Aprillz.MewUI;
-using Pookie.App.Auth;
 using Pookie.App.Storage;
 
 namespace Pookie.App;

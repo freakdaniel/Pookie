@@ -1,3 +1,4 @@
+using Pookie.App.Diagnostics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -43,7 +44,7 @@ internal sealed partial class MainWindow
     private async Task HideStartupSplashAsync()
     {
         if (disposed) return;
-        await startupMinimumDisplay;
+        await StartupLog.RunAsync("startup.splash-minimum-wait", () => startupMinimumDisplay);
         if (!CanUseWorkspace)
         {
             await ShowLoginScreenAsync();

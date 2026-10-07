@@ -1,10 +1,10 @@
+using Pookie.App.Browser;
 using System.Net;
 using Aprillz.MewUI;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Pookie.App.Auth;
 using Pookie.SoundCloud;
 
 namespace Pookie.App;

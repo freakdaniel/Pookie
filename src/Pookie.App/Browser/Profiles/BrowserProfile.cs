@@ -1,6 +1,6 @@
 using Pookie.App.Storage;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // Login and the background website reuse one profile; fixtures use isolated temporary profiles.
 internal sealed class BrowserProfile : IDisposable

@@ -4,6 +4,10 @@
     <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)LICENSING.md;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.Logging'">
+    <None Update="Serilog-NOTICES.txt" TargetPath="SERILOG-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.Audio'">
     <PookieDependencyLicense Include="$(PkgSoundFlow)/LICENSE.md;$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt;$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md;$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" />
     <None Include="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

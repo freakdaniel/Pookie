@@ -38,7 +38,7 @@ internal sealed class WidevineSession : IDisposable
                 var installed = await result.NextAsync(token);
                 if (installed.Kind != 3 || installed.Promise != result.promise || installed.Code != 0)
                     throw new DrmPlaybackException("Widevine CDM отклонил сертификат сервера.");
-                Console.WriteLine("DRM_SERVICE_CERTIFICATE_INSTALLED: native CDM accepted certificate; payload redacted");
+                Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug("Widevine принял сертификат сервера");
             }
             handle.Begin(++result.promise, initData);
             await result.LicenseAsync(token);

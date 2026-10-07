@@ -1,7 +1,9 @@
+using Pookie.App.Hosting;
+using Pookie.App.Browser;
 using Aprillz.MewUI;
 using Pookie.App;
-using Pookie.App.Auth;
 using Pookie.App.Diagnostics;
+using Pookie.Logging;
 
 internal static class Program
 {
@@ -44,5 +46,6 @@ internal static class Program
             Console.Error.WriteLine(error);
             Environment.ExitCode = 1;
         }
+        finally { AppLog.Shutdown(); }
     }
 }

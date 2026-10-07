@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Pookie.SoundCloud;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class BrowserWorkerSmokeTest
 {

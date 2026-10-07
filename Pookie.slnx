@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Pookie.App/Pookie.App.csproj" />
+    <Project Path="src/Pookie.Logging/Pookie.Logging.csproj" />
     <Project Path="src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <Project Path="src/Pookie.Audio/Pookie.Audio.csproj" />
     <Project Path="src/Pookie.Discord/Pookie.Discord.csproj" />

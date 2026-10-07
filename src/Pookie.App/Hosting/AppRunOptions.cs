@@ -1,4 +1,4 @@
-namespace Pookie.App;
+namespace Pookie.App.Hosting;
 
 internal sealed record AppRunOptions
 {

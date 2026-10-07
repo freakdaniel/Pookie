@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class LoginSmokeTest
 {

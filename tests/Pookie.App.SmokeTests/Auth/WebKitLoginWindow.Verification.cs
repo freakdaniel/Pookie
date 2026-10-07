@@ -1,7 +1,7 @@
 using Pookie.SoundCloud;
 using System.Runtime.InteropServices;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal sealed partial class WebKitLoginWindow
 {

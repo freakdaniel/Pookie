@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Pookie.SoundCloud;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // Exported session metadata, not a native cookie backup. Contains no OAuth token.
 // NativeBrowserSession never restores it into website storage: the browser owns

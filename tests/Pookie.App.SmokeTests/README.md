@@ -8,6 +8,8 @@ Run from the repository root:
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --startup-log-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --content-blocker-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --storage-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --session-vault-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --audio-smoke-test
@@ -17,6 +19,17 @@ dotnet run --project tests/Pookie.App.SmokeTests -- --browser-persistence-smoke-
 dotnet run --project tests/Pookie.App.SmokeTests -- --browser-audio-state-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --browser-shutdown-smoke-test
 ```
+
+`--startup-log-smoke-test` checks default/explicit console and file thresholds,
+worker file output, console fallback when files are unavailable, stage timings,
+exception propagation and filtering of private text, using isolated temporary data.
+
+`--content-blocker-smoke-test` checks host/path boundaries and parity between the
+Windows matcher and generated WebKit rules. An isolated native browser fixture
+then requests blocked tracking URLs and verifies that ordinary page scripts and
+the authorized profile API still work. The fixture uses a temporary profile and
+never loads a real SoundCloud account. Windows returns an inert response for
+blocked resources; WebKit rejects them through its native content rules.
 
 UI and local browser scenarios require a desktop session and the same native
 dependencies as the application. Run UI scenarios sequentially: keyboard focus
@@ -37,6 +50,7 @@ of damaged/oversized data and deletion on logout. It uses an isolated directory.
 The following scenarios use the real SoundCloud service and must be run explicitly:
 
 ```bash
+dotnet run --project tests/Pookie.App.SmokeTests -- --startup-network-probe
 dotnet run --project tests/Pookie.App.SmokeTests -- --web-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-handoff-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --session-smoke-test
@@ -48,6 +62,36 @@ dotnet run --project tests/Pookie.App.SmokeTests -- --drm-webview-capabilities
 dotnet run --project tests/Pookie.App.SmokeTests -- --drm-browser-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url> --drm-native-cdm
 ```
+
+`--startup-network-probe` validates the saved account through the production Windows
+WebView worker and exits. Close the normal app first so the probe can open its
+existing profile. It preserves the session and records startup milestones at
+Debug without account details. Set `POOKIE_LOG_CONSOLE_LEVEL=Debug` to see these
+milestones in the console; the default file level already includes them.
+Setting `POOKIE_STARTUP_DEBUG_PORT` to a port from 1024 to 65535
+enables InfiniFrame's loopback CDP endpoint for an explicitly configured diagnostic
+run. This endpoint exposes browser debugging capabilities; it is disabled by default.
+
+On 2026-10-07, a local Windows capture found `pixel.quantserve.com` requests timing
+out after 42.3 seconds. The document reached DOMContentLoaded after 1.4 seconds,
+but InfiniFrame's initial-navigation readiness awaited the full page load at 45.8
+seconds. A controlled run blocking only that domain through CDP completed the saved
+session probe in 4.5 seconds, compared with 46.2 seconds in the baseline. This
+blocking was confined to that diagnostic run. Production now installs its shared,
+embedded content rules before the first navigation, including Quantserve filtering.
+The preserved Windows session probe completed in 3.3 seconds with those filters
+on 2026-10-07; Lucidream's full DRM playback smoke test also passed.
+
+The Windows adapter uses InfiniFrame 0.62.1's runtime HTTP(S) request dispatch,
+returning null content to preserve allowed requests and an inert response for
+blocked ones. Register HTTP(S) on the created window, not on the builder: these
+are existing WebView2 protocols. This integration depends on InfiniFrame's native
+dispatch behavior; run the native smoke check when upgrading it. Linux WebKitGTK
+compiles the same rules into a native content filter before loading a document,
+caching it by rule-set SHA-256 under the browser profile's `ContentFilters/`.
+Filters apply to both the login and background service paths. The rules do not
+target API/media/CDM, OAuth providers, or DataDome resources. The complete
+Ghostery engine, scriptlets, and cosmetic rules are not included.
 
 The session scenario sends an idempotent like request for an already liked track;
 the handoff scenario opens the real sign-in flow. These are not run by `dotnet test`

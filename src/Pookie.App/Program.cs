@@ -1,10 +1,24 @@
+using Pookie.App.Hosting;
+using Pookie.App.Browser;
 using Pookie.App;
-using Pookie.App.Auth;
+using Pookie.App.Storage;
+using Pookie.Logging;
+using Serilog.Events;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main(string[] args) => RunAsync(args).GetAwaiter().GetResult();
+    private static void Main(string[] args)
+    {
+        try { RunAsync(args).GetAwaiter().GetResult(); }
+        catch (Exception error)
+        {
+            AppLog.Initialize(AppDataPaths.DefaultRoot());
+            AppLog.Failure("Pookie", "Приложение аварийно завершилось", error, LogEventLevel.Fatal);
+            Environment.ExitCode = 1;
+        }
+        finally { AppLog.Shutdown(); }
+    }
 
     private static async Task RunAsync(string[] args)
     {

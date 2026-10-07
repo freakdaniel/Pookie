@@ -1,4 +1,5 @@
-using Pookie.App.Auth;
+using Pookie.App.Playback;
+using Pookie.App.Browser;
 using Pookie.Audio;
 using Pookie.SoundCloud;
 

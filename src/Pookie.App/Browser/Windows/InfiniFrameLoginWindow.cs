@@ -1,3 +1,4 @@
+using Pookie.App.Diagnostics;
 using InfiniFrame;
 using InfiniFrame.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,7 +7,7 @@ using Pookie.SoundCloud;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class InfiniFrameLoginWindow
 {
@@ -28,6 +29,19 @@ internal static class InfiniFrameLoginWindow
             .SetTemporaryFilesPath(profilePath).EnableIgnoreCertificateErrors(false).EnableWebSecurity(true)
             .EnableFileSystemAccess(false).EnableJavascriptClipboardAccess(false).EnableBrowserPermissions(false)
             .EnableMediaStream(false).EnableMediaAutoplay(OperatingSystem.IsWindows()).EnableDevTools(false).AddTrustedOrigin(origin);
+        // Explicit, local-only diagnostic runs may observe startup traffic through CDP.
+        if (OperatingSystem.IsWindows() && int.TryParse(Environment.GetEnvironmentVariable("POOKIE_STARTUP_DEBUG_PORT"), out var debugPort) &&
+            debugPort is >= 1024 and <= 65535) builder.SetRemoteDebuggingPort(debugPort);
+        var navigationObserved = false;
+        builder.RegisterNavigationStartingHandler((_, navigation) =>
+        {
+            if (navigation.IsMainFrame && !navigationObserved)
+            {
+                navigationObserved = true;
+                StartupLog.Event("browser.initial-navigation-start");
+            }
+            return NavigationStartingResult.Allow;
+        });
         builder.RegisterWebMessagePostHandler(BridgeMessageId, (window, raw) =>
         {
             if (raw == null) return;
@@ -39,6 +53,8 @@ internal static class InfiniFrameLoginWindow
         });
         builder.RegisterWindowCreatedHandler(window =>
         {
+            BrowserContentBlocker.Attach(window);
+            StartupLog.Event("browser.window-created");
             if (OperatingSystem.IsWindows()) BrowserWindowVisibility.UseForPlayback(window);
             else BrowserWindowVisibility.Set(window, false);
             if (OperatingSystem.IsWindows())
@@ -107,6 +123,7 @@ internal static class InfiniFrameLoginWindow
         });
         builder.RegisterWindowCreatedHandler(window =>
         {
+            BrowserContentBlocker.Attach(window);
             // Reinstall across full-page navigations without sharing MewUI's dispatcher.
             _ = RunBridgeTaskAsync(window, () => ObservePagesAsync(window, script, lifetime.Token),
                 error => Interlocked.CompareExchange(ref bridgeError, error, null), lifetime.Token);
@@ -138,10 +155,13 @@ internal static class InfiniFrameLoginWindow
     private static async Task ObservePagesAsync(IInfiniFrameWindow window, string script, CancellationToken token, bool hideWhenReady = false)
     {
         await window.WaitForReadyAsync(token);
+        if (hideWhenReady) StartupLog.Event("browser.initial-navigation-ready");
+        var firstInjection = true;
         if (hideWhenReady) await window.DispatchAsync(() => BrowserWindowVisibility.Set(window, false), cancellationToken: token);
         while (!window.IsClosedOrClosing())
         {
             await window.Features.JavaScript.ExecuteJavaScriptAsync(AsExpression(script), token);
+            if (firstInjection && hideWhenReady) { StartupLog.Event("browser.bridge-installed"); firstInjection = false; }
             await Task.Delay(300, token);
         }
     }

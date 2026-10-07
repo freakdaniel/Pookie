@@ -1,13 +1,8 @@
+using Pookie.App.Browser;
 using Pookie.Audio;
 using Pookie.SoundCloud;
 
-namespace Pookie.App.Auth;
-
-internal interface IBrowserAudioSession
-{
-    event Action<BrowserRequestEvent>? Changed;
-    Task<BrowserRequestEvent> SendAudioAsync(BrowserAudioCommand command, CancellationToken token = default);
-}
+namespace Pookie.App.Playback;
 
 // SoundFlow handles ordinary audio; Windows protected audio stays inside browser EME.
 internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudioSession?> session) : IAudioPlayer

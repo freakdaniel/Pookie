@@ -13,6 +13,13 @@ SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie is distributed under BSD-3-Clause; the original MIT attribution and permission notice are retained in licenses/MIT.txt."
 
 [[annotations]]
+path = "src/Pookie.App/Browser/Filtering/blacklist.json"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Daniel Freak"
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileComment = "Pookie configuration containing literal advertising and analytics request hosts and path prefixes."
+
+[[annotations]]
 path = "src/Pookie.App/Assets/Icons/*.svg"
 precedence = "closest"
 SPDX-FileCopyrightText = "2023 Phosphor Icons"

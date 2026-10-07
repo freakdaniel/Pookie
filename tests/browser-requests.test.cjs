@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Auth/browser-requests.js'), 'utf8');
+const script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const command = (n, operation = 'like', liked = true) => ({id:n.toString(16).padStart(32,'0'), operation, user_id:42, track_id:90, liked});
 function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded = true, stored = true, prepared = true, extraAccount = {}, resources = []) {

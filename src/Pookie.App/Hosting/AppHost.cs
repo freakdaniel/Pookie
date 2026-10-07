@@ -1,11 +1,14 @@
+using Pookie.App.Diagnostics;
 using Aprillz.MewUI;
+using Pookie.Logging;
 
-namespace Pookie.App;
+namespace Pookie.App.Hosting;
 
 internal static class AppHost
 {
     internal static async Task RunAsync(AppRunOptions options, Action<MainWindow>? configureWindow = null)
     {
+        StartupLog.Event("app.host-start");
 #if POOKIE_LINUX
         X11Platform.Register(); MewVGX11Backend.Register();
 #elif POOKIE_WINDOWS
@@ -21,7 +24,7 @@ internal static class AppHost
 
         Application.DispatcherUnhandledException += eventArgs =>
         {
-            Console.Error.WriteLine($"UI_ERROR: {eventArgs.Exception.GetType().Name}");
+            AppLog.Failure("Pookie.UI", "Ошибка потока интерфейса", eventArgs.Exception);
             Environment.ExitCode = 1;
             Application.Shutdown();
             eventArgs.Handled = true;
@@ -42,9 +45,18 @@ internal static class AppHost
         };
         ThemeManager.DefaultAccentColor = Color.FromRgb(180, 180, 180);
         ThemeManager.DefaultMetrics = ThemeMetrics.Default with { ControlCornerRadius = 10, FontFamily = appFont.FontFamily };
-        using var native = new MainWindow(options, brandFont.FontFamily);
+        using var native = StartupLog.Run("app.main-window-create", () => new MainWindow(options, brandFont.FontFamily));
         configureWindow?.Invoke(native);
-        Application.Create().UseTheme(ThemeVariant.Dark).UseAccent(Color.FromRgb(180, 180, 180)).Run(native.Window);
-        await native.FinishShutdownAsync().ConfigureAwait(false);
+        try { Application.Create().UseTheme(ThemeVariant.Dark).UseAccent(Color.FromRgb(180, 180, 180)).Run(native.Window); }
+        finally
+        {
+            try { await native.FinishShutdownAsync().ConfigureAwait(false); }
+            finally
+            {
+                AppLog.For("Pookie").Information("Приложение закрыто");
+                AppLog.Shutdown();
+                native.CleanupIsolatedData();
+            }
+        }
     }
 }

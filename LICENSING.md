@@ -109,3 +109,9 @@ restored packages and combined into `THIRD-PARTY-NOTICES.txt` during the audio
 project's build. The generated file is copied into the application distribution;
 the dependency notices are not duplicated into the source tree. REUSE checks
 repository files; dependency notices accompany the built binaries separately.
+
+The logging backend restores Serilog 4.2.0, Serilog.Sinks.Console 6.1.1 and
+Serilog.Sinks.File 7.0.0 from NuGet. These unmodified libraries use Apache-2.0.
+Their attribution is shipped as `SERILOG-NOTICES.txt` and the complete license
+is included in `licenses/Apache-2.0.txt`. Pookie's logging integration remains
+BSD-3-Clause.

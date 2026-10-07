@@ -54,7 +54,9 @@ internal static class DrmLicenseFailure
             }
             var category = Classify(buffer.AsSpan(0, count));
             if (Environment.GetEnvironmentVariable("POOKIE_DRM_DIAGNOSTICS") == "1")
-                Console.WriteLine($"DRM_LICENSE_REJECTED: http={(int)response.StatusCode}; httpVersion={response.Version}; reason={category}; code={NumericCode(buffer.AsMemory(0, count))}; inspectedBytes={count}; cloudFront={response.Headers.Contains("x-amz-cf-id")}; credentials redacted");
+                Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug(
+                    "DRM-лицензия отклонена: HTTP {HttpStatus}; протокол {HttpVersion}; причина {Reason}; код {Code}; проверено байт {InspectedBytes}; CloudFront {CloudFront}",
+                    (int)response.StatusCode, response.Version, category, NumericCode(buffer.AsMemory(0, count)), count, response.Headers.Contains("x-amz-cf-id"));
             return category == "host-verification" ? " Сервер сообщил об ошибке проверки DRM-хоста (VMP)." :
                 category == "expired-authorization" ? " Сервер сообщил об истечении авторизации лицензии." :
                 category == "invalid-authorization" ? " Сервер сообщил о некорректной авторизации лицензии." :

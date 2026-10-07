@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pookie.Audio;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // Diagnostic only: compare native CDM transport with Pookie's own browser CDM.
 // One fixed license endpoint, no arbitrary browser requests, credentials only over anonymous IPC.

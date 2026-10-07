@@ -1,0 +1,21 @@
+SPDX-FileCopyrightText: Serilog Contributors
+SPDX-License-Identifier: Apache-2.0
+
+Serilog 4.2.0
+Copyright (c) Serilog Contributors
+https://github.com/serilog/serilog
+NuGet source commit: c00e17fdeb615d36c062569f7342f72c9ece4aa7
+
+Serilog.Sinks.Console 6.1.1
+Serilog Contributors
+https://github.com/serilog/serilog-sinks-console
+NuGet source commit: b3cb1f042f5636161b831fa8816d70d865a5eec4
+
+Serilog.Sinks.File 7.0.0
+Serilog Contributors
+https://github.com/serilog/serilog-sinks-file
+NuGet source commit: 23c732a8658a0df2a5434fe69b0011800b14f0da
+
+These unmodified NuGet dependencies are licensed under the Apache License,
+Version 2.0. The complete license accompanies this distribution in
+licenses/Apache-2.0.txt. Pookie's integration code is licensed separately.

@@ -1,3 +1,7 @@
+using Pookie.App.Diagnostics;
+using Pookie.App.Hosting;
+using Pookie.App.Playback;
+using Pookie.App.Browser;
 using System.Net;
 using System.Text.Json;
 using Aprillz.MewUI;
@@ -8,6 +12,8 @@ using Pookie.App.Preview;
 using Pookie.App.Auth;
 using Pookie.App.Storage;
 using Pookie.SoundCloud;
+using Pookie.Logging;
+using Serilog.Events;
 
 namespace Pookie.App;
 
@@ -69,6 +75,8 @@ internal sealed partial class MainWindow : IDisposable
         skipSessionRestore = options.SkipSessionRestore;
         isolatedRun = options.IsolatedData || demo;
         dataPaths = new AppDataPaths(isolatedRun ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
+        StartupLog.Initialize(dataPaths);
+        StartupLog.Event(OperatingSystem.IsWindows() ? "platform.windows.webview2" : OperatingSystem.IsLinux() ? "platform.linux.webkit" : "platform.macos");
         configuration = new ConfigurationStore(dataPaths);
         imageDiskCache = new ImageDiskCache(dataPaths);
         imageDiskCache.Prune();
@@ -89,13 +97,14 @@ internal sealed partial class MainWindow : IDisposable
                 player = OperatingSystem.IsWindows() ? new WindowsAudioPlayer(native, () => browser) : native;
                 audioStatus.Value = "Аудио: SoundFlow";
             }
-            catch (Exception error) { audioStatus.Value = error.Message; }
+            catch (Exception error) { AppLog.Failure("Pookie.Audio", "Не удалось запустить аудио", error); audioStatus.Value = error.Message; }
         }
         else audioStatus.Value = "Аудио отключено для проверки интерфейса";
         if (options.DiscordPresence)
         {
             try { presence = new PresenceService(); }
-            catch (Exception error) when (error is InvalidOperationException or IOException) { }
+            catch (Exception error) when (error is InvalidOperationException or IOException)
+            { AppLog.Failure("Pookie.Discord", "Discord Presence недоступен", error, LogEventLevel.Debug); }
         }
         if (presence != null) presence.Enabled = discordEnabled.Value;
         player?.Volume(volume.Value);
@@ -139,6 +148,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private void OnWindowLoaded()
     {
+        StartupLog.Event("app.window-loaded");
         var size = Window!.ClientSize;
         UpdateContentFrameWidth(size.Width);
         UpdateLibraryCardSize(size.Width);
@@ -147,7 +157,7 @@ internal sealed partial class MainWindow : IDisposable
         timer.Start(); clipboardTimer?.Start();
         Run(async () =>
         {
-            try { await InitializeAsync(); }
+            try { await StartupLog.RunAsync("startup.initialize", InitializeAsync); }
             catch (SoundCloudException error) when (error.StatusCode == 401)
             {
                 await LogoutAsync();
@@ -155,7 +165,8 @@ internal sealed partial class MainWindow : IDisposable
             }
             finally
             {
-                await HideStartupSplashAsync();
+                await StartupLog.RunAsync("startup.splash-hide", HideStartupSplashAsync);
+                StartupLog.Event("startup.screen-ready");
             }
             if (signedIn.Value) Run(LoadLikedIdsAsync);
             OnInitialized();
@@ -176,7 +187,7 @@ internal sealed partial class MainWindow : IDisposable
     private async Task InitializeAsync()
     {
         status.Value = "Для продолжения войди в свой аккаунт SoundCloud.";
-        if (skipSessionRestore) return;
+        if (skipSessionRestore) { StartupLog.Event("session.restore-skipped"); return; }
         if (demo)
         {
             heading.Value = "На твоей волне";
@@ -187,8 +198,9 @@ internal sealed partial class MainWindow : IDisposable
         }
         try
         {
-            vault = SessionVault.Open(dataPaths);
-            var saved = await Task.Run(vault.Load, lifetime.Token);
+            vault = StartupLog.Run("session.vault-open", () => SessionVault.Open(dataPaths));
+            var saved = await StartupLog.RunAsync("session.vault-read", () => Task.Run(vault.Load, lifetime.Token));
+            StartupLog.Event(saved == null ? "session.not-found" : "session.found");
             if (saved != null)
             {
                 api.Session = saved;
@@ -196,20 +208,21 @@ internal sealed partial class MainWindow : IDisposable
                 {
                     var connected = new NativeBrowserSession(saved);
                     AttachBrowser(connected);
-                    me = await connected.GetMeAsync(lifetime.Token);
+                    me = await StartupLog.RunAsync("session.profile-verify", () => connected.GetMeAsync(lifetime.Token));
                     api.Session = connected.Account;
                     profile.Value = me.Username;
                     signedIn.Value = true;
+                    StartupLog.Event("session.authenticated");
                     UpdateProfileAvatar(me);
                 }
                 catch (SoundCloudException error) when (error.StatusCode == 401)
                 { DetachBrowserNotifications(); browser?.Dispose(); browser = null; api.BrowserTransport = null; api.Session = null; }
             }
         }
-        catch (Exception error) when (error is InvalidOperationException or JsonException) { audioStatus.Value += " · Сессия: только в памяти"; }
+        catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
         if (me != null)
         {
-            await NavigateAsync(Page.Home);
+            await StartupLog.RunAsync("startup.home-tracks", () => NavigateAsync(Page.Home));
         }
     }
 
@@ -445,7 +458,8 @@ internal sealed partial class MainWindow : IDisposable
         {
             await sessionWrites.WaitAsync(token);
             try { token.ThrowIfCancellationRequested(); await Task.Run(() => vault.Save(connectedBrowser.Account), token); saved = true; }
-            catch (InvalidOperationException) { }
+            catch (InvalidOperationException error)
+            { AppLog.Failure("Pookie.Session", "Сессия не сохранена в хранилище", error, LogEventLevel.Warning); }
             finally { sessionWrites.Release(); }
         }
         token.ThrowIfCancellationRequested();
@@ -549,15 +563,20 @@ internal sealed partial class MainWindow : IDisposable
     private async void Run(Func<Task> action)
     {
         try { await action(); }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { AppLog.For("Pookie.UI").Debug("Операция отменена"); }
         catch (SoundCloudException error) when (error.StatusCode == 401 && signedIn.Value)
         {
+            AppLog.For("Pookie.Session").Warning("Сессия SoundCloud истекла; требуется вход");
             try { await LogoutAsync(); }
-            catch (Exception logoutError) when (!disposed) { status.Value = FriendlyError(logoutError); }
+            catch (Exception logoutError) when (!disposed)
+            { AppLog.Failure("Pookie.Session", "Не удалось завершить выход", logoutError); status.Value = FriendlyError(logoutError); }
             if (!disposed) status.Value = "Сессия SoundCloud истекла. Войди снова, чтобы продолжить.";
         }
         catch (Exception error)
         {
+            AppLog.Failure("Pookie.UI", "Операция не выполнена", error,
+                error is SoundCloudException or HttpRequestException ? LogEventLevel.Warning : LogEventLevel.Error,
+                (error as SoundCloudException)?.StatusCode);
             if (!disposed)
             {
                 status.Value = FriendlyError(error);
@@ -566,7 +585,11 @@ internal sealed partial class MainWindow : IDisposable
             }
         }
     }
-    private void RunSync(Action action) { try { action(); } catch (Exception error) { status.Value = FriendlyError(error); } }
+    private void RunSync(Action action)
+    {
+        try { action(); }
+        catch (Exception error) { AppLog.Failure("Pookie.UI", "Операция не выполнена", error); status.Value = FriendlyError(error); }
+    }
     private static string FriendlyError(Exception error) => error is SoundCloudException or InvalidOperationException ? error.Message :
         error is HttpRequestException ? "Не удалось подключиться к SoundCloud. Проверь сеть и POOKIE_PROXY." : "Не удалось выполнить действие. Попробуй ещё раз.";
 
@@ -599,6 +622,10 @@ internal sealed partial class MainWindow : IDisposable
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);
         foreach (var file in demoFiles) try { File.Delete(file); } catch (IOException) { }
+    }
+
+    internal void CleanupIsolatedData()
+    {
         if (isolatedRun)
             try { Directory.Delete(dataPaths.Root, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }

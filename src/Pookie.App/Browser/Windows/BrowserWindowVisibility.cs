@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using InfiniFrame;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // InfiniFrame 0.62 exposes minimize/focus, but no hide API. Use its public OS handle.
 internal static class BrowserWindowVisibility

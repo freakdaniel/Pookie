@@ -1,10 +1,11 @@
+using Pookie.App.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using Pookie.SoundCloud;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 // Published InfiniFrame 0.62.1 initializes Linux WebKit on a worker thread, which aborts
 // in current JavaScriptCore. This fallback keeps GTK/WebKit on the helper's main thread.
@@ -27,6 +28,7 @@ internal sealed partial class WebKitLoginWindow
     private readonly string pairing = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
     private nint rootWindow;
     private nint rootView;
+    private WebKitContentFilter? contentFilter;
     private bool done;
 
     private WebKitLoginWindow(Action<WebSession> connected, string origin, bool background,
@@ -62,6 +64,8 @@ internal sealed partial class WebKitLoginWindow
     private static bool RunCore(WebKitLoginWindow app, string startUri, string profilePath)
     {
         if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException("Не удалось открыть WebView.");
+        using var contentFilter = new WebKitContentFilter(profilePath);
+        app.contentFilter = contentFilter;
         var dataPath = Path.Combine(profilePath, "Data");
         var cachePath = Path.Combine(profilePath, "Cache");
         Storage.AppDataPaths.CreatePrivateDirectory(dataPath);
@@ -75,6 +79,12 @@ internal sealed partial class WebKitLoginWindow
         Native.g_object_unref(context);
         app.rootWindow = app.AddWindow(view);
         app.rootView = view;
+        if (app.browserEvent != null)
+        {
+            StartupLog.Event("browser.window-created");
+            StartupLog.Event("browser.engine-ready");
+            StartupLog.Event("browser.bridge-installed");
+        }
         app.OnBrowserEvent(null);
         Native.webkit_web_view_load_uri(view, startUri);
         if (app.browserEvent != null) _ = Task.Run(app.ReadCommandsAsync);
@@ -133,6 +143,7 @@ internal sealed partial class WebKitLoginWindow
         var manager = Native.webkit_web_view_get_user_content_manager(view);
         if (managers.Add(manager))
         {
+            contentFilter?.Attach(manager);
             Connect(manager, "script-message-received::pookie", messageCallback);
             Native.webkit_user_content_manager_register_script_message_handler(manager, "pookie");
             var userScript = Native.webkit_user_script_new(script, 1, 0, 0, 0); // Top frame, document start.

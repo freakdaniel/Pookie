@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const script = fs.readFileSync(path.join(__dirname, '../src/Pookie.App/Auth/login-capture.js'), 'utf8');
+const script = fs.readFileSync(path.join(__dirname, '../src/Pookie.App/Browser/Scripts/login-capture.js'), 'utf8');
 
 function harness(origin = 'https://soundcloud.com', cookie = '', hydration = []) {
   const messages = [], calls = [], timers = [], events = new Map();

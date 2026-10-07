@@ -1,6 +1,6 @@
 using Pookie.SoundCloud;
 
-namespace Pookie.App.Auth;
+namespace Pookie.App.Browser;
 
 internal static class LoginHandoffSmokeTest
 {

@@ -1,3 +1,4 @@
+using Pookie.App.Browser;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -127,7 +128,7 @@ internal sealed partial class MainWindow
 
     private async Task ReadLikedIdsAsync(WebSession session, CancellationToken token)
     {
-        if (browser == null) AttachBrowser(new Pookie.App.Auth.NativeBrowserSession(session));
+        if (browser == null) AttachBrowser(new NativeBrowserSession(session));
         var ids = await browser!.GetLikedIdsAsync(token);
         token.ThrowIfCancellationRequested();
         if (api.Session != session) return;
@@ -149,7 +150,7 @@ internal sealed partial class MainWindow
             if (api.Session != session) return;
             var liked = !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
-            if (browser == null) AttachBrowser(new Pookie.App.Auth.NativeBrowserSession(session));
+            if (browser == null) AttachBrowser(new NativeBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
             await browser!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
