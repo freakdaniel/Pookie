@@ -31,5 +31,6 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Audio/Pookie.Audio.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Discord/Pookie.Discord.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Lyrics/Pookie.Lyrics.csproj" />
   </ItemGroup>
 </Project>

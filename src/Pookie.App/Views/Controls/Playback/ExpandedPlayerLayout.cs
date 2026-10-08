@@ -46,7 +46,9 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
             y, settled && panelReveal > .999999);
     }
 
-    protected override Size MeasureOverride(Size availableSize)
+    // FrameworkElement removes the outer margin before MeasureContent. Using
+    // MeasureOverride here measured the panel 32 px taller than its arranged slot.
+    protected override Size MeasureContent(Size availableSize)
     {
         var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 1280;
         var height = double.IsFinite(availableSize.Height) ? availableSize.Height : 720;

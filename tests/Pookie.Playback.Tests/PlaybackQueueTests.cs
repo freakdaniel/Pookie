@@ -217,9 +217,27 @@ public sealed class PlaybackQueueTests
         var calls = 0;
         using var loader = new PlaybackQueueLoader(queue, (_, _, _) =>
             { calls++; return Task.FromResult(new TrackPage([], null)); }, () => { }, CancellationToken.None);
-        var pending = loader.EnsureAheadAsync(); loader.Dispose();
+        // The UI dispatcher holds Task.Yield until the current event finishes.
+        // A thread-pool continuation can otherwise beat Dispose in this test.
+        var previous = SynchronizationContext.Current;
+        var dispatcher = new HeldDispatcher();
+        Task pending;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(dispatcher);
+            pending = loader.EnsureAheadAsync(); loader.Dispose();
+            dispatcher.RunPosted();
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
         Assert.Equal(0, calls);
+    }
+
+    private sealed class HeldDispatcher : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> posted = new();
+        public override void Post(SendOrPostCallback callback, object? state) => posted.Enqueue((callback, state));
+        public void RunPosted() { while (posted.TryDequeue(out var item)) item.Callback(item.State); }
     }
 
     [Fact]

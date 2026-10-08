@@ -16,6 +16,7 @@ dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --browser-media-isolation-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --expanded-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --lyrics-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --buffer-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --login-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --startup-log-smoke-test
@@ -56,7 +57,8 @@ and MediaSessionService disabled; Pookie owns the system session and queue.
 `--expanded-ui-smoke-test` checks cover hover, native fullscreen and window-state
 restore, rendered intermediate animation frames, centered/split composition,
 lyrics/queue panel changes, queue selection, shared seeking and buffered progress,
-interrupted close/reopen and reset. Lyrics are an interface placeholder.
+interrupted close/reopen and reset. It checks switching to the lyrics panel;
+actual lyric behavior is covered by the dedicated scenario below.
 It also repeats fullscreen entry/exit while paused and simulates a resize viewport
 that misses the retained motion layer. Cover hover must produce intermediate and
 final native frames without clicking or hovering the progress bar; an opacity
@@ -250,6 +252,24 @@ or a missing browser DRM capability. The license service gives no detailed refus
 reason, so host verification/VMP remains a hypothesis, not a confirmed diagnosis.
 The Windows production route now uses browser EME/MSE through `WindowsAudioPlayer`;
 the comparison modes above keep the native path available for diagnosis.
+
+`--lyrics-ui-smoke-test` uses a fake provider and local player. It checks 1000
+virtualized lines, smooth hover/click-to-seek with native and speed-adjusted
+timestamps, the real seven-second idle timer
+and its reset on wheel input, larger dots with lyric shading and smooth wave
+start/settling, skeleton crossfade to text/missing, direct hidden-panel reveal
+without an outgoing queue,
+end-of-text attribution, plain/missing states without action buttons, responsive
+layout and ignored late replies. It sends no real lyrics or SoundCloud requests.
+Pure matching/parser/storage/retry checks live in `tests/Pookie.Lyrics.Tests` and
+are included in `dotnet test Pookie.slnx`.
+
+`--artwork-ui-smoke-test` seeds the isolated disk cache with different 100px and
+500px images. It verifies the player's thumbnail URL is upgraded through the
+same shared loader as cards, including an older compact-row cache, first/repeated
+fullscreen entry and artwork arriving while fullscreen is already open. It checks
+the native image resource before CPU previews can realize another resource and
+rejects stale track completions. No real artwork or SoundCloud requests are sent.
 
 ## Source boundaries
 

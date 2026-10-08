@@ -57,8 +57,16 @@ public sealed record SoundCloudTrack
     public string? TrackAuthorization { get; init; }
     public SoundCloudUser? User { get; init; }
     public TrackMedia? Media { get; init; }
+    public PublisherMetadata? PublisherMetadata { get; init; }
     public double DurationSeconds => Duration / 1000;
     public string Author => User?.Username ?? "Unknown artist";
+}
+
+public sealed record PublisherMetadata
+{
+    public string? Artist { get; init; }
+    public string? AlbumTitle { get; init; }
+    public string? Isrc { get; init; }
 }
 
 public sealed record TrackMedia

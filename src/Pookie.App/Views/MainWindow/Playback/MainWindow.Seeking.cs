@@ -25,6 +25,7 @@ internal sealed partial class MainWindow
         pendingSeek = Math.Clamp(position, 0, progress.Maximum);
         currentTime.Value = FormatTime(pendingSeek.Value);
         RefreshLikedRows(pendingSeek.Value);
+        TickLyrics(pendingSeek.Value);
         if (!seekDragging)
         {
             seekTimer.Stop();

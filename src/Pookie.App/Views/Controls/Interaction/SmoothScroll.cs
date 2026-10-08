@@ -42,7 +42,12 @@ internal sealed class SmoothScroll : IDisposable
 
     internal bool Scroll(double delta)
     {
-        var next = Math.Clamp((running ? target : viewer.VerticalOffset) + delta, 0, Maximum(viewer));
+        return ScrollTo((running ? target : viewer.VerticalOffset) + delta);
+    }
+
+    internal bool ScrollTo(double position)
+    {
+        var next = Math.Clamp(position, 0, Maximum(viewer));
         if (Math.Abs(next - viewer.VerticalOffset) < .5) { Stop(); return false; }
         target = next;
         if (!running)

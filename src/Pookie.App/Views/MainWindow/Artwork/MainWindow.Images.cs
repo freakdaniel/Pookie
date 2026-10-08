@@ -119,7 +119,9 @@ internal sealed partial class MainWindow
 
     private async Task LoadArtworkAsync(SoundCloudTrack track, long generation)
     {
-        var source = await FetchImageAsync(track.ArtworkUrl ?? track.User?.AvatarUrl, lifetime.Token);
+        // Share the same full-size source as cards instead of fetching the API's
+        // thumbnail URL into a separate player cache.
+        var source = await GetLibraryArtworkAsync(track);
         if (generation == playGeneration && !disposed)
         {
             if (source != null)
@@ -134,21 +136,10 @@ internal sealed partial class MainWindow
     private async Task LoadRowArtworkAsync(Image image, SoundCloudTrack track)
     {
         if (demo) return;
-        if (!coverCache.TryGetValue(track.Id, out var source))
-        {
-            await coverGate.WaitAsync(lifetime.Token);
-            try
-            {
-                if (!coverCache.TryGetValue(track.Id, out source))
-                {
-                    source = await FetchImageAsync(track.ArtworkUrl ?? track.User?.AvatarUrl, lifetime.Token);
-                    if (source == null) return;
-                    if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
-                    coverCache[track.Id] = source;
-                }
-            }
-            finally { coverGate.Release(); }
-        }
+        var source = await GetLibraryArtworkAsync(track);
+        if (source == null || disposed) return;
+        if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
+        coverCache[track.Id] = source;
         if (!disposed && rowTracks.TryGetValue(image, out var id) && id == track.Id) image.Source = source;
     }
 }

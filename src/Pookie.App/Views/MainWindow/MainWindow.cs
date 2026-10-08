@@ -91,6 +91,7 @@ internal sealed partial class MainWindow : IDisposable
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireBrowserTransport = true };
         InitializePlaybackQueue();
+        InitializeLyrics();
         if (options.AudioEnabled)
         {
             try
@@ -133,6 +134,7 @@ internal sealed partial class MainWindow : IDisposable
             .OnClosed(Dispose);
         Window.FrameRendered += RestoreNavigationScroll;
         Window.FrameRendered += ObservePageScrolling;
+        Window.FrameRendered += UpdateLyricsFrame;
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
@@ -332,6 +334,7 @@ internal sealed partial class MainWindow : IDisposable
         var queueEntry = SelectPlaybackTrack(track);
         playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
         current = track;
+        BeginLyricsTrack(track);
         audioPreparing = true; audioReady = false;
         paused = false; isPlaying.Value = true; playbackLoading.Value = true;
         RefreshPlayerTimeline();
@@ -344,11 +347,14 @@ internal sealed partial class MainWindow : IDisposable
         updatingProgress = true;
         try { progress.Value = 0; progress.Maximum = Math.Max(1, track.DurationSeconds); }
         finally { updatingProgress = false; }
-        var cachedArtwork = libraryCoverCache.GetValueOrDefault(track.Id) ?? coverCache.GetValueOrDefault(track.Id);
+        var fullArtwork = libraryCoverCache.GetValueOrDefault(track.Id);
+        var cachedArtwork = fullArtwork ?? coverCache.GetValueOrDefault(track.Id);
         SetPlayerArtwork(cachedArtwork, generation, pending: cachedArtwork == null);
         playerVisible.Value = true;
         RefreshLikedPlayback(); UpdateLikeState(); RefreshQueue();
-        if (cachedArtwork == null) Run(() => LoadArtworkAsync(track, generation));
+        // An older compact-row thumbnail may be shown immediately, but must not
+        // suppress loading the full-size cover used by fullscreen and cards.
+        if (fullArtwork == null) Run(() => LoadArtworkAsync(track, generation));
         UpdateSystemMedia();
         Run(() => queueLoader.EnsureAheadAsync());
         if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
@@ -381,6 +387,7 @@ internal sealed partial class MainWindow : IDisposable
                 track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(audioStarted).TotalMilliseconds);
             var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
+            RefreshLyricsMetadata(track);
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
             RefreshQueue();
             title.Value = track.Title; artist.Value = track.Author;
@@ -569,6 +576,7 @@ internal sealed partial class MainWindow : IDisposable
                 AnimatePlaybackProgress(state);
                 currentTime.Value = FormatTime(state.Position);
                 RefreshLikedRows(state.Position);
+                TickLyrics(state.Position, state.Playing && !state.Buffering);
             }
             totalTime.Value = FormatTime(progress.Maximum);
             if (!seekPreview && (state.BufferedEnd > 0 || !state.Buffering))
@@ -636,6 +644,7 @@ internal sealed partial class MainWindow : IDisposable
         ResetExpandedPlayer();
         DisposeSystemMedia();
         queueLoader.Dispose();
+        DisposeLyrics();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();

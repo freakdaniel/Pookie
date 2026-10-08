@@ -98,15 +98,10 @@ internal sealed partial class MainWindow
             () => expandedProgress.IsMouseCaptured));
 
         expandedQueueContent = ExpandedQueuePanel();
-        expandedLyricsContent = new StackPanel().Vertical().Spacing(16).CenterVertical().Children(
-            Icons.View("text-align-left", 34, PlayerSecondaryText),
-            new TextBlock().Text("Текст песни").FontSize(32).Bold().Foreground(Color.White),
-            new TextBlock().Text("Здесь появится текст текущего трека.").FontSize(18)
-                .Foreground(PlayerSecondaryText).TextWrapping(TextWrapping.Wrap)).Cached();
+        expandedLyricsContent = LyricsPanel();
         expandedPanel = new TransitionContentControl
         {
-            Transition = ContentTransition.CreateSlide(SlideDirection.Up, durationMs: 280),
-            Content = expandedQueueContent
+            Transition = ContentTransition.CreateSlide(SlideDirection.Up, durationMs: 280)
         };
         var panelViewport = new Border().ClipToBounds().Child(expandedPanel);
         var cardLayer = new PlayerMotionLayer(card);
@@ -212,8 +207,10 @@ internal sealed partial class MainWindow
         if (disposed || expandedOpen == open || open && (!playerVisible.Value || current == null)) return;
         expandedAnimation.Stop();
         expandedOpen = open;
+        SetLyricsPanelActive(open && expandedPanelMode == PlayerPanel.Lyrics);
         if (open)
         {
+            if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
             {
                 expandedPreviousState = Window.WindowState;
@@ -236,7 +233,7 @@ internal sealed partial class MainWindow
     {
         var next = expandedPanelMode == mode ? PlayerPanel.None : mode;
         if (next != PlayerPanel.None && next != expandedPanelMode)
-            expandedPanel.Content = next == PlayerPanel.Queue ? expandedQueueContent : expandedLyricsContent;
+            SetExpandedPanelContent(next, animate: expandedOpen && expandedPanelMode != PlayerPanel.None);
         expandedPanelMode = next;
         expandedQueueActive.Value = next == PlayerPanel.Queue;
         expandedLyricsActive.Value = next == PlayerPanel.Lyrics;
@@ -249,6 +246,20 @@ internal sealed partial class MainWindow
         }
         else BeginExpandedPanelMotion(true);
         if (next == PlayerPanel.Queue) RefreshExpandedQueue();
+        SetLyricsPanelActive(next == PlayerPanel.Lyrics && expandedOpen);
+    }
+
+    private void SetExpandedPanelContent(PlayerPanel mode, bool animate)
+    {
+        // A hidden panel has no visible outgoing page. Its reveal belongs to the
+        // outer player motion, not a slide from the last retained panel content.
+        if (!animate)
+        {
+            expandedPanel.Transition = ContentTransition.CreateNone();
+            expandedPanel.Content = null;
+        }
+        expandedPanel.Content = mode == PlayerPanel.Queue ? expandedQueueContent : expandedLyricsContent;
+        expandedPanel.Transition = ContentTransition.CreateSlide(SlideDirection.Up, durationMs: 280);
     }
 
     private void BeginExpandedPanelMotion(bool open)
@@ -275,6 +286,7 @@ internal sealed partial class MainWindow
 
     private void ResetExpandedPlayer()
     {
+        SetLyricsPanelActive(false);
         expandedAnimation.Stop(); panelAnimation.Stop(); panelFade.Stop();
         if (expandedHost.IsVisible && !disposed) Window.WindowState = expandedPreviousState;
         expandedOpen = false; expandedReveal = expandedFrom = expandedTo = panelFrom = panelTo = 0;
