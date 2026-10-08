@@ -40,10 +40,54 @@ public sealed class PlaybackTests
         await using var server = await MediaServer.StartAsync(1, 22050);
         await using var player = new SoundFlowPlayer(silent: true);
         var previous = player.PlayAsync(new(server.Url + "/slow", AudioTransport.Progressive));
-        await Task.Delay(100);
+        await server.SlowRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
         await player.PlayAsync(new(server.Url + "/track.wav", AudioTransport.Progressive));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => previous);
         await WaitAsync(player, state => state.Playing && state.Position > .1);
+    }
+
+    [Fact]
+    public async Task NativePreparationAndTeardownDoNotResumeOnTheCallerContext()
+    {
+        await using var server = await MediaServer.StartAsync(1, 22050);
+        await using var player = new SoundFlowPlayer(silent: true);
+        var context = new RecordingContext();
+        Task OnContext(Func<Task> operation)
+        {
+            var original = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(context);
+            try { return operation(); }
+            finally { SynchronizationContext.SetSynchronizationContext(original); }
+        }
+        await OnContext(() => player.PlayAsync(new(server.Url + "/track.wav", AudioTransport.Progressive)));
+        await WaitAsync(player, state => state.Playing && state.Position > .1);
+        await OnContext(player.StopAsync);
+        Assert.Equal(0, context.Posts);
+        Assert.False(player.Poll().Playing);
+    }
+
+    [Fact]
+    public async Task AsyncStopCancelsPreparationAndAllowsTheNextTrack()
+    {
+        await using var server = await MediaServer.StartAsync(1, 22050);
+        await using var player = new SoundFlowPlayer(silent: true);
+        var pending = player.PlayAsync(new(server.Url + "/slow", AudioTransport.Progressive));
+        await server.SlowRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await player.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        await player.PlayAsync(new(server.Url + "/track.wav", AudioTransport.Progressive));
+        await WaitAsync(player, state => state.Playing && state.Position > .1);
+    }
+
+    private sealed class RecordingContext : SynchronizationContext
+    {
+        private int posts;
+        public int Posts => posts;
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            Interlocked.Increment(ref posts);
+            ThreadPool.QueueUserWorkItem(_ => callback(state));
+        }
     }
 
     [Fact]
@@ -176,11 +220,12 @@ public sealed class PlaybackTests
         while (!condition(player.Poll())) await Task.Delay(30, timeout.Token);
     }
 
-    private sealed class MediaServer(WebApplication app, string url, ConcurrentBag<string?> ranges, ConcurrentBag<string> segments) : IAsyncDisposable
+    private sealed class MediaServer(WebApplication app, string url, ConcurrentBag<string?> ranges, ConcurrentBag<string> segments, TaskCompletionSource slowRequested) : IAsyncDisposable
     {
         public string Url => url;
         public ConcurrentBag<string?> Ranges => ranges;
         public ConcurrentBag<string> SegmentRequests => segments;
+        public TaskCompletionSource SlowRequested => slowRequested;
         public static async Task<MediaServer> StartAsync(int channels, int rate)
         {
             var builder = WebApplication.CreateSlimBuilder();
@@ -189,6 +234,7 @@ public sealed class PlaybackTests
             var app = builder.Build();
             var ranges = new ConcurrentBag<string?>();
             var segments = new ConcurrentBag<string>();
+            var slowRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var track = Wav(channels, rate, 12);
             var mp3 = new Lazy<byte[]>(() => Mp3(60));
             var segment = Wav(channels, rate, 2);
@@ -198,10 +244,10 @@ public sealed class PlaybackTests
             app.MapGet("/combined.wav", (HttpContext context) => { segments.Add(context.Request.Headers.Range.ToString()); return Results.File(segment.Concat(segment).Concat(segment).ToArray(), "audio/wav", enableRangeProcessing: true); });
             app.MapGet("/playlist.m3u8", () => Results.Text("#EXTM3U\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/ranges.m3u8", () => Results.Text($"#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}@0\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
-            app.MapGet("/slow", async (HttpContext context) => { try { await Task.Delay(10000, context.RequestAborted); } catch (OperationCanceledException) { } });
+            app.MapGet("/slow", async (HttpContext context) => { slowRequested.TrySetResult(); try { await Task.Delay(10000, context.RequestAborted); } catch (OperationCanceledException) { } });
             await app.StartAsync();
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            return new(app, address, ranges, segments);
+            return new(app, address, ranges, segments, slowRequested);
         }
         public async ValueTask DisposeAsync() { await app.StopAsync(); await app.DisposeAsync(); }
     }

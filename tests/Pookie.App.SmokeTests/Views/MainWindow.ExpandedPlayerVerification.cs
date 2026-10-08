@@ -51,6 +51,8 @@ internal sealed partial class MainWindow
         }
         timer.Stop(); player = fixture;
         Window.FrameRendered += Sample;
+        LikedActionPoint savedCursor = default;
+        var restoreCursor = OperatingSystem.IsWindows() && GetLikedActionCursor(out savedCursor);
         try
         {
             ReplaceTracks(new TrackPage(Enumerable.Range(1, 1000).Select(i => new SoundCloudTrack
@@ -137,11 +139,14 @@ internal sealed partial class MainWindow
             CaptureExpandedPanelPreview("expanded-lyrics-transition");
             ToggleExpandedPanel(PlayerPanel.Queue);
             await WaitForLikedLayoutAsync(() => expandedPanel.Content == expandedQueueContent);
-            await WaitForLikedLayoutAsync(() => expandedQueueRows.Values.Any(row => row.Track?.Id == 3 && row.Root.ActualHeight > 0));
+            await WaitForLikedLayoutAsync(() => !expandedLayout.IsMeasureDirty && !expandedLayout.IsArrangeDirty &&
+                !panelAnimation.IsRunning && !panelFade.IsRunning &&
+                expandedQueueRows.Values.Any(row => row.Track?.Id == 3 && row.Cover.ActualWidth > 40 && row.Root.ActualHeight > 60));
             var nextRow = expandedQueueRows.Values.Single(row => row.Track?.Id == 3);
-            if (nextRow.Cover.ActualWidth != 44 || nextRow.Root.ActualHeight != 64 || nextRow.Title.FontSize != 14 ||
-                nextRow.Author.FontSize != 12 || nextRow.Duration.ActualWidth != 48)
-                throw new InvalidOperationException("Fullscreen queue does not share the compact search row layout.");
+            var pixelTolerance = 1 / Window.DpiScale;
+            if (Math.Abs(nextRow.Cover.ActualWidth - 44) > pixelTolerance || Math.Abs(nextRow.Root.ActualHeight - 64) > pixelTolerance ||
+                nextRow.Title.FontSize != 14 || nextRow.Author.FontSize != 12 || Math.Abs(nextRow.Duration.ActualWidth - 48) > pixelTolerance)
+                throw new InvalidOperationException($"Fullscreen queue does not share the compact search row layout: cover={nextRow.Cover.ActualWidth}, row={nextRow.Root.ActualHeight}, duration={nextRow.Duration.ActualWidth}, dpi={Window.DpiScale}.");
             RouteWaveformClick(new Point(nextRow.Cover.Bounds.X + 22, nextRow.Cover.Bounds.Y + 22));
             await WaitForLikedLayoutAsync(() => current?.Id == 3 && audioReady);
             if (title.Value != tracks[2].Title || expandedUpcoming.Length != 997)
@@ -187,7 +192,12 @@ internal sealed partial class MainWindow
             Console.WriteLine("EXPANDED_UI_OK: hover reset, native fullscreen, volume/time reveal and debounce, repaint bounds across repeated/interrupted motion, simultaneous closing without queue remeasurement/overlap, queue selection, shared seek/buffer and window restore");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("EXPANDED_UI_FAILED: " + error); }
-        finally { Window.FrameRendered -= Sample; player = original; Window.Close(); }
+        finally
+        {
+            Window.FrameRendered -= Sample; player = original; Window.Close();
+            if (restoreCursor && !SetLikedActionCursor(savedCursor.X, savedCursor.Y))
+                throw new InvalidOperationException("Could not restore cursor position after fullscreen verification.");
+        }
     }
 
     private void CaptureExpandedPanelPreview(string name)
@@ -196,9 +206,16 @@ internal sealed partial class MainWindow
         // CPU previews cannot read a previously built native GPU bitmap. Render the
         // same live tree for the artifact, then restore the production cache policy.
         var cache = content.CacheMode;
+        var cachedRows = expandedQueueBlocks.Keys.Select(motion => (UIElement)motion.Content!).ToArray();
+        var rowCaches = cachedRows.Select(element => element.CacheMode).ToArray();
         content.CacheMode = null;
+        foreach (var element in cachedRows) element.CacheMode = null;
         try { CaptureUiPreview(name); }
-        finally { content.CacheMode = cache; }
+        finally
+        {
+            content.CacheMode = cache;
+            for (var i = 0; i < cachedRows.Length; i++) cachedRows[i].CacheMode = rowCaches[i];
+        }
     }
 
     private async Task VerifyExpandedCoverHoverAsync()
@@ -206,17 +223,22 @@ internal sealed partial class MainWindow
         var transport = (UIElement)((Grid)expandedCover.Child!).Children[1];
         for (var cycle = 0; cycle < 3; cycle++)
         {
-            RouteWaveformPointer(new Point(1, 1));
+            RouteExpandedPointer(new Point(1, 1));
             await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
             if (transport.IsHitTestVisible)
                 throw new InvalidOperationException("Hidden cover controls still accept clicks.");
             var point = new Point(expandedCover.Bounds.X + expandedCover.ActualWidth * .5,
                 expandedCover.Bounds.Y + expandedCover.ActualHeight * .5);
-            RouteWaveformPointer(point);
-            await WaitForLikedLayoutAsync(() => expandedCover.IsMouseOver && transport.Opacity > .999);
+            RouteExpandedPointer(point);
+            try { await WaitForLikedLayoutAsync(() => expandedCover.IsMouseOver && transport.Opacity > .999); }
+            catch (InvalidOperationException error)
+            {
+                var layer = (PlayerMotionLayer)expandedLayout.Children[0];
+                throw new InvalidOperationException($"Cover hover failed: hover={expandedCover.IsMouseOver}, opacity={transport.Opacity}, hit={transport.IsHitTestVisible}, layerhit={layer.IsHitTestVisible}, cover={expandedCover.Bounds}, layer={layer.Bounds}, offset={layer.OffsetX},{layer.OffsetY}, pointer={point}", error);
+            }
         }
         CaptureUiPreview("expanded-controls-hover");
-        RouteWaveformPointer(new Point(1, 1));
+        RouteExpandedPointer(new Point(1, 1));
         await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
     }
 
@@ -226,13 +248,13 @@ internal sealed partial class MainWindow
         if (isPlaying.Value) await ToggleAsync();
         for (var cycle = 0; cycle < 3; cycle++)
         {
-            RouteWaveformPointer(new Point(1, 1));
+            RouteExpandedPointer(new Point(1, 1));
             await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
             SetExpandedPlayer(false);
             await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible);
             SetExpandedPlayer(true);
             await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
-            await Task.Delay(600, lifetime.Token);
+            await WaitForLikedLayoutAsync(() => transport.Opacity == 0 && !transport.IsHitTestVisible);
 
             // Reproduce an intermediate fullscreen resize whose viewport misses the retained
             // motion layer. Its invisible overlay must still be able to request future frames.
@@ -252,15 +274,15 @@ internal sealed partial class MainWindow
                 finally { viewport.SetValue(null, previousViewport); context.EndFrame(); }
             }
             Window.Invalidate();
-            await Task.Delay(300, lifetime.Token);
+            await WaitForLoginFrameAsync();
             var frames = new List<double>();
             void Sample() => frames.Add(transport.Opacity);
             Window.FrameRendered += Sample;
             try
             {
-                RouteWaveformPointer(new Point(expandedCover.Bounds.X + expandedCover.ActualWidth * .12,
+                RouteExpandedPointer(new Point(expandedCover.Bounds.X + expandedCover.ActualWidth * .12,
                     expandedCover.Bounds.Y + expandedCover.ActualHeight * .35));
-                await Task.Delay(500, lifetime.Token);
+                await WaitForLikedLayoutAsync(() => transport.Opacity > .999 && frames.Any(value => value > .999));
                 if (isPlaying.Value || transport.Opacity < .999 || frames.Count(value => value is > 0 and < 1) < 3 ||
                     !frames.Any(value => value > .999))
                     throw new InvalidOperationException($"Paused fullscreen reentry did not paint the cover overlay without a progress hover: cycle={cycle}, opacity={transport.Opacity}, frames={string.Join(',', frames)}");
@@ -268,10 +290,18 @@ internal sealed partial class MainWindow
             finally { Window.FrameRendered -= Sample; }
         }
         CaptureUiPreview("expanded-paused-reentry-hover");
-        RouteWaveformPointer(new Point(1, 1));
+        RouteExpandedPointer(new Point(1, 1));
         await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
         await ToggleAsync();
         Console.WriteLine("EXPANDED_PAUSED_REENTRY_OK: three fullscreen reopen cycles, resize culling, native intermediate and final overlay frames without clicks or progress hover");
+    }
+
+    private void RouteExpandedPointer(Point point)
+    {
+        // Keep native and injected positions consistent across fullscreen resize
+        // and hover reevaluation. An old OS cursor can otherwise cancel the input.
+        if (OperatingSystem.IsWindows()) MoveLikedActionCursor(point);
+        RouteWaveformPointer(point);
     }
 
     private async Task VerifyExpandedVolumeAsync()

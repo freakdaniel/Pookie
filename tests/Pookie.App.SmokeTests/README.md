@@ -65,10 +65,17 @@ Queue checks cover the retained playback source/current track, row backgrounds
 extending beyond heading edges, hidden scrollbars, native wheel interpolation,
 animated movement of earlier tracks and a stable now-playing source heading while
 playback advances, including after scrolling away and selecting a distant track.
-Native edge fade frames follow the player's artwork palette throughout a color
-transition with fractional channel precision, including when another transition interrupts it. Gradient textures
-are retained across those frames; rebinding the same queue item must not cancel
-its movement. Hover backgrounds remain inside the viewport, with their rounded
+GPU-rendered background/edge-fade pixels and the window's presented frame follow
+intermediate and settled colors, including an interrupted transition. Background
+and edge fades each reuse one mutable image, including the final frame. Queue rows
+share one timeline with zero initial/final velocity. Queue advance reports native frame intervals
+for performance comparisons; these depend on the machine and are not an FPS gate.
+Rebinding the same queue item or replacing resolved track metadata must not reset
+its movement or recycle its retained row. Three additional cover Next clicks use
+the real SoundFlow decoder/device lifecycle with local audio and a silent backend,
+rather than the instant fixture player; their native frame intervals are reported.
+These checks do not reproduce SoundCloud network delays or physical output drivers.
+Hover backgrounds remain inside the viewport, with their rounded
 corners verified in rendered pixels and covers aligned to section headings.
 `--ui-smoke-test` also checks that pending artwork keeps the previous palette until
 the new cover arrives, failed/missing covers fall back to neutral, and a one-level

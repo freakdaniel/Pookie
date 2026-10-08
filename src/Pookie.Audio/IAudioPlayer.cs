@@ -21,6 +21,7 @@ public interface IAudioPlayer : IDisposable, IAsyncDisposable
     Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default);
     Task SeekAsync(double seconds, CancellationToken cancellationToken = default);
     void Stop();
+    Task StopAsync() { Stop(); return Task.CompletedTask; }
     void Pause(bool paused);
     void Volume(double percent);
     AudioState Poll();

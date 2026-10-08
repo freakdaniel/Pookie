@@ -27,7 +27,7 @@ internal sealed class PaginationItems
         Style = style; this.equal = equal ?? Equals; this.key = key;
         View = ItemsView.Create(items, item => item switch
         { SoundCloudTrack track => track.Title, LibraryItem entry => entry.Title, _ => "" },
-            item => item switch { SoundCloudTrack track => track.Id, LibraryItem entry => entry.Key, _ => item });
+            item => item is LoadingSlot ? item : this.key(item));
     }
 
     public void SetData(IEnumerable<object> value) { data = value.ToArray(); Refresh(); }

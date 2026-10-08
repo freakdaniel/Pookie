@@ -229,8 +229,11 @@ internal sealed partial class MainWindow
             _ => items };
     }
 
+    private bool overviewRefreshPending;
     private void RefreshOverviewSections()
     {
+        if (expandedHost?.IsVisible == true) { overviewRefreshPending = true; return; }
+        overviewRefreshPending = false;
         foreach (var (key, section) in overviewSections)
         {
             var items = LibraryItems(key).Take(6).ToArray();

@@ -135,6 +135,7 @@ internal sealed partial class MainWindow
             expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, panelReveal);
             if (expandedOpen) return;
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
+            if (overviewRefreshPending) RefreshOverviewSections();
             workspace.IsHitTestVisible = workspace.IsEnabled;
             Window.WindowState = expandedPreviousState;
             expandedLoading.SetLoading(false);
@@ -286,6 +287,7 @@ internal sealed partial class MainWindow
         expandedLayout.SetMotion(0, 0, 0);
         expandedHost.Opacity = 0;
         expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
+        if (!disposed && overviewRefreshPending) RefreshOverviewSections();
         expandedLoading.SetLoading(false); expandedBuffer.Reset(); expandedBackdrop.Reset();
         workspace.IsHitTestVisible = workspace.IsEnabled;
     }

@@ -21,7 +21,8 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
     public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        Stop();
+        await StopAsync();
+        cancellationToken.ThrowIfCancellationRequested();
         if (source.Transport != AudioTransport.WidevineHls)
         {
             await native.PlayAsync(source, cancellationToken);
@@ -128,6 +129,18 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
 
     public void Stop()
     {
+        ClearBrowser();
+        native.Stop();
+    }
+
+    public Task StopAsync()
+    {
+        ClearBrowser();
+        return native.StopAsync();
+    }
+
+    private void ClearBrowser()
+    {
         lock (sync)
         {
             preparing?.Cancel();
@@ -138,7 +151,6 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
             }
             browser = null; playbackId = null; error = null; endedReported = false;
             state = new(0, 0, false, false, false);
-            native.Stop();
         }
     }
 

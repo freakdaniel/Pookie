@@ -4,16 +4,18 @@ using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
-// The player background varies horizontally, so covering the edges with matching
-// translucent pixels fades into the actual artwork palette rather than a flat color.
+// Bake the same intermediate gradient as the backdrop while keeping mask alpha
+// constant. Cross-fading translucent masks would pulse their combined alpha.
 internal sealed class QueueEdgeFade : Control
 {
     private readonly PlayerBackdrop backdrop;
-    private ImageSource? source;
+    private WriteableBitmap? source;
     private IImage? image;
+    private IGraphicsFactory? factory;
     private PlayerGradient gradient;
+    private float[] grain = [];
     private int width;
-    private double origin, span;
+    private double origin, span, dpi;
     internal const double FadeHeight = 28;
     private const int RasterRows = 32;
     private static readonly byte[] alpha = Enumerable.Range(0, RasterRows).Select(y =>
@@ -32,32 +34,50 @@ internal sealed class QueueEdgeFade : Control
 
     protected override void OnRender(IGraphicsContext context)
     {
+        if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
         var pixelWidth = Math.Max(1, (int)Math.Ceiling(Bounds.Width * context.DpiScale));
-        if (image == null || gradient != backdrop.CurrentGradient || width != pixelWidth || origin != Bounds.X || span != backdrop.ActualWidth)
+        var graphics = Application.Current.GraphicsFactory;
+        var relativeX = Bounds.X - backdrop.Bounds.X;
+        var geometryChanged = width != pixelWidth || origin != relativeX || span != backdrop.ActualWidth || dpi != context.DpiScale;
+        if (image == null || width != pixelWidth || factory != graphics)
         {
-            ClearRaster(); gradient = backdrop.CurrentGradient; width = pixelWidth; origin = Bounds.X; span = backdrop.ActualWidth;
-            const int rows = RasterRows;
-            var pixels = new byte[width * rows * 4];
+            ClearRaster();
+            source = new WriteableBitmap(pixelWidth, RasterRows, clear: false);
+            image = ((IImageSource)source).CreateImage(graphics);
+            factory = graphics;
+            geometryChanged = true;
+        }
+        width = pixelWidth; origin = relativeX; span = backdrop.ActualWidth; dpi = context.DpiScale;
+        if (geometryChanged)
+        {
+            grain = new float[width * RasterRows];
+            for (var y = 0; y < RasterRows; y++)
+            for (var x = 0; x < width; x++)
+                grain[y * width + x] = (float)PlayerGradient.Noise((int)Math.Round(origin * dpi) + x, y);
+        }
+        if (geometryChanged || gradient != backdrop.CurrentGradient)
+        {
+            gradient = backdrop.CurrentGradient;
+            using var write = source!.LockForWrite();
+            var pixels = write.PixelsBgra32;
             for (var x = 0; x < width; x++)
             {
-                var position = Math.Clamp((origin - backdrop.Bounds.X + (x + .5) / context.DpiScale) / Math.Max(1, span), 0, 1);
-                var color = gradient.Sample(position);
-                for (var y = 0; y < rows; y++)
+                var color = gradient.Sample((origin + (x + .5) / dpi) / Math.Max(1, span));
+                for (var y = 0; y < RasterRows; y++)
                 {
-                    var i = (y * width + x) * 4;
-                    var noise = PlayerGradient.Noise((int)Math.Round((origin - backdrop.Bounds.X) * context.DpiScale) + x, y);
+                    var sample = y * width + x;
+                    double noise = grain[sample];
+                    var i = sample * 4;
                     pixels[i] = (byte)(color.Z + noise); pixels[i + 1] = (byte)(color.Y + noise);
                     pixels[i + 2] = (byte)(color.X + noise); pixels[i + 3] = alpha[y];
                 }
             }
-            source = ImageSource.FromBgraPixels(width, rows, pixels);
-            image = source.CreateImage(Application.Current.GraphicsFactory);
         }
         var height = Math.Min(FadeHeight, Bounds.Height / 2);
-        context.DrawImage(image, new Rect(Bounds.X, Bounds.Y, Bounds.Width, height));
+        context.DrawImage(image!, new Rect(Bounds.X, Bounds.Y, Bounds.Width, height));
         context.Save();
         context.Translate(0, 2 * Bounds.Bottom - height); context.Scale(1, -1);
-        context.DrawImage(image, new Rect(Bounds.X, Bounds.Bottom - height, Bounds.Width, height));
+        context.DrawImage(image!, new Rect(Bounds.X, Bounds.Bottom - height, Bounds.Width, height));
         context.Restore();
     }
 

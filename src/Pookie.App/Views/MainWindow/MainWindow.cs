@@ -321,6 +321,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
+        var selectionStarted = System.Diagnostics.Stopwatch.GetTimestamp();
         CancelSeek();
         var generation = ++playGeneration;
         playLoading?.Cancel(); playLoading?.Dispose();
@@ -351,11 +352,17 @@ internal sealed partial class MainWindow : IDisposable
         UpdateSystemMedia();
         Run(() => queueLoader.EnsureAheadAsync());
         if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
+        AppLog.For("Pookie.Playback").Debug("Выбор трека {TrackId}: обновление интерфейса {DurationMs:F1} мс",
+            track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(selectionStarted).TotalMilliseconds);
 
         try
         {
             presence?.Clear();
-            player.Stop();
+            var stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            await player.StopAsync();
+            if (generation != playGeneration || disposed) return;
+            AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: асинхронная остановка аудио {DurationMs:F1} мс",
+                track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted).TotalMilliseconds);
             AudioSource source;
             if (demo) source = new(DemoSource(track.Id), AudioTransport.File, track.DurationSeconds);
             else
@@ -367,8 +374,12 @@ internal sealed partial class MainWindow : IDisposable
                     { LicenseAuthToken = stream.LicenseAuthToken };
             }
             if (generation != playGeneration || disposed) return;
+            var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
+            AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: подготовка аудио {DurationMs:F1} мс",
+                track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(audioStarted).TotalMilliseconds);
+            var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
             RefreshQueue();
@@ -383,6 +394,8 @@ internal sealed partial class MainWindow : IDisposable
             if (!IsLibrary(page.Value))
                 status.Value = demo ? "Играет локальный тестовый звук." : source.Transport == AudioTransport.WidevineHls
                     ? "Воспроизведение защищённого потока." : "Воспроизведение полного доступного потока.";
+            AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: обновление готового интерфейса {DurationMs:F1} мс",
+                track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(readyStarted).TotalMilliseconds);
         }
         catch
         {
@@ -627,6 +640,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
+        expandedQueueAnimation.Dispose();
         expandedQueueFade.Dispose();
         OnDisposed();
         loginSpinner.IsActive = false;

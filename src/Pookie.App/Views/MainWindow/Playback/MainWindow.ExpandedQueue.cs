@@ -16,6 +16,7 @@ internal sealed partial class MainWindow
     private HashSet<string> expandedNewKeys = [];
     private long expandedQueueChangedAt;
     private ScrollViewer expandedQueueScroll = null!;
+    private QueueRowAnimation expandedQueueAnimation = null!;
     private QueueEdgeFade expandedQueueFade = null!;
     private (string Key, double Y)? expandedQueueAnchor;
     private bool expandedQueueStartPending = true;
@@ -55,6 +56,7 @@ internal sealed partial class MainWindow
         expandedQueue = new ItemsControl().ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent)
             .BorderThickness(0).Padding(0).ItemPadding(new Thickness(0));
         expandedQueue.ItemsSource = expandedQueueSource.View;
+        expandedQueueAnimation = new QueueRowAnimation(expandedQueue.InvalidateVisual);
         expandedQueue.ItemTemplate = new DelegateTemplate<QueueBlock>(context =>
         {
             CompactTrackRow row = null!;
@@ -64,8 +66,10 @@ internal sealed partial class MainWindow
             var label = new TextBlock().FontSize(12).SemiBold().Foreground(PlayerSecondaryText);
             var title = new TextBlock().FontSize(22).Bold().Foreground(Color.White).TextTrimming(TextTrimming.CharacterEllipsis);
             var heading = new StackPanel().Vertical().Spacing(5).Margin(8, 26, 8, 18).Children(label, title);
-            var root = new Grid().Columns("*").Rows("Auto").Children(row.Root, heading);
-            var motion = new QueueRowMotion().Content(root);
+            // Cache the stationary contents, not the translating wrapper. Text,
+            // icons and artwork then move as one bitmap during queue edits.
+            var root = new Grid().Columns("*").Rows("Auto").Children(row.Root, heading).Cached();
+            var motion = new QueueRowMotion(expandedQueueAnimation).Content(root);
             expandedQueueRows[row.Root] = row; expandedQueueBlocks[motion] = null;
             context.Register("motion", motion); context.Register("row", row.Root);
             context.Register("heading", heading); context.Register("label", label); context.Register("title", title);
@@ -167,12 +171,21 @@ internal sealed partial class MainWindow
         next.AddRange(state.ContextUpcoming.Select(TrackBlock));
         var data = next.ToArray();
         if (expandedQueueData.SequenceEqual(data)) return;
+        // Resolving audio can replace track metadata without changing queue order.
+        // Rebind the retained rows without restarting their ongoing movement.
+        if (expandedQueueData.Select(block => block.Key).SequenceEqual(data.Select(block => block.Key)))
+        {
+            expandedQueueData = data;
+            expandedQueueSource.SetData(data);
+            return;
+        }
         expandedQueuePositions.Clear();
         if (expandedOpen && expandedPanelMode == PlayerPanel.Queue && panelReveal > .999)
         {
             foreach (var (motion, block) in expandedQueueBlocks)
                 if (block != null) expandedQueuePositions[block.Key] = motion.VisualY;
         }
+        expandedQueueAnimation.Begin();
         var followCurrent = expandedQueueStartPending || expandedCurrentEntry != state.Current?.EntryId || expandedSourceVersion != state.SourceVersion;
         if (followCurrent)
         {
