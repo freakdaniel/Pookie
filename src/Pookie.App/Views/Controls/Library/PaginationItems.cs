@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -12,7 +14,7 @@ internal sealed record LoadingSlot(int Index);
 // response discards measured row heights and the virtual presenter's scroll anchor.
 internal sealed class PaginationItems
 {
-    private readonly ObservableCollection<object> items = [];
+    private readonly PageCollection items = [];
     private object[] data = [];
     private int loadingCount;
     private readonly Func<object, object, bool> equal;
@@ -37,10 +39,13 @@ internal sealed class PaginationItems
         var next = data.Concat(Enumerable.Range(0, loadingCount).Select(index => (object)new LoadingSlot(index))).ToArray();
         var prefix = 0;
         while (prefix < Math.Min(items.Count, next.Length) && equal(items[prefix], next[prefix])) prefix++;
+        if (prefix == items.Count && prefix == next.Length) return;
+        if (prefix == items.Count) { items.AddRange(next[prefix..]); return; }
+        if (prefix == next.Length) { items.RemoveTail(prefix); return; }
         var wantedKeys = next.Select(key).ToHashSet();
         for (var i = prefix; i < next.Length; i++)
         {
-            if (i >= items.Count) { items.Add(next[i]); continue; }
+            if (i >= items.Count) { items.AddRange(next[i..]); break; }
             if (equal(items[i], next[i])) continue;
             if (items[i] is LoadingSlot || Equals(key(items[i]), key(next[i])) || !wantedKeys.Contains(key(items[i])))
             { items[i] = next[i]; continue; }
@@ -54,7 +59,33 @@ internal sealed class PaginationItems
                 if (!equal(items[i], next[i])) items[i] = next[i];
             }
         }
-        while (items.Count > next.Length) items.RemoveAt(items.Count - 1);
+        if (items.Count > next.Length) items.RemoveTail(next.Length);
+    }
+
+    // Report one range change for a page, rather than invalidating bindings and
+    // rescanning the selected key for every individual appended track. Keep
+    // incremental notifications so the presenter retains its scroll anchor.
+    private sealed class PageCollection : ObservableCollection<object>
+    {
+        public void AddRange(object[] added)
+        {
+            CheckReentrancy();
+            var start = Count;
+            foreach (var item in added) Items.Add(item);
+            OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+            OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+            OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, added, start));
+        }
+
+        public void RemoveTail(int start)
+        {
+            CheckReentrancy();
+            var removed = this.Skip(start).ToArray();
+            while (Count > start) Items.RemoveAt(Count - 1);
+            OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+            OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+            OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, removed, start));
+        }
     }
 }
 

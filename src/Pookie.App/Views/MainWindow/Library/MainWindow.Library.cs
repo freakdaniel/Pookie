@@ -91,6 +91,7 @@ internal sealed partial class MainWindow
             var root = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Top()
                 .Content(new StackPanel().Vertical().Spacing(1).Children(frame, title.Margin(0, 7, 0, 0), subtitle));
             AttachTrackQueueMenu(root, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
+            AttachTrackTitle(title, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
             root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryItemAsync(card.Item, collectionCardPositions.GetValueOrDefault(root))); };
             root.MouseEnter += () => { if (collectionCards.TryGetValue(root, out var card) && card.Item.Track != null) card.Playback.SetHovered(true); };
             root.MouseLeave += () => playback.SetHovered(false);

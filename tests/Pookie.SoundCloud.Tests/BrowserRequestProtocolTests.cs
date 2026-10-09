@@ -137,6 +137,11 @@ public sealed class BrowserRequestProtocolTests
         Assert.False(new BrowserAudioState(double.NaN, 2, false, false, false).IsValid());
         var buffered = value.Audio! with { BufferedStart = 10, BufferedEnd = 45 };
         Assert.Equal(buffered, BrowserRequestProtocol.Parse(Raw(value with { Audio = buffered }), Origin, Origin)!.Audio);
+        var normalized = buffered with { NormalizationGainDb = -10 };
+        Assert.Equal(normalized, BrowserRequestProtocol.Parse(Raw(value with { Audio = normalized }), Origin, Origin)!.Audio);
+        foreach (var invalid in new[] {
+            normalized with { NormalizationGainDb = double.PositiveInfinity }, normalized with { NormalizationGainDb = 10 } })
+            Assert.False(invalid.IsValid());
         foreach (var invalid in new[] {
             buffered with { BufferedStart = -1 }, buffered with { BufferedEnd = 9 },
             buffered with { BufferedEnd = 201 }, buffered with { BufferedEnd = double.PositiveInfinity } })

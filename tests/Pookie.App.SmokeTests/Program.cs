@@ -27,12 +27,13 @@ internal static class Program
                 { Environment.ExitCode = NativeWebLogin.RunChild(args[1], args[3], fixture); return; }
             }
             if (await DiagnosticsRunner.TryRunAsync(args)) return;
-            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test"))
+            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--track-page-live-ui-probe"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
+            var liveTrackUi = args.Contains("--track-page-live-ui-probe");
             var options = AppRunOptions.FromArgs(args) with
             {
-                Preview = true, RequireSignIn = loginUi, SkipSessionRestore = loginUi,
+                Preview = !liveTrackUi, RequireSignIn = loginUi, SkipSessionRestore = loginUi || liveTrackUi,
                 SilentAudio = true, DiscordPresence = false, SystemMediaSession = args.Contains("--media-ui-smoke-test"), IsolatedData = true
             };
             Application.DispatcherUnhandledException += e => Console.Error.WriteLine(e.Exception);

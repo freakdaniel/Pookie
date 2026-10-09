@@ -13,14 +13,17 @@ internal static class BrowserAudioStateSmokeTest
         var browser = new FakeBrowser();
         await using var player = new WindowsAudioPlayer(native, () => browser);
         var source = new AudioSource("https://media.sndcdn.com/track.m3u8", AudioTransport.WidevineHls, 120)
-            { LicenseAuthToken = "fixture-authorization" };
+            { LicenseAuthToken = "fixture-authorization", NormalizationGainDb = -10 };
         player.Volume(0);
         await player.PlayAsync(source);
         var first = browser.Commands.Last(c => c.Action == "start");
         Require(native.Played == null && first.Volume == 0, "Protected audio must use browser EME with configured volume.");
-        browser.State(first.PlaybackId, new(3, 120, true, false, false) { BufferedStart = 0, BufferedEnd = 45 });
+        Require(first.NormalizationGainDb == -10, "The waveform correction must be supplied before protected playback starts.");
+        browser.State(first.PlaybackId, new(3, 120, true, false, false)
+            { BufferedStart = 0, BufferedEnd = 45, NormalizationGainDb = -10 });
         Require(player.Poll().Playing && player.Poll().Position == 3, "Browser state must reach the player.");
         Require(player.Poll().BufferedEnd == 45, "The real browser buffer must reach the player.");
+        Require(player.Poll().NormalizationGainDb == -10, "The fixed browser correction must reach diagnostics.");
         browser.State(first.PlaybackId, new(3, 120, true, false, false) { BufferedEnd = 121 });
         Require(player.Poll().BufferedEnd == 45, "Invalid buffer events must not alter playback.");
         await player.SeekAsync(35);

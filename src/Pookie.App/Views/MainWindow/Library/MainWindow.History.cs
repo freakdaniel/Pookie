@@ -8,13 +8,13 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     // A collection's identity and a search's query belong to the route, not just its page type.
-    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All)
+    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null)
     {
-        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section;
+        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
-        string Filter, bool ListView, double Scroll, LibraryPage? SearchResults);
+        string Filter, bool ListView, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail);
     private sealed class NavigationEntry(NavigationRoute route)
     {
         public NavigationRoute Route { get; } = route;
@@ -31,12 +31,13 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
-        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0, searchResults);
+        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0, searchResults, trackDetailState);
 
     private ScrollViewer? NavigationScroll() => page.Value switch
     {
         Page.Library => overviewScroll,
         Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
+        Page.Track => trackDetailScroll,
         Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
         > Page.LibraryTracks => (ScrollViewer?)collectionGrid.FindVisualChild<ScrollViewer>(),
         _ => (ScrollViewer?)list.FindVisualChild<ScrollViewer>()
@@ -73,7 +74,7 @@ internal sealed partial class MainWindow
         var generation = BeginNavigation(route, pending: true);
         try { await action(generation); }
         // Late replies/errors from a page we already left cannot replace the new page.
-        catch (Exception) when (generation != navigationGeneration || disposed) { }
+        catch (Exception) when (generation != navigationGeneration || disposed) { return; }
         catch (Exception error)
         {
             if (route.Page > Page.LibraryTracks) librarySectionStatus.Value = FriendlyError(error);
@@ -110,7 +111,8 @@ internal sealed partial class MainWindow
         if (entry.Pending || entry.Snapshot == null)
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
-            if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
+            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track);
+            else if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
             else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }
             else if (entry.Route.Page > Page.LibraryTracks) await ShowLibrarySectionAsync(entry.Route.Page);
             else if (entry.Route.Page == Page.LibraryTracks) await LikesAsync(true);
@@ -118,6 +120,8 @@ internal sealed partial class MainWindow
             return;
         }
         var state = entry.Snapshot;
+        trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false } : null;
+        if (entry.Route.Page == Page.Track) RenderTrackDetail();
         heading.Value = state.Heading; eyebrow.Value = state.Eyebrow; status.Value = state.Status;
         activeCollection = state.Collection; activeLibrarySource = state.Source;
         librarySectionTitle.Value = state.CollectionTitle; librarySectionStatus.Value = state.CollectionStatus;
@@ -147,6 +151,7 @@ internal sealed partial class MainWindow
     private void ResetNavigationHistory()
     {
         loading?.Cancel(); ++navigationGeneration;
+        trackDetailState = null;
         ResetPageScrolling(); searchLoading.Value = false; searchResults = null; RefreshSearchViews();
         navigationHistory.Clear(); navigationHistory.Add(new(new(Page.Home))); navigationIndex = 0;
         page.Value = Page.Home;

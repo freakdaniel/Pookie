@@ -8,10 +8,26 @@ native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entr
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
+`--track-page-ui-smoke-test` checks native title navigation without starting audio,
+metadata/artwork/waveform/comments/related tracks, deduplicated comment pagination,
+back/forward restoration, cancellation and stale replies, and the shared player's
+queue and seek. It uses an isolated demo profile and a local browser-transport fixture.
+
+`--track-page-network-probe <SoundCloud track URL>` verifies real metadata, timed
+comments and pagination, related tracks and waveform through the production browser
+transport. `--track-page-live-ui-probe` additionally opens the real "Этажи" track in
+an isolated application window, clicks title/play/pause/waveform/comment timestamps,
+decodes actual audio at zero volume and checks back/forward. Close the normal app
+first: these two probes preserve and lease the saved SoundCloud browser profile.
+They do not change likes or write to the clipboard.
+
 Run from the repository root:
 
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --scrolling-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --track-page-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --pagination-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --browser-media-isolation-smoke-test

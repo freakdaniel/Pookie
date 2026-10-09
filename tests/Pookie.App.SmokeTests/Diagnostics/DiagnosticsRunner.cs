@@ -13,6 +13,9 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--track-page-network-probe") { await TrackPageNetworkProbe.RunAsync(args[1]); return true; }
+        if (args.Contains("--pagination-smoke-test")) { PaginationSmokeTest.Run(); return true; }
+        if (args.Contains("--waveform-gain-smoke-test")) { await WaveformGainSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-media-isolation-smoke-test")) { await BrowserMediaIsolationSmokeTest.RunAsync(); return true; }
         if (args.Contains("--system-media-smoke-test")) { await SystemMediaSmokeTest.RunAsync(); return true; }
         if (args.Length == 2 && args[0] == "--clipboard-fixture") { ClipboardFixture.Run(args[1]); return true; }
@@ -128,9 +131,20 @@ internal static class DiagnosticsRunner
             await using var player = protectedPlayer;
             player.Volume(args.Contains("--system-audio") ? 15 : 0);
             var protectedSource = new AudioSource(resolved.Stream.Uri.AbsoluteUri, AudioTransport.WidevineHls, resolved.Stream.Duration)
-                { LicenseAuthToken = resolved.Stream.LicenseAuthToken };
+                { LicenseAuthToken = resolved.Stream.LicenseAuthToken,
+                  NormalizationGainDb = args.Contains("--normalization-probe")
+                    ? await new WaveformGainResolver(protectedHttp, new AppDataPaths()).ResolveAsync(track.WaveformUrl, timeout.Token) : 0 };
             await player.PlayAsync(protectedSource, timeout.Token);
             await WaitForPlaybackAsync(player);
+            if (args.Contains("--normalization-probe"))
+            {
+                using var meterTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
+                while (player.Poll().Position < 5) await meterTimer.WaitForNextTickAsync(timeout.Token);
+                var normalized = player.Poll();
+                if (normalized.NormalizationGainDb is not { } gain || gain != protectedSource.NormalizationGainDb || gain >= 0)
+                    throw new InvalidOperationException("Protected track did not keep its waveform correction.");
+                Console.WriteLine($"NORMALIZATION_PROBE_OK: constant waveform correction={gain:F2} dB; user volume remains zero");
+            }
             Console.WriteLine("PROTECTED_PLAYBACK_OK: decoded audio clock advances");
             if (Math.Abs(player.Poll().Duration - resolved.Stream.Duration) > 2) throw new InvalidOperationException("DRM duration mismatch.");
             if (player is WindowsAudioPlayer)

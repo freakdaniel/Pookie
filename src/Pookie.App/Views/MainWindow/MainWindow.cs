@@ -373,13 +373,20 @@ internal sealed partial class MainWindow : IDisposable
             if (demo) source = new(DemoSource(track.Id), AudioTransport.File, track.DurationSeconds);
             else
             {
-                var resolved = await new SoundCloudStreamResolver(api).ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
+                var resolver = new WaveformGainResolver(http, dataPaths);
+                var waveformUrl = track.WaveformUrl;
+                var gainTask = resolver.ResolveAsync(waveformUrl, token);
+                var streamTask = new SoundCloudStreamResolver(api).ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
+                await Task.WhenAll(gainTask, streamTask);
+                var resolved = await streamTask;
                 track = resolved.Track;
                 var stream = resolved.Stream;
                 source = new(stream.Uri.AbsoluteUri, stream.Protected ? AudioTransport.WidevineHls : stream.Protocol == "hls" ? AudioTransport.Hls : AudioTransport.Progressive, stream.Duration)
-                    { LicenseAuthToken = stream.LicenseAuthToken };
+                    { LicenseAuthToken = stream.LicenseAuthToken,
+                      NormalizationGainDb = track.WaveformUrl == waveformUrl ? await gainTask : await resolver.ResolveAsync(track.WaveformUrl, token) };
             }
             if (generation != playGeneration || disposed) return;
+            AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;

@@ -138,7 +138,8 @@ public sealed class SoundFlowPlayer : IAudioPlayer
                 provider?.Buffering == true && !paused, notifyEnd)
             {
                 BufferedStart = source?.Transport == AudioTransport.File ? 0 : provider?.Seconds ?? 0,
-                BufferedEnd = source?.Transport == AudioTransport.File ? provider?.Duration ?? 0 : provider?.BufferedEnd ?? 0
+                BufferedEnd = source?.Transport == AudioTransport.File ? provider?.Duration ?? 0 : provider?.BufferedEnd ?? 0,
+                NormalizationGainDb = provider?.NormalizationGainDb
             };
         }
     }

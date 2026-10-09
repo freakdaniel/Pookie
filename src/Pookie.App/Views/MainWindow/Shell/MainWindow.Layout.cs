@@ -262,7 +262,7 @@ internal sealed partial class MainWindow
             new Border().Background(Raised).CornerRadius(18).Padding(16, 10).CenterVertical().Column(1)
                 .Child(new StackPanel().Horizontal().Spacing(8).Children(Icons.View("headphones", 18),
                     new TextBlock().Text("Твоя музыка. Твой ритм.").Foreground(Muted).FontSize(12).CenterVertical())))
-            .BindIsVisible(page, value => !IsLibrary(value) && value != Page.Search);
+            .BindIsVisible(page, value => !IsLibrary(value) && value is not (Page.Search or Page.Track));
         var chips = new StackPanel().Horizontal().Spacing(8).BindIsVisible(page, value => value == Page.Home).Children(
             SearchChip("Для спокойного вечера", "ambient"), SearchChip("Электроника", "electronic"),
             SearchChip("Хип-хоп", "hip hop"), SearchChip("В ритме джаза", "jazz"));
@@ -275,12 +275,13 @@ internal sealed partial class MainWindow
         var listBody = new Grid().Columns("*").Rows("*").Children(
             CreateHomeLoadingView().BindIsVisible(page, value => value is Page.Home or Page.Feed),
             SearchPage().BindIsVisible(page, value => value == Page.Search),
+            TrackDetailPageView().BindIsVisible(page, value => value == Page.Track),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
             CollectionPage().BindIsVisible(page, value => value > Page.LibraryTracks));
         return new DockPanel().LastChildFill().Spacing(18).Children(
             new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading, chips, listHead)
-                .BindIsVisible(page, value => value != Page.Search),
+                .BindIsVisible(page, value => value is not (Page.Search or Page.Track)),
             listBody);
     }
 
@@ -407,6 +408,7 @@ internal sealed partial class MainWindow
                 new StackPanel().Vertical().Spacing(4).CenterVertical().Column(compact ? 1 : 2).Children(trackTitle, author),
                 duration.Column(compact ? 2 : 3));
             AttachTrackQueueMenu(root, () => rowTracks.TryGetValue(cover, out var id) ? tracks.FirstOrDefault(track => track.Id == id) : null);
+            AttachTrackTitle(trackTitle, () => rowTracks.TryGetValue(cover, out var id) ? tracks.FirstOrDefault(track => track.Id == id) : null);
             return root;
         }, (_, track, index, context) =>
         {

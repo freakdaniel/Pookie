@@ -34,6 +34,7 @@ internal sealed partial class MainWindow
             CopyTrackLink, (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
+        AttachTrackTitle(row.Title, () => row.Track);
         return row;
     }
 
@@ -67,6 +68,7 @@ internal sealed partial class MainWindow
         if (seconds is { } value) likedPlaybackPosition = value;
         foreach (var row in likedRows.Values) RefreshLikedRow(row);
         RefreshSearchPlayback();
+        RefreshTrackDetailPlayback();
     }
 
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)
@@ -91,10 +93,16 @@ internal sealed partial class MainWindow
 
     private async Task LoadLikedWaveformAsync(LikedTrackRow row, SoundCloudTrack track)
     {
-        if (!Uri.TryCreate(track.WaveformUrl, UriKind.Absolute, out var uri) || !SoundCloudWebClient.IsMediaUri(uri)) return;
+        var samples = await GetTrackWaveformAsync(track);
+        if (samples != null && !disposed && ReferenceEquals(row.Track, track)) row.Waveform.SetSamples(samples);
+    }
+
+    private async Task<float[]?> GetTrackWaveformAsync(SoundCloudTrack track)
+    {
+        if (!Uri.TryCreate(track.WaveformUrl, UriKind.Absolute, out var uri) || !SoundCloudWebClient.IsMediaUri(uri)) return null;
         if (uri.AbsolutePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
             uri = new UriBuilder(uri) { Path = uri.AbsolutePath[..^4] + ".json" }.Uri;
-        if (!uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return;
+        if (!uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return null;
         if (!waveformRequests.TryGetValue(uri.AbsoluteUri, out var request))
         {
             if (waveformRequests.Count >= 256)
@@ -104,36 +112,20 @@ internal sealed partial class MainWindow
             }
             waveformRequests[uri.AbsoluteUri] = request = FetchWaveformAsync(uri);
         }
-        var samples = await request;
-        if (samples != null && !disposed && ReferenceEquals(row.Track, track)) row.Waveform.SetSamples(samples);
+        return await request;
     }
 
-    private async Task<float[]?> FetchWaveformAsync(Uri uri)
+    private Task<float[]?> FetchWaveformAsync(Uri uri) => Task.Run(() => FetchWaveformCoreAsync(uri), lifetime.Token);
+
+    private async Task<float[]?> FetchWaveformCoreAsync(Uri uri)
     {
         await waveformGate.WaitAsync(lifetime.Token);
         try
         {
-            var cache = new WaveformDiskCache(dataPaths);
-            var bytes = await cache.ReadAsync(uri.AbsoluteUri, lifetime.Token);
-            if (bytes != null)
-            {
-                try { using var cached = JsonDocument.Parse(bytes); return WaveformData.Parse(cached.RootElement); }
-                catch (JsonException) { }
-            }
-            using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, lifetime.Token);
-            if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > WaveformDiskCache.MaxEntrySize) return null;
-            await using var input = await response.Content.ReadAsStreamAsync(lifetime.Token);
-            using var output = new MemoryStream();
-            var buffer = new byte[8192]; int count;
-            while ((count = await input.ReadAsync(buffer, lifetime.Token)) > 0)
-            {
-                if (output.Length + count > WaveformDiskCache.MaxEntrySize) return null;
-                output.Write(buffer, 0, count);
-            }
-            bytes = output.ToArray();
+            var bytes = await new Pookie.App.Playback.WaveformGainResolver(http, dataPaths).ReadAsync(uri, lifetime.Token);
+            if (bytes == null) return null;
             using var json = JsonDocument.Parse(bytes);
             var samples = WaveformData.Parse(json.RootElement);
-            await cache.WriteAsync(uri.AbsoluteUri, bytes, lifetime.Token);
             return samples;
         }
         catch (Exception error) when (error is HttpRequestException or IOException or JsonException or InvalidOperationException) { return null; }

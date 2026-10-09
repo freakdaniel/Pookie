@@ -73,7 +73,9 @@ internal sealed partial class MainWindow
             .OnClick(() => SetExpandedPlayer(true));
 
         playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Children(
-            new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
+            new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Left()
+                .Content(new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis))
+                .OnClick(() => { if (current is { } track) Run(() => OpenTrackPageAsync(track)); }),
             new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText).TextTrimming(TextTrimming.CharacterEllipsis));
         positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(0, 0, 4, 2).CenterVertical().Right().Column(0);

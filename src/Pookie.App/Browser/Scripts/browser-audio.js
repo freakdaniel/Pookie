@@ -5,6 +5,7 @@
 (() => {
   if (location.origin !== 'https://soundcloud.com' || window !== window.top || window.__pookieAudioRequest) return;
   const mime = 'audio/mp4; codecs="mp4a.40.2"';
+  const normalizationModule = __POOKIE_NORMALIZATION_MODULE__;
   let current = null;
   const pendingSeeks = new Map();
   // Autoplay is enabled for app-controlled playback; keep the hidden website silent.
@@ -21,7 +22,8 @@
   }
   function valid(c) {
     return c && /^[a-f0-9]{32}$/.test(c.playback_id || '') && Number.isFinite(c.position) && c.position >= 0 && c.position <= 86400 &&
-      Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 100 && (c.action === 'start'
+      Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 100 &&
+      (c.normalization_gain_db == null || Number.isFinite(c.normalization_gain_db) && c.normalization_gain_db >= -24 && c.normalization_gain_db <= 6) && (c.action === 'start'
       ? typeof c.source === 'string' && c.source.length <= 8192 && typeof c.authorization === 'string' &&
         c.authorization.length > 0 && c.authorization.length <= 16384 && !/[\x00-\x1f\x7f]/.test(c.authorization)
       : ['stop','pause','volume','seek'].includes(c.action) && c.source == null && c.authorization == null);
@@ -38,6 +40,7 @@
     }
     return {position: Math.max(0, st.audio.currentTime || 0), duration: st.duration || 0,
       buffered_start:bufferedStart, buffered_end:bufferedEnd,
+      normalization_gain_db:st.gainDb,
       playing: !st.paused && !st.audio.paused && !st.audio.ended && st.audio.readyState >= 3 && !st.error,
       buffering: !st.paused && !st.audio.ended && st.audio.readyState < 3 && !st.error,
       ended: st.audio.ended, error: st.error, stage:st.stage,
@@ -59,9 +62,50 @@
     if (current === st) current = null;
     clearInterval(st.timer); st.controller.abort(); st.audio.pause();
     st.audio.removeAttribute('src'); st.audio.load(); st.audio.remove();
+    closeNormalization(st);
     if (st.objectUrl) URL.revokeObjectURL(st.objectUrl);
     if (st.session) st.session.close().catch(() => { /* CDM may already be closed during teardown. */ });
     const error = new Error('closed'); st.rejectKeys(error); st.rejectReady(error);
+  }
+  function closeNormalization(st) {
+    if (!st.normalization) return;
+    const n=st.normalization; st.normalization=null;
+    n.source.disconnect(); n.node.disconnect(); n.master.disconnect();
+    if (n.context.state !== 'closed') n.context.close().catch(() => { /* Page teardown can close the context first. */ });
+  }
+  function createAudio(st) {
+    const audio=st.audio=document.createElement('audio');
+    audio.preload='auto'; audio.volume=directVolume(st);
+    audio.style.display='none'; document.body.append(audio);
+    audio.addEventListener('error',()=>{if(st.audio===audio)fail(st,new Error('decode'));});
+    for(const name of ['playing','pause','waiting','ended','seeked'])
+      audio.addEventListener(name,()=>{if(st.audio===audio)publish(st);});
+  }
+  function directVolume(st) {
+    return Math.min(1, st.volume / 100 * Math.pow(10, st.gainDb / 20));
+  }
+  async function setupNormalization(st) {
+    // Attenuation stays in the media element: it needs neither PCM access nor
+    // a Worklet and applies equally to every protected frame from the start.
+    if (st.gainDb <= 0 || !window.AudioContext || !window.AudioWorkletNode) return;
+    const context = new AudioContext();
+    let source;
+    const url = URL.createObjectURL(new Blob([normalizationModule], {type:'text/javascript'}));
+    try {
+      await context.audioWorklet.addModule(url);
+      await context.resume();
+      if (current !== st || st.controller.signal.aborted) { await context.close(); return; }
+      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb}});
+      const master = context.createGain(); master.gain.value = st.volume / 100;
+      source = context.createMediaElementSource(st.audio);
+      source.connect(node).connect(master).connect(context.destination);
+      st.audio.volume = 1;
+      st.normalization = {context,node,source,master};
+    } catch (error) {
+      if (context.state !== 'closed') await context.close();
+      // A failed graph cannot be detached back to direct media output.
+      if (source && current === st) { st.audio.remove(); createAudio(st); st.normalization=null; }
+    } finally { URL.revokeObjectURL(url); }
   }
   async function bytes(url, limit, st) {
     if (st.controller.signal.aborted) throw new Error('closed');
@@ -173,16 +217,18 @@
     if (current !== st || st.controller.signal.aborted) throw new Error('closed');
     const session = st.session = keys.createSession('temporary');
     session.addEventListener('keystatuseschange', () => {
+      if (st.session !== session) return;
       const statuses = Array.from(session.keyStatuses.values());
       if (statuses.includes('usable')) st.resolveKeys();
       else if (statuses.some(value => !['status-pending','usable-in-future'].includes(value))) fail(st, new Error('expired'));
     });
     let exchangeQueue = Promise.resolve(), exchanges = 0;
     session.addEventListener('message', e => {
+      if (st.session !== session) return;
       if (!['license-request','license-renewal'].includes(e.messageType) || ++exchanges > 64) { fail(st, new Error('license')); return; }
       exchangeQueue = exchangeQueue.then(async () => {
         const response = await license(st, e.message, command.authorization);
-        if (current !== st) return;
+        if (current !== st || st.session !== session) return;
         await session.update(response);
       }).catch(error => fail(st, error));
     });
@@ -266,16 +312,14 @@
     try {
       if (c.action === 'start') {
         mediaUrl(c.source); stop(current);
-        const audio = document.createElement('audio'); audio.preload = 'auto'; audio.volume = c.volume / 100;
-        audio.style.display = 'none'; document.body.append(audio);
-        st = {id:c.playback_id, requestId:request.id, audio, send, paused:c.paused, duration:0, index:0,
+        st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, duration:0, index:0,
           controller:new AbortController(), operations:Promise.resolve(), error:null, stage:'manifest', seekRevision:0};
         st.keys = new Promise((resolve, reject) => { st.resolveKeys = resolve; st.rejectKeys = reject; }); st.keys.catch(() => {});
         st.ready = new Promise((resolve, reject) => { st.resolveReady = resolve; st.rejectReady = reject; }); st.ready.catch(() => {});
         current = st;
-        audio.addEventListener('error', () => fail(st, new Error('decode')));
-        for (const name of ['playing','pause','waiting','ended','seeked']) audio.addEventListener(name, () => publish(st));
+        createAudio(st);
         st.timer = setInterval(() => { publish(st); pump(st); }, 250);
+        await setupNormalization(st);
         // Initialization is fetched with the same bounded media-only transport as segments.
         const manifest = playlist(new TextDecoder().decode(await bytes(c.source, 1024 * 1024, st)), c.source);
         st.playlist = manifest;
@@ -286,7 +330,12 @@
         st = current;
         if (!st || st.id !== c.playback_id) { send({kind:'complete', request_id:request.id, status:200}); return; }
         if (c.action === 'stop') stop(st);
-        else if (c.action === 'volume') st.audio.volume = c.volume / 100;
+        else if (c.action === 'volume') {
+          st.volume = c.volume;
+          if (st.normalization) {
+            st.normalization.master.gain.setTargetAtTime(c.volume / 100, st.normalization.context.currentTime, .02);
+          } else st.audio.volume = directVolume(st);
+        }
         else if (c.action === 'pause') { st.paused = c.paused; if (c.paused) st.audio.pause(); else if (st.buffer) await st.audio.play(); }
         else if (c.action === 'seek') {
           const revision = ++st.seekRevision;

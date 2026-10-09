@@ -28,6 +28,9 @@ internal sealed class StreamingProvider : ISoundDataProvider
     private volatile bool buffering = true;
     private volatile bool ended;
     private Exception? error;
+    private readonly double gainDb;
+    private FixedTrackGain? trackGain;
+    public double NormalizationGainDb => gainDb;
     public AudioFormat Format { get; private set; }
     public Task<AudioFormat> Ready => ready.Task;
     public Task Completion { get; }
@@ -52,6 +55,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
     public StreamingProvider(HttpClient http, AudioSource source, double offset, Func<Uri, bool> allowed, CancellationToken token,
         EncodedTrackCache? cache = null)
     {
+        gainDb = source.NormalizationGainDb;
+        if (!double.IsFinite(gainDb) || gainDb is < -24 or > 6) throw new ArgumentOutOfRangeException(nameof(source));
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         Duration = source.Duration;
         Completion = Task.Run(async () =>
@@ -183,6 +188,7 @@ internal sealed class StreamingProvider : ISoundDataProvider
             startingSample = (long)(offset * format.SampleRate) * format.Channels;
             if (Duration <= 0 && decoder.Length > 0) Duration = decoder.Length / (double)(format.SampleRate * format.Channels);
             if (stream is HttpRangeStream progressive) progressive.SetDuration(Duration);
+            if (gainDb != 0) trackGain = new(format.SampleRate, format.Channels, gainDb);
             ready.TrySetResult(format);
         }
         else if (Format.Channels != format.Channels || Format.SampleRate != format.SampleRate)
@@ -212,13 +218,23 @@ internal sealed class StreamingProvider : ISoundDataProvider
                 Volatile.Write(ref downloadedEnd, fraction * Duration);
             var discard = (int)Math.Min(skip, count);
             skip -= discard;
-            if (discard < count) await chunks.Writer.WriteAsync(buffer[discard..count], token);
+            if (discard < count)
+            {
+                var pcm = buffer[discard..count];
+                trackGain?.Apply(pcm);
+                await chunks.Writer.WriteAsync(pcm, token);
+            }
             Interlocked.Add(ref samplesPrepared, count - discard);
         }
     }
 
     private static Uri MediaUri(string value, Func<Uri, bool> allowed) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && allowed(uri)
         ? uri : throw new InvalidOperationException("Недопустимый адрес аудиопотока.");
+
+    // Async consumers can wait for decoded data. The real-time callback keeps
+    // using ReadBytes without ever waiting for the decoder or the network.
+    internal ValueTask<bool> WaitForDataAsync(CancellationToken token) =>
+        chunk != null ? ValueTask.FromResult(true) : chunks.Reader.WaitToReadAsync(token);
 
     public int ReadBytes(Span<float> buffer)
     {

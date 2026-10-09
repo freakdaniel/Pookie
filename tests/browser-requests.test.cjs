@@ -200,6 +200,15 @@ test('invalid protection session does not leave the WebView', () => {
 });
 
 const apiRead = (n, path = '/search/tracks?q=музыка') => ({ ...command(n, 'api-get'), url: 'https://api-v2.soundcloud.com' + path });
+test('track pages can read comments and related tracks without allowing arbitrary track actions', async () => {
+  const h=harness(()=>response(200,{collection:[]}));
+  const paths=['/tracks/42/comments?limit=30','/tracks/42/related?limit=6'];
+  for (const [index,path] of paths.entries()) h.window.__pookieRequest(apiRead(index+1,path));
+  await tick(); assert.equal(h.calls.length,2);
+  for (const [index,path] of ['/tracks/0/comments','/tracks/42/comments/delete','/tracks/42/reposts'].entries())
+    h.window.__pookieRequest(apiRead(index+10,path));
+  await tick(); assert.equal(h.calls.length,2);
+});
 test('search categories use only the five read-only endpoints', async () => {
   const h=harness(()=>response(200,{collection:[]}));
   const paths=['/search','/search/tracks','/search/users','/search/albums','/search/playlists_without_albums'];

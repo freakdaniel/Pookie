@@ -44,6 +44,7 @@ internal sealed partial class MainWindow
         var row = new CompactTrackRow(root, cover, play, overlay, like, heart, title, author, duration, hoverFill);
         compactTrackRows.Add(row);
         if (!queueRow) AttachTrackQueueMenu(root, () => row.Track);
+        AttachTrackTitle(title, () => row.Track);
         action.Click += () => { if (row.Track is { } item) (select ?? SelectLibraryTrack)(item); };
         like.Click += () => { if (row.Track is { } item) Run(() => ToggleTrackLikeAsync(item)); };
         root.MouseEnter += () => { row.Hovered = true; RefreshCompactTrackRow(row); };

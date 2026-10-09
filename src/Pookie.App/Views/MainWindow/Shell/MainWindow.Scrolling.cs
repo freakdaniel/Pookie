@@ -115,6 +115,7 @@ internal sealed partial class MainWindow
     private string? PageCursor() => page.Value switch
     {
         Page.Library => null,
+        Page.Track => null,
         Page.Search => searchResults?.NextHref,
         > Page.LibraryTracks => activeCollection?.NextHref,
         _ => nextHref
@@ -167,7 +168,7 @@ internal sealed partial class MainWindow
             loadedPageCursors.Add(cursor);
             emptyPageStreak = PageItemCount() > count ? 0 : emptyPageStreak + 1;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { return; }
         catch (Exception error)
         {
             if (disposed || generation != navigationGeneration) return;

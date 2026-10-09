@@ -12,6 +12,9 @@ internal sealed partial class MainWindow
     private bool expandedUiSmoke;
     private bool lyricsUiSmoke;
     private bool artworkUiSmoke;
+    private bool scrollingUiSmoke;
+    private bool trackPageUiSmoke;
+    private bool trackPageLiveUi;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
 
@@ -25,6 +28,9 @@ internal sealed partial class MainWindow
         expandedUiSmoke = args.Contains("--expanded-ui-smoke-test");
         lyricsUiSmoke = args.Contains("--lyrics-ui-smoke-test");
         artworkUiSmoke = args.Contains("--artwork-ui-smoke-test");
+        scrollingUiSmoke = args.Contains("--scrolling-ui-smoke-test");
+        trackPageUiSmoke = args.Contains("--track-page-ui-smoke-test");
+        trackPageLiveUi = args.Contains("--track-page-live-ui-probe");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
@@ -54,6 +60,9 @@ internal sealed partial class MainWindow
         if (expandedUiSmoke) Run(VerifyExpandedPlayerAsync);
         if (lyricsUiSmoke) Run(VerifyLyricsUiAsync);
         if (artworkUiSmoke) Run(VerifyPlayerArtworkAsync);
+        if (scrollingUiSmoke) Run(VerifyScrollingUiAsync);
+        if (trackPageUiSmoke) Run(VerifyTrackPageUiAsync);
+        if (trackPageLiveUi) Run(VerifyTrackPageLiveUiAsync);
     }
 
     private sealed class EmptyLyricsProvider : Pookie.Lyrics.ILyricsProvider

@@ -21,17 +21,17 @@ public sealed record BrowserRequestCommand(string Id, string Operation, long Use
         return path is "/me" or "/me/track_likes/ids" or "/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
             path.StartsWith("/media/", StringComparison.Ordinal) ||
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/system-playlists/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
-            System.Text.RegularExpressions.Regex.IsMatch(path, @"^/((tracks|playlists)/[1-9][0-9]*|users/[1-9][0-9]*/(likes|followings|tracks))$");
+            System.Text.RegularExpressions.Regex.IsMatch(path, @"^/((tracks|playlists)/[1-9][0-9]*|tracks/[1-9][0-9]*/(comments|related)|users/[1-9][0-9]*/(likes|followings|tracks))$");
     }
     public override string ToString() => $"Browser command ({Operation}; URL and session redacted)";
 
 }
 
 public sealed record BrowserAudioCommand(string Action, string PlaybackId, string? Source = null, string? Authorization = null,
-    double Position = 0, double Volume = 70, bool Paused = false)
+    double Position = 0, double Volume = 70, bool Paused = false, double NormalizationGainDb = 0)
 {
     public bool IsValid() => Guid.TryParseExact(PlaybackId, "N", out _) && double.IsFinite(Position) && Position is >= 0 and <= 86400 &&
-        double.IsFinite(Volume) && Volume is >= 0 and <= 100 && (Action == "start"
+        double.IsFinite(Volume) && Volume is >= 0 and <= 100 && double.IsFinite(NormalizationGainDb) && NormalizationGainDb is >= -24 and <= 6 && (Action == "start"
         ? Source is { Length: > 0 and <= 8192 } && Uri.TryCreate(Source, UriKind.Absolute, out var uri) &&
           SoundCloudWebClient.IsMediaUri(uri) && uri.Fragment == "" && Authorization is { Length: > 0 and <= 16384 } &&
           !Authorization.Any(c => c < 32 || c == 127)
@@ -44,10 +44,12 @@ public sealed record BrowserAudioState(double Position, double Duration, bool Pl
 {
     public double BufferedStart { get; init; }
     public double BufferedEnd { get; init; }
+    public double? NormalizationGainDb { get; init; }
     public bool IsValid() => double.IsFinite(Position) && Position is >= 0 and <= 86400 &&
         double.IsFinite(Duration) && Duration is >= 0 and <= 86400 &&
         double.IsFinite(BufferedStart) && double.IsFinite(BufferedEnd) &&
         BufferedStart >= 0 && BufferedEnd >= BufferedStart && BufferedEnd <= Duration &&
+        (NormalizationGainDb == null || double.IsFinite(NormalizationGainDb.Value) && NormalizationGainDb is >= -24 and <= 6) &&
         (Error == null || Error is "unsupported" or "network" or "playlist" or "decode" or "license" or "expired" or "autoplay" or "closed") &&
         (Stage == null || Stage is "manifest" or "initialization" or "eme" or "license" or "source" or "buffer" or "segment" or "play" or "ready") &&
         MediaError is >= 0 and <= 4 && ReadyState is >= 0 and <= 4 && NetworkState is >= 0 and <= 3;

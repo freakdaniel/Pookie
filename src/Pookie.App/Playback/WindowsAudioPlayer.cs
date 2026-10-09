@@ -41,7 +41,8 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
         }
         try
         {
-            await connected.SendAudioAsync(new("start", id, source.Location, source.LicenseAuthToken, Volume: volume), timeout.Token);
+            await connected.SendAudioAsync(new("start", id, source.Location, source.LicenseAuthToken, Volume: volume,
+                NormalizationGainDb: source.NormalizationGainDb), timeout.Token);
             timeout.Token.ThrowIfCancellationRequested();
             lock (sync) if (playbackId != id) throw new OperationCanceledException();
         }
@@ -66,7 +67,8 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
             else if (message.Kind == "audio-state" && message.RequestId == playbackId && message.Audio is { } audio && audio.IsValid())
             {
                 state = new(audio.Position, audio.Duration, audio.Playing, audio.Buffering, audio.Ended)
-                    { BufferedStart = audio.BufferedStart, BufferedEnd = audio.BufferedEnd };
+                    { BufferedStart = audio.BufferedStart, BufferedEnd = audio.BufferedEnd,
+                      NormalizationGainDb = audio.NormalizationGainDb };
                 if (audio.Error != null) error = PlaybackError(audio.Error);
             }
         }

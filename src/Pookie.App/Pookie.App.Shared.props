@@ -20,6 +20,7 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/login-capture.js" LogicalName="Pookie.App.Browser.Scripts.login-capture.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-requests.js" LogicalName="Pookie.App.Browser.Scripts.browser-requests.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-audio.js" LogicalName="Pookie.App.Browser.Scripts.browser-audio.js" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/audio-normalization.js" LogicalName="Pookie.App.Browser.Scripts.audio-normalization.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Filtering/blacklist.json" LogicalName="Pookie.App.Browser.Filtering.blacklist.json" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Icons/*.svg" LogicalName="Pookie.App.Assets.Icons.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/logo.svg" LogicalName="Pookie.App.Assets.logo.svg" />

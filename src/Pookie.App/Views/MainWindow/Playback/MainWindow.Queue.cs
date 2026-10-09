@@ -32,13 +32,13 @@ internal sealed partial class MainWindow
     {
         CaptureQueueOrigin();
         var route = navigationHistory[navigationIndex].Route;
-        var data = page.Value == Page.Search ? [first] :
+        var data = page.Value == Page.Track ? new[] { first }.Concat(trackDetailState?.Related.Tracks.Where(track => track.Id != first.Id) ?? []).ToArray() : page.Value == Page.Search ? [first] :
             page.Value == Page.LibraryCollection ? activeCollection?.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray() ?? [first] :
             page.Value is Page.Library or Page.LibraryTracks ? libraryLikes?.Tracks ?? tracks.ToArray() : tracks.ToArray();
-        var cursor = page.Value == Page.Search ? null : page.Value == Page.LibraryCollection ? activeCollection?.NextHref :
+        var cursor = page.Value is Page.Search or Page.Track ? null : page.Value == Page.LibraryCollection ? activeCollection?.NextHref :
             page.Value is Page.Library or Page.LibraryTracks ? libraryLikes?.NextHref ?? nextHref : nextHref;
         if (!data.Any(track => track.Id == first.Id)) data = [.. data, first];
-        var key = page.Value == Page.Search ? $"track:{first.Id}" : route.Item?.Key ?? (page.Value is Page.Library or Page.LibraryTracks ? "likes" : page.Value.ToString());
+        var key = page.Value is Page.Search or Page.Track ? $"track:{first.Id}" : route.Item?.Key ?? (page.Value is Page.Library or Page.LibraryTracks ? "likes" : page.Value.ToString());
         var kind = page.Value switch
         {
             Page.Library or Page.LibraryTracks => PlaybackContextKind.Likes,
@@ -49,7 +49,7 @@ internal sealed partial class MainWindow
             Page.Home => PlaybackContextKind.Recommendations,
             _ => PlaybackContextKind.Track
         };
-        if (page.Value == Page.Search) { queueOriginTitle = first.Title; queueOriginKind = "Сейчас играет отдельный трек"; }
+        if (page.Value is Page.Search or Page.Track) { queueOriginTitle = first.Title; queueOriginKind = "Сейчас играет отдельный трек"; }
         if (page.Value == Page.LibraryCollection && selectedIndex is { } cardIndex && activeCollection != null)
             selectedIndex = activeCollection.Items.Take(cardIndex).Count(item => item.Track != null);
         StartQueueContext(new(key, queueOriginTitle, queueOriginKind, cursor, Kind: kind), data, first, selectedIndex);
@@ -158,6 +158,7 @@ internal sealed partial class MainWindow
             root.Commands.Register(command, execute, enabled);
             menu.Item(command);
         }
+        Item("open", "Открыть страницу трека", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
         Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
         Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
         if (entryId != null)
