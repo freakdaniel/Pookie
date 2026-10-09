@@ -100,7 +100,7 @@ internal sealed partial class MainWindow
     {
         if (searchList == null) return;
         renderedSearchColumns = libraryColumns;
-        searchList.ItemHeight = searchSection.Value == SearchSection.Tracks ? 196 : 64;
+        searchList.ItemHeight = searchSection.Value == SearchSection.Tracks ? TrackRowLayout.Stride : 64;
         var blocks = SearchBlocks();
         if (pageItems.TryGetValue(searchList, out var source))
         {

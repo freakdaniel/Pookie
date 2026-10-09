@@ -17,6 +17,10 @@ public sealed record SoundCloudPlaylist
     public string? PlaylistType { get; init; }
     public bool IsAlbum { get; init; }
     public int TrackCount { get; init; }
+    public double Duration { get; init; }
+    public string? Description { get; init; }
+    public string? Sharing { get; init; }
+    public string? LastModified { get; init; }
     public SoundCloudUser? User { get; init; }
     public SoundCloudTrack[] Tracks { get; init; } = [];
 }
@@ -27,6 +31,8 @@ public sealed record LibraryItem(string Key, string Title, string Subtitle, stri
     public bool IsAlbum => Playlist is { IsAlbum: true } || Playlist?.PlaylistType?.ToLowerInvariant() is "album" or "ep" or "single" or "compilation";
     public static LibraryItem FromTrack(SoundCloudTrack track) => new("track:" + track.Id, track.Title, track.Author, track.ArtworkUrl ?? track.User?.AvatarUrl, Track: track);
 }
+public sealed record CollectionDetail(LibraryItem Item, TrackPage Tracks);
+
 public sealed record LibraryPage(LibraryItem[] Items, string? NextHref);
 
 public static class LibraryData

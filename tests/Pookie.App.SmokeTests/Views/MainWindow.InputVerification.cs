@@ -14,10 +14,11 @@ internal sealed partial class MainWindow
         if (!OperatingSystem.IsLinux()) return;
         if (searchInput == null) throw new InvalidOperationException("Native search input is unavailable");
         var selection = "POOKIE_TEST_" + Guid.NewGuid().ToString("N");
-        var clipboard = GtkClipboardService.TryCreate(selection)!;
+        using var clipboard = windowClipboard!.ForSelection(null, selection);
         var start = new ProcessStartInfo(Environment.ProcessPath!)
         { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
         if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet") start.ArgumentList.Add(typeof(MainWindow).Assembly.Location);
+        start.Environment["GDK_BACKEND"] = "x11";
         start.ArgumentList.Add("--clipboard-fixture"); start.ArgumentList.Add(selection);
         using var owner = Process.Start(start)!;
         var display = XOpenDisplay(0);
@@ -70,8 +71,8 @@ internal sealed partial class MainWindow
         }
         finally
         {
-            topSearchInput.ClipboardService = nativeClipboard;
-            likedFilter.ClipboardService = nativeClipboard;
+            topSearchInput.ClipboardService = windowClipboard;
+            likedFilter.ClipboardService = windowClipboard;
             CloseTopSearch(true);
             Window.FocusManager.ClearFocus();
             await NavigateAsync(Page.Home);

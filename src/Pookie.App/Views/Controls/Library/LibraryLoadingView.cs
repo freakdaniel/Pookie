@@ -89,7 +89,7 @@ internal sealed class LibrarySkeleton : Control
         if (loadingRowStyle == style && artworkSize == size && columns == rowColumns && !double.IsNaN(Height)) return;
         loadingRowStyle = style;
         SetGeometry(size, rowColumns, style == LoadingRowStyle.Waveform);
-        Height = style switch { LoadingRowStyle.Compact => 64, LoadingRowStyle.Waveform => 196, _ => size + 90 };
+        Height = style switch { LoadingRowStyle.Compact => 64, LoadingRowStyle.Waveform => TrackRowLayout.Stride, _ => size + 90 };
     }
 
     public void SetActive(bool active) { if (active) shimmer.Start(); else shimmer.Stop(); }
@@ -119,17 +119,17 @@ internal sealed class LibrarySkeleton : Control
             }
             return;
         }
-        var rowHeight = ListView ? 196 : artworkSize + 90;
+        var rowHeight = ListView ? TrackRowLayout.Stride : artworkSize + 90;
         var rows = Preview ? (int)Math.Ceiling(6d / columns) : (int)Math.Ceiling(bounds.Height / rowHeight);
         for (var row = 0; row < rows; row++)
         {
             var y = row * rowHeight;
             if (ListView)
             {
-                Block(0, y, 160, 160, 6); Block(180, y + 1, 38, 38, 19);
+                Block(0, y + 6, 160, 160, 6); Block(180, y, 40, 40, 20);
                 Block(230, y + 3, 130, 10); Block(230, y + 24, Math.Min(280, bounds.Width - 248), 14);
                 Block(180, y + 56, bounds.Width - 198, 52);
-                Block(180, y + 132, 62, 28); Block(248, y + 132, 30, 28);
+                Block(180, y + 132, 88, 40, 20); Block(276, y + 132, 40, 40, 20);
             }
             else for (var column = 0; column < columns; column++)
             {

@@ -66,7 +66,7 @@ internal sealed partial class MainWindow
         {
             Page.Search => searchList,
             Page.LibraryTracks => likesAsList.Value ? likedList : likedGrid,
-            > Page.LibraryTracks => collectionGrid,
+            > Page.LibraryTracks => playlistCollectionVisible.Value ? collectionTrackList : collectionGrid,
             _ => (ScrollableItemsBase)list
         };
         if (pageItems.TryGetValue(control, out var source))
@@ -77,6 +77,12 @@ internal sealed partial class MainWindow
     private void ObservePageScrolling()
     {
         if (disposed) return;
+        var frameWidth = Math.Min(1440, Window.ClientSize.Width);
+        if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
+        {
+            UpdateContentFrameWidth(frameWidth);
+            contentFrame.InvalidateMeasure();
+        }
         ClearUnboundExpandedQueueRows();
         if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
         if (page.Value == Page.Search && searchLayoutPending)
@@ -104,7 +110,10 @@ internal sealed partial class MainWindow
                 viewer.ScrollChanged += CheckPageEnd;
                 viewer.MouseWheel += OnPageWheel;
             }
-        CheckPageEnd();
+        // Positions belong to this edit's first layout, never to rows realized
+        // later by scrolling or pagination.
+        likedEditPositions.Clear();
+        CheckPageEnd(); CheckTrackSectionEnd();
     }
 
     private static void DisablePreviewGridScrolling(ItemsControl grid)
@@ -122,7 +131,7 @@ internal sealed partial class MainWindow
     };
 
     private int PageItemCount() => page.Value == Page.Search ? searchResults?.Items.Length ?? 0 :
-        page.Value > Page.LibraryTracks ? pageItems.GetValueOrDefault(collectionGrid)?.DataCount ?? 0 :
+        page.Value > Page.LibraryTracks ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? collectionTrackList : collectionGrid)?.DataCount ?? 0 :
         page.Value == Page.LibraryTracks ? pageItems.GetValueOrDefault(likesAsList.Value ? likedList : likedGrid)?.DataCount ?? 0 : tracks.Count;
 
     private void OnPageWheel(MouseWheelEventArgs args)
@@ -184,6 +193,9 @@ internal sealed partial class MainWindow
 
     private void ResetPageScrolling()
     {
+        trackDetailSectionSkeleton?.SetActive(false);
+        likedEditPositions.Clear();
+        foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
         searchScrollAnchor = null;
         foreach (var motion in smoothScrolls.Values) motion.Stop();
         foreach (var source in pageItems.Values) source.SetLoading(0);
@@ -193,6 +205,7 @@ internal sealed partial class MainWindow
 
     private void DisposePageScrolling()
     {
+        foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
         Window.FrameRendered -= ObservePageScrolling;
         foreach (var (viewer, motion) in smoothScrolls)
         { viewer.ScrollChanged -= CheckPageEnd; viewer.MouseWheel -= OnPageWheel; motion.Dispose(); }

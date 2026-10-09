@@ -27,13 +27,14 @@ internal static class Program
                 { Environment.ExitCode = NativeWebLogin.RunChild(args[1], args[3], fixture); return; }
             }
             if (await DiagnosticsRunner.TryRunAsync(args)) return;
-            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--track-page-live-ui-probe"))
+            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--track-page-live-ui-probe" or "--likes-edits-ui-smoke-test" or "--collections-ui-smoke-test"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
             var liveTrackUi = args.Contains("--track-page-live-ui-probe");
+            var likesEditsUi = args.Contains("--likes-edits-ui-smoke-test") || args.Contains("--collections-ui-smoke-test");
             var options = AppRunOptions.FromArgs(args) with
             {
-                Preview = !liveTrackUi, RequireSignIn = loginUi, SkipSessionRestore = loginUi || liveTrackUi,
+                Preview = !liveTrackUi && !likesEditsUi, RequireSignIn = loginUi, SkipSessionRestore = loginUi || liveTrackUi || likesEditsUi,
                 SilentAudio = true, DiscordPresence = false, SystemMediaSession = args.Contains("--media-ui-smoke-test"), IsolatedData = true
             };
             Application.DispatcherUnhandledException += e => Console.Error.WriteLine(e.Exception);

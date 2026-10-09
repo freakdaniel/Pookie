@@ -161,6 +161,7 @@ internal sealed partial class MainWindow
         Item("open", "Открыть страницу трека", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
         Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
         Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
+        Item("playlist", "Добавить в плейлист", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
         if (entryId != null)
         {
             int Index() => playbackQueue.Snapshot.ManualUpcoming.ToList().FindIndex(entry => entry.EntryId == entryId());

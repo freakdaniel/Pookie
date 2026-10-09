@@ -37,6 +37,15 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default) =>
         _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "like", userId, trackId, liked), token);
 
+    public async Task SetRepostedAsync(long trackId, bool reposted, CancellationToken token = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "repost", TrackId: trackId, Reposted: reposted), token);
+
+    public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken token = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "follow", UserId: userId, ArtistId: artistId, Following: following), token);
+
+    public async Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken token = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-add", UserId: userId, PlaylistId: playlistId, TrackId: trackId), token);
+
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken token = default) =>
         (await RequestAsync(new(Guid.NewGuid().ToString("N"), "liked-ids"), token)).Ids?.ToHashSet() ?? [];
 
@@ -47,6 +56,13 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken);
         try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
+        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
+    }
+
+    public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken);
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал страницу трека.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
@@ -76,7 +92,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
-            using var cancellation = command.Operation == "like" ? timeout.Token.Register(current.Abort) : default;
+            var write = command.Operation is "like" or "repost" or "follow" or "playlist-add";
+            using var cancellation = write ? timeout.Token.Register(current.Abort) : default;
             await (ordered ? StartupLog.RunAsync(stage + ".site-ready", () => current.Ready.Task.WaitAsync(timeout.Token))
                 : current.Ready.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
             if (current.Blocked && (command.Operation != "audio" || command.Audio?.Action == "start")) throw BrowserBlocked();
@@ -87,7 +104,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 timeout.Token.ThrowIfCancellationRequested();
                 await (ordered ? StartupLog.RunAsync(stage + ".send", () => current.SendAsync(command, timeout.Token))
                     : current.SendAsync(command, timeout.Token)).ConfigureAwait(false);
-                using var readCancellation = command.Operation != "like"
+                using var readCancellation = !write
                     ? timeout.Token.Register(() => _ = current.CancelReadAsync(command.Id)) : default;
                 var result = await (ordered ? StartupLog.RunAsync(stage + ".response", () => response.Task.WaitAsync(timeout.Token))
                     : response.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);

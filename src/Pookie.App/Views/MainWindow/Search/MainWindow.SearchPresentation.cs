@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
         var cardGrid = CreateCollectionGrid(true);
         var cards = new StackPanel().Vertical().Spacing(16).Margin(0, 0, 0, 24).Children(cardsTitle, cardGrid);
         var heading = new TextBlock().FontSize(22).Bold().Margin(0, 8, 0, 14);
-        var libraryTrackHost = new StackPanel().Vertical().Margin(0, 0, 0, 36);
+        var libraryTrackHost = new StackPanel().Vertical().Margin(0, 0, 0, TrackRowLayout.Gap);
         var root = new StackPanel().Vertical().Children(hero.Root, cards, track.Root, heading, libraryTrackHost);
         var view = new SearchResultView(root, hero, cards, cardsTitle, cardGrid, track, heading, libraryTrackHost);
         searchViews[root] = view;

@@ -30,7 +30,12 @@ internal sealed partial class MainWindow
     private readonly SemaphoreSlim coverGate = new(4);
     private CancellationTokenSource? likedLoading;
     private Task? likedTask;
-    private bool likedIdsReady, likeBusy, advancing;
+    private bool likedIdsReady, advancing;
+    private readonly HashSet<(WebSession Session, long Track)> pendingLikes = [];
+    private bool IsLikePending(SoundCloudTrack track) => api.Session is { } session && pendingLikes.Contains((session, track.Id));
+    private bool likeBusy => pendingLikes.Any(item => item.Session == api.Session);
+    private bool CanLikeTrack(SoundCloudTrack track) => me != null && !demo &&
+        (api.Session == null || !pendingLikes.Contains((api.Session, track.Id)));
     private double previousVolume = 70;
 
     private Task NavigateAsync(Page target)
@@ -67,7 +72,7 @@ internal sealed partial class MainWindow
     private void UpdateLikeState()
     {
         isLiked.Value = current != null && likedIds.Contains(current.Id);
-        likeAvailable.Value = current != null && me != null && !likeBusy && !demo;
+        likeAvailable.Value = current != null && CanLikeTrack(current);
         RefreshLikedRows();
     }
 
@@ -97,26 +102,26 @@ internal sealed partial class MainWindow
 
     private async Task ToggleTrackLikeAsync(SoundCloudTrack track)
     {
-        if (demo || me == null || likeBusy || api.Session == null) return;
+        if (demo || me == null || api.Session == null || !pendingLikes.Add((api.Session, track.Id))) return;
         likedActionError.Value = "";
         var user = me; var session = api.Session;
-        likeBusy = true; UpdateLikeState();
+        UpdateLikeState();
         try
         {
             if (!likedIdsReady) await LoadLikedIdsAsync();
             if (api.Session != session) return;
             var liked = !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
-            if (browser == null) AttachBrowser(new NativeBrowserSession(session));
+            if (api.BrowserTransport == null) AttachBrowser(new NativeBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
-            await browser!.SetLikedAsync(user.Id, track.Id, liked, token);
+            await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
             UpdateLikeState();
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
-            if (page.Value is Page.Library or Page.LibraryTracks) await LikesAsync(page.Value == Page.LibraryTracks);
+            await ApplyLibraryLikeAsync(track, liked, session);
         }
-        finally { likeBusy = false; UpdateLikeState(); }
+        finally { pendingLikes.Remove((session, track.Id)); if (!disposed) UpdateLikeState(); }
     }
 
 }

@@ -8,9 +8,9 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     // A collection's identity and a search's query belong to the route, not just its page type.
-    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null)
+    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null, TrackSection TrackSection = TrackSection.Overview)
     {
-        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id;
+        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && TrackSection == other.TrackSection;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
@@ -39,7 +39,7 @@ internal sealed partial class MainWindow
         Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.Track => trackDetailScroll,
         Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
-        > Page.LibraryTracks => (ScrollViewer?)collectionGrid.FindVisualChild<ScrollViewer>(),
+        > Page.LibraryTracks => CollectionScroll,
         _ => (ScrollViewer?)list.FindVisualChild<ScrollViewer>()
     };
 
@@ -111,7 +111,7 @@ internal sealed partial class MainWindow
         if (entry.Pending || entry.Snapshot == null)
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
-            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track);
+            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection);
             else if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
             else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }
             else if (entry.Route.Page > Page.LibraryTracks) await ShowLibrarySectionAsync(entry.Route.Page);
@@ -120,8 +120,8 @@ internal sealed partial class MainWindow
             return;
         }
         var state = entry.Snapshot;
-        trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false } : null;
-        if (entry.Route.Page == Page.Track) RenderTrackDetail();
+        trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false, SectionLoading = false } : null;
+        if (entry.Route.Page == Page.Track) { trackDetailSection.Value = entry.Route.TrackSection; failedTrackSectionCursor = null; RenderTrackDetail(); }
         heading.Value = state.Heading; eyebrow.Value = state.Eyebrow; status.Value = state.Status;
         activeCollection = state.Collection; activeLibrarySource = state.Source;
         librarySectionTitle.Value = state.CollectionTitle; librarySectionStatus.Value = state.CollectionStatus;

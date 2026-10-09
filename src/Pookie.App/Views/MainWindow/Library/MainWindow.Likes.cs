@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
     private int libraryColumns = 6;
 
     private FrameworkElement LibraryTabs() => new StackPanel().Horizontal().Spacing(22)
-        .BindIsVisible(page, value => IsLibrary(value)).Children(
+        .BindIsVisible(page, value => IsLibrary(value) && value != Page.LibraryCollection).Children(
             LibraryTab("Обзор", Page.Library, () =>
             {
                 if (!demo && me != null && libraryLikes == null) { Run(() => LikesAsync()); return; }
@@ -52,10 +52,11 @@ internal sealed partial class MainWindow
             AttachTrackTitle(tile.Title, () => tile.Track);
             context.Register("tile", tile.Root);
             tiles.Add(tile.Root, tile);
-            return tile.Root;
+            return CreateLikedItemMotion(tile.Root, grid, context);
         }, (_, track, _, context) =>
         {
             var tile = tiles[context.Get<Button>("tile")];
+            BindLikedItemMotion(context, track.Id);
             tile.Track = track;
             tile.Title.Text = track.Title;
             tile.Author.Text = track.Author;
@@ -66,6 +67,7 @@ internal sealed partial class MainWindow
             Run(() => LoadLikedArtworkAsync(tile.Cover, track));
         }, (_, _, _, context) =>
         {
+            ClearLikedItemMotion(context);
             var tile = tiles[context.Get<Button>("tile")];
             tile.Track = null;
             tile.Reset();
@@ -87,16 +89,18 @@ internal sealed partial class MainWindow
             likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesAsList.Value);
             if (paginationLoading.Value && page.Value == Page.LibraryTracks) RefreshPaginationSkeletons(true);
         };
-        likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").FontSize(12)
-            .Background(Raised).BorderThickness(0).Padding(12, 8).CornerRadius(6)
+        likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
             .OnTextChanged(value => { likedFilterText = value; RefreshLikedViews(); });
-        var tools = new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(
-            new TextBlock().Text("Вид").FontSize(12).Foreground(Muted).CenterVertical().Margin(0, 0, 4, 0),
-            LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true));
+        var viewSwitch = new Border().Background(TrackButtons.TonalSurface).BorderThickness(0).CornerRadius(20).Padding(4).Height(40)
+            .Child(new StackPanel().Horizontal().Spacing(4).Children(
+                LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true)));
+        var tools = new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
+            new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(), viewSwitch);
+        var filterField = MaterialSearchField.Create(likedFilter);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14).Children(
-            new Grid().Columns("*,Auto,280").Rows("Auto").Spacing(16).DockTop().Children(
+            new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
-                tools.Column(1), likedFilter.Column(2)),
+                tools.Column(1), filterField.Column(2)),
             new Grid().Columns("*").Rows("*").Children(
                 likesLoadingView.Root,
                 new TextBlock().Text("По этому фильтру ничего не найдено.")
@@ -107,9 +111,12 @@ internal sealed partial class MainWindow
     private Button LikesViewButton(string icon, bool showList)
     {
         var image = Icons.View(icon, 20);
-        image.Bind(Image.SourceProperty, likesAsList, value => Icons.Source(icon, value == showList ? Color.White : Muted));
-        return new Button().Background(Raised).BorderThickness(0).Padding(7).Width(34).Height(34).CornerRadius(5)
-            .Content(image.CenterHorizontal().CenterVertical()).OnClick(() => likesAsList.Value = showList);
+        image.Bind(Image.SourceProperty, likesAsList, value => Icons.Source(icon, value == showList ? TrackButtons.OnPrimary : TrackButtons.OnSurface));
+        var button = TrackButtons.Icon(image, () => { if (likesAsList.Value != showList) likesAsList.Value = showList; }, TrackButtons.Text, 32)
+            .Width(44).ToolTip(showList ? "Список" : "Карточки");
+        void Refresh() => TrackButtons.SetVariant(button, likesAsList.Value == showList ? TrackButtons.Filled : TrackButtons.Text);
+        likesAsList.Changed += Refresh; Refresh();
+        return button;
     }
 
     private void RefreshLikedViews()
@@ -137,7 +144,7 @@ internal sealed partial class MainWindow
         if (Math.Abs(artworkSize - likedArtworkSize) < 0.1) return;
         likedArtworkSize = artworkSize;
         foreach (var view in libraryLoadingViews)
-            view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : view == likesLoadingView && likesAsList.Value));
+            view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : (view == likesLoadingView && likesAsList.Value || view == collectionLoadingView && playlistCollectionVisible.Value)));
         foreach (var grid in new[] { libraryGrid, likedGrid })
             if (grid != null) { grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure(); }
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetSize(artworkSize);

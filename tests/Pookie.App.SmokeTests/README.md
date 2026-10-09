@@ -9,12 +9,34 @@ priority/editing/duplicates, actual history and forward traversal, stable shuffl
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
-metadata/artwork/waveform/comments/related tracks, deduplicated comment pagination,
+responsive reference hero, metadata/artwork/waveform, threaded comments and replies,
+sidebar fans and 2x2 playlist previews, shared library profile/playlist cards and
+waveform rows in related tracks, compact preview alignment and duration spacing,
+continuous resize in both directions, nonpersistent action focus, track subsections
+(reposts/albums/playlists/related), infinite loading and deduplicated pagination,
 back/forward restoration, cancellation and stale replies, and the shared player's
-queue and seek. It uses an isolated demo profile and a local browser-transport fixture.
+queue and seek. On Linux it clicks the hero and list copy buttons, resolves a missing
+permalink and reads the new URL from a separate process using a private X selection;
+the user's clipboard is untouched. The writer and search inputs also work with
+`GDK_BACKEND=wayland` and no GTK clipboard service. The hero checks rendered
+forward/reverse background, icon and count colours, interruption, and the absence
+of a faded disabled state during pending requests. It uses an isolated demo profile
+and a local browser-transport fixture.
+
+`--likes-edits-ui-smoke-test` uses an isolated account fixture to check per-track
+pending state, duplicate suppression, animated removal/insertion and movement in
+likes, stable scroll and pagination, focus recycling, failed writes and late replies.
+It also checks existing reposts, add/remove state, isolated pending buttons, duplicate
+suppression, failed writes, own-track restrictions and stale session replies. All
+account mutations use a local fixture transport.
+
+`--collections-ui-smoke-test` checks the playlist hero and shared track list at
+narrow/wide sizes, queue source, back-navigation scroll, following/unfollowing,
+isolated pending states, playlist selection and stale account replies. All writes
+use a local fixture transport.
 
 `--track-page-network-probe <SoundCloud track URL>` verifies real metadata, timed
-comments and pagination, related tracks and waveform through the production browser
+comments/replies and pagination, sidebar fans/collections, all four subsection endpoints and their next pages, related tracks and waveform through the production browser
 transport. `--track-page-live-ui-probe` additionally opens the real "Этажи" track in
 an isolated application window, clicks title/play/pause/waveform/comment timestamps,
 decodes actual audio at zero volume and checks back/forward. Close the normal app
@@ -27,6 +49,8 @@ Run from the repository root:
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --scrolling-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --track-page-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --likes-edits-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --collections-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --pagination-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --system-media-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --media-ui-smoke-test

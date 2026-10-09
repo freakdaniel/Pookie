@@ -27,7 +27,7 @@ internal sealed partial class MainWindow
             await WaitForTrackPageLiveAsync(() => likedRows.Values.Any(row => row.Track?.Id == track.Id && row.Title.ActualWidth > 100));
             var title = likedRows.Values.First(row => row.Track?.Id == track.Id && row.Title.ActualWidth > 100).Title;
             ClickLiveTrackElement(title);
-            await WaitForTrackPageLiveAsync(() => page.Value == Page.Track && trackDetailState is { CommentsLoading: false, RelatedLoading: false } &&
+            await WaitForTrackPageLiveAsync(() => page.Value == Page.Track && trackDetailState is { CommentsLoading: false, RelatedLoading: false, SidebarLoading: false } &&
                 !navigationHistory[navigationIndex].Pending && trackDetailWaveform.HasSamples && trackDetailCover.Source is ImageSource);
             if (trackDetailState!.MetadataError.Length > 0 || trackDetailState.CommentsError.Length > 0 || trackDetailState.RelatedError.Length > 0 ||
                 trackDetailState.Comments.Comments.Length == 0 || trackDetailState.Related.Tracks.Length == 0 || current != null)
@@ -55,7 +55,11 @@ internal sealed partial class MainWindow
             var timed = trackDetailState.Comments.Comments.First(comment => comment.Timestamp > 1000 && comment.Timestamp < track.Duration);
             var index = Array.FindIndex(trackDetailState.Comments.Comments, comment => comment.Id == timed.Id);
             Button? timeButton = null;
-            VisualTree.Visit(trackDetailComments.Children[index], element => { if (element is Button button) timeButton = button; });
+            VisualTree.Visit(trackDetailComments.Children[index], element =>
+            {
+                if (element is Button { Content: TextBlock label } button && label.Text == FormatTime(timed.Timestamp!.Value / 1000))
+                    timeButton ??= button;
+            });
             if (timeButton == null) throw new InvalidOperationException("Live timed comment button was not rendered.");
             trackDetailScroll.SetScrollOffsets(0, Math.Max(0, timeButton.Bounds.Y - Window.ClientSize.Height * .6));
             await WaitForLoginFrameAsync();

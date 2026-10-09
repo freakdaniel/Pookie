@@ -5,23 +5,27 @@ using System.Text.Json.Serialization;
 
 namespace Pookie.SoundCloud;
 
-public sealed record BrowserRequestCommand(string Id, string Operation, long UserId = 0, long TrackId = 0, bool Liked = false, string? Url = null, BrowserAudioCommand? Audio = null)
+public sealed record BrowserRequestCommand(string Id, string Operation, long UserId = 0, long TrackId = 0, bool Liked = false, string? Url = null, BrowserAudioCommand? Audio = null, TrackReadRequest? Detail = null, bool Reposted = false, long ArtistId = 0, bool Following = false, long PlaylistId = 0)
 {
     public const int MaxLength = 65536;
     public bool IsValid() => Id is { Length: 32 } && Id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+        (Operation == "track-read" ? Url == null && Audio == null && Detail?.IsValid() == true : Detail == null &&
         (Operation == "audio" ? Url == null && Audio?.IsValid() == true : Audio == null &&
         (Operation == "api-get" ? IsReadUrl(Url) : Url == null && (Operation is "me" or "liked-ids" or "cancel" ||
-        Operation == "like" && UserId is > 0 and <= 9007199254740991 && TrackId is > 0 and <= 9007199254740991)));
+        Operation == "like" && UserId is > 0 and <= 9007199254740991 && TrackId is > 0 and <= 9007199254740991 ||
+        Operation == "repost" && UserId == 0 && TrackId is > 0 and <= 9007199254740991 ||
+        Operation == "follow" && UserId is > 0 and <= 9007199254740991 && ArtistId is > 0 and <= 9007199254740991 && ArtistId != UserId && TrackId == 0 ||
+        Operation == "playlist-add" && UserId is > 0 and <= 9007199254740991 && PlaylistId is > 0 and <= 9007199254740991 && TrackId is > 0 and <= 9007199254740991))));
 
     public static bool IsReadUrl(string? value)
     {
         if (value is not { Length: > 0 and <= 8192 } || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             !SoundCloudWebClient.IsApiUri(uri) || uri.Fragment != "") return false;
         var path = uri.AbsolutePath;
-        return path is "/me" or "/me/track_likes/ids" or "/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
+        return path is "/me" or "/me/track_likes/ids" or "/me/track_reposts/ids" or "/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
             path.StartsWith("/media/", StringComparison.Ordinal) ||
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/system-playlists/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
-            System.Text.RegularExpressions.Regex.IsMatch(path, @"^/((tracks|playlists)/[1-9][0-9]*|tracks/[1-9][0-9]*/(comments|related)|users/[1-9][0-9]*/(likes|followings|tracks))$");
+            System.Text.RegularExpressions.Regex.IsMatch(path, @"^/((tracks|playlists)/[1-9][0-9]*|tracks/[1-9][0-9]*/(comments|related|reposters|albums|playlists_without_albums)|users/[1-9][0-9]*/(likes|followings|followings/ids|tracks|playlists))$");
     }
     public override string ToString() => $"Browser command ({Operation}; URL and session redacted)";
 

@@ -127,13 +127,13 @@ internal sealed partial class MainWindow
             searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Cards && view.Block.Items?.Length == 4));
         await SearchFixture(SearchSection.Tracks, Enumerable.Range(0, 100).Select(index => LibraryItem.FromTrack(track with { Id = 71000 + index })).ToArray());
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.LibraryTrack is { Track.Id: 71000 } row &&
-            row.Root.ActualHeight == 160 && row.Cover.ActualWidth == 160 && row.Waveform.ActualHeight == 68));
+            row.Root.ActualHeight == 172 && row.Cover.ActualWidth == 160 && row.Waveform.ActualHeight == 68));
         var librarySearchRows = searchViews.Values.Where(view => view.Block?.Kind == SearchBlockKind.LibraryTrack &&
             view.LibraryTrack?.Track != null).Select(view => view.LibraryTrack!).OrderBy(row => row.Root.Bounds.Y).ToArray();
         var firstSearchRow = librarySearchRows.First(row => row.Track!.Id == 71000);
         var nextSearchRow = librarySearchRows.First(row => row.Track!.Id == 71001);
         if (searchList.ItemsSource.Count != 100 || librarySearchRows.Length > 20 ||
-            Math.Abs(nextSearchRow.Root.Bounds.Y - firstSearchRow.Root.Bounds.Y - 196) > 1 ||
+            Math.Abs(nextSearchRow.Root.Bounds.Y - firstSearchRow.Root.Bounds.Y - 208) > 1 ||
             firstSearchRow.Author.Bounds.Y >= firstSearchRow.Title.Bounds.Y ||
             !ReferenceEquals(likedRows[firstSearchRow.Root], firstSearchRow) ||
             searchLoadingView.Skeleton.CompactList || pageItems[searchList].Style != LoadingRowStyle.Waveform)

@@ -16,22 +16,30 @@ internal sealed partial class MainWindow
     private ItemsControl CreateLikedList()
     {
         var result = new ItemsControl().Items(Array.Empty<SoundCloudTrack>(), track => track.Title)
-            .ItemHeight(196).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .ItemPadding(new Thickness(0, 0, 18, 36));
+            .ItemHeight(TrackRowLayout.Stride).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
+            .ItemPadding(new Thickness(0, 0, 18, TrackRowLayout.Gap));
         result.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
             var row = CreateLibraryTrackRow();
             context.Register("row", row.Root);
-            return row.Root;
-        }, (_, track, _, context) => BindLibraryTrackRow(likedRows[context.Get<Grid>("row")], track),
-            (_, _, _, context) => ClearLibraryTrackRow(likedRows[context.Get<Grid>("row")]));
+            return CreateLikedItemMotion(row.Root, result, context);
+        }, (_, track, _, context) =>
+        {
+            BindLikedItemMotion(context, track.Id);
+            BindLibraryTrackRow(likedRows[context.Get<Grid>("row")], track);
+        },
+            (_, _, _, context) =>
+            {
+                ClearLikedItemMotion(context);
+                ClearLibraryTrackRow(likedRows[context.Get<Grid>("row")]);
+            });
         return result;
     }
 
     private LikedTrackRow CreateLibraryTrackRow()
     {
         var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => ToggleTrackLikeAsync(track)),
-            CopyTrackLink, (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
+            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);
@@ -58,17 +66,18 @@ internal sealed partial class MainWindow
     private void RefreshLikedRow(LikedTrackRow row)
     {
         if (row.Track is not { } track) return;
+        row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
         var selected = current?.Id == track.Id;
         row.Refresh(selected, isPlaying.Value, likedIds.Contains(track.Id) || !likedIdsReady && tracks.Any(t => t.Id == track.Id) &&
-            page.Value is Page.Library or Page.LibraryTracks, me != null && !likeBusy && !demo,
-            selected ? likedPlaybackPosition : 0);
+            page.Value is Page.Library or Page.LibraryTracks, CanLikeTrack(track),
+            selected ? likedPlaybackPosition : 0, IsLikePending(track));
     }
     private void RefreshLikedRows(double? seconds = null)
     {
         if (seconds is { } value) likedPlaybackPosition = value;
         foreach (var row in likedRows.Values) RefreshLikedRow(row);
         RefreshSearchPlayback();
-        RefreshTrackDetailPlayback();
+        RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }
 
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)
@@ -85,10 +94,24 @@ internal sealed partial class MainWindow
 
     private void CopyTrackLink(SoundCloudTrack track)
     {
-        if (!Uri.TryCreate(track.PermalinkUrl, UriKind.Absolute, out var url) || url.Scheme != "https" ||
-            url.Host is not ("soundcloud.com" or "www.soundcloud.com") || url.UserInfo != "") return;
-        var clipboard = nativeClipboard ?? Application.Current.PlatformServices.Clipboard;
-        status.Value = clipboard?.TrySetText(url.AbsoluteUri) == true ? "Ссылка на трек скопирована." : "Не удалось скопировать ссылку.";
+        if (TrackLink(track.PermalinkUrl) is { } url) { CopyText(url.AbsoluteUri); return; }
+        Run(async () =>
+        {
+            if (track.Id <= 0) { status.Value = "У этого трека нет ссылки."; return; }
+            var resolved = await api.GetTrackAsync(track.Id, lifetime.Token);
+            if (TrackLink(resolved.PermalinkUrl) is { } link) CopyText(link.AbsoluteUri);
+            else status.Value = "Не удалось получить ссылку на трек.";
+        });
+    }
+
+    private static Uri? TrackLink(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var url) &&
+        url.Scheme is "https" or "http" && url.Host is "soundcloud.com" or "www.soundcloud.com" && url.UserInfo == ""
+            ? new UriBuilder(url) { Scheme = "https", Port = -1 }.Uri : null;
+
+    private void CopyText(string text)
+    {
+        var clipboard = (Aprillz.MewUI.Platform.IClipboardService?)windowClipboard ?? nativeClipboard ?? Application.Current.PlatformServices.Clipboard;
+        status.Value = clipboard?.TrySetText(text) == true ? "Скопировано." : "Не удалось скопировать.";
     }
 
     private async Task LoadLikedWaveformAsync(LikedTrackRow row, SoundCloudTrack track)

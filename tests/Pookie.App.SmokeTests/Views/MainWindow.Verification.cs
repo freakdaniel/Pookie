@@ -373,7 +373,7 @@ internal sealed partial class MainWindow
         var pixelTolerance = 1 / Window.DpiScale;
         if (Math.Abs(filteredRow.Cover.ActualWidth - 160) > pixelTolerance || Math.Abs(filteredRow.Cover.ActualHeight - 160) > pixelTolerance ||
             filteredRow.Author.Bounds.Y >= filteredRow.Title.Bounds.Y || filteredRow.Waveform.Bounds.X <= filteredRow.Cover.Bounds.Right ||
-            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || Math.Abs(filteredRow.PlayButton.ActualHeight - 38) > pixelTolerance)
+            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || Math.Abs(filteredRow.PlayButton.ActualHeight - 40) > pixelTolerance)
             throw new InvalidOperationException($"SoundCloud list layout clipped cover, title, waveform or playback controls: " +
                 $"cover={filteredRow.Cover.ActualWidth:F2}x{filteredRow.Cover.ActualHeight:F2}, " +
                 $"authorY={filteredRow.Author.Bounds.Y:F2}, titleY={filteredRow.Title.Bounds.Y:F2}, " +

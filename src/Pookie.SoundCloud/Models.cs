@@ -36,6 +36,7 @@ public sealed record SoundCloudUser
     public string? AvatarUrl { get; init; }
     public long? FollowersCount { get; init; }
     public long? TrackCount { get; init; }
+    public string? PermalinkUrl { get; init; }
 }
 
 public sealed record SoundCloudTrack
@@ -52,6 +53,8 @@ public sealed record SoundCloudTrack
     public long? PlaybackCount { get; init; }
     public long? LikesCount { get; init; }
     public long? CommentCount { get; init; }
+    public long? RepostsCount { get; init; }
+    public string? License { get; init; }
     public string? PermalinkUrl { get; init; }
     public string? Access { get; init; }
     public string? Policy { get; init; }
@@ -99,9 +102,15 @@ public sealed record SoundCloudComment
     public string? CreatedAt { get; init; }
     public double? Timestamp { get; init; }
     public SoundCloudUser? User { get; init; }
+    public SoundCloudComment[] Replies { get; init; } = [];
+    public int ReplyCount { get; init; }
+    public string? RepliesCursor { get; init; }
 }
 
 public sealed record TrackCommentPage(SoundCloudComment[] Comments, string? NextHref);
+public sealed record TrackReplyPage(SoundCloudComment[] Comments, int Total, string? Cursor);
+public sealed record TrackFan(SoundCloudUser User, long Plays);
+public sealed record TrackSidebar(TrackFan[] Fans, LibraryItem[] Playlists, LibraryItem[] Albums, bool FansHidden = false, bool HasMorePlaylists = false);
 
 public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 {
@@ -117,6 +126,7 @@ public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 [JsonSerializable(typeof(SoundCloudComment))]
 [JsonSerializable(typeof(WebSession))]
 [JsonSerializable(typeof(BrowserRequestCommand))]
+[JsonSerializable(typeof(TrackReadRequest))]
 [JsonSerializable(typeof(BrowserRequestEvent))]
 public partial class SoundCloudJson : JsonSerializerContext;
 

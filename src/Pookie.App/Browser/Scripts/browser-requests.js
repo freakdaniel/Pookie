@@ -4,6 +4,8 @@
 (() => {
   const siteOrigin = 'https://soundcloud.com';
   const apiOrigin = 'https://api-v2.soundcloud.com';
+  const graphOrigin = 'https://graph.soundcloud.com';
+  const trackQueries = { comments: __POOKIE_TRACK_COMMENTS__, replies: __POOKIE_TRACK_REPLIES__, sidebar: __POOKIE_TRACK_SIDEBAR__ };
   if (location.origin !== siteOrigin || window !== window.top || window.__pookieBrowserRequests) return;
   window.__pookieBrowserRequests = true;
   const account = __POOKIE_ACCOUNT__;
@@ -120,7 +122,7 @@
   function wait(promise, context) { return Promise.race([promise, context.cancelled]); }
   function checkCancelled(context) { if (context.controller.signal.aborted) throw new Error('cancelled'); }
 
-  async function fetchProtected(url, method, context) {
+  async function fetchProtected(url, method, context, body) {
     checkCancelled(context);
     await wait(ready, context);
     if (blocked) throw new Error('site-blocked');
@@ -139,7 +141,9 @@
         // Use the live fetch intercepted by the website's DataDome tag, not .NET HTTP or a saved cookie.
         response = await wait(window.fetch(url.href, {
           method,
-          headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1' },
+          headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1',
+            ...(body ? { 'Content-Type': 'application/json', 'apollographql-client-name': 'webi' } : {}) },
+          ...(body ? { body } : {}),
           redirect: 'error', signal: context.controller.signal
         }), context);
       } catch (error) {
@@ -168,8 +172,8 @@
       const url = new URL(value);
       // Check the real API address before remapping local smoke-test fixtures.
       if (url.origin !== 'https://api-v2.soundcloud.com' || url.username || url.password || url.hash ||
-        !(/^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(me|me\/track_likes\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
-          /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related)|users\/[1-9][0-9]*\/(likes|followings|tracks))$/.test(url.pathname))) return null;
+        !(/^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(me|me\/track_likes\/ids|me\/track_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
+          /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*\/(likes|followings|followings\/ids|tracks|playlists))$/.test(url.pathname))) return null;
       return new URL(url.pathname + url.search, apiOrigin);
     } catch { return null; }
   }
@@ -201,10 +205,66 @@
     return { text, json: JSON.parse(text) };
   }
 
+  // Use SoundCloud's live signing helper for its own follow endpoint. No copied
+  // signature secret or stale browser identity is stored in the desktop app.
+  let siteModules;
+  function followSignature(userId, artistId) {
+    if (!siteModules && window.webpackJsonp?.push) {
+      const moduleId = 'pookie-follow-bridge';
+      window.webpackJsonp.push([[moduleId], { [moduleId]: (_module, _exports, require) => { siteModules = require; } }, [[moduleId]]]);
+    }
+    if (!siteModules?.m) throw new Error('website-follow-helper-unavailable');
+    const modules = Object.entries(siteModules.m);
+    const signer = modules.find(([, factory]) => factory.toString().includes('__FOLLOWS_SIGNATURE_VERSION__'));
+    const secret = modules.find(([, factory]) => factory.toString().includes('__FOLLOWS_SIGNATURE_SECRET__') &&
+      !factory.toString().includes('getCreateEndpointQueryParams'));
+    if (!signer || !secret) throw new Error('website-follow-helper-unavailable');
+    return siteModules(signer[0]).sign(userId, artistId, account.client_id, siteModules(secret[0]).__FOLLOWS_SIGNATURE_SECRET__);
+  }
+
+  async function addToPlaylist(command, context) {
+    const url = new URL(`/playlists/${command.playlist_id}?representation=full`, apiOrigin);
+    const current = await fetchProtected(url, 'GET', context);
+    if (!current.ok) { send({ kind: 'complete', request_id: command.id, status: current.status }); return; }
+    const { json: playlist } = await readJson(current, context);
+    if (playlist.id !== command.playlist_id || playlist.user?.id !== command.user_id || playlist.is_album ||
+      !Array.isArray(playlist.tracks) || playlist.tracks.length !== playlist.track_count)
+      throw new Error('playlist-not-editable');
+    // Keep every existing ID, including private/unavailable placeholders and order.
+    const ids = playlist.tracks.map(track => track.id);
+    if (ids.some(id => !Number.isSafeInteger(id) || id <= 0)) throw new Error('invalid-playlist-tracks');
+    if (ids.includes(command.track_id)) { send({ kind: 'complete', request_id: command.id, status: 200 }); return; }
+    if (ids.length >= 500) throw new Error('playlist-full');
+    ids.push(command.track_id);
+    const result = await fetchProtected(new URL(`/playlists/${command.playlist_id}`, apiOrigin), 'PUT', context,
+      JSON.stringify({ playlist: { tracks: ids } }));
+    send({ kind: 'complete', request_id: command.id, status: result.status });
+  }
+
   async function request(command, context) {
     checkCancelled(context);
-    if (command.operation === 'api-get') {
-      const response = await fetchProtected(readUrl(command.url), 'GET', context);
+    if (command.operation === 'playlist-add') { await addToPlaylist(command, context); return; }
+    if (command.operation === 'follow') {
+      await wait(ready, context);
+      const url = new URL(`/me/followings/${command.artist_id}`, apiOrigin);
+      if (command.following) url.searchParams.set('signature', followSignature(command.user_id, command.artist_id));
+      const response = await fetchProtected(url, command.following ? 'POST' : 'DELETE', context);
+      send({ kind: 'complete', request_id: command.id, status: response.status });
+      return;
+    }
+    if (command.operation === 'api-get' || command.operation === 'track-read') {
+      let response;
+      if (command.operation === 'track-read') {
+        const d = command.detail;
+        const variables = { trackUrn: `soundcloud:tracks:${d.track_id}` };
+        if (d.kind === 'comments') variables.options = { first: 30, repliesFirst: 16, sort: 'NEWEST', repliesSort: 'ASCENDING', after: d.cursor || null };
+        if (d.kind === 'replies') {
+          variables.commentUrn = `soundcloud:comments:${d.comment_id}`;
+          variables.options = { first: 30, sort: 'ASCENDING', after: d.cursor || null };
+        }
+        response = await fetchProtected(new URL('/graphql', graphOrigin), 'POST', context,
+          JSON.stringify({ query: trackQueries[d.kind], variables }));
+      } else response = await fetchProtected(readUrl(command.url), 'GET', context);
       if (response.ok) {
         const { text } = await readJson(response, context);
         let index = 0;
@@ -220,7 +280,7 @@
       return;
     }
     const url = new URL(command.operation === 'me' ? '/me' : command.operation === 'liked-ids' ?
-      '/me/track_likes/ids?limit=200&linked_partitioning=1' : `/users/${command.user_id}/track_likes/${command.track_id}`, apiOrigin);
+      '/me/track_likes/ids?limit=200&linked_partitioning=1' : command.operation === 'repost' ? `/me/track_reposts/${command.track_id}` : `/users/${command.user_id}/track_likes/${command.track_id}`, apiOrigin);
     if (command.operation === 'liked-ids') {
       let target = url, count = 0, pages = 0;
       const seen = new Set();
@@ -246,7 +306,7 @@
       }
       send({ kind:'complete', request_id:command.id, status:200 });
     } else {
-      const response = await fetchProtected(url, command.operation === 'me' ? 'GET' : command.liked ? 'PUT' : 'DELETE', context);
+      const response = await fetchProtected(url, command.operation === 'me' ? 'GET' : (command.operation === 'repost' ? command.reposted : command.liked) ? 'PUT' : 'DELETE', context);
       const result = { kind: 'complete', request_id: command.id, status: response.status };
       if (command.operation === 'me' && response.ok) {
         const { json: user } = await readJson(response, context);
@@ -266,16 +326,21 @@
       window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
-      if (context && context.operation !== 'like') {
+      if (context && !['like', 'repost', 'follow', 'playlist-add'].includes(context.operation)) {
         context.controller.abort(); context.rejectCancel(new Error('cancelled'));
       }
       return;
     }
     if (active.has(command.id) ||
-      !(command.operation === 'api-get' && readUrl(command.url) ||
+      !(command.operation === 'track-read' && validTrackRead(command) || command.operation === 'api-get' && readUrl(command.url) ||
         command.operation === 'me' || command.operation === 'liked-ids' || command.operation === 'like' &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.track_id) && command.track_id > 0 &&
-        typeof command.liked === 'boolean')) return;
+        typeof command.liked === 'boolean' || command.operation === 'repost' && !command.user_id &&
+        Number.isSafeInteger(command.track_id) && command.track_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'follow' &&
+        Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.artist_id) && command.artist_id > 0 &&
+        command.artist_id !== command.user_id && !command.track_id && typeof command.following === 'boolean' || command.operation === 'playlist-add' &&
+        Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 &&
+        Number.isSafeInteger(command.track_id) && command.track_id > 0)) return;
     let rejectCancel;
     const cancelled = new Promise((_, reject) => { rejectCancel = reject; });
     cancelled.catch(() => {});
@@ -286,4 +351,13 @@
       send({ kind: 'complete', request_id: command.id, status: blocked ? 403 : 0 }))
       .finally(() => active.delete(command.id));
   };
+
+  function validTrackRead(command) {
+    const d = command.detail;
+    return !command.url && !command.audio && d && ['comments', 'replies', 'sidebar'].includes(d.kind) &&
+      Number.isSafeInteger(d.track_id) && d.track_id > 0 &&
+      (d.cursor == null || typeof d.cursor === 'string' && d.cursor.length > 0 && d.cursor.length <= 2048 && !/[\x00-\x1f\x7f]/.test(d.cursor)) &&
+      (d.kind === 'replies' ? Number.isSafeInteger(d.comment_id) && d.comment_id > 0 :
+        !d.comment_id && (d.kind !== 'sidebar' || d.cursor == null));
+  }
 })();

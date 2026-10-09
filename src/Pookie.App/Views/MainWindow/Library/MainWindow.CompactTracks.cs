@@ -27,15 +27,15 @@ internal sealed partial class MainWindow
             .Child(ArtworkLayer(cover).Children(overlay));
         var title = new TextBlock().FontSize(14).SemiBold().Height(21).TextTrimming(TextTrimming.CharacterEllipsis);
         var author = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Height(19).TextTrimming(TextTrimming.CharacterEllipsis);
-        var duration = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Width(48).Right().CenterVertical();
+        var duration = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Right().CenterVertical();
         var heart = Icons.View("heart", 17, Muted).CenterHorizontal().CenterVertical();
-        var like = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Width(28).Height(32)
-            .CenterVertical().Content(heart);
+        var like = TrackButtons.Icon(heart, () => { }, TrackButtons.Text, 32).CenterVertical();
         var action = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(new Grid().Columns("44,*").Rows("*").Spacing(12).Children(frame.Column(0).CenterVertical(),
                 new StackPanel().Vertical().CenterVertical().Column(1).Children(title, author)));
-        var root = new Grid().Columns("*,28,48").Rows("*").Spacing(12).Padding(8, 6).Height(64);
-        var hoverFill = new Border().CornerRadius(6).Background(Color.FromArgb(22, 255, 255, 255))
+        ((FrameworkElement)action.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
+        var root = new Grid().Columns("*,32,Auto").Rows("*").Spacing(8).Padding(8, 6).Height(64);
+        var hoverFill = new Border().CornerRadius(10).Background(Color.FromArgb(22, 255, 255, 255))
             .BorderThickness(0).Padding(0).Margin(-8, -6).Column(0).ColumnSpan(3);
         hoverFill.Opacity = 0;
         hoverFill.Transitions = [Transition.Create(UIElement.OpacityProperty, 150)];
@@ -77,7 +77,7 @@ internal sealed partial class MainWindow
         row.Overlay.Opacity = selected || row.Hovered ? 1 : 0;
         var liked = likedIds.Contains(track.Id);
         row.Heart.Source = Icons.Source(liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : Muted);
-        row.Like.IsEnabled = me != null && !likeBusy && !demo;
+        row.Like.IsEnabled = CanLikeTrack(track);
     }
 
 }

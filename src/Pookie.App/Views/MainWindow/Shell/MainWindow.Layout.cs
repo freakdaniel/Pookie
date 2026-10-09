@@ -93,7 +93,7 @@ internal sealed partial class MainWindow
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
         return new Grid().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0));
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0));
     }
 
     private FrameworkElement StartupSplash()
@@ -126,16 +126,14 @@ internal sealed partial class MainWindow
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
-        topSearchBar = new Border().Background(Color.FromRgb(44, 44, 44)).BorderThickness(0)
-            .CornerRadius(15).Padding(11, 6).Width(0).Height(40).CenterVertical().ClipToBounds()
-            .Child(new Grid().Columns("Auto,*").Rows("*").Spacing(8).Children(
-                Icons.View("magnifying-glass", 18).CenterVertical().Column(0), topSearchInput.CenterVertical().Column(1)));
+        topSearchBar = MaterialSearchField.Create(topSearchInput).Width(0);
         topNavigation.Transitions = [
             Transition.Create(FrameworkElement.WidthProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1)),
             Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
         topSearchBar.Transitions = [
             Transition.Create(FrameworkElement.WidthProperty, 220, Easing.CubicBezier(0.2, 0, 0, 1)),
-            Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(0.2, 0, 0, 1))];
+            Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(0.2, 0, 0, 1)),
+            Transition.Create(Control.BackgroundProperty, 150)];
         topSearchBar.IsHitTestVisible = false;
         topSearchBar.Opacity = 0;
 
@@ -196,7 +194,7 @@ internal sealed partial class MainWindow
         Refresh();
         navVisualRefreshers.Add(Refresh);
         return new Button().StyleSheet(sectionButtonStyles).StyleName("section-button")
-            .Background(Color.Transparent).BorderThickness(0).Padding(11, 8).CornerRadius(13)
+            .Background(Color.Transparent).BorderThickness(0).Padding(11, 0).Height(40).CornerRadius(20)
             .BindIsEnabled(page, value => value != target)
             .Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(glyph.CenterVertical(), text))
             .OnMouseEnter(() => { hovered = true; Refresh(); })
@@ -222,7 +220,7 @@ internal sealed partial class MainWindow
             hoverGlyph.Opacity = hovered ? 1 : 0;
             textColor.Value = hovered ? NavHover : Muted;
         }
-        return new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Padding(11, 8).CornerRadius(13)
+        return new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Padding(11, 0).Height(40).CornerRadius(20)
             .Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(glyph.CenterVertical(), text))
             .OnMouseEnter(() => SetHovered(true))
             .OnMouseLeave(() => SetHovered(false))

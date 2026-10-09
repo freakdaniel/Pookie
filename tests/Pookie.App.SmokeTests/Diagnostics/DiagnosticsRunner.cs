@@ -19,6 +19,7 @@ internal static class DiagnosticsRunner
         if (args.Contains("--browser-media-isolation-smoke-test")) { await BrowserMediaIsolationSmokeTest.RunAsync(); return true; }
         if (args.Contains("--system-media-smoke-test")) { await SystemMediaSmokeTest.RunAsync(); return true; }
         if (args.Length == 2 && args[0] == "--clipboard-fixture") { ClipboardFixture.Run(args[1]); return true; }
+        if (args.Length == 2 && args[0] == "--clipboard-read-fixture") { ClipboardFixture.Read(args[1]); return true; }
         if (args.Contains("--content-blocker-smoke-test")) { await ContentBlockerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--startup-network-probe"))
         {

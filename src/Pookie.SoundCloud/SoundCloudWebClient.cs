@@ -189,7 +189,10 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         return await EnrichLibraryAsync(new(ordered.DistinctBy(item => item.Key).ToArray(), parsed.NextHref), cancellationToken);
     }
 
-    public async Task<TrackPage> GetCollectionTracksAsync(LibraryItem item, CancellationToken cancellationToken = default)
+    public async Task<TrackPage> GetCollectionTracksAsync(LibraryItem item, CancellationToken cancellationToken = default) =>
+        (await GetCollectionDetailAsync(item, cancellationToken)).Tracks;
+
+    public async Task<CollectionDetail> GetCollectionDetailAsync(LibraryItem item, CancellationToken cancellationToken = default)
     {
         string path;
         if (item.User is { Id: > 0 } user) path = $"users/{user.Id}/tracks?limit=30&linked_partitioning=1";
@@ -200,7 +203,8 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         else throw new SoundCloudException("Нет треков для этой карточки.");
         using var document = await GetJsonAsync(Api(path), cancellationToken);
         var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out var tracks)) return ParsePage(root);
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out var tracks)) return new(item, ParsePage(root));
+        item = LibraryData.FromPlaylist(LibraryData.ParsePlaylist(root)) with { Key = item.Key };
         // Some playlists contain ID-only placeholders. Resolve those in bounded batches.
         var complete = new List<SoundCloudTrack>();
         foreach (var value in tracks.EnumerateArray())
@@ -216,7 +220,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             using var json = await GetJsonAsync(Api("tracks?ids=" + string.Join(',', batch)), cancellationToken);
             foreach (var track in ParsePage(json.RootElement).Tracks) resolved[track.Id] = track;
         }
-        return new(complete.Select(t => resolved.GetValueOrDefault(t.Id) ?? t).Where(t => !string.IsNullOrEmpty(t.Title)).ToArray(), null);
+        return new(item, new(complete.Select(t => resolved.GetValueOrDefault(t.Id) ?? t).Where(t => !string.IsNullOrEmpty(t.Title)).ToArray(), null));
     }
 
     public async Task<TrackPage> GetFeedAsync(CancellationToken cancellationToken = default)

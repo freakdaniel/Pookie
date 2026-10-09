@@ -2,7 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
+const querySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/TrackReadRequest.cs'), 'utf8');
+let script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
+for (const name of ['Comments', 'Replies', 'Sidebar'])
+  script = script.replace(`__POOKIE_TRACK_${name.toUpperCase()}__`, JSON.stringify(querySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const command = (n, operation = 'like', liked = true) => ({id:n.toString(16).padStart(32,'0'), operation, user_id:42, track_id:90, liked});
 function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded = true, stored = true, prepared = true, extraAccount = {}, resources = []) {
@@ -294,4 +297,109 @@ test('library reads use the same browser transport and preserve the read-only al
     h.window.__pookieRequest(apiRead(200, path)); await tick();
   }
   assert.equal(h.calls.length, paths.length);
+});
+
+test('track reads use fixed read-only GraphQL documents and bounded thread options', async () => {
+  const h=harness(()=>response(200,{data:{trackComments:{comments:[],pageInfo:{endCursor:null}}}}));
+  for (const [index,kind] of ['comments','replies','sidebar'].entries())
+    h.window.__pookieRequest({...command(700+index,'track-read'),detail:{kind,track_id:90,comment_id:kind==='replies'?12:0,cursor:kind==='sidebar'?null:'next'}});
+  await tick();
+  assert.equal(h.calls.length,3);
+  for(const [url,options] of h.calls) {
+    assert.equal(new URL(url).origin,'https://graph.soundcloud.com');
+    assert.equal(new URL(url).pathname,'/graphql');
+    assert.equal(options.method,'POST');
+    assert.equal(options.headers['Content-Type'],'application/json');
+    assert.match(JSON.parse(options.body).query,/query PookieTrack/);
+    assert.doesNotMatch(JSON.parse(options.body).query,/mutation/);
+    assert.equal(JSON.parse(options.body).variables.trackUrn,'soundcloud:tracks:90');
+  }
+  assert.equal(JSON.parse(h.calls[0][1].body).variables.options.repliesFirst,16);
+  assert.equal(JSON.parse(h.calls[1][1].body).variables.commentUrn,'soundcloud:comments:12');
+  assert.equal(JSON.parse(h.calls[1][1].body).variables.options.after,'next');
+  assert.equal(h.messages.at(-1).status,200);
+});
+
+test('track reads reject arbitrary operations, endpoints, IDs and excessive cursors', async () => {
+  const h=harness(()=>response(200));
+  const base={...command(800,'track-read'),detail:{kind:'comments',track_id:90,comment_id:0,cursor:null}};
+  for(const c of [ {...base,detail:{...base.detail,kind:'mutation'}}, {...base,url:'https://evil.test'},
+    {...base,detail:{...base.detail,track_id:0}}, {...base,detail:{...base.detail,cursor:'x'.repeat(2049)}},
+    {...base,detail:{...base.detail,cursor:'bad\n'}}, {...base,detail:{...base.detail,kind:'sidebar',cursor:'next'}},
+    {...base,detail:{...base.detail,kind:'replies',comment_id:0}} ]) h.window.__pookieRequest(c);
+  await tick();assert.equal(h.calls.length,0);
+});
+
+test('repost uses fixed PUT/DELETE endpoint and rejects unsafe writes', async () => {
+  const h=harness(()=>response(204));
+  const repost=(n,value)=>({id:n.toString(16).padStart(32,'0'),operation:'repost',user_id:0,track_id:90,reposted:value});
+  h.window.__pookieRequest(repost(901,true)); h.window.__pookieRequest(repost(902,false));
+  await tick();
+  assert.deepEqual(h.calls.map(c=>c[1].method),['PUT','DELETE']);
+  assert.equal(new URL(h.calls[0][0]).pathname,'/me/track_reposts/90');
+  assert.equal(h.calls[0][1].headers.Authorization,'OAuth secret-token');
+  for (const value of [{...repost(903,true),track_id:0}, {...repost(904,true),track_id:Number.MAX_SAFE_INTEGER+1},
+    {...repost(905,true),reposted:'true'}, {...repost(906,true),user_id:42},
+    {id:repost(907,true).id,operation:'api-get',url:'https://api-v2.soundcloud.com/me/track_reposts/90'}])
+    h.window.__pookieRequest(value);
+  await tick(); assert.equal(h.calls.length,2);
+});
+
+test('repost ID read shares protected JSON transport', async () => {
+  const h=harness(()=>response(200,{collection:[42,'90'],next_href:null}));
+  h.window.__pookieRequest({id:command(908).id,operation:'api-get',url:'https://api-v2.soundcloud.com/me/track_reposts/ids?limit=200'});
+  await tick(); assert.equal(h.calls[0][1].method,'GET');
+  assert.equal(h.messages.at(-1).status,200);
+  assert.equal(JSON.parse(h.messages.filter(m=>m.kind==='json-chunk').map(m=>m.chunk).join('')).collection[1],'90');
+});
+
+const playlistAdd = n => ({id:command(n).id,operation:'playlist-add',user_id:42,playlist_id:11,track_id:90});
+test('playlist add reads fresh contents and appends without losing placeholders or order', async () => {
+  const h=harness((url, options)=>response(200, options.method==='GET' ?
+    {id:11,user:{id:42},track_count:3,tracks:[{id:8},{id:7},{id:8}]} : {}));
+  h.window.__pookieRequest(playlistAdd(1001));await tick();await tick();
+  assert.deepEqual(h.calls.map(call=>call[1].method),['GET','PUT']);
+  assert.equal(new URL(h.calls[0][0]).searchParams.get('representation'),'full');
+  assert.equal(new URL(h.calls[1][0]).pathname,'/playlists/11');
+  assert.deepEqual(JSON.parse(h.calls[1][1].body),{playlist:{tracks:[8,7,8,90]}});
+  assert.equal(h.messages.at(-1).status,200);
+});
+test('playlist add is idempotent and refuses other owners, albums and incomplete snapshots', async () => {
+  const cases=[
+    {id:11,user:{id:42},track_count:1,tracks:[{id:90}]},
+    {id:11,user:{id:7},track_count:0,tracks:[]},
+    {id:11,user:{id:42},track_count:2,tracks:[{id:8}]},
+    {id:11,user:{id:42},is_album:true,track_count:0,tracks:[]},
+    {id:11,user:{id:42},track_count:1,tracks:[{id:0}]},
+    {id:11,user:{id:42},track_count:500,tracks:Array.from({length:500},(_,i)=>({id:i+100}))}
+  ];
+  for(const [i,playlist] of cases.entries()) {
+    const h=harness(()=>response(200,playlist));h.window.__pookieRequest(playlistAdd(1010+i));await tick();await tick();
+    assert.equal(h.calls.length,1);assert.equal(h.messages.at(-1).status,i===0?200:0);
+  }
+});
+test('follow delegates signature to the current website helper and uses POST/DELETE', async () => {
+  const h=harness(()=>response(200));let argumentsSeen;
+  const modules={
+    signer(module){ module.exports={__FOLLOWS_SIGNATURE_VERSION__:'fixture',sign:(...args)=>{argumentsSeen=args;return 'site-signature';}}; },
+    secret(module){ module.exports={__FOLLOWS_SIGNATURE_SECRET__:'fixture-site-value'}; }
+  };
+  const require=id=>{const module={exports:{}};modules[id](module,{},require);return module.exports;}; require.m=modules;
+  h.window.webpackJsonp={push:entry=>Object.values(entry[1])[0]({}, {}, require)};
+  const follow=n=>({id:command(n).id,operation:'follow',user_id:42,artist_id:7,following:true});
+  h.window.__pookieRequest(follow(1101));h.window.__pookieRequest({...follow(1102),following:false});await tick();await tick();
+  assert.deepEqual(h.calls.map(call=>call[1].method),['POST','DELETE']);
+  assert.equal(new URL(h.calls[0][0]).pathname,'/me/followings/7');
+  assert.equal(new URL(h.calls[0][0]).searchParams.get('signature'),'site-signature');
+  assert.equal(new URL(h.calls[1][0]).searchParams.has('signature'),false);
+  assert.deepEqual(argumentsSeen,[42,7,'fixtureid','fixture-site-value']);
+  for(const value of [{...follow(1103),artist_id:42},{...follow(1104),artist_id:0},{...follow(1105),following:'true'},
+    {...playlistAdd(1106),playlist_id:0},{...playlistAdd(1107),track_id:Number.MAX_SAFE_INTEGER+1}]) h.window.__pookieRequest(value);
+  await tick();assert.equal(h.calls.length,2);
+});
+test('following and own playlist reads are allowed while writes cannot masquerade as GET', async () => {
+  const h=harness(()=>response(200,[]));
+  for(const [i,path] of ['/users/42/playlists','/users/42/followings/ids','/me/followings/7'].entries())
+    h.window.__pookieRequest({id:command(1200+i).id,operation:'api-get',url:'https://api-v2.soundcloud.com'+path});
+  await tick();await tick();assert.equal(h.calls.length,2);
 });

@@ -26,6 +26,7 @@ internal static class TrackPageNetworkProbe
         Console.WriteLine($"TRACK_PAGE_METADATA_OK: duration={track.DurationSeconds:F1}s; description={track.Description?.Length ?? 0} chars");
         var comments = await api.GetTrackCommentsAsync(track.Id, timeout.Token);
         Console.WriteLine($"TRACK_PAGE_COMMENTS_OK: count={comments.Comments.Length}; timed={comments.Comments.Count(comment => comment.Timestamp >= 0)}; next={comments.NextHref != null}");
+        Console.WriteLine($"TRACK_PAGE_REPLIES_OK: loaded={comments.Comments.Sum(comment => comment.Replies.Length)}; total={comments.Comments.Sum(comment => comment.ReplyCount)}");
         if (comments.NextHref is { } cursor)
         {
             var next = await api.GetTrackCommentsNextAsync(track.Id, cursor, timeout.Token);
@@ -34,6 +35,18 @@ internal static class TrackPageNetworkProbe
         }
         var related = await api.GetRelatedTracksAsync(track.Id, timeout.Token);
         Console.WriteLine($"TRACK_PAGE_RELATED_OK: count={related.Tracks.Length}");
+        var sidebar = await api.GetTrackSidebarAsync(track.Id, timeout.Token);
+        Console.WriteLine($"TRACK_PAGE_SIDEBAR_OK: fans={sidebar.Fans.Length}; playlists={sidebar.Playlists.Length}; albums={sidebar.Albums.Length}; fans_hidden={sidebar.FansHidden}");
+        foreach (var section in new[] { "reposts", "albums", "playlists", "related" })
+        {
+            var items = await api.GetTrackSectionAsync(track.Id, section, token: timeout.Token);
+            Console.WriteLine($"TRACK_PAGE_SECTION_OK: section={section}; count={items.Items.Length}; next={items.NextHref != null}");
+            if (items.NextHref is { } nextSection)
+            {
+                var nextItems = await api.GetTrackSectionAsync(track.Id, section, nextSection, timeout.Token);
+                Console.WriteLine($"TRACK_PAGE_SECTION_NEXT_OK: section={section}; count={nextItems.Items.Length}");
+            }
+        }
         if (!Uri.TryCreate(track.WaveformUrl, UriKind.Absolute, out var waveform))
             throw new InvalidOperationException("Real track has no waveform URL.");
         if (waveform.AbsolutePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))

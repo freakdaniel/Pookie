@@ -142,6 +142,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
             if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
@@ -171,13 +172,16 @@ internal sealed partial class MainWindow : IDisposable
                 await StartupLog.RunAsync("startup.splash-hide", HideStartupSplashAsync);
                 StartupLog.Event("startup.screen-ready");
             }
-            if (signedIn.Value) Run(LoadLikedIdsAsync);
+            if (signedIn.Value) { Run(LoadLikedIdsAsync); Run(LoadRepostedIdsAsync); }
             OnInitialized();
         });
     }
 
     private void UpdateContentFrameWidth(double availableWidth)
     {
+        // An arrange pass can still report the previous, wider desired size
+        // during a native resize. The client viewport is the source of truth.
+        if (Window?.ClientSize.Width is > 0 and var clientWidth) availableWidth = Math.Min(availableWidth, clientWidth);
         if (availableWidth > 0)
         {
             contentFrame.Width = Math.Min(1440, availableWidth);
@@ -480,7 +484,7 @@ internal sealed partial class MainWindow : IDisposable
         catch { await connectedBrowser.DisposeAsync(); throw; }
         AttachBrowser(connectedBrowser);
         likedLoading?.Cancel(); likedTask = null;
-        likedIds.Clear(); likedIdsReady = false;
+        likedIds.Clear(); likedIdsReady = false; ResetReposts(); ResetFollowing();
         api.Session = connectedBrowser.Account;
         me = connectedProfile;
         ClearLibraryData();
@@ -490,7 +494,7 @@ internal sealed partial class MainWindow : IDisposable
         UpdateProfileAvatar(me);
         profileOpen.Value = false;
         await ShowWorkspaceAsync();
-        Run(LoadLikedIdsAsync);
+        Run(LoadLikedIdsAsync); Run(LoadRepostedIdsAsync);
         var saved = false;
         if (vault != null)
         {
@@ -511,7 +515,7 @@ internal sealed partial class MainWindow : IDisposable
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
         loginBusy.Value = true;
-        profileOpen.Value = settingsOpen.Value = queueOpen.Value = false;
+        ClosePlaylistPicker(); profileOpen.Value = settingsOpen.Value = queueOpen.Value = false;
         CloseTopSearch(clear: true);
         try
         {
@@ -533,7 +537,7 @@ internal sealed partial class MainWindow : IDisposable
             audioPreparing = audioReady = false; playbackLoading.Value = false;
             RefreshLikedPlayback();
             playerVisible.Value = false;
-            likedIds.Clear(); likedIdsReady = false; UpdateLikeState();
+            likedIds.Clear(); likedIdsReady = false; ResetReposts(); ResetFollowing(); UpdateLikeState();
             playbackQueue.Clear(); queueLoader.ContextChanged(); RefreshQueue();
             presence?.Clear();
             RunSync(() => player?.Stop());
@@ -651,7 +655,7 @@ internal sealed partial class MainWindow : IDisposable
         ResetExpandedPlayer();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        DisposeLyrics();
+        ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();
@@ -663,7 +667,7 @@ internal sealed partial class MainWindow : IDisposable
         CancelSeek(); seekTimer.Dispose();
         foreach (var hover in hoverReveals) hover.Dispose();
         foreach (var view in libraryLoadingViews) view.Dispose();
-        searchInput?.Dispose(); clipboardTimer?.Dispose();
+        searchInput?.Dispose(); windowClipboard?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;
         bufferedTrack.Reset();

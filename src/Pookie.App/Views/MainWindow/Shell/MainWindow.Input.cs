@@ -6,6 +6,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private GtkClipboardService? nativeClipboard;
+    private LinuxWindowClipboard? windowClipboard;
     private DispatcherTimer? clipboardTimer;
     private LinuxSearchInput? searchInput;
 
@@ -13,11 +14,11 @@ internal sealed partial class MainWindow
     {
         if (!OperatingSystem.IsLinux()) return;
         nativeClipboard = GtkClipboardService.TryCreate();
-        if (nativeClipboard == null) return;
-        topSearchInput.ClipboardService = nativeClipboard;
-        likedFilter.ClipboardService = nativeClipboard;
+        windowClipboard = new(Window, nativeClipboard);
+        topSearchInput.ClipboardService = windowClipboard;
+        likedFilter.ClipboardService = windowClipboard;
         clipboardTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(20));
-        clipboardTimer.Tick += nativeClipboard.Pump;
+        clipboardTimer.Tick += () => { nativeClipboard?.Pump(); windowClipboard?.Pump(); };
         searchInput = new(Window, topSearchInput, likedFilter);
     }
 }
