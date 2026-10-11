@@ -57,6 +57,7 @@ internal sealed class LibraryLoadingView : IDisposable
 internal sealed class LibrarySkeleton : Control
 {
     public bool Preview { get; set; }
+    public int PreviewItems { get; set; } = 6;
     public bool ListView { get; set; }
     public bool CompactList { get; set; }
     public bool ArtworkOnly { get; set; }
@@ -94,7 +95,7 @@ internal sealed class LibrarySkeleton : Control
 
     public void SetActive(bool active) { if (active) shimmer.Start(); else shimmer.Stop(); }
     protected override Size MeasureContent(Size availableSize) => new(0,
-        Preview ? Math.Ceiling(6d / columns) * (artworkSize + 90) : 0);
+        Preview ? Math.Ceiling(PreviewItems / (double)columns) * (artworkSize + 90) : 0);
 
     protected override void OnRender(IGraphicsContext context)
     {
@@ -120,7 +121,7 @@ internal sealed class LibrarySkeleton : Control
             return;
         }
         var rowHeight = ListView ? TrackRowLayout.Stride : artworkSize + 90;
-        var rows = Preview ? (int)Math.Ceiling(6d / columns) : (int)Math.Ceiling(bounds.Height / rowHeight);
+        var rows = Preview ? (int)Math.Ceiling(PreviewItems / (double)columns) : (int)Math.Ceiling(bounds.Height / rowHeight);
         for (var row = 0; row < rows; row++)
         {
             var y = row * rowHeight;
@@ -133,7 +134,7 @@ internal sealed class LibrarySkeleton : Control
             }
             else for (var column = 0; column < columns; column++)
             {
-                if (Preview && row * columns + column >= 6) break;
+                if (Preview && row * columns + column >= PreviewItems) break;
                 var left = column * (artworkSize + 24);
                 Block(left, y, artworkSize, artworkSize, 6);
                 Block(left, y + artworkSize + 11, artworkSize * .76, 12);

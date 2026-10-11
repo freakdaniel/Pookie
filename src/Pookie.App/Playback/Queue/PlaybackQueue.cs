@@ -3,10 +3,10 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Playback;
 
 internal enum RepeatMode { Off, Context, Track }
-internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent }
+internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Wave }
 internal enum PlaybackEntryOrigin { Context, Manual }
 internal enum PlaybackPreparation { Preparing, Ready, Failed, Stopped }
-internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track);
+internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null);
 internal sealed record PlaybackEntry(long EntryId, SoundCloudTrack Track, PlaybackEntryOrigin Origin, int SourceIndex = -1);
 internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext? Context, PlaybackEntry? Current,
     IReadOnlyList<PlaybackEntry> Source, IReadOnlyList<PlaybackEntry> ManualUpcoming,
@@ -155,6 +155,21 @@ internal sealed class PlaybackQueue
         if (Shuffle) Mix(added);
         upcoming.AddRange(added);
         Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
+        Changed(); return true;
+    }
+    internal bool ReplaceRecommendations(long version, IEnumerable<SoundCloudTrack> tracks)
+    {
+        if (version != SourceVersion || Context?.Kind != PlaybackContextKind.Wave) return false;
+        var removed = upcoming.Select(entry => entry.EntryId).ToHashSet();
+        source.RemoveAll(entry => removed.Contains(entry.EntryId));
+        upcoming.Clear();
+        foreach (var track in tracks)
+        {
+            var entry = NewEntry(track, PlaybackEntryOrigin.Context, source.Count);
+            source.Add(entry); upcoming.Add(entry);
+        }
+        // Retain a refill marker after an empty local pool so newly fetched candidates can revive it.
+        Context = Context with { NextHref = "pookie:wave:rerank:" + entrySequence };
         Changed(); return true;
     }
     internal void SetPreparation(long entryId, PlaybackPreparation state, SoundCloudTrack? resolved = null)

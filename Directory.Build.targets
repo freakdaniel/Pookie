@@ -1,14 +1,10 @@
 <Project>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App'">
     <None Include="$(MSBuildThisFileDirectory)licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)LICENSING.md;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)NOTICE;$(MSBuildThisFileDirectory)LICENSING.md;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.Logging'">
-    <None Update="Serilog-NOTICES.txt" TargetPath="SERILOG-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.Audio'">
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
     <PookieDependencyLicense Include="$(PkgSoundFlow)/LICENSE.md;$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt;$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md;$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" />
     <None Include="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
@@ -16,7 +12,7 @@
   <Target Name="GeneratePookieThirdPartyNotices"
           BeforeTargets="GetCopyToOutputDirectoryItems;ComputeFilesToPublish"
           DependsOnTargets="ResolvePackageAssets"
-          Condition="'$(MSBuildProjectName)' == 'Pookie.Audio'">
+          Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
     <Error Condition="!Exists('%(PookieDependencyLicense.Identity)')"
            Text="Missing dependency license: %(PookieDependencyLicense.Identity). Restore packages and check their licensing files before distributing Pookie." />
     <MakeDir Directories="$(IntermediateOutputPath)" />

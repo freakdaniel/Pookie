@@ -13,7 +13,7 @@ internal static class TrackPageNetworkProbe
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         using var vault = SessionVault.Open(new AppDataPaths());
-        var account = vault.Load() ?? throw new InvalidOperationException("No saved SoundCloud session for the track page probe.");
+        var account = vault.Load() ?? await NativeWebLogin.TryRestoreAsync(timeout.Token) ?? throw new InvalidOperationException("No saved SoundCloud session for the track page probe.");
         await using var browser = new NativeBrowserSession(account);
         using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
         var api = new SoundCloudWebClient(http) { Session = account, BrowserTransport = browser, RequireBrowserTransport = true };

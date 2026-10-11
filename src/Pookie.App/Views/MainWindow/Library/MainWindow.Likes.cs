@@ -46,7 +46,7 @@ internal sealed partial class MainWindow
             .ItemPadding(new Thickness(0, 0, 24, 0)).WrapPresenter(likedArtworkSize + 24, likedArtworkSize + 90);
         grid.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var tile = new LikedTrackTile(SelectLibraryTrack, ArtworkLayer);
+            var tile = new LikedTrackTile(SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), ArtworkLayer);
             tile.SetSize(likedArtworkSize);
             AttachTrackQueueMenu(tile.Root, () => tile.Track);
             AttachTrackTitle(tile.Title, () => tile.Track);
@@ -160,8 +160,8 @@ internal sealed partial class MainWindow
     private void RefreshLikedPlayback()
     {
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id, isPlaying.Value);
-        foreach (var card in collectionCards.Values)
-            card.Playback.SetPlaying(card.Item.Track != null && card.Item.Track.Id == current?.Id, isPlaying.Value);
+        RefreshCollectionCardsPlayback();
+        RefreshHomeHeroPlayback();
         RefreshLikedRows();
     }
 

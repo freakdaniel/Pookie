@@ -29,8 +29,16 @@ internal sealed class PlaybackQueueLoader(PlaybackQueue queue,
     {
         await Task.Yield();
         token.ThrowIfCancellationRequested();
-        var page = await fetch(context, cursor, token);
-        if (!token.IsCancellationRequested && queue.Append(sourceVersion, cursor, page)) changed();
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var page = await fetch(context, cursor, token);
+            if (token.IsCancellationRequested || sourceVersion != queue.SourceVersion) return;
+            if (queue.Append(sourceVersion, cursor, page)) { changed(); return; }
+            // Feedback can replace only a wave's future queue while this request is
+            // in flight. Retry against its new cursor without touching manual entries.
+            if (context.Kind != PlaybackContextKind.Wave || queue.Context?.NextHref is not { } next || next == cursor) return;
+            context = queue.Context; cursor = next;
+        }
     }
     public void Dispose() { cancellation?.Cancel(); cancellation?.Dispose(); cancellation = null; }
 }

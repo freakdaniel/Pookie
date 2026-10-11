@@ -51,9 +51,17 @@ public sealed class CollectionActionsTests
         await client.AddToPlaylistAsync(42, 11, 90);
         Assert.Equal(new[] { (42L, 7L, true), (42L, 7L, false) }, browser.Follows);
         Assert.Equal((42L, 11L, 90L), browser.Added);
+        await client.SetPlaylistLikedAsync(42, 11, true); await client.SetPlaylistLikedAsync(42, 11, false);
+        await client.SetPlaylistRepostedAsync(11, true); await client.SetPlaylistRepostedAsync(11, false);
+        Assert.Equal(new[] { (42L, 11L, true), (42L, 11L, false) }, browser.PlaylistLikes);
+        Assert.Equal(new[] { (11L, true), (11L, false) }, browser.PlaylistReposts);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.SetPlaylistLikedAsync(42, 0, true));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.SetPlaylistRepostedAsync(long.MaxValue, true));
         await Assert.ThrowsAsync<ArgumentException>(() => client.SetFollowingAsync(42, 42, true));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.AddToPlaylistAsync(42, 0, 90));
         client.BrowserTransport = null;
+        await Assert.ThrowsAsync<SoundCloudException>(() => client.SetPlaylistLikedAsync(42, 11, true));
+        await Assert.ThrowsAsync<SoundCloudException>(() => client.SetPlaylistRepostedAsync(11, true));
         await Assert.ThrowsAsync<SoundCloudException>(() => client.SetFollowingAsync(42, 7, true));
         await Assert.ThrowsAsync<SoundCloudException>(() => client.AddToPlaylistAsync(42, 11, 90));
     }
@@ -78,11 +86,33 @@ public sealed class CollectionActionsTests
         var follow = new BrowserRequestCommand(Guid.NewGuid().ToString("N"), "follow", UserId: 42, ArtistId: 7, Following: true);
         var add = new BrowserRequestCommand(Guid.NewGuid().ToString("N"), "playlist-add", UserId: 42, PlaylistId: 11, TrackId: 90);
         Assert.True(follow.IsValid()); Assert.True(add.IsValid());
+        var like = add with { Operation = "playlist-like", TrackId = 0 };
+        var repost = like with { Operation = "playlist-repost", UserId = 0 };
+        Assert.True(like.IsValid()); Assert.True(repost.IsValid());
+        Assert.False((like with { PlaylistId = long.MaxValue }).IsValid());
+        Assert.False((like with { TrackId = 90 }).IsValid());
+        Assert.False((repost with { UserId = 42 }).IsValid());
+        Assert.False((repost with { PlaylistId = 0 }).IsValid());
         Assert.False((follow with { ArtistId = 42 }).IsValid()); Assert.False((add with { PlaylistId = long.MaxValue }).IsValid());
         Assert.False((add with { Url = "https://evil.test" }).IsValid());
         Assert.True(BrowserRequestCommand.IsReadUrl("https://api-v2.soundcloud.com/users/42/followings/ids"));
         Assert.True(BrowserRequestCommand.IsReadUrl("https://api-v2.soundcloud.com/users/42/playlists"));
         Assert.False(BrowserRequestCommand.IsReadUrl("https://api-v2.soundcloud.com/me/followings/7"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PlaylistActionReadsKeepTheirPaginationScope(bool reposts)
+    {
+        var path = reposts ? "/me/playlist_reposts/ids" : "/me/playlist_likes/ids";
+        using var http = new HttpClient(new Handler(request => request.RequestUri!.Query.Contains("cursor=") ? "[11,12,0,9007199254740992]" :
+            JsonSerializer.Serialize(new { collection = new object[] { "11", -1, "bad" }, next_href = "https://api-v2.soundcloud.com" + path + "?cursor=next" })));
+        Assert.Equal(new long[] { 11, 12 }, (await Client(http).GetPlaylistActionIdsAsync(reposts)).Order());
+        var reads = 0;
+        using var foreign = new HttpClient(new Handler(_ => { reads++; return """{"collection":[],"next_href":"https://api-v2.soundcloud.com/me/track_likes/ids"}"""; }));
+        await Assert.ThrowsAsync<SoundCloudException>(() => Client(foreign).GetPlaylistActionIdsAsync(reposts));
+        Assert.Equal(1, reads);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, string> response) : HttpMessageHandler
@@ -93,9 +123,15 @@ public sealed class CollectionActionsTests
     private sealed class Transport : ISoundCloudBrowserTransport
     {
         public List<(long, long, bool)> Follows { get; } = [];
+        public List<(long, long, bool)> PlaylistLikes { get; } = [];
+        public List<(long, bool)> PlaylistReposts { get; } = [];
         public (long, long, long) Added { get; private set; }
         public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => throw new InvalidOperationException();
+        public Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken cancellationToken = default)
+        { PlaylistLikes.Add((userId, playlistId, liked)); return Task.CompletedTask; }
+        public Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken cancellationToken = default)
+        { PlaylistReposts.Add((playlistId, reposted)); return Task.CompletedTask; }
         public Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken cancellationToken = default)
         { Follows.Add((userId, artistId, following)); return Task.CompletedTask; }
         public Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken cancellationToken = default)

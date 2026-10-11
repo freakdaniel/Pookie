@@ -17,6 +17,7 @@ internal sealed partial class MainWindow
         playbackQueue.SetShuffle(shuffle.Value);
         queueLoader = new(playbackQueue, async (context, cursor, token) =>
         {
+            if (context.Kind == PlaybackContextKind.Wave) return await GetWavePageAsync(token);
             if (context.LibraryCursor)
             {
                 var page = await api.GetLibraryNextAsync(cursor, token);
@@ -52,7 +53,8 @@ internal sealed partial class MainWindow
         if (page.Value is Page.Search or Page.Track) { queueOriginTitle = first.Title; queueOriginKind = "Сейчас играет отдельный трек"; }
         if (page.Value == Page.LibraryCollection && selectedIndex is { } cardIndex && activeCollection != null)
             selectedIndex = activeCollection.Items.Take(cardIndex).Count(item => item.Track != null);
-        StartQueueContext(new(key, queueOriginTitle, queueOriginKind, cursor, Kind: kind), data, first, selectedIndex);
+        StartQueueContext(new(key, queueOriginTitle, queueOriginKind, cursor, Kind: kind,
+            ResourceUrn: page.Value == Page.LibraryCollection ? PlaybackHistoryContextUrn(route.Item) : null), data, first, selectedIndex);
     }
 
     private void StartQueueContext(PlaybackContext context, SoundCloudTrack[] data, SoundCloudTrack first, int? selectedIndex = null)
@@ -106,6 +108,7 @@ internal sealed partial class MainWindow
             if (previous != null) await PlayAsync(previous.Track);
             return;
         }
+        FinishWaveListening(skipped: !naturalEnd);
         // Never wrap past an unloaded page. The loading token belongs to this
         // context and survives navigation away from its originating screen.
         var sourceVersion = playbackQueue.SourceVersion;
@@ -123,6 +126,7 @@ internal sealed partial class MainWindow
 
     private void EndPlayback()
     {
+        FinishWaveListening();
         ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();
         audioReady = audioPreparing = paused = false;
         isPlaying.Value = playbackLoading.Value = false;
@@ -149,7 +153,7 @@ internal sealed partial class MainWindow
     }
     private void ChangeManualQueue(Action change) { change(); RefreshQueue(); }
 
-    private void AttachTrackQueueMenu(FrameworkElement root, Func<SoundCloudTrack?> track, Func<long?>? entryId = null)
+    private void AttachTrackQueueMenu(FrameworkElement root, Func<SoundCloudTrack?> track, Func<long?>? entryId = null, bool extraActions = false)
     {
         var menu = new ContextMenu();
         void Item(string id, string label, Action execute, Func<bool> enabled)
@@ -162,6 +166,12 @@ internal sealed partial class MainWindow
         Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
         Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
         Item("playlist", "Добавить в плейлист", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
+        if (extraActions)
+        {
+            Item("copy", "Скопировать ссылку", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);
+            Item("repost", "Сделать репост", () => { if (track() is { } item) Run(() => ToggleTrackRepostAsync(item)); },
+                () => track() is { } item && CanRepostTrack(item));
+        }
         if (entryId != null)
         {
             int Index() => playbackQueue.Snapshot.ManualUpcoming.ToList().FindIndex(entry => entry.EntryId == entryId());

@@ -54,8 +54,11 @@ internal sealed partial class MainWindow
         startupContent.IsHitTestVisible = false;
         contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
             .Padding(36, 30).Child(startupContent);
+        homeWaveLayout = new HomeWaveLayout(contentFrame, WaveSettingsView());
+        waveSettingsOpen.Changed += () => homeWaveLayout.SetOpen(waveSettingsOpen.Value);
+        page.Changed += () => { if (page.Value != Page.Home) waveSettingsOpen.Value = false; };
         contentSurface = new Border().Background(Surface).CornerRadius(new CornerRadius(30, 30, 0, 0))
-            .Margin(0, 8, 0, 0).Child(contentFrame);
+            .Margin(0, 8, 0, 0).Child(homeWaveLayout);
         // Use the arranged viewport as well as native resize notifications. Some platforms
         // apply programmatic window sizes without delivering ClientSizeChanged first.
         contentSurface.SizeChanged += e =>
@@ -260,26 +263,18 @@ internal sealed partial class MainWindow
             new Border().Background(Raised).CornerRadius(18).Padding(16, 10).CenterVertical().Column(1)
                 .Child(new StackPanel().Horizontal().Spacing(8).Children(Icons.View("headphones", 18),
                     new TextBlock().Text("Твоя музыка. Твой ритм.").Foreground(Muted).FontSize(12).CenterVertical())))
-            .BindIsVisible(page, value => !IsLibrary(value) && value is not (Page.Search or Page.Track));
-        var chips = new StackPanel().Horizontal().Spacing(8).BindIsVisible(page, value => value == Page.Home).Children(
-            SearchChip("Для спокойного вечера", "ambient"), SearchChip("Электроника", "electronic"),
-            SearchChip("Хип-хоп", "hip hop"), SearchChip("В ритме джаза", "jazz"));
-        var listHead = new StackPanel().Vertical().Spacing(10).Children(
-            new Grid().Columns("44,48,*,64").Rows("Auto").Spacing(12).Padding(12, 0).Children(
-                new TextBlock().Text("#").FontSize(11).Foreground(Muted).Column(0),
-                new TextBlock().Text("ТРЕК / ИСПОЛНИТЕЛЬ").FontSize(11).Foreground(Muted).Column(2),
-                new TextBlock().Text("ВРЕМЯ").FontSize(11).Foreground(Muted).Right().Column(3)))
-            .BindIsVisible(page, value => value is Page.Home or Page.Feed);
+            .BindIsVisible(page, value => value == Page.Feed);
         var listBody = new Grid().Columns("*").Rows("*").Children(
-            CreateHomeLoadingView().BindIsVisible(page, value => value is Page.Home or Page.Feed),
+            HomePageView().BindIsVisible(page, value => value == Page.Home),
+            CreateHomeLoadingView().BindIsVisible(page, value => value == Page.Feed),
             SearchPage().BindIsVisible(page, value => value == Page.Search),
             TrackDetailPageView().BindIsVisible(page, value => value == Page.Track),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
             CollectionPage().BindIsVisible(page, value => value > Page.LibraryTracks));
         return new DockPanel().LastChildFill().Spacing(18).Children(
-            new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading, chips, listHead)
-                .BindIsVisible(page, value => value is not (Page.Search or Page.Track)),
+            new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading)
+                .BindIsVisible(page, value => value is not (Page.Home or Page.Search or Page.Track)),
             listBody);
     }
 
@@ -344,10 +339,6 @@ internal sealed partial class MainWindow
         Run(() => PlayAsync(track));
     }
 
-    private Button SearchChip(string label, string search) => new Button().StyleName("flat-button").Content(label)
-        .Background(Raised).Padding(14, 9).CornerRadius(16).FontSize(12)
-        .OnClick(() => { query.Value = search; Run(SearchAsync); });
-
     private FrameworkElement ProfilePanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
         .CornerRadius(18).Width(300).Padding(20).Top().Right().Margin(0, 64, 28, 0).BindIsVisible(profileOpen)
         .Child(new StackPanel().Vertical().Spacing(14).Children(
@@ -371,7 +362,18 @@ internal sealed partial class MainWindow
                 IconButton("x", () => settingsOpen.Value = false).Column(1)),
             new TextBlock().BindText(audioStatus).Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap),
             new CheckBox().Content("Показывать музыку в Discord").BindIsChecked(discordEnabled).FontSize(12)
-                .OnCheckedChanged(value => { if (presence != null) presence.Enabled = value; })));
+                .OnCheckedChanged(value => { if (presence != null) presence.Enabled = value; }),
+            new StackPanel().Vertical().Spacing(4).Children(
+                new TextBlock().Text("О приложении").FontSize(12).Foreground(Muted),
+                TrackButtons.Action(new TextBlock().Text("Иллюстрации: Icons8").FontSize(12), OpenIllustrationCredits,
+                    TrackButtons.Text, 28).Padding(0).Left())));
+
+    private void OpenIllustrationCredits()
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://icons8.com") { UseShellExecute = true }); }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        { status.Value = "Не удалось открыть сайт Icons8."; }
+    }
 
     private FrameworkElement QueuePanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
         .CornerRadius(22).Padding(18).Width(380).Height(336).Bottom().Right().Margin(0, 0, 36, 16).BindIsVisible(queueOpen)
@@ -386,39 +388,24 @@ internal sealed partial class MainWindow
     private static Button IconButton(string name, Action action) => new Button().StyleName("flat-button")
         .Content(Icons.View(name, 20)).Width(34).Height(34).CornerRadius(12).OnClick(action);
 
-    private ListBox CreateTrackList(bool compact = false)
+    private ListBox CreateTrackList()
     {
-        var result = new ListBox().Items(Array.Empty<string>()).ItemHeight(compact ? 60 : 70)
+        var result = new ListBox().Items(Array.Empty<string>()).ItemHeight(64)
             .Background(Color.Transparent).BorderThickness(0).CornerRadius(12);
         result.ZebraStriping = false;
         result.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var number = new TextBlock().Foreground(Muted).FontSize(12).CenterVertical();
-            var cover = Icons.View("music-notes", compact ? 30 : 38);
-            var trackTitle = new TextBlock().FontSize(compact ? 12 : 14).TextTrimming(TextTrimming.CharacterEllipsis);
-            var author = new TextBlock().FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
-            var duration = new TextBlock().FontSize(12).Foreground(Muted).CenterVertical().Right();
-            context.Register("number", number); context.Register("cover", cover); context.Register("title", trackTitle);
-            context.Register("author", author); context.Register("duration", duration);
-            var root = new Grid().Columns(compact ? "40,*,44" : "44,48,*,64").Rows("*").Spacing(12).Padding(12, 8).Children(
-                number.IsVisible(!compact).Column(0),
-                new Border().Background(Raised).CornerRadius(8).Width(compact ? 30 : 38).Height(compact ? 30 : 38).Child(cover).CenterVertical().Left().Column(compact ? 0 : 1),
-                new StackPanel().Vertical().Spacing(4).CenterVertical().Column(compact ? 1 : 2).Children(trackTitle, author),
-                duration.Column(compact ? 2 : 3));
-            AttachTrackQueueMenu(root, () => rowTracks.TryGetValue(cover, out var id) ? tracks.FirstOrDefault(track => track.Id == id) : null);
-            AttachTrackTitle(trackTitle, () => rowTracks.TryGetValue(cover, out var id) ? tracks.FirstOrDefault(track => track.Id == id) : null);
-            return root;
-        }, (_, track, index, context) =>
+            var row = CreateCompactTrackRow();
+            context.Register("row", row.Root); return row.Root;
+        }, (_, track, _, context) =>
         {
-            context.Get<TextBlock>("number").Text = (index + 1).ToString("00");
-            context.Get<TextBlock>("title").Text = track.Title;
-            context.Get<TextBlock>("author").Text = track.Author + (track.Access is "blocked" or "preview" ? " · Ограничен" : "");
-            context.Get<TextBlock>("duration").Text = FormatTime(track.DurationSeconds);
-            var cover = context.Get<Image>("cover");
-            cover.Source = Icons.Source("music-notes");
-            rowTracks[cover] = track.Id;
-            Run(() => LoadRowArtworkAsync(cover, track));
-        }, (_, _, _, context) => rowTracks.Remove(context.Get<Image>("cover")));
+            var row = compactTrackRows.First(row => row.Root == context.Get<Grid>("row"));
+            BindCompactTrackRow(row, track);
+        }, (_, _, _, context) =>
+        {
+            var row = compactTrackRows.First(row => row.Root == context.Get<Grid>("row"));
+            BindCompactTrackRow(row, null);
+        });
         return result;
     }
 }

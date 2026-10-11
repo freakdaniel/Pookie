@@ -46,10 +46,14 @@ internal sealed partial class MainWindow
     {
         foreach (var row in likedRows.Values)
             if (row.Track is { } track) row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
+        foreach (var row in compactTrackRows.Where(row => row.RepostMenu != null)) RefreshCompactTrackRow(row);
         if (trackDetailState is not { } state) return;
         var reposted = repostedIds.Contains(state.Track.Id);
         TrackButtons.SetReposted(trackDetailRepost, reposted, TrackButtons.Glass);
         TrackButtons.SetGlyph(trackDetailRepostIcon, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
+        TrackButtons.SetCounter(trackDetailRepost, trackDetailRepostCount,
+            state.Track.RepostsCount is > 0 ? DetailCount(state.Track.RepostsCount) : "");
+        TrackButtons.SetTextColor(trackDetailRepostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
         TrackButtons.SetAvailability(trackDetailRepost, CanRepostTrack(state.Track), IsRepostPending(state.Track));
         trackDetailRepost.ToolTip(me != null && state.Track.User?.Id == me.Id ? "Это твой трек" : reposted ? "Убрать репост" : "Сделать репост");
     }

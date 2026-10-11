@@ -14,7 +14,7 @@ internal sealed partial class MainWindow
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
-        string Filter, bool ListView, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail);
+        string Filter, bool ListView, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter);
     private sealed class NavigationEntry(NavigationRoute route)
     {
         public NavigationRoute Route { get; } = route;
@@ -31,10 +31,11 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
-        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0, searchResults, trackDetailState);
+        likedFilterText, likesAsList.Value, NavigationScroll()?.VerticalOffset ?? 0, searchResults, trackDetailState, collectionFilterText);
 
     private ScrollViewer? NavigationScroll() => page.Value switch
     {
+        Page.Home => homeScroll,
         Page.Library => overviewScroll,
         Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.Track => trackDetailScroll,
@@ -57,7 +58,7 @@ internal sealed partial class MainWindow
         }
         navigationHistory[navigationIndex].Pending = pending;
         RenewLoadToken();
-        ResetPageScrolling(); searchLoading.Value = false;
+        ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         profileOpen.Value = settingsOpen.Value = false;
@@ -99,7 +100,7 @@ internal sealed partial class MainWindow
         if (index < 0 || index >= navigationHistory.Count) return;
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();
         RenewLoadToken();
-        ResetPageScrolling(); searchLoading.Value = false;
+        ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         navigationIndex = index;
@@ -133,8 +134,10 @@ internal sealed partial class MainWindow
         likedFilter.Text = state.Filter; likesAsList.Value = state.ListView;
         likedActionError.Value = "";
         ReplaceTracks((entry.Route.Page is Page.Library or Page.LibraryTracks) && libraryLikes != null ? libraryLikes : state.Tracks);
-        if (entry.Route.Page == Page.Library) { RefreshLibraryCards(); RefreshOverviewSections(); }
-        else if (entry.Route.Page > Page.LibraryTracks) RenderLibrarySection();
+        if (entry.Route.Page == Page.Home) RefreshCachedHome();
+        else if (entry.Route.Page == Page.Library) { RefreshLibraryCards(); RefreshOverviewSections(); }
+        else if (entry.Route.Page > Page.LibraryTracks)
+        { RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; }
         // Restore against arranged virtualized extents, rather than a guessed delay.
         pendingNavigationScroll = (generation, state.Scroll);
         Window.InvalidateVisual();
@@ -152,7 +155,7 @@ internal sealed partial class MainWindow
     {
         loading?.Cancel(); ++navigationGeneration;
         trackDetailState = null;
-        ResetPageScrolling(); searchLoading.Value = false; searchResults = null; RefreshSearchViews();
+        ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false; searchResults = null; RefreshSearchViews();
         navigationHistory.Clear(); navigationHistory.Add(new(new(Page.Home))); navigationIndex = 0;
         page.Value = Page.Home;
         query.Value = ""; likedFilter.Text = "";

@@ -85,6 +85,8 @@ internal static class BrowserPersistenceSmokeTest
             var profile = Path.Combine(root, "Profile");
             var login = await NativeWebLogin.ConnectAsync(timeout.Token, uri + "/login", profile);
             if (login.DataDomeClientId != "fixture-initial") throw new InvalidOperationException("Login protection state missing");
+            var restored = await NativeWebLogin.TryRestoreAsync(timeout.Token, uri + "/login", profile);
+            if (restored?.AccessToken != login.AccessToken) throw new InvalidOperationException("Persistent Electron profile could not restore without a session vault");
             var staleLogin = login with { };
             var paths = new AppDataPaths(root);
             if (OperatingSystem.IsWindows())
@@ -104,11 +106,11 @@ internal static class BrowserPersistenceSmokeTest
                 using var vault = SessionVault.Open(paths);
                 staleLogin = vault.Load() ?? throw new InvalidOperationException("Windows lost the saved login after worker shutdown.");
             }
-            await using (var restarted = new NativeBrowserSession(staleLogin, uri + "/", profile))
+            await using (var restartedBrowser = new NativeBrowserSession(staleLogin, uri + "/", profile))
             {
-                await restarted.GetMeAsync(timeout.Token);
-                await restarted.SetLikedAsync(42, 90, true, timeout.Token);
-                if (restarted.Account.DataDomeClientId != "fixture-rotated") throw new InvalidOperationException("Latest session not restored after restart");
+                await restartedBrowser.GetMeAsync(timeout.Token);
+                await restartedBrowser.SetLikedAsync(42, 90, true, timeout.Token);
+                if (restartedBrowser.Account.DataDomeClientId != "fixture-rotated") throw new InvalidOperationException("Latest session not restored after restart");
             }
             if (challenges != 1 || requests != 3) throw new InvalidOperationException("Restart requested another browser challenge");
             Console.WriteLine("BROWSER_PERSISTENCE_OK: login-to-worker cookies/localStorage, challenge rotation, graceful process exit, restart with stale login token and protected action without another check");
@@ -129,7 +131,7 @@ internal static class BrowserPersistenceSmokeTest
             try { Directory.Delete(target, recursive: true); return; }
             catch (Exception error) when (OperatingSystem.IsWindows() && attempt < 19 && error is IOException or UnauthorizedAccessException)
             {
-                // WebView2 retains its metrics file briefly after the awaited host process exits.
+                // Chromium can retain its metrics file briefly after the awaited host process exits.
                 // No file-unlock notification is exposed; this bounded I/O backoff only cleans fixture resources.
                 await Task.Delay(100);
             }

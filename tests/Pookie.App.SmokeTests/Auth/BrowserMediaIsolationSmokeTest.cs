@@ -73,7 +73,7 @@ internal static class BrowserMediaIsolationSmokeTest
                 next.TrySetResult();
             };
             session.Update(snapshot);
-            await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit"), server.Urls.Single() + "/");
+            await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), server.Urls.Single() + "/");
             await browser.GetMeAsync(timeout.Token);
             await Task.Delay(1200, timeout.Token);
             var user = await browser.GetMeAsync(timeout.Token);
@@ -107,7 +107,7 @@ internal static class BrowserMediaIsolationSmokeTest
         }
         finally { File.Delete(audioPath); }
 #else
-        throw new PlatformNotSupportedException("This check uses Windows SMTC and WebView2.");
+        throw new PlatformNotSupportedException("This check uses Windows SMTC and Electron.");
 #endif
     }
 }

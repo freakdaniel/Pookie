@@ -15,17 +15,24 @@ internal sealed partial class MainWindow
         public SoundCloudTrack? Track { get; set; }
         public bool Hovered { get; set; }
         public long? EntryId { get; set; }
+        public bool CollectionRow { get; init; }
+        public int SourceIndex { get; set; }
+        public Button? More { get; set; }
+        public MenuItem? RepostMenu { get; set; }
+        public Button PlaybackButton { get; set; } = null!;
     }
-    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false)
+    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false)
     {
         var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
-        var play = Icons.View("play-solid", 18).CenterHorizontal().CenterVertical();
-        var overlay = new Border().Background(Color.FromArgb(170, 0, 0, 0)).Child(play);
+        var play = Icons.View("play-solid", 18, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
+        CompactTrackRow row = null!;
+        var playback = TrackButtons.Icon(play, () => { if (row.Track is { } track) (select ?? SelectLibraryTrack)(track); }, TrackButtons.Filled, 30).Center();
+        var overlay = new Border().Background(Color.FromArgb(170, 0, 0, 0)).Child(playback);
         overlay.Opacity = 0;
         overlay.Transitions = [Transition.Create(UIElement.OpacityProperty, 150)];
         var frame = new Border().Width(44).Height(44).CornerRadius(5).ClipToBounds()
             .Child(ArtworkLayer(cover).Children(overlay));
-        var title = new TextBlock().FontSize(14).SemiBold().Height(21).TextTrimming(TextTrimming.CharacterEllipsis);
+        var title = new TextBlock().FontSize(14).SemiBold().Left().Height(21).TextTrimming(TextTrimming.CharacterEllipsis);
         var author = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Height(19).TextTrimming(TextTrimming.CharacterEllipsis);
         var duration = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Right().CenterVertical();
         var heart = Icons.View("heart", 17, Muted).CenterHorizontal().CenterVertical();
@@ -34,18 +41,30 @@ internal sealed partial class MainWindow
             .Content(new Grid().Columns("44,*").Rows("*").Spacing(12).Children(frame.Column(0).CenterVertical(),
                 new StackPanel().Vertical().CenterVertical().Column(1).Children(title, author)));
         ((FrameworkElement)action.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
-        var root = new Grid().Columns("*,32,Auto").Rows("*").Spacing(8).Padding(8, 6).Height(64);
+        var root = new Grid().Columns(collectionRow ? "*,32,32,Auto" : "*,32,Auto").Rows("*").Spacing(8).Padding(8, 6).Height(64);
         var hoverFill = new Border().CornerRadius(10).Background(Color.FromArgb(22, 255, 255, 255))
-            .BorderThickness(0).Padding(0).Margin(-8, -6).Column(0).ColumnSpan(3);
+            .BorderThickness(0).Padding(0).Margin(-8, -6).Column(0).ColumnSpan(collectionRow ? 4 : 3);
         hoverFill.Opacity = 0;
         hoverFill.Transitions = [Transition.Create(UIElement.OpacityProperty, 150)];
         hoverFill.IsHitTestVisible = false;
-        root.Children(hoverFill, action.Column(0), like.Column(1), duration.Column(2));
-        var row = new CompactTrackRow(root, cover, play, overlay, like, heart, title, author, duration, hoverFill);
+        root.Children(hoverFill, action.Column(0), like.Column(1), duration.Column(collectionRow ? 3 : 2));
+        row = new CompactTrackRow(root, cover, play, overlay, like, heart, title, author, duration, hoverFill) { CollectionRow = collectionRow, PlaybackButton = playback };
         compactTrackRows.Add(row);
-        if (!queueRow) AttachTrackQueueMenu(root, () => row.Track);
+        if (!queueRow) AttachTrackQueueMenu(root, () => row.Track, extraActions: collectionRow);
+        if (collectionRow)
+        {
+            row.RepostMenu = root.ContextMenu!.Items.OfType<MenuItem>().Last();
+            row.More = TrackButtons.Icon(Icons.View("dots-three", 20), () => { }, TrackButtons.Text, 32).CenterVertical().Column(2);
+            row.More.Click += () => root.ContextMenu!.Show(row.More);
+            root.Children(row.More);
+        }
         AttachTrackTitle(title, () => row.Track);
-        action.Click += () => { if (row.Track is { } item) (select ?? SelectLibraryTrack)(item); };
+        action.Click += () =>
+        {
+            if (row.Track is not { } item) return;
+            if (queueRow) (select ?? SelectLibraryTrack)(item);
+            else Run(() => OpenTrackPageAsync(item));
+        };
         like.Click += () => { if (row.Track is { } item) Run(() => ToggleTrackLikeAsync(item)); };
         root.MouseEnter += () => { row.Hovered = true; RefreshCompactTrackRow(row); };
         root.MouseLeave += () => { row.Hovered = false; RefreshCompactTrackRow(row); };
@@ -71,13 +90,16 @@ internal sealed partial class MainWindow
     private void RefreshCompactTrackRow(CompactTrackRow row)
     {
         if (row.Track is not { } track) return;
-        var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId : current?.Id == track.Id;
+        if (row.RepostMenu != null) row.RepostMenu.Text = repostedIds.Contains(track.Id) ? "Убрать репост" : "Сделать репост";
+        var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId :
+            row.CollectionRow && playbackQueue.Context?.Key == displayedCollection?.Key
+                ? current?.Id == track.Id && playbackQueue.Current?.SourceIndex == row.SourceIndex : current?.Id == track.Id;
         row.HoverFill.Opacity = selected || row.Hovered ? 1 : 0;
-        row.Play.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid");
+        row.Play.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
         row.Overlay.Opacity = selected || row.Hovered ? 1 : 0;
         var liked = likedIds.Contains(track.Id);
-        row.Heart.Source = Icons.Source(liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : Muted);
-        row.Like.IsEnabled = CanLikeTrack(track);
+        TrackButtons.SetGlyph(row.Heart, liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : Muted);
+        TrackButtons.SetAvailability(row.Like, CanLikeTrack(track), IsLikePending(track));
     }
 
 }

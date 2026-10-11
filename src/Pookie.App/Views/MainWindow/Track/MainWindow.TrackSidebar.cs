@@ -109,9 +109,11 @@ internal sealed partial class MainWindow
     private FrameworkElement TrackCollectionCard(LibraryItem item, long trackId)
     {
         var card = CreateCollectionCardView(responsive: true);
+        card.Item = item;
         card.SetArtist(item.User != null);
         card.Title.Text = item.Title; card.Author.Text = item.Subtitle;
-        card.Playback.IsVisible = false;
+        card.Playback.IsVisible = item.Playlist != null;
+        RefreshCollectionCardPlayback(card, animate: false);
         var image = card.Cover;
         var button = card.Root.OnClick(() => Run(() => OpenLibraryItemAsync(item)));
         SetCollectionArtwork(image, item);

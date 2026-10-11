@@ -9,10 +9,11 @@ text per license used by repository files.
 | --- | --- | --- |
 | Project code, configuration, tests, documentation, and logo | BSD-3-Clause | Richard Habitzreuter; Daniel Freak |
 | `src/Pookie.App/Assets/Icons/*.svg` | MIT | Phosphor Icons |
+| `src/Pookie.App/Assets/Stickle/*.png` | LicenseRef-Icons8 | Icons8 |
 | `src/Pookie.App/Assets/Fonts/GoogleSans.ttf` | OFL-1.1 | The Google Sans Project Authors |
 | `src/Pookie.App/Assets/Fonts/Bungee-Regular.ttf` | OFL-1.1 | The Bungee Project Authors |
 | `src/Pookie.App/Assets/Branding/soundcloud-mark-white.png` | LicenseRef-SoundCloud-Marks | SoundCloud |
-| `src/Pookie.Audio/Drm/CdmAbi.cs` | BSD-3-Clause | The Chromium Authors; Daniel Freak |
+| `src/Pookie.App/Audio/Drm/CdmAbi.cs` | BSD-3-Clause | The Chromium Authors; Daniel Freak |
 
 Pookie's original MIT copyright and permission notice for Richard Habitzreuter
 is retained in `licenses/MIT.txt`, alongside the MIT notice for Phosphor Icons.
@@ -20,12 +21,28 @@ The BSD-3-Clause distribution terms do not remove these original notices.
 
 ## Asset provenance
 
+The wave character cards embed the user-supplied `heart.png`, `star.png`, and
+`tranding.png`; Home shortcut cards use `pixel-heart.png` and `pixel-clock.png`.
+These Icons8 assets are stored in `Assets/Stickle/`. Their pixels are unmodified;
+the native UI scales them proportionally. The user identified the source as
+[Icons8](https://icons8.com/i). The original individual download URLs and account
+plan were not supplied. These assets remain subject to Icons8's own terms;
+Pookie's BSD license does not apply to them.
+The [Universal Multimedia License Agreement](https://intercom.help/icons8-7fb7577e8170/en/articles/5534926-universal-multimedia-license-agreement-for-icons8),
+published November 27, 2025 and retrieved October 12, 2026, is retained in
+`licenses/LicenseRef-Icons8.txt` and accompanies builds. Application settings include
+a clickable Icons8 credit, following their [desktop attribution guidance](https://icons8.com/license).
+Icons8 prohibits redistribution of the original assets as standalone downloads;
+public source distribution of these PNGs requires appropriate separate permission.
+
 Phosphor icons come from [phosphor-icons/core](https://github.com/phosphor-icons/core)
 at commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`. Most assets are duotone SVGs;
 filled heart and playback variants are also included. `squares-four`, `list-bullets`,
 `copy`, `chat-circle`, and `arrow-left` use the corresponding upstream duotone
 assets; `arrows-out` and `text-align-left` are also upstream duotone
-assets for the expanded player. `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
+assets for the expanded player. `paper-plane-tilt` uses `assets/duotone/paper-plane-tilt-duotone.svg`
+for comment submission. `clock-counter-clockwise` uses `assets/regular/clock-counter-clockwise.svg`
+for the Home history card. `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
 runtime CDN dependency.
 
 `GoogleSans.ttf` is the unmodified `GoogleSans[GRAD,opsz,wght].ttf` from
@@ -99,23 +116,27 @@ fail the check.
 
 ## Binary distributions
 
-`Directory.Build.targets` copies `LICENSE`, `LICENSING.md`, `REUSE.toml`, and the
-all `licenses/*.txt` files into application builds and published
+`Directory.Build.targets` copies `LICENSE`, `NOTICE`, `LICENSING.md`, `REUSE.toml`,
+and all `licenses/*.txt` files into application builds and published
 packages. This preserves both the complete terms and the copyright notices for
 embedded assets and the CDM declaration translation.
 
 SoundFlow and SoundFlow.Codecs.FFMpeg are restored NuGet dependencies. Their
 license texts and bundled native-library notices are read directly from the
-restored packages and combined into `THIRD-PARTY-NOTICES.txt` during the audio
-project's build. The generated file is copied into the application distribution;
+restored packages and combined into `THIRD-PARTY-NOTICES.txt` during the
+application's build. The generated file is copied into the application distribution;
 the dependency notices are not duplicated into the source tree. REUSE checks
 repository files; dependency notices accompany the built binaries separately.
 
 The logging backend restores Serilog 4.2.0, Serilog.Sinks.Console 6.1.1 and
 Serilog.Sinks.File 7.0.0 from NuGet. These unmodified libraries use Apache-2.0.
-Their attribution is shipped as `SERILOG-NOTICES.txt` and the complete license
-is included in `licenses/Apache-2.0.txt`. Pookie's logging integration remains
-BSD-3-Clause.
+Their complete license is in `licenses/Apache-2.0.txt`; attribution and source
+commits are retained in the shared root `NOTICE`. `REUSE.toml` records Apache-2.0
+metadata for this notice and the three restored assemblies in application
+distributions. These files accompany builds and published packages through the
+common licensing rules in
+`Directory.Build.targets`; no separate logging notice file is needed.
+Pookie's logging integration remains BSD-3-Clause.
 
 The system-media integration restores LibSMTC 1.1.0 (Windows SMTC) and
 Tmds.DBus 0.95.1 (Linux MPRIS) as unmodified NuGet dependencies, both MIT.

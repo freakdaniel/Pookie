@@ -1,12 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Pookie.App/Pookie.App.csproj" />
-    <Project Path="src/Pookie.Logging/Pookie.Logging.csproj" />
-    <Project Path="src/Pookie.Media/Pookie.Media.csproj" />
     <Project Path="src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
-    <Project Path="src/Pookie.Audio/Pookie.Audio.csproj" />
-    <Project Path="src/Pookie.Discord/Pookie.Discord.csproj" />
-    <Project Path="src/Pookie.Lyrics/Pookie.Lyrics.csproj" />
+    <Project Path="src/Pookie.Browser.Electron/Pookie.Browser.Electron.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Pookie.Lyrics.Tests/Pookie.Lyrics.Tests.csproj" />

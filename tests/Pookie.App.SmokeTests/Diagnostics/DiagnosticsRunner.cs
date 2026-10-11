@@ -13,6 +13,7 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }
         if (args.Length == 2 && args[0] == "--track-page-network-probe") { await TrackPageNetworkProbe.RunAsync(args[1]); return true; }
         if (args.Contains("--pagination-smoke-test")) { PaginationSmokeTest.Run(); return true; }
         if (args.Contains("--waveform-gain-smoke-test")) { await WaveformGainSmokeTest.RunAsync(); return true; }
@@ -23,7 +24,6 @@ internal static class DiagnosticsRunner
         if (args.Contains("--content-blocker-smoke-test")) { await ContentBlockerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--startup-network-probe"))
         {
-            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This probe uses Windows WebView2.");
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             using var sessionVault = SessionVault.Open(new AppDataPaths());
             var saved = sessionVault.Load() ?? throw new InvalidOperationException("No saved SoundCloud session for the startup probe.");
@@ -40,19 +40,10 @@ internal static class DiagnosticsRunner
         if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
-        if (args.Contains("--drm-webview-capabilities") || args.Contains("--drm-browser-media-smoke-test"))
-        {
-            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This probe uses Windows WebView2.");
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            await DrmTransportProbe.CheckCapabilitiesAsync(timeout.Token, args.Contains("--drm-browser-media-smoke-test"));
-            return true;
-        }
         if (args.Contains("--protected-audio-smoke-test"))
         {
             var flag = Array.IndexOf(args, "--protected-audio-smoke-test");
             if (flag + 1 >= args.Length) throw new ArgumentException("После --protected-audio-smoke-test нужна ссылка на трек SoundCloud.");
-            if ((args.Contains("--drm-webview-transport") || args.Contains("--drm-webview-cdm")) && !OperatingSystem.IsWindows())
-                throw new PlatformNotSupportedException("Проверка DRM-транспорта WebView предназначена для Windows.");
             // A preserved-profile login, browser API resolution and DRM exchange are separate network stages.
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             using var vault = SessionVault.Open(new AppDataPaths());
@@ -79,7 +70,7 @@ internal static class DiagnosticsRunner
             Console.WriteLine($"PROTECTED_TRACK_OK: track {track.Id}; credentials redacted");
             var resolved = await new SoundCloudStreamResolver(protectedApi).ResolveAsync(track.Id, timeout.Token, ["ctr-encrypted-hls"]);
             Console.WriteLine($"PROTECTED_STREAM_OK: track {track.Id}; {resolved.Stream.Protocol}; credentials redacted");
-            if (args.Contains("--drm-webview-transport") || args.Contains("--drm-webview-cdm") || args.Contains("--drm-service-certificate"))
+            if (args.Contains("--drm-service-certificate"))
             {
                 await protectedBrowser.DisposeAsync();
                 using var manifestResponse = await protectedHttp.GetAsync(resolved.Stream.Uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
@@ -114,17 +105,6 @@ internal static class DiagnosticsRunner
                     }
                     return true;
                 }
-                using var profile = BrowserProfile.Open();
-                if (args.Contains("--drm-webview-cdm"))
-                {
-                    await DrmTransportProbe.CheckBrowserCdmAsync(profile.Path, resolved.Stream.LicenseAuthToken!, playlist.InitData, timeout.Token);
-                    Console.WriteLine("DRM_BROWSER_CDM_LICENSE_OK: browser CDM reported usable keys; playback not tested");
-                    return true;
-                }
-                using var probeHttp = new HttpClient(new DrmTransportProbe(profile.Path));
-                using var license = await WidevineSession.OpenAsync(probeHttp, resolved.Stream.LicenseAuthToken!, playlist.InitData, timeout.Token);
-                Console.WriteLine("DRM_WEBVIEW_LICENSE_OK: native CDM accepted license through WebView transport; playback not tested");
-                return true;
             }
             IAudioPlayer protectedPlayer = new SoundFlowPlayer(silent: true, SoundCloudWebClient.IsMediaUri);
             if (OperatingSystem.IsWindows() && !args.Contains("--drm-native-cdm"))

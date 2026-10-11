@@ -22,7 +22,7 @@ internal sealed class BrowserProfile : IDisposable
         fixture != null && path == null);
 
     public static string DefaultPath() => System.IO.Path.Combine(new AppDataPaths().Browser,
-        OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe" ? "WebKit" : "InfiniFrame");
+        "Electron");
 
     public async Task ResetAsync(CancellationToken token)
     {
@@ -49,7 +49,7 @@ internal sealed class BrowserProfile : IDisposable
             }
             catch (Exception error) when (OperatingSystem.IsWindows() && attempt < 29 && error is IOException or UnauthorizedAccessException)
             {
-                // WebView2 can retain profile files briefly after its awaited host exits.
+                // Electron can retain profile files briefly after its awaited host exits.
                 // Retry only file access failures, bounded to three seconds, before opening a fresh login.
                 await Task.Delay(100, token).ConfigureAwait(false);
             }
@@ -60,7 +60,7 @@ internal sealed class BrowserProfile : IDisposable
 
     internal static void Clear(AppDataPaths paths)
     {
-        foreach (var engine in new[] { "WebKit", "InfiniFrame" })
+        foreach (var engine in new[] { "Electron" })
         {
             var path = System.IO.Path.Combine(paths.Browser, engine);
             if (!Directory.Exists(path)) continue;

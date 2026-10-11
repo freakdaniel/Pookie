@@ -23,8 +23,8 @@ internal sealed partial class MainWindow
         {
             top.Add(new TextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
             var time = TrackButtons.Action(new TextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
-                .Foreground(Color.FromRgb(110, 166, 255)), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
-                TrackButtons.Text, 24).Padding(6, 0).Background(Color.FromArgb(28, 110, 166, 255));
+                .Foreground(TrackButtons.OnCommentTime), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
+                TrackButtons.CommentTime, 24).Padding(6, 0);
             top.Add(time);
         }
         var age = DetailAge(comment.CreatedAt);
@@ -36,6 +36,13 @@ internal sealed partial class MainWindow
         menu.Item(copy);
         var open = new Command("pookie.comment.open", "Открыть в SoundCloud");
         more.Commands.Register(open, () => OpenSoundCloudPage(track.PermalinkUrl)); menu.Item(open);
+        if (me is { } viewer && comment.User?.Id == viewer.Id)
+        {
+            var delete = new Command("pookie.comment.delete", "Удалить");
+            more.Commands.Register(delete, () => Run(() => ConfirmDeleteTrackCommentAsync(track, comment)),
+                () => CanDeleteTrackComment(track.Id, comment));
+            menu.Item(delete);
+        }
         more.OnClick(() => menu.Show(more)); more.ContextMenu = menu;
         var actions = new StackPanel().Horizontal().Spacing(12).Children(
             TrackButtons.Action(new TextBlock().Text("Ответить").FontSize(13).SemiBold(),

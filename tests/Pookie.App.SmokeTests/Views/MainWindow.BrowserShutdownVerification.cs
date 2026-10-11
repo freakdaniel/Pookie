@@ -39,9 +39,9 @@ internal sealed partial class MainWindow
             shutdownFixture.MapGet("/me", () => Results.Json(new { id = 42, username = "fixture" }));
             await shutdownFixture.StartAsync();
 
-            AttachBrowser(new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit")));
+            AttachBrowser(new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium")));
             lateBrowserCallbacks.Add(browserNotifications!.Value.Handler);
-            var connected = new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit"), shutdownFixture.Urls.Single() + "/");
+            var connected = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), shutdownFixture.Urls.Single() + "/");
             AttachBrowser(connected);
             lateBrowserCallbacks.Add(browserNotifications!.Value.Handler);
             connected.Changed += message =>

@@ -14,7 +14,10 @@ internal sealed partial class MainWindow
             foreach (var repost in new[] { false, true })
             {
                 var button = repost ? trackDetailRepost : trackDetailLike;
+                var material = (MaterialTrackButton)button;
+                double InnerCorner() => repost ? material.ConnectedCorners.TopLeft : material.ConnectedCorners.TopRight;
                 var glyph = repost ? trackDetailRepostIcon : trackDetailHeart;
+                var countLabel = repost ? trackDetailRepostCount : trackDetailLikeCount;
                 var active = repost ? TrackButtons.RepostedSurface : TrackButtons.SelectedSurface;
                 var foreground = repost ? TrackButtons.OnReposted : TrackButtons.OnSelected;
                 void Set(bool selected)
@@ -23,17 +26,21 @@ internal sealed partial class MainWindow
                     else TrackButtons.SetLiked(button, selected, TrackButtons.Glass);
                     TrackButtons.SetGlyph(glyph, repost ? "repeat" : selected ? "heart-filled" : "heart",
                         selected ? foreground : TrackButtons.OnSurface);
-                    if (!repost) TrackButtons.SetTextColor(trackDetailLikeCount, selected ? foreground : TrackButtons.OnSurface);
+                    TrackButtons.SetTextColor(countLabel, selected ? foreground : TrackButtons.OnSurface);
                 }
                 TrackButtons.SetAvailability(button, true, false); Set(false);
                 await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);
+                if (!material.IsConnected || InnerCorner() != 8 || Math.Abs(trackDetailRepost.Bounds.X - trackDetailLike.Bounds.Right - 2) > 1)
+                    throw new InvalidOperationException("Track actions lost their connected geometry.");
                 var colors = new List<Color>(); var iconFrames = new HashSet<object>();
+                var shapeFrames = new HashSet<double>();
                 var labelFrames = new HashSet<Color>();
                 void Sample()
                 {
                     colors.Add(button.Background);
+                    shapeFrames.Add(InnerCorner());
                     if (glyph.Source != null) iconFrames.Add(glyph.Source);
-                    if (!repost) labelFrames.Add(trackDetailLikeCount.Foreground);
+                    labelFrames.Add(countLabel.Foreground);
                 }
                 Window.FrameRendered += Sample;
                 try
@@ -49,8 +56,11 @@ internal sealed partial class MainWindow
                     TrackButtons.SetAvailability(button, true, false);
                     if (button.Background != interrupted) throw new InvalidOperationException("Completing a request snapped the colour.");
                     await WaitForLikedLayoutAsync(() => button.Background == active);
+                    if (InnerCorner() != 22 || shapeFrames.Count(corner => corner > 8 && corner < 22) < 3)
+                        throw new InvalidOperationException("Connected selection shape snapped instead of animating.");
+                    CaptureUiPreview(repost ? "track-repost-selected" : "track-like-selected");
                     Validate(colors, before, active);
-                    if (iconFrames.Count < 3 || !repost && labelFrames.Count < 3)
+                    if (iconFrames.Count < 3 || labelFrames.Count < 3)
                         throw new InvalidOperationException("Icon/count colour snapped instead of interpolating.");
                     colors.Clear(); Set(false);
                     await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);

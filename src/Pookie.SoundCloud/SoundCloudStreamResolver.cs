@@ -26,7 +26,6 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
             cancellationToken.ThrowIfCancellationRequested();
             var track = await source.GetTrackAsync(trackId, cancellationToken);
             if (track.Id != trackId) throw new SoundCloudException("Резольвер вернул другой трек.");
-            // Search/likes can contain old access flags and expired track_authorization.
             if (track.Access == "blocked" || track.Policy == "BLOCK") { blocked = true; continue; }
             if (track.Access == "preview" || track.Policy == "SNIP")
                 throw new SoundCloudException("SoundCloud предоставил только отрывок. Полное воспроизведение требует доступа к треку.");

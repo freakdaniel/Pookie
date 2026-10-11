@@ -14,6 +14,9 @@ internal sealed partial class MainWindow
             if (element is Button button && button.StyleName is TrackButtons.Tonal or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
         });
         if (buttons.Count != 4) throw new InvalidOperationException("Like/repost/playlist/copy actions are missing.");
+        if (buttons[0] is not MaterialTrackButton { IsConnected: true } || buttons[1] is not MaterialTrackButton { IsConnected: true } ||
+            Math.Abs(buttons[1].Bounds.X - buttons[0].Bounds.Right - 2) > 1)
+            throw new InvalidOperationException("List like/repost buttons did not form a connected pair.");
         var count = ((StackPanel)buttons[0].Content!).Children.OfType<TextBlock>().Single();
         if (count.FontWeight != FontWeight.Bold) throw new InvalidOperationException("Like count lost its bold weight.");
         var originalCursor = default(LikedActionPoint);
@@ -40,8 +43,21 @@ internal sealed partial class MainWindow
                     if (button.BorderThickness != 0 || button.CornerRadius != 20 || Math.Abs(button.ActualHeight - 40) > 1 / Window.DpiScale || button.Cursor != CursorType.Hand)
                         throw new InvalidOperationException("Material action lost its pill shape, size or hand cursor.");
                     CaptureUiPreview(button == buttons[0] ? "like-hover" : button == buttons[1] ? "repost-hover" : button == buttons[2] ? "playlist-hover" : "copy-hover");
+                    var connected = button is MaterialTrackButton { IsConnected: true };
+                    var pressedSurface = connected ? TrackButtons.HoverColor(surface, foreground) : TrackButtons.PressedColor(surface, foreground);
+                    var cornersBeforePress = ((MaterialTrackButton)button).ConnectedCorners;
+                    var pressStarted = Environment.TickCount64;
                     PressActionPointer(center, true);
-                    await WaitForLikedLayoutAsync(() => button.IsPressed && button.Background == TrackButtons.PressedColor(surface, foreground));
+                    // X11 capture can queue a native enter/leave for the physical cursor,
+                    // which differs from the fixture's routed pointer. Keep the held
+                    // pointer over this button while its state transition settles.
+                    await WaitForLikedLayoutAsync(() =>
+                    {
+                        if (!OperatingSystem.IsWindows()) RouteActionHeldPointer(center);
+                        return button.IsPressed && button.Background == pressedSurface && (!connected || Environment.TickCount64 - pressStarted >= 240);
+                    });
+                    if (connected && ((MaterialTrackButton)button).ConnectedCorners != cornersBeforePress)
+                        throw new InvalidOperationException("Connected action introduced an intermediate pressed shape.");
                     // Release outside the action so this visual check never invokes a like or clipboard write.
                     MoveActionPointer(new Point(1, 1));
                     PressActionPointer(new Point(1, 1), false);
@@ -82,6 +98,14 @@ internal sealed partial class MainWindow
         router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
             .Single(method => method.Name == "MouseButton" && method.GetParameters().Length == 10)
             .Invoke(null, [Window, point, new Point(0, 0), MouseButton.Left, pressed, pressed, false, false, 1, ModifierKeys.None]);
+    }
+
+    private void RouteActionHeldPointer(Point point)
+    {
+        var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", throwOnError: true)!;
+        router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Single(method => method.Name == "MouseMove" && method.GetParameters().Length == 7)
+            .Invoke(null, [Window, point, Window.ClientToScreen(point), true, false, false, ModifierKeys.None]);
     }
 
     private void MoveLikedActionCursor(Point clientPoint)

@@ -26,6 +26,11 @@ internal static class StartupLogSmokeTest
                 await StartupLog.RunAsync("probe.async", () => Task.FromResult(43)) != 43)
                 throw new InvalidOperationException("Logging changed operation results.");
             const string privateValue = "synthetic-secret-must-not-be-logged";
+            StartupLog.BrowserChallenge(new("checking", ChallengeType: "device_check"));
+            StartupLog.BrowserChallenge(new("checking", Interactive: true, ChallengeType: "block"));
+            StartupLog.BrowserChallenge(new("passed", ChallengeType: "block"));
+            StartupLog.BrowserChallenge(new("challenge-error", ChallengeType: privateValue));
+            StartupLog.BrowserChallenge(new(privateValue, ChallengeType: privateValue));
             var propagated = false;
             try { await StartupLog.RunAsync("probe.failure", () => Task.FromException(new InvalidOperationException(privateValue))); }
             catch (InvalidOperationException error) when (error.Message == privateValue) { propagated = true; }
@@ -52,6 +57,15 @@ internal static class StartupLogSmokeTest
             foreach (var level in new[] { "Debug", "Information", "Warning", "Error", "Fatal" })
                 if (!events.Any(entry => entry.GetProperty("Level").GetString() == level)) throw new InvalidOperationException("Missing log level: " + level);
             if (log.Contains(privateValue, StringComparison.Ordinal)) throw new InvalidOperationException("Private text reached startup logs.");
+            foreach (var (type, interactive) in new[] { ("device_check", false), ("block", true) })
+                if (!events.Any(entry => entry.GetProperty("Properties") is var properties &&
+                    properties.TryGetProperty("Stage", out var stage) && stage.GetString() == "browser.site.checking" &&
+                    properties.GetProperty("ChallengeType").GetString() == type && properties.GetProperty("Interactive").GetBoolean() == interactive))
+                    throw new InvalidOperationException("Challenge type/visibility missing from diagnostics.");
+            if (!events.Any(entry => entry.GetProperty("Properties") is var properties &&
+                properties.TryGetProperty("Stage", out var stage) && stage.GetString() == "browser.site.passed" &&
+                properties.GetProperty("ChallengeType").GetString() == "block"))
+                throw new InvalidOperationException("Completed challenge type missing from diagnostics.");
             var console = output.ToString();
             if (console.Contains("probe-debug") || console.Contains("probe-trace") || console.Contains("stage=probe.sync") || console.Contains(privateValue) || log.Contains("probe-trace"))
                 throw new InvalidOperationException("Debug noise or private data reached the wrong destination.");

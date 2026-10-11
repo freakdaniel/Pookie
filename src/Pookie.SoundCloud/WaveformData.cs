@@ -32,9 +32,7 @@ public static class WaveformData
         }
         var scale = root.TryGetProperty("height", out var height) && height.ValueKind == JsonValueKind.Number && height.TryGetSingle(out var declared) &&
             float.IsFinite(declared) && declared > 0 ? Math.Max(peak, declared) : Math.Max(peak, 1);
-        // The website first curves the distance from the top of the waveform,
-        // then draws the remaining height. Keep its quantization as well as the
-        // nonlinear curve; linear normalization flattens loud, mastered tracks.
+        
         for (index = 0; index < samples.Length; index++)
         {
             var top = Math.Floor(Math.Pow(1 - samples[index] / scale, 2d / 3) * scale + .5);

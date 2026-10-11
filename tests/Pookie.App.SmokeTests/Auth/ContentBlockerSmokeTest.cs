@@ -23,13 +23,10 @@ internal static class ContentBlockerSmokeTest
             "https://appleid.apple.com/auth/authorize", "https://www.facebook.com/dialog/oauth",
             "https://quantserve.com.example.org/", "https://example.org/?url=https://pixel.quantserve.com/",
             "https://soundcloud.com/audio-ads-song", "https://soundcloud.com/user/track", "http://localhost:5000/me"];
-        using var webkit = JsonDocument.Parse(BrowserContentBlocker.CreateWebKitRules());
-        var patterns = webkit.RootElement.EnumerateArray().Select(rule =>
-            new Regex(rule.GetProperty("trigger").GetProperty("url-filter").GetString()!, RegexOptions.IgnoreCase)).ToArray();
         foreach (var url in blocked.Concat(allowed))
         {
             var expected = blocked.Contains(url);
-            if (BrowserContentBlocker.ShouldBlock(url) != expected || patterns.Any(pattern => pattern.IsMatch(url)) != expected)
+            if (BrowserContentBlocker.ShouldBlock(url) != expected)
                 throw new InvalidOperationException("Platform filters disagree or block an essential service: " + url);
         }
 
@@ -82,7 +79,7 @@ internal static class ContentBlockerSmokeTest
         });
         await server.StartAsync();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit"), server.Urls.Single() + "/");
+        await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), server.Urls.Single() + "/");
         var user = await browser.GetMeAsync(timeout.Token);
         if (user.Id != 42 || allowedRequests != 1) throw new InvalidOperationException("Allowed resource or profile verification failed.");
         Console.WriteLine("CONTENT_BLOCKER_OK: native requests filtered; page assets, authorized API, DRM and login allow rules verified");

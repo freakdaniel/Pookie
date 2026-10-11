@@ -44,7 +44,7 @@ jobs:
       - name: Check JavaScript
         run: npm run lint
       - name: Publish Pookie
-        run: dotnet publish src/Pookie.App -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/${{ matrix.rid }}
+        run: dotnet publish src/Pookie.App -c Release -r ${{ matrix.rid }} --self-contained true -p:PookieInstallElectron=true -o artifacts/${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: pookie-${{ matrix.rid }}

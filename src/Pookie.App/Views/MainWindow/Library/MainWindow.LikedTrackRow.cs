@@ -34,10 +34,11 @@ internal sealed partial class MainWindow
         private readonly Button copyButton;
         private readonly Button repostButton;
         private readonly Image repostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
+        private readonly TextBlock repostCount = new TextBlock().FontSize(14).Bold().CenterVertical();
         private bool snapActionColors = true;
         public bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
-        public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> like,
+        public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Action<SoundCloudTrack> like,
             Action<SoundCloudTrack> copy, Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer)
         {
             PlayButton = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(play, pause),
@@ -46,7 +47,8 @@ internal sealed partial class MainWindow
                 () => { if (Track is { } track) like(track); });
             copyButton = TrackButtons.Icon(Icons.View("copy", 20, TrackButtons.OnSurface),
                 () => { if (Track is { } track) copy(track); }).ToolTip("Скопировать ссылку");
-            repostButton = TrackButtons.Icon(repostIcon, () => { if (Track is { } track) repost(track); }).ToolTip("Сделать репост");
+            repostButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(repostIcon.CenterVertical(), repostCount),
+                () => { if (Track is { } track) repost(track); }).ToolTip("Сделать репост");
             var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 20, TrackButtons.OnSurface),
                 () => { if (Track is { } track) playlist(track); }).ToolTip("Добавить в плейлист");
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
@@ -59,7 +61,7 @@ internal sealed partial class MainWindow
             Root = new Grid().Columns("160,*").Rows("*").Spacing(20).Height(TrackRowLayout.Height).Children(
                 new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
                     .Content(new Border().CornerRadius(6).ClipToBounds().Width(160).Height(160).Child(artworkLayer(Cover)))
-                    .OnClick(() => { if (Track is { } track) select(track); }),
+                    .OnClick(() => { if (Track is { } track) open(track); }),
                 new Grid().Columns("*").Rows("40,68,40").Spacing(12).Column(1).Children(
                     new Grid().Columns("40,*,Auto").Rows("*").Spacing(10).Row(0).Children(
                         PlayButton.CenterVertical().Column(0),
@@ -70,7 +72,7 @@ internal sealed partial class MainWindow
                         positionLabel,
                         new Border().Background(Surface).Padding(3, 1).Right().Bottom().Child(duration)),
                     new Grid().Columns("Auto,*").Rows("*").Row(2).Children(
-                        new StackPanel().Horizontal().Spacing(8).Children(likeButton, repostButton, playlistButton, copyButton).Column(0),
+                        new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton), playlistButton, copyButton).Column(0),
                         new StackPanel().Horizontal().Spacing(12).Right().CenterVertical().Column(1).Children(playsStat, commentsStat))));
         }
 
@@ -86,6 +88,7 @@ internal sealed partial class MainWindow
             posted.Text = PostedAt(track.CreatedAt);
             genre.Text = track.Genre ?? "";
             likeCount.Text = track.LikesCount is { } likes ? ShortCount(likes) : "Лайк";
+            TrackButtons.SetCounter(repostButton, repostCount, track.RepostsCount is { } reposts && reposts > 0 ? ShortCount(reposts) : "");
             genreBadge.IsVisible = !string.IsNullOrWhiteSpace(track.Genre);
             playsStat.IsVisible = track.PlaybackCount != null;
             commentsStat.IsVisible = track.CommentCount != null;
@@ -125,6 +128,7 @@ internal sealed partial class MainWindow
         {
             TrackButtons.SetReposted(repostButton, reposted);
             TrackButtons.SetGlyph(repostIcon, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
+            TrackButtons.SetTextColor(repostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetAvailability(repostButton, available, pending);
             repostButton.ToolTip(reposted ? "Убрать репост" : "Сделать репост");
         }

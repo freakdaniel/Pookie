@@ -41,6 +41,7 @@ public sealed record SoundCloudUser
 
 public sealed record SoundCloudTrack
 {
+    public bool? Commentable { get; init; }
     public long Id { get; init; }
     public string Urn { get; init; } = "";
     public string Title { get; init; } = "";
@@ -127,6 +128,7 @@ public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 [JsonSerializable(typeof(WebSession))]
 [JsonSerializable(typeof(BrowserRequestCommand))]
 [JsonSerializable(typeof(TrackReadRequest))]
+[JsonSerializable(typeof(CommentWriteRequest))]
 [JsonSerializable(typeof(BrowserRequestEvent))]
 public partial class SoundCloudJson : JsonSerializerContext;
 

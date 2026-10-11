@@ -17,10 +17,10 @@ internal sealed partial class MainWindow
             var row = likedRows.Values.First(row => row.Track?.Id == id);
             var buttons = new List<Button>();
             VisualTree.Visit(row.Root, element => {
-                if (element is Button button && button.StyleName is TrackButtons.Tonal or TrackButtons.Reposted && button.Content is Image)
+                if (element is MaterialTrackButton { IsConnected: true } button)
                     buttons.Add(button);
             });
-            return buttons[0];
+            return buttons[1];
         }
         if (!repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Reposted)
             throw new InvalidOperationException("Existing repost did not appear selected.");

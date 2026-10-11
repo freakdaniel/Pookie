@@ -12,6 +12,7 @@ namespace Pookie.App.Browser;
 // One live website per account. Secrets travel through stdin, never through argv or logs.
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, IBrowserAudioSession
 {
+    private WebSession account = account;
     private readonly SemaphoreSlim requests = new(1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
@@ -23,6 +24,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     private void BrowserChanged(BrowserRequestEvent message)
     {
+        if (message.Kind == "session" && message.Session?.IsValid() == true)
+            lock (sync) account = message.Session;
         if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
             lock (sync) account.UpdateDataDomeClientId(value);
         Changed?.Invoke(message);
@@ -37,8 +40,17 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default) =>
         _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "like", userId, trackId, liked), token);
 
+    public async Task RecordPlaybackAsync(long trackId, string? contextUrn = null, CancellationToken cancellationToken = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "play-history", TrackId: trackId, ContextUrn: contextUrn), cancellationToken);
+
     public async Task SetRepostedAsync(long trackId, bool reposted, CancellationToken token = default) =>
         _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "repost", TrackId: trackId, Reposted: reposted), token);
+
+    public async Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken token = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-like", UserId: userId, PlaylistId: playlistId, Liked: liked), token);
+
+    public async Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken token = default) =>
+        _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-repost", PlaylistId: playlistId, Reposted: reposted), token);
 
     public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken token = default) =>
         _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "follow", UserId: userId, ArtistId: artistId, Following: following), token);
@@ -55,14 +67,21 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал ответ SoundCloud.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
     public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал страницу трека.")); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал страницу трека.")); }
+        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
+    }
+
+    public async Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "comment-write", Comment: request), cancellationToken);
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал ответ SoundCloud.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
@@ -92,36 +111,46 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
-            var write = command.Operation is "like" or "repost" or "follow" or "playlist-add";
+            var write = command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
             using var cancellation = write ? timeout.Token.Register(current.Abort) : default;
-            await (ordered ? StartupLog.RunAsync(stage + ".site-ready", () => current.Ready.Task.WaitAsync(timeout.Token))
-                : current.Ready.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
-            if (current.Blocked && (command.Operation != "audio" || command.Audio?.Action == "start")) throw BrowserBlocked();
-            var response = new TaskCompletionSource<BrowserRequestEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
-            current.Pending[command.Id] = response;
             try
             {
-                timeout.Token.ThrowIfCancellationRequested();
-                await (ordered ? StartupLog.RunAsync(stage + ".send", () => current.SendAsync(command, timeout.Token))
-                    : current.SendAsync(command, timeout.Token)).ConfigureAwait(false);
-                using var readCancellation = !write
-                    ? timeout.Token.Register(() => _ = current.CancelReadAsync(command.Id)) : default;
-                var result = await (ordered ? StartupLog.RunAsync(stage + ".response", () => response.Task.WaitAsync(timeout.Token))
-                    : response.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
-                if (ordered) StartupLog.HttpStatus(stage, result.Status);
-                if (result.Status is >= 200 and < 300) return result;
-                throw result.Status switch
+                await (ordered ? StartupLog.RunAsync(stage + ".site-ready", () => current.Ready.Task.WaitAsync(timeout.Token))
+                    : current.Ready.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
+                if (current.Blocked && (command.Operation != "audio" || command.Audio?.Action == "start")) throw BrowserBlocked();
+                var response = new TaskCompletionSource<BrowserRequestEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+                current.Pending[command.Id] = response;
+                try
                 {
-                    401 => new SoundCloudException("Сессия SoundCloud истекла. Войди в аккаунт ещё раз.", 401),
-                    403 when current.Blocked => BrowserBlocked(),
-                    403 => new SoundCloudException("SoundCloud отклонил запрос в браузере. Проверка могла не завершиться или ресурс недоступен.", 403),
-                    404 => new SoundCloudException("Трек или ресурс SoundCloud не найден.", 404),
-                    429 => new SoundCloudException("SoundCloud ограничил частоту запросов. Повтори позже.", 429),
-                    0 => new SoundCloudException("WebView не завершил запрос. Проверь соединение и окно проверки SoundCloud."),
-                    _ => new SoundCloudException($"SoundCloud не выполнил действие (HTTP {result.Status}).", result.Status)
-                };
+                    timeout.Token.ThrowIfCancellationRequested();
+                    await (ordered ? StartupLog.RunAsync(stage + ".send", () => current.SendAsync(command, timeout.Token))
+                        : current.SendAsync(command, timeout.Token)).ConfigureAwait(false);
+                    using var readCancellation = !write
+                        ? timeout.Token.Register(() => _ = current.CancelReadAsync(command.Id)) : default;
+                    var result = await (ordered ? StartupLog.RunAsync(stage + ".response", () => response.Task.WaitAsync(timeout.Token))
+                        : response.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
+                    if (ordered) StartupLog.HttpStatus(stage, result.Status);
+                    if (result.Status is >= 200 and < 300) return result;
+                    throw result.Status switch
+                    {
+                        401 => new SoundCloudException("Сессия SoundCloud истекла. Войди в аккаунт ещё раз.", 401),
+                        403 when current.Blocked => BrowserBlocked(),
+                        403 => new SoundCloudException("SoundCloud отклонил запрос в браузере. Проверка могла не завершиться или ресурс недоступен.", 403),
+                        404 => new SoundCloudException("Трек или ресурс SoundCloud не найден.", 404),
+                        429 => new SoundCloudException("SoundCloud ограничил частоту запросов. Повтори позже.", 429),
+                        0 => new SoundCloudException("Electron не завершил запрос. Проверь соединение и окно проверки SoundCloud."),
+                        _ => new SoundCloudException($"SoundCloud не выполнил действие (HTTP {result.Status}).", result.Status)
+                    };
+                }
+                finally { current.Pending.TryRemove(command.Id, out _); }
             }
-            finally { current.Pending.TryRemove(command.Id, out _); }
+            catch (OperationCanceledException) when (write && timeout.IsCancellationRequested)
+            {
+                // WaitAsync can complete before the registered cancellation callback runs.
+                // Stop the worker before the next command can reuse a cancelled write's queue.
+                current.Abort();
+                throw;
+            }
         }
         finally { if (ordered) requests.Release(); }
     }
@@ -147,38 +176,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         foreach (var item in all) await item.Completion.ConfigureAwait(false);
     }
 
-    public static int RunChild(string handle, string profile, string? fixture)
-    {
-        StartupLog.UseChildOutput();
-        StartupLog.Event("browser.child-start");
-        try
-        {
-            ValidateFixture(fixture);
-            // Read synchronously: GTK/WebKit must be initialized on the STA entry thread.
-            var line = Console.In.ReadLine();
-            if (line is not { Length: > 0 and <= 10000 }) return 2;
-            var session = JsonSerializer.Deserialize(line, SoundCloudJson.Default.WebSession);
-            if (session?.IsValid() != true) return 2;
-            using var pipe = new AnonymousPipeClientStream(PipeDirection.Out, handle);
-            StartupLog.Event("browser.child-input-ready");
-            using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
-            void Received(BrowserRequestEvent message) => writer.WriteLine(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
-            if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe")
-                WebKitLoginWindow.RunRequests(session, Received, profile, fixture);
-            else InfiniFrameLoginWindow.RunRequests(session, Received, profile, fixture);
-            return 0;
-        }
-        catch (Exception error)
-        {
-            AppLog.Failure("Pookie.Browser", "Браузерный процесс завершился с ошибкой", error);
-            return 2;
-        }
-    }
-
     private static void ValidateFixture(string? fixture)
     {
         if (fixture != null && (!Uri.TryCreate(fixture, UriKind.Absolute, out var uri) || !uri.IsLoopback || uri.Scheme != "http" || uri.UserInfo != ""))
-            throw new ArgumentException("Тестовый WebView допускает только локальный HTTP адрес.");
+            throw new ArgumentException("Тестовый Electron допускает только локальный HTTP адрес.");
     }
 
     private sealed class Worker
@@ -187,7 +188,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         public readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly ConcurrentDictionary<string, TaskCompletionSource<BrowserRequestEvent>> Pending = new();
         public readonly Task Completion;
-        private readonly WebSession account;
+        private WebSession account;
         private readonly BrowserProtectionStore protection;
         private readonly SemaphoreSlim input = new(1, 1);
         private int stopped;
@@ -208,15 +209,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
             try
             {
-                var start = new ProcessStartInfo(Environment.ProcessPath!)
-                { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-                if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet") start.ArgumentList.Add(typeof(NativeBrowserSession).Assembly.Location);
-                foreach (var argument in new[] { "--web-requests", pipe.GetClientHandleAsString(), "--login-profile", profile.Path }) start.ArgumentList.Add(argument);
-                if (fixture != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixture); }
+                var start = ElectronProcess.Create("--app-worker", pipe.GetClientHandleAsString(), profile.Path, fixture);
                 AppLog.ConfigureChild(start);
-                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView."));
+                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить Electron."));
                 pipe.DisposeLocalCopyOfClientHandle();
-                Process.StandardInput.WriteLine(JsonSerializer.Serialize(account, SoundCloudJson.Default.WebSession));
+                Process.StandardInput.WriteLine(JsonSerializer.Serialize(new { Account = account, Script = BrowserRequestScript.Read(null, fixture == null ? "https://soundcloud.com" : new Uri(fixture).GetLeftPart(UriPartial.Authority)) }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
                 Process.StandardInput.Flush();
                 Completion = ReadAsync(pipe, profile, changed);
             }
@@ -263,7 +260,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         public void Stop()
         {
             if (Interlocked.Exchange(ref stopped, 1) != 0) return;
-            // EOF lets WebKit/WebView2 close normally and persist website storage.
+            // EOF lets Electron close normally and persist website storage.
             try { Process.StandardInput.Close(); }
             catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { }
             _ = KillIfStillRunningAsync();
@@ -297,10 +294,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                     if (line.Length > 10000) continue;
                     var message = JsonSerializer.Deserialize(line, SoundCloudJson.Default.BrowserRequestEvent);
                     if (message == null) continue;
+                    if (message.Kind == "session" && message.Session?.IsValid() == true) { account = message.Session; changed(message); }
                     if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
                         protection.Save(account, value);
                     if (message.Kind == "ready") { StartupLog.Event("browser.site-ready"); Ready.TrySetResult(); }
-                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error") StartupLog.Event("browser.site." + message.Kind);
+                    StartupLog.BrowserChallenge(message);
                     if (message.Kind == "blocked")
                     {
                         Interlocked.Exchange(ref blocked, 1);
@@ -339,7 +337,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             {
                 Stop();
                 changed(new("audio-closed"));
-                var error = new InvalidOperationException("Окно SoundCloud закрыто или WebView завершился. Повтори действие, чтобы открыть его снова.");
+                var error = new InvalidOperationException("Окно SoundCloud закрыто или Electron завершился. Повтори действие, чтобы открыть его снова.");
                 Ready.TrySetException(error);
                 foreach (var pending in Pending.Values) pending.TrySetException(error);
                 await Process.WaitForExitAsync().ConfigureAwait(false);

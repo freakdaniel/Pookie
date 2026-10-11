@@ -126,7 +126,7 @@ internal sealed partial class MainWindow
         Button? found = null;
         VisualTree.Visit(root, element =>
         {
-            if (element is Button button && button.StyleName is TrackButtons.Selected or TrackButtons.Tonal && button.Content is StackPanel)
+            if (found == null && element is MaterialTrackButton { IsConnected: true } button)
                 found = button;
         });
         return found ?? throw new InvalidOperationException("Like action missing.");

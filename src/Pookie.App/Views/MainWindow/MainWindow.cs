@@ -23,7 +23,6 @@ internal sealed partial class MainWindow : IDisposable
     private readonly bool isolatedRun;
     private readonly bool requireSignIn;
     private readonly bool skipSessionRestore;
-    private bool syncingTrackList;
     private readonly CancellationTokenSource lifetime = new();
     private CancellationTokenSource? loading;
     private CancellationTokenSource? login;
@@ -77,7 +76,7 @@ internal sealed partial class MainWindow : IDisposable
         enableSystemMedia = options.SystemMediaSession;
         dataPaths = new AppDataPaths(isolatedRun ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
         StartupLog.Initialize(dataPaths);
-        StartupLog.Event(OperatingSystem.IsWindows() ? "platform.windows.webview2" : OperatingSystem.IsLinux() ? "platform.linux.webkit" : "platform.macos");
+        StartupLog.Event("platform.browser.electron");
         configuration = new ConfigurationStore(dataPaths);
         imageDiskCache = new ImageDiskCache(dataPaths);
         imageDiskCache.Prune();
@@ -90,6 +89,7 @@ internal sealed partial class MainWindow : IDisposable
         if (Environment.GetEnvironmentVariable("POOKIE_PROXY") is { Length: > 0 } proxy) handler.Proxy = new WebProxy(proxy);
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireBrowserTransport = true };
+        InitializeWave();
         InitializePlaybackQueue();
         InitializeLyrics();
         if (options.AudioEnabled)
@@ -112,10 +112,7 @@ internal sealed partial class MainWindow : IDisposable
         if (presence != null) presence.Enabled = discordEnabled.Value;
         player?.Volume(volume.Value);
 
-        list = CreateTrackList().OnSelectionChanged(item =>
-        {
-            if (!syncingTrackList && item is SoundCloudTrack track) { SetQueue(track); Run(() => PlayAsync(track)); }
-        });
+        list = CreateTrackList();
         queueList = CreatePlaybackQueueList();
         progress = ThinSlider().Minimum(0).Maximum(1).Value(0).OnValueChanged(QueueSeek)
             .OnMouseDown(e => { if (e.Button == MouseButton.Left) BeginSeekDrag(); })
@@ -143,6 +140,8 @@ internal sealed partial class MainWindow : IDisposable
         Window.PreviewKeyDown += e =>
         {
             if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
+            if (e.Key == Key.Escape && waveSettingsOpen.Value) { e.Handled = true; waveSettingsOpen.Value = false; return; }
+            if (e.Key == Key.Escape && CancelTrackCommentInput()) { e.Handled = true; return; }
             if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
@@ -200,13 +199,20 @@ internal sealed partial class MainWindow : IDisposable
             heading.Value = "На твоей волне";
             ReplaceTracks(new TrackPage(Enumerable.Range(1, 3).Select(i => new SoundCloudTrack
             { Id = i, Title = $"Тестовый звук {i}", Duration = 12000, User = new() { Username = "Pookie audio test" } }).ToArray(), null));
+            await LoadHomeAsync();
             status.Value = "Демо-режим: реальные локальные WAV, без обращения к SoundCloud.";
             return;
         }
         try
         {
-            vault = StartupLog.Run("session.vault-open", () => SessionVault.Open(dataPaths));
-            var saved = await StartupLog.RunAsync("session.vault-read", () => Task.Run(vault.Load, lifetime.Token));
+            WebSession? saved = null;
+            try
+            {
+                vault = StartupLog.Run("session.vault-open", () => SessionVault.Open(dataPaths));
+                saved = await StartupLog.RunAsync("session.vault-read", () => Task.Run(vault.Load, lifetime.Token));
+            }
+            catch (InvalidOperationException) { StartupLog.Event("session.restore-unavailable"); }
+            saved ??= await NativeWebLogin.TryRestoreAsync(lifetime.Token);
             StartupLog.Event(saved == null ? "session.not-found" : "session.found");
             if (saved != null)
             {
@@ -229,7 +235,7 @@ internal sealed partial class MainWindow : IDisposable
         catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
         if (me != null)
         {
-            await StartupLog.RunAsync("startup.home-tracks", () => NavigateAsync(Page.Home));
+            Run(() => StartupLog.RunAsync("startup.home", () => NavigateAsync(Page.Home)));
         }
     }
 
@@ -316,9 +322,7 @@ internal sealed partial class MainWindow : IDisposable
     private void ReplaceTracks(TrackPage page) { tracks.Clear(); tracks.AddRange(page.Tracks); nextHref = page.NextHref; RefreshList(); }
     private void RefreshList()
     {
-        syncingTrackList = true;
-        try { SetPageItems(list, tracks, LoadingRowStyle.Compact); }
-        finally { syncingTrackList = false; }
+        SetPageItems(list, tracks, LoadingRowStyle.Compact);
         if (!likesLoading && page.Value is (Page.Library or Page.LibraryTracks)) libraryLikes = new(tracks.ToArray(), nextHref);
         RefreshLikedViews();
     }
@@ -328,6 +332,7 @@ internal sealed partial class MainWindow : IDisposable
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
         var selectionStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        FinishWaveListening();
         CancelSeek();
         var generation = ++playGeneration;
         playLoading?.Cancel(); playLoading?.Dispose();
@@ -398,6 +403,9 @@ internal sealed partial class MainWindow : IDisposable
                 track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(audioStarted).TotalMilliseconds);
             var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
+            EnsureWaveTaste();
+            waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context, waveTime.Elapsed);
+            BeginPlaybackHistory(queueEntry);
             RefreshLyricsMetadata(track);
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
             RefreshQueue();
@@ -405,6 +413,7 @@ internal sealed partial class MainWindow : IDisposable
             localRecent.RemoveAll(item => item.Key == "track:" + track.Id);
             localRecent.Insert(0, LibraryItem.FromTrack(track));
             if (localRecent.Count > 30) localRecent.RemoveAt(30);
+            RefreshHomeShortcuts();
             RefreshOverviewSections();
             audioReady = true;
             // The user can pause the selected track while it is still loading.
@@ -472,7 +481,7 @@ internal sealed partial class MainWindow : IDisposable
         try
         {
             SetLoginButtonState(LoginButtonState.Waiting);
-            session = await NativeWebLogin.ConnectAsync(token);
+            session = await NativeWebLogin.ConnectAsync(token, resetSession: false);
             token.ThrowIfCancellationRequested();
             SetLoginButtonState(LoginButtonState.Connecting);
         }
@@ -576,6 +585,8 @@ internal sealed partial class MainWindow : IDisposable
         RunSync(() =>
         {
             var state = player.Poll();
+            waveListening.Poll(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null, waveTime.Elapsed);
+            PollPlaybackHistory();
             UpdateSystemMedia(state);
             var seekPreview = seekDragging || pendingSeek != null || seeking;
             if (!seekPreview)
@@ -596,6 +607,7 @@ internal sealed partial class MainWindow : IDisposable
                 expandedBuffer.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
             }
             SyncExpandedTimeline();
+            RefreshWaveMotion();
             presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
                 state.Position, progress.Maximum, state.Playing));
             if (state.Ended && !advancing)
@@ -651,6 +663,7 @@ internal sealed partial class MainWindow : IDisposable
     public void Dispose()
     {
         if (disposed) return;
+        FinishWaveListening(); SaveWaveProfile(); waveSaveTimer.Dispose();
         disposed = true;
         ResetExpandedPlayer();
         DisposeSystemMedia();
@@ -709,11 +722,11 @@ internal sealed partial class MainWindow : IDisposable
         void Changed(BrowserRequestEvent message)
         {
             if (disposed || browser != connected || message.Kind is not
-                ("protection-session" or "blocked" or "checking" or "passed" or "challenge-error")) return;
+                ("session" or "protection-session" or "blocked" or "checking" or "passed" or "challenge-error")) return;
             dispatcher?.BeginInvoke(() =>
             {
                 if (disposed || browser != connected) return;
-                if (message.Kind == "protection-session") Run(() => PersistBrowserSessionAsync(connected));
+                if (message.Kind is "session" or "protection-session") Run(() => PersistBrowserSessionAsync(connected));
                 if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ. Капча не предложена; действие остановлено. Подробности — в окне сайта.";
                 if (message.Kind == "checking") status.Value = message.ChallengeType == "hard_block"
                     ? "SoundCloud заблокировал этот браузер. Подробности — в окне сайта."

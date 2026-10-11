@@ -1,10 +1,9 @@
 namespace Pookie.SoundCloud;
 
-// Bounded, read-only operations from the current SoundCloud track page. The
-// browser receives an operation and IDs, never arbitrary GraphQL documents.
-public sealed record TrackReadRequest(string Kind, long TrackId, long CommentId = 0, string? Cursor = null)
+public sealed record TrackReadRequest(string Kind, long TrackId, long CommentId = 0, string? Cursor = null, string Sort = "NEWEST")
 {
     public bool IsValid() => TrackId is > 0 and <= 9007199254740991 &&
+        (Kind == "comments" ? Sort is "NEWEST" or "OLDEST" or "TIMESTAMP" : Sort == "NEWEST") &&
         (Cursor == null || Cursor.Length is > 0 and <= 2048 && !Cursor.Any(char.IsControl)) &&
         (Kind is "comments" or "sidebar" ? CommentId == 0 && (Kind != "sidebar" || Cursor == null) :
          Kind == "replies" && CommentId is > 0 and <= 9007199254740991);

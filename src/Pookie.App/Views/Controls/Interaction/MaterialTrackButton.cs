@@ -10,14 +10,45 @@ namespace Pookie.App;
 internal sealed class MaterialTrackButton : Button
 {
     private Color? target;
+    private (Color Surface, Color Foreground)? palette;
     private bool pending, pendingHot, snapNext;
+    private bool connected, groupStart;
+    private double innerCorner = 8, shapeFrom, shapeTarget = 8;
+    private readonly AnimationClock shapeClock = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
+    internal bool IsConnected => connected;
+    internal CornerRadius ConnectedCorners => groupStart
+        ? new(CornerRadius, innerCorner, innerCorner, CornerRadius)
+        : new(innerCorner, CornerRadius, CornerRadius, innerCorner);
     private static readonly Transition[] colorTransitions =
         [Transition.Create(Control.BackgroundProperty, 240, Easing.CubicBezier(.2, 0, 0, 1))];
 
     internal void Variant(string variant)
     {
         StyleName = variant;
-        RefreshSurface(snapNext); snapNext = false;
+        RefreshSurface(snapNext); RefreshShape(snapNext); snapNext = false;
+    }
+
+    internal void Palette(Color surface, Color foreground)
+    {
+        palette = (surface, foreground);
+        RefreshSurface();
+    }
+
+    internal void Connect(bool start)
+    {
+        connected = true; groupStart = start;
+        shapeClock.TickCallback = amount => { innerCorner = shapeFrom + (shapeTarget - shapeFrom) * amount; InvalidateVisual(); };
+        RefreshShape(true);
+    }
+
+    private void RefreshShape(bool snap = false)
+    {
+        if (!connected) return;
+        var next = StyleName is TrackButtons.Selected or TrackButtons.Reposted ? CornerRadius : 8;
+        if (shapeTarget == next && !snap) return;
+        shapeClock.Stop(); shapeTarget = next;
+        if (snap || FindVisualRoot() is not Window) { innerCorner = next; InvalidateVisual(); return; }
+        shapeFrom = innerCorner; shapeClock.Start();
     }
 
     internal void SnapNextChange() => snapNext = true;
@@ -43,10 +74,12 @@ internal sealed class MaterialTrackButton : Button
     {
         var variant = StyleName;
         if (variant == null) return;
-        var surface = TrackButtons.Surface(variant);
-        var foreground = TrackButtons.Foreground(variant);
+        var surface = palette?.Surface ?? TrackButtons.Surface(variant);
+        var foreground = palette?.Foreground ?? TrackButtons.Foreground(variant);
         var hot = pending ? pendingHot : IsEnabled && IsMouseOver;
-        var next = !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
+        // Connected toggles animate directly between selection states. A separate
+        // pressed colour/shape would introduce a detour during that transition.
+        var next = !connected && !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
             hot ? TrackButtons.HoverColor(surface, foreground) : surface;
         if (target == next && !snap) return;
         var first = target == null;
@@ -60,12 +93,14 @@ internal sealed class MaterialTrackButton : Button
     {
         base.OnMewPropertyChanged(property);
         if (property == IsMouseOverProperty || property == IsPressedProperty || property == IsEnabledProperty)
-            RefreshSurface();
+        { RefreshSurface(); RefreshShape(); }
     }
 
     protected override void OnRender(IGraphicsContext context)
     {
         RefreshSurface();
-        base.OnRender(context);
+        if (connected)
+            DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
+        else base.OnRender(context);
     }
 }

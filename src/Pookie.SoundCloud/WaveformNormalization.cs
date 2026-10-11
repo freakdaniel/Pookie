@@ -2,8 +2,6 @@ using System.Text.Json;
 
 namespace Pookie.SoundCloud;
 
-// A fixed, whole-track envelope estimate. Waveform pixels do not contain
-// frequency information or calibrated PCM levels, so this is NOT measured LUFS.
 public static class WaveformNormalization
 {
     public static double EstimateGainDb(JsonElement root)
@@ -23,8 +21,7 @@ public static class WaveformNormalization
             powers[index++] = amplitude * amplitude;
             energy += amplitude * amplitude;
         }
-        // Exclude silence and sections >10 dB below the initial envelope mean.
-        // Use the original values, before the UI's nonlinear height transform.
+        
         var gate = Math.Max(.0001, energy / powers.Length * .1);
         energy = 0; var count = 0;
         foreach (var power in powers) if (power >= gate) { energy += power; count++; }

@@ -4,22 +4,25 @@ namespace Pookie.SoundCloud;
 
 public sealed partial class SoundCloudWebClient
 {
-    public async Task<TrackCommentPage> GetTrackCommentsAsync(long trackId, CancellationToken token = default)
+    public async Task<TrackCommentPage> GetTrackCommentsAsync(long trackId, CancellationToken token = default, string sort = "NEWEST")
     {
         ValidateDetailTrackId(trackId);
+        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException("Неверная сортировка комментариев.");
         try
         {
-            using var graph = await ReadTrackDocumentAsync(new("comments", trackId), token);
+            using var graph = await ReadTrackDocumentAsync(new("comments", trackId, Sort: sort), token);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
         catch (NotSupportedException) { /* Compatibility with REST-only transports. */ }
+        if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
         using var document = await GetJsonAsync(Api($"tracks/{trackId}/comments?limit=30&linked_partitioning=1&threaded=0&filter_replies=1"), token);
         return ParseComments(document.RootElement);
     }
 
-    public async Task<TrackCommentPage> GetTrackCommentsNextAsync(long trackId, string cursor, CancellationToken token = default)
+    public async Task<TrackCommentPage> GetTrackCommentsNextAsync(long trackId, string cursor, CancellationToken token = default, string sort = "NEWEST")
     {
         ValidateDetailTrackId(trackId);
+        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException("Неверная сортировка комментариев.");
         if (cursor.StartsWith("sc-comments:", StringComparison.Ordinal))
         {
             var prefix = $"sc-comments:{trackId}:";
@@ -27,11 +30,12 @@ public sealed partial class SoundCloudWebClient
             string after;
             try { after = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor[prefix.Length..])); }
             catch (FormatException) { throw new SoundCloudException("Неверный курсор комментариев."); }
-            var request = new TrackReadRequest("comments", trackId, Cursor: after);
+            var request = new TrackReadRequest("comments", trackId, Cursor: after, Sort: sort);
             if (!request.IsValid()) throw new SoundCloudException("Неверный курсор комментариев.");
             using var graph = await ReadTrackDocumentAsync(request, token);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
+        if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
         if (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out var uri) ||
             uri.AbsolutePath != $"/tracks/{trackId}/comments")
             throw new SoundCloudException("Неверный адрес страницы комментариев.");
@@ -102,7 +106,7 @@ public sealed partial class SoundCloudWebClient
             if (request.Kind != "sidebar")
             {
                 writer.WriteStartObject("options"); writer.WriteNumber("first", 30);
-                writer.WriteString("sort", request.Kind == "comments" ? "NEWEST" : "ASCENDING");
+                writer.WriteString("sort", request.Kind == "comments" ? request.Sort : "ASCENDING");
                 if (request.Kind == "comments") { writer.WriteNumber("repliesFirst", 16); writer.WriteString("repliesSort", "ASCENDING"); }
                 if (request.Cursor != null) writer.WriteString("after", request.Cursor);
                 writer.WriteEndObject();

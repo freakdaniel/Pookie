@@ -6,7 +6,7 @@ namespace Pookie.App.Browser;
 
 internal static class BrowserRequestScript
 {
-    public static string Read(WebSession account, string origin)
+    public static string Read(WebSession? account, string origin)
     {
         using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream("Pookie.App.Browser.Scripts.browser-requests.js")!;
         using var reader = new StreamReader(input);
@@ -20,7 +20,9 @@ internal static class BrowserRequestScript
             .Replace("__POOKIE_TRACK_COMMENTS__", JsonSerializer.Serialize(TrackReadQueries.Comments))
             .Replace("__POOKIE_TRACK_REPLIES__", JsonSerializer.Serialize(TrackReadQueries.Replies))
             .Replace("__POOKIE_TRACK_SIDEBAR__", JsonSerializer.Serialize(TrackReadQueries.Sidebar))
+            .Replace("__POOKIE_COMMENT_CREATE__", JsonSerializer.Serialize(CommentWriteQueries.Create))
+            .Replace("__POOKIE_COMMENT_DELETE__", JsonSerializer.Serialize(CommentWriteQueries.Delete))
             .Replace("const graphOrigin = 'https://graph.soundcloud.com';", "const graphOrigin = " + JsonSerializer.Serialize(origin == "https://soundcloud.com" ? "https://graph.soundcloud.com" : origin) + ";")
-            .Replace("__POOKIE_ACCOUNT__", JsonSerializer.Serialize(account with { DataDomeClientId = null }, SoundCloudJson.Default.WebSession));
+            .Replace("__POOKIE_ACCOUNT__", account == null ? "__POOKIE_ACCOUNT__" : JsonSerializer.Serialize(account with { DataDomeClientId = null }, SoundCloudJson.Default.WebSession));
     }
 }

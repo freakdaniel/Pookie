@@ -146,14 +146,4 @@ internal sealed partial class MainWindow
             SetPlayerArtwork(source, generation);
         }
     }
-
-    private async Task LoadRowArtworkAsync(Image image, SoundCloudTrack track)
-    {
-        if (demo) return;
-        var source = await GetLibraryArtworkAsync(track);
-        if (source == null || disposed) return;
-        if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
-        coverCache[track.Id] = source;
-        if (!disposed && rowTracks.TryGetValue(image, out var id) && id == track.Id) image.Source = source;
-    }
 }

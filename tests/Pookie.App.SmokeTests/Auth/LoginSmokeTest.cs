@@ -52,7 +52,7 @@ internal static class LoginSmokeTest
         {
             context.Response.ContentType = "text/html; charset=utf-8";
             var origin = app.Urls.Single();
-            var provider = new UriBuilder(origin) { Host = "localhost", Path = "/popup-provider" }.Uri.AbsoluteUri;
+            var provider = origin + "/popup-provider";
             await context.Response.WriteAsync($$"""
                 <!doctype html><html lang="ru"><title>Pookie: проверка возврата из окна входа</title>
                 <h1>Локальная проверка дочернего окна</h1><p>Вымышленный провайдер на другом origin.</p>
@@ -103,19 +103,19 @@ internal static class LoginSmokeTest
             context.Response.Cookies.Append("datadome", "fixture-protection");
             var html = """
                 <!doctype html><html lang="ru"><title>Pookie: проверка окна входа</title>
-                <h1>Тест передачи сессии InfiniFrame</h1><p>Используются вымышленные данные, без SoundCloud.</p>
+                <h1>Тест передачи сессии Electron</h1><p>Используются вымышленные данные, без SoundCloud.</p>
                 <script>
                 window.ddoptions = {sessionByHeader:true};
                 window.__sc_version = '123';
                 window.__sc_hydration = [{hydratable:'apiClient',data:{id:'fixtureid'}}];
-                if (!window.__pookieLoginCapture) window.fetch = () => Promise.resolve(new Response('{}'));
-                setInterval(() => window.fetch('https://api-v2.soundcloud.com/me?client_id=fixtureid',
+                setInterval(() => window.fetch('/api/me?client_id=fixtureid',
                     {headers:{Authorization:'OAuth fixture-token'}}), 600);
                 </script>
                 """;
             if (mode == "wait") html = html.Replace("Authorization:'OAuth fixture-token'", "Authorization:'Bearer invalid'");
             await context.Response.WriteAsync(html);
         });
+        app.MapGet("/api/me", () => Results.Json(new { id = 42, username = "fixture" }));
         await app.StartAsync();
         // A cancelled/unfinished previous login can still have durable cookies, including HttpOnly cookies.
         // Verify the same profile is actually populated first, then starts clean on a new sign-in attempt.
@@ -143,20 +143,9 @@ internal static class LoginSmokeTest
                 session.DataDomeClientId != "fixture-protection" || session.AppVersion != "123" || session.AppLocale != "ru")
                 throw new InvalidOperationException("Ошибка передачи тестовой сессии.");
             if (OperatingSystem.IsWindows() && (!session.UserAgent.StartsWith("Mozilla/5.0", StringComparison.Ordinal) ||
-                !session.UserAgent.Contains("Windows", StringComparison.Ordinal) || session.UserAgent.Contains("InfiniFrame", StringComparison.Ordinal)))
-                throw new InvalidOperationException("Окно входа потеряло штатный User-Agent WebView2.");
+                !session.UserAgent.Contains("Windows", StringComparison.Ordinal) || !session.UserAgent.Contains("Chrome/", StringComparison.Ordinal)))
+                throw new InvalidOperationException("Окно входа потеряло штатный User-Agent Chromium.");
             Console.WriteLine($"LOGIN_SMOKE_OK: WebView {mode}, origin check, anonymous pipe, window close");
-        }
-        if (OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") == "infiniframe")
-        {
-            using var failureTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            try
-            {
-                await NativeWebLogin.ConnectAsync(failureTimeout.Token, app.Urls.Single() + "/bridge-error");
-                throw new InvalidOperationException("Ошибка JavaScript не остановила передачу сессии.");
-            }
-            catch (InvalidOperationException error) when (error.Message.Contains("Не удалось передать сессию", StringComparison.Ordinal))
-            { Console.WriteLine("LOGIN_BRIDGE_ERROR_OK: evaluation failure reaches caller and closes the host without hanging"); }
         }
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         try

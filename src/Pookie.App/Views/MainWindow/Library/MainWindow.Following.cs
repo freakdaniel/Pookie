@@ -8,7 +8,7 @@ internal sealed partial class MainWindow
 {
     private readonly HashSet<long> followingIds = [];
     private readonly HashSet<(WebSession Session, long Artist)> pendingFollows = [];
-    private readonly List<(Button Button, Image Icon, Func<SoundCloudUser?> User)> artistFollowButtons = [];
+    private readonly List<(Button Button, Image Icon, Func<SoundCloudUser?> User, string Inactive)> artistFollowButtons = [];
     private WebSession? followingSession;
     private Task? followingTask;
     private bool followingReady;
@@ -19,11 +19,11 @@ internal sealed partial class MainWindow
         RefreshFollowingButtons();
     }
 
-    private Button ArtistFollowButton(Func<SoundCloudUser?> user)
+    private Button ArtistFollowButton(Func<SoundCloudUser?> user, string inactive = TrackButtons.Tonal, double size = 40)
     {
         var icon = Icons.View("user-plus", 20, TrackButtons.OnSurface);
-        var button = TrackButtons.Icon(icon, () => { if (user() is { } artist) Run(() => ToggleArtistFollowAsync(artist)); });
-        artistFollowButtons.Add((button, icon, user));
+        var button = TrackButtons.Icon(icon, () => { if (user() is { } artist) Run(() => ToggleArtistFollowAsync(artist)); }, inactive, size);
+        artistFollowButtons.Add((button, icon, user, inactive));
         return button;
     }
 
@@ -47,13 +47,13 @@ internal sealed partial class MainWindow
 
     private void RefreshFollowingButtons()
     {
-        foreach (var (button, icon, getUser) in artistFollowButtons)
+        foreach (var (button, icon, getUser, inactive) in artistFollowButtons)
         {
             var user = getUser(); var following = user != null && followingSession == api.Session && followingIds.Contains(user.Id);
             var pending = user != null && api.Session is { } session && pendingFollows.Contains((session, user.Id));
             button.IsVisible = user is { Id: > 0 } && user.Id != me?.Id;
-            TrackButtons.SetReposted(button, following);
-            TrackButtons.SetGlyph(icon, following ? "user-check" : "user-plus", following ? TrackButtons.OnReposted : TrackButtons.OnSurface);
+            TrackButtons.SetConfirmed(button, following, inactive);
+            TrackButtons.SetGlyph(icon, following ? "user-check" : "user-plus", following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(button, !demo && user is { Id: > 0 } && me != null && api.Session != null && !pending, pending);
             button.ToolTip(following ? "Отписаться" : "Подписаться");
         }

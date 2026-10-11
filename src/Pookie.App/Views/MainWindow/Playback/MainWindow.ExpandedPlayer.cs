@@ -207,9 +207,11 @@ internal sealed partial class MainWindow
         if (disposed || expandedOpen == open || open && (!playerVisible.Value || current == null)) return;
         expandedAnimation.Stop();
         expandedOpen = open;
+        RefreshWaveMotion();
         SetLyricsPanelActive(open && expandedPanelMode == PlayerPanel.Lyrics);
         if (open)
         {
+            waveSettingsOpen.Value = false;
             if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
             {

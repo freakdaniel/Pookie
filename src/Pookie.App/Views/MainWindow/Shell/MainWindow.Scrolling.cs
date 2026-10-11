@@ -47,6 +47,7 @@ internal sealed partial class MainWindow
     private static object PageItemKey(object item) => item switch
     {
         Pookie.SoundCloud.SoundCloudTrack track => ("track", track.Id),
+        CollectionTrackEntry entry => ("collection-track", entry.Position),
         Pookie.SoundCloud.LibraryItem entry => entry.Key,
         SearchBlock block => (block.Kind, block.Kind switch
         {
@@ -83,6 +84,7 @@ internal sealed partial class MainWindow
             UpdateContentFrameWidth(frameWidth);
             contentFrame.InvalidateMeasure();
         }
+        if (playlistCollectionVisible.Value && collectionDescriptionExpanded) RefreshCollectionDescriptionGeometry();
         ClearUnboundExpandedQueueRows();
         if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
         if (page.Value == Page.Search && searchLayoutPending)
@@ -97,7 +99,7 @@ internal sealed partial class MainWindow
         }
         foreach (var (skeleton, source) in pageSkeletons)
             skeleton.ConfigureLoadingRow(likedArtworkSize, libraryColumns, source.Style);
-        if (page.Value is Page.Library or Page.Search)
+        if (page.Value is Page.Home or Page.Library or Page.Search)
         {
             DisablePreviewGridScrolling(libraryGrid);
             foreach (var (grid, preview) in collectionGrids)
@@ -123,6 +125,7 @@ internal sealed partial class MainWindow
 
     private string? PageCursor() => page.Value switch
     {
+        Page.Home => null,
         Page.Library => null,
         Page.Track => null,
         Page.Search => searchResults?.NextHref,

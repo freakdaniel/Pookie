@@ -16,11 +16,13 @@ internal sealed partial class MainWindow
         public TextBlock Author { get; } = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).Height(19)
             .TextTrimming(TextTrimming.CharacterEllipsis);
         private readonly Border artworkFrame;
-        private readonly TrackArtworkOverlay overlay = new();
+        private readonly TrackArtworkOverlay overlay;
+        internal Button PlaybackButton => overlay.PlaybackButton!;
         internal bool ShowsPause => overlay.ShowsPause;
 
-        public LikedTrackTile(Action<SoundCloudTrack> select, Func<Image, Grid> artworkLayer)
+        public LikedTrackTile(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Func<Image, Grid> artworkLayer)
         {
+            overlay = new TrackArtworkOverlay(() => { if (Track is { } track) select(track); });
             artworkFrame = new Border().CornerRadius(6).ClipToBounds()
                 .Child(artworkLayer(Cover).Children(overlay));
             Root = new Button().Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0).Padding(0).Top()
@@ -31,7 +33,7 @@ internal sealed partial class MainWindow
                     Author))
                 .OnMouseEnter(() => overlay.SetHovered(true))
                 .OnMouseLeave(() => overlay.SetHovered(false))
-                .OnClick(() => { if (Track is { } track) select(track); });
+                .OnClick(() => { if (Track is { } track) open(track); });
         }
 
         public void SetSize(double size)

@@ -1,5 +1,18 @@
 # Application integration checks
 
+Browser scenarios now use the production Electron.NET/Chromium helper on every
+platform. Build with `-p:PookieInstallElectron=true` once (Node.js/npm required).
+The helper and its runtime are copied into each executable's `BrowserHost/`.
+`node tests/electron-browser.smoke.cjs` additionally checks real Chromium
+isolation, blank OAuth popups, persistent HttpOnly cookies and cold restart.
+There is no WebKit compatibility identity or alternate login-engine switch.
+
+Browser challenge logs include whitelisted `ChallengeType` and `Interactive`
+fields and retain the challenge type on success/failure. This distinguishes
+hidden automatic checks from an interactive Slider in Fetch/XHR flows. Initial
+document-navigation challenges cannot be reconstructed from JS Tag events.
+Cookie values, account tokens and arbitrary challenge URLs/text are not logged.
+
 This executable contains native UI checks, local browser fixtures, and storage/audio
 integration scenarios. It is separate from the production `Pookie` executable
 
@@ -7,6 +20,16 @@ Pure queue model checks live in `tests/Pookie.Playback.Tests` and run without a
 native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entry
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
+
+`--home-ui-smoke-test` checks personal shortcut cards, the inline settings drawer
+across repeated width/height changes, its independent scroll and close behavior,
+continuous/interrupted palette transitions while playing and paused, the animated wave hero and native settings clicks,
+favorite/discovery boundaries, current/manual queue preservation, dislike, continuous
+refill and account-scoped persistence, fallback without mixes, independent sections, skeleton-to-card
+transitions, responsive grids and scrolling, account-scoped cache, partial failures
+and refresh, stale account replies, and native play/card clicks for Home, compact
+rows and liked tiles, including compact title hit bounds. It uses local account
+data and requests no real audio.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
 responsive reference hero, metadata/artwork/waveform, threaded comments and replies,
@@ -30,10 +53,22 @@ It also checks existing reposts, add/remove state, isolated pending buttons, dup
 suppression, failed writes, own-track restrictions and stale session replies. All
 account mutations use a local fixture transport.
 
-`--collections-ui-smoke-test` checks the playlist hero and shared track list at
-narrow/wide sizes, queue source, back-navigation scroll, following/unfollowing,
-isolated pending states, playlist selection and stale account replies. All writes
-use a local fixture transport.
+`--comments-ui-smoke-test` checks the animated avatar composer, Escape/outside-click
+collapse with draft preservation, uninterrupted send focus, send click, confirmed insertion,
+duplicate suppression, retained drafts after failures, server sorting races, timestamp hover,
+own-only deletion, reply preservation, disabled comments, and stale account responses.
+It uses a fixture transport and never posts or deletes real SoundCloud comments.
+
+`--collections-ui-smoke-test` checks the compact playlist rows without numbering, row menus,
+filtering without changing the full playback source, expandable description,
+narrow/wide hero layout, back-navigation filter/scroll, playlist likes/reposts,
+following/unfollowing, isolated pending states, playlist selection and stale account
+replies. All writes use a local fixture transport.
+
+`--playlist-page-network-probe <SoundCloud playlist URL>` verifies real playlist
+metadata, ordered track loading and playlist like/repost state reads through Electron.
+Close the normal app first: this probe preserves and leases the saved browser profile.
+It makes no account writes.
 
 `--track-page-network-probe <SoundCloud track URL>` verifies real metadata, timed
 comments/replies and pagination, sidebar fans/collections, all four subsection endpoints and their next pages, related tracks and waveform through the production browser
@@ -91,7 +126,7 @@ Other UI tests keep system integration disabled to avoid taking over media keys.
 local audio page that repeatedly publishes website metadata and registers Next.
 It verifies audio progress, absence of a competing SMTC session, and routing of
 OS Next to Pookie with an updated track title. The fixture has an isolated profile
-and does not use the real account. WebView2 starts with HardwareMediaKeyHandling
+and does not use the real account. Electron starts with HardwareMediaKeyHandling
 and MediaSessionService disabled; Pookie owns the system session and queue.
 
 `--expanded-ui-smoke-test` checks cover hover, native fullscreen and window-state
@@ -147,74 +182,14 @@ commands, and keeps the timeline visible during a seek or temporary underrun.
 Audio unit tests also exercise encoded MP3/HLS
 lookahead, reuse across seeks, sparse byte ranges and temporary-file cleanup.
 
-`--content-blocker-smoke-test` checks host/path boundaries and parity between the
-Windows matcher and generated WebKit rules. An isolated native browser fixture
-then requests blocked tracking URLs and verifies that ordinary page scripts and
-the authorized profile API still work. The fixture uses a temporary profile and
-never loads a real SoundCloud account. Windows returns an inert response for
-blocked resources; WebKit rejects them through its native content rules.
+`--content-blocker-smoke-test` checks reviewed rules and actual Chromium request
+cancellation. The same embedded rules apply before navigation in the login and
+worker partitions. SoundCloud API/media/license, OAuth and challenge resources
+remain allowed.
 
-UI and local browser scenarios require a desktop session and the same native
-dependencies as the application. Run UI scenarios sequentially: keyboard focus
-and window events belong to the shared desktop. UI checks use temporary app data,
-synthetic accounts, local audio, and isolated clipboard selections
-
-Set `POOKIE_UI_PREVIEW=/tmp/pookie-preview` to save PPM renders during UI checks.
-The `--smoke-test` flag opens the local preview and closes it after five seconds
-
-`--browser-shutdown-smoke-test` opens an isolated local WebView worker, replaces
-its UI subscription, then closes the application. It awaits worker cleanup and
-delivers captured callbacks after the UI loop has ended to check the shutdown race.
-
-`--session-vault-smoke-test` verifies Windows DPAPI storage with a synthetic
-account: encrypted bytes, reload in another process, session rotation, rejection
-of damaged/oversized data and deletion on logout. It uses an isolated directory.
-
-The following scenarios use the real SoundCloud service and must be run explicitly:
-
-```bash
-dotnet run --project tests/Pookie.App.SmokeTests -- --startup-network-probe
-dotnet run --project tests/Pookie.App.SmokeTests -- --web-smoke-test
-dotnet run --project tests/Pookie.App.SmokeTests -- --login-handoff-smoke-test
-dotnet run --project tests/Pookie.App.SmokeTests -- --session-smoke-test
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url>
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url> --drm-webview-transport
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url> --drm-webview-cdm
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url> --drm-service-certificate
-dotnet run --project tests/Pookie.App.SmokeTests -- --drm-webview-capabilities
-dotnet run --project tests/Pookie.App.SmokeTests -- --drm-browser-media-smoke-test
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test <track-url> --drm-native-cdm
-```
-
-`--startup-network-probe` validates the saved account through the production Windows
-WebView worker and exits. Close the normal app first so the probe can open its
-existing profile. It preserves the session and records startup milestones at
-Debug without account details. Set `POOKIE_LOG_CONSOLE_LEVEL=Debug` to see these
-milestones in the console; the default file level already includes them.
-Setting `POOKIE_STARTUP_DEBUG_PORT` to a port from 1024 to 65535
-enables InfiniFrame's loopback CDP endpoint for an explicitly configured diagnostic
-run. This endpoint exposes browser debugging capabilities; it is disabled by default.
-
-On 2026-10-07, a local Windows capture found `pixel.quantserve.com` requests timing
-out after 42.3 seconds. The document reached DOMContentLoaded after 1.4 seconds,
-but InfiniFrame's initial-navigation readiness awaited the full page load at 45.8
-seconds. A controlled run blocking only that domain through CDP completed the saved
-session probe in 4.5 seconds, compared with 46.2 seconds in the baseline. This
-blocking was confined to that diagnostic run. Production now installs its shared,
-embedded content rules before the first navigation, including Quantserve filtering.
-The preserved Windows session probe completed in 3.3 seconds with those filters
-on 2026-10-07; Lucidream's full DRM playback smoke test also passed.
-
-The Windows adapter uses InfiniFrame 0.62.1's runtime HTTP(S) request dispatch,
-returning null content to preserve allowed requests and an inert response for
-blocked ones. Register HTTP(S) on the created window, not on the builder: these
-are existing WebView2 protocols. This integration depends on InfiniFrame's native
-dispatch behavior; run the native smoke check when upgrading it. Linux WebKitGTK
-compiles the same rules into a native content filter before loading a document,
-caching it by rule-set SHA-256 under the browser profile's `ContentFilters/`.
-Filters apply to both the login and background service paths. The rules do not
-target API/media/CDM, OAuth providers, or DataDome resources. The complete
-Ghostery engine, scriptlets, and cosmetic rules are not included.
+`--startup-network-probe` validates a saved account with the production Electron
+worker. Close Pookie first to release the persistent profile. Diagnostics record
+only whitelisted startup stages and status codes; no tokens or raw browser output.
 
 The session scenario sends an idempotent like request for an already liked track;
 the handoff scenario opens the real sign-in flow. These are not run by `dotnet test`
@@ -231,67 +206,19 @@ The Windows scenario is muted by default; `--system-audio` uses 15% volume to
 verify unmuted autoplay and system output. `--drm-native-cdm` retains the old
 native route for a controlled Windows comparison.
 
-Windows audio shares the account's existing API WebView and does not open a
-second profile. Its service window stays active off-screen without focus or a
-taskbar entry: WebView2 defers MSE attachment in an `SW_HIDE` window. Interactive
-website checks restore the window to its normal position. Playback commands run
-independently of API reads, so a slow read cannot hold up pause or stop.
-Ordinary audio continues to use SoundFlow. Browser media and license responses
-remain in the browser; no content keys are exported. The hidden website's own
-media elements are paused, and the app selects only its resolved track stream.
+The Windows browser-audio adapter now uses the same hidden Electron worker as API
+calls, with background throttling and Chromium's system media integration disabled.
+Electron does not ship a Widevine CDM by default: successful login/API checks do
+not establish protected EME playback. This remains a runtime capability requirement;
+Windows protected playback needs separate validation with an appropriate CDM.
+Ordinary audio and the Linux native Widevine/SoundFlow route remain unchanged.
 
 `--browser-audio-state-smoke-test` uses local fake transports without a website
 or CDM. It verifies routing, volume, seek, pause, one-shot end, ignored stale-track
 events, worker failure and cancellation when switching tracks.
 
-`--drm-webview-transport` is a Windows diagnostic: it sends the native CDM's
-license challenge through the app's own WebView, with the same fixed SoundCloud
-endpoint and application ID. It reports the HTTP result and browser EME support.
-`DRM_WEBVIEW_LICENSE_OK` confirms that the native CDM accepted a license; it does
-not confirm audio playback. This transport is not enabled in the production player.
-
-`--drm-webview-cdm` uses the browser's EME implementation for the same track's
-initialization data and license authorization. It handles certificate and license
-messages and waits for `keystatuseschange`, including changes after `update()`
-resolves. `DRM_BROWSER_CDM_LICENSE_OK` requires usable browser CDM keys; it does
-not confirm audio decoding or playback. Browser license responses stay inside
-their browser session and are never exported to the native CDM.
-
-`--drm-service-certificate` requests the service's signed privacy certificate,
-installs it through the native CDM's `SetServerCertificate`, then attempts the
-normal native license exchange. This optional experiment does not change the
-production player's default behavior.
-
-`--drm-webview-capabilities` only queries EME on a secure SoundCloud-origin
-document in an isolated temporary profile. It does not use an account or send a
-license request. All transport probes use a static SoundCloud document instead
-of its player, so website music and advertising cannot generate their requests.
-Their IPC carries credentials through private pipes, with only bounded status
-metadata written to the console.
-
-`--drm-browser-media-smoke-test` additionally verifies that a browser MediaSource
-opens in the off-screen service window. It uses no account, license or audio data.
-
-Windows observations on 2026-10-06, Da Lumé — Lucidream (track `2404736589`):
-
-| Check | Observed result |
-| --- | --- |
-| Production native CDM and HTTP transport | License HTTP 403 before audio decoding |
-| Same native CDM challenge through WebView transport | License HTTP 403 |
-| Browser CDM, same track initialization data and authorization flow | Two exchanges; HTTP 200 and usable keys |
-| Native CDM with service privacy certificate | Certificate HTTP 200, accepted by CDM; content license still HTTP 403 |
-| Native CDM against the public Shaka Angel One reference server | HTTP 200 and usable key callback |
-| Windows production EME/MSE route | Lucidream passed playback, duration, seek, pause/resume, end, restart and stop |
-| Windows production EME/MSE route, «спасибо» (track `2178826375`) | Same full cycle passed at 15% volume |
-
-The browser license probe does not play audio. Actual Lucidream playback in the
-app's test WebView was separately confirmed manually. The static-document probes
-do not start SoundCloud's player or advertising. These results isolate the failure
-to the native Windows CDM request/integration rather than a captured advertisement
-or a missing browser DRM capability. The license service gives no detailed refusal
-reason, so host verification/VMP remains a hypothesis, not a confirmed diagnosis.
-The Windows production route now uses browser EME/MSE through `WindowsAudioPlayer`;
-the comparison modes above keep the native path available for diagnosis.
+The former InfiniFrame/WebView2 transport/CDM probes have been removed with that
+backend. `--drm-service-certificate` still exercises the native certificate exchange.
 
 `--lyrics-ui-smoke-test` uses a fake provider and local player. It checks 1000
 virtualized lines, smooth hover/click-to-seek with native and speed-adjusted
@@ -314,7 +241,7 @@ rejects stale track completions. No real artwork or SoundCloud requests are sent
 ## Source boundaries
 
 `Views/` contains the verification partials for `MainWindow`; `Auth/` contains local
-WebView servers and assertions; `Diagnostics/` contains scenario dispatch, audio/storage
+Electron fixture servers and assertions; `Diagnostics/` contains scenario dispatch, audio/storage
 checks, and the clipboard child process
 
 The test executable compiles the application's original sources as linked files,

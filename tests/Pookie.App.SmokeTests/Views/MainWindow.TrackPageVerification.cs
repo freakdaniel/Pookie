@@ -47,8 +47,14 @@ internal sealed partial class MainWindow
                 !trackDetailTitle.Text.Contains("Этажи") || !trackDetailDescription.Text.Contains("релиза"))
                 throw new InvalidOperationException("Track metadata, comments or related tracks were not displayed.");
             if (trackDetailState.Comments.Comments[0].Replies.Length != 1 || trackDetailState.Sidebar?.Fans.Length != 1 ||
-                trackDetailPlaylists.Children.Count != 4 || trackDetailAlbums.Children.Count != 1 || trackDetailSidebarReposts.Text != "28")
+                trackDetailPlaylists.Children.Count != 4 || trackDetailAlbums.Children.Count != 1 || trackDetailSidebarReposts.Text != "28" || trackDetailRepostCount.Text != "28")
                 throw new InvalidOperationException("Threaded replies or track sidebar information were not displayed.");
+            var countedState = trackDetailState;
+            trackDetailState = countedState with { Track = countedState.Track with { RepostsCount = 0 } };
+            RefreshRepostState();
+            await WaitForLikedLayoutAsync(() => !trackDetailRepostCount.IsVisible && trackDetailRepost.ActualWidth == 44);
+            trackDetailState = countedState; RefreshRepostState();
+            await WaitForLikedLayoutAsync(() => trackDetailRepostCount.IsVisible && trackDetailRepostCount.Text == "28" && trackDetailRepost.ActualWidth > 44);
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
                 trackDetailCommentsTitle.ActualHeight > 0);
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
@@ -93,10 +99,11 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Track page seek is not connected to the shared player.");
             var copyButtons = new List<Aprillz.MewUI.Controls.Button>();
             Aprillz.MewUI.VisualTree.Visit(trackDetailScroll, element => {
-                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName == TrackButtons.Glass && button.Width == 44) copyButtons.Add(button);
+                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName == TrackButtons.Glass && button.Width == 44 &&
+                    button.Content is Aprillz.MewUI.Controls.Image) copyButtons.Add(button);
             });
-            await VerifyTrackPlaylistButtonAsync(copyButtons[1], trackDetailState!.Track);
-            await VerifyTrackClipboardAsync(copyButtons[2], trackDetailState!.Track);
+            await VerifyTrackPlaylistButtonAsync(copyButtons[0], trackDetailState!.Track);
+            await VerifyTrackClipboardAsync(copyButtons[1], trackDetailState!.Track);
             repostedIds.Add(fixtures[1].Id); RefreshRepostState();
             if (trackDetailRepost.StyleName != TrackButtons.Reposted)
                 throw new InvalidOperationException("Hero repost state was not selected.");
@@ -106,14 +113,27 @@ internal sealed partial class MainWindow
             ShowLibraryTracks(); likesAsList.Value = true;
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[0].Id && row.Root.ActualHeight > 100));
             var copyRow = likedRows.Values.First(row => row.Track?.Id == fixtures[0].Id);
+            var connectedActions = new List<MaterialTrackButton>();
+            VisualTree.Visit(copyRow.Root, element => {
+                if (element is MaterialTrackButton { IsConnected: true } button) connectedActions.Add(button);
+            });
+            var rowRepost = connectedActions[1];
+            var rowCounter = ((Aprillz.MewUI.Controls.StackPanel)rowRepost.Content!).Children.OfType<Aprillz.MewUI.Controls.TextBlock>().Single();
+            foreach (int? count in new int?[] { 0, null, 28 })
+            {
+                BindLibraryTrackRow(copyRow, fixtures[0] with { RepostsCount = count });
+                await WaitForLikedLayoutAsync(() => count is > 0
+                    ? rowCounter.IsVisible && rowCounter.Text == "28" && rowRepost.ActualWidth > 40
+                    : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && rowRepost.ActualWidth == 40);
+            }
             BindLibraryTrackRow(copyRow, fixtures[0] with { PermalinkUrl = null });
             var listActions = new List<Aprillz.MewUI.Controls.Button>();
             VisualTree.Visit(copyRow.Root, element => {
                 if (element is Aprillz.MewUI.Controls.Button button && button.StyleName is TrackButtons.Tonal or TrackButtons.Reposted &&
                     button.Content is Aprillz.MewUI.Controls.Image) listActions.Add(button);
             });
-            await VerifyTrackPlaylistButtonAsync(listActions[1], fixtures[0]);
-            await VerifyTrackClipboardAsync(listActions[2], fixtures[0]);
+            await VerifyTrackPlaylistButtonAsync(listActions[0], fixtures[0]);
+            await VerifyTrackClipboardAsync(listActions[1], fixtures[0]);
             Console.WriteLine("TRACK_PAGE_UI_OK: reference hero, responsive cover/sidebar, threaded comments/replies, shared seek, sidebar fans/playlists/albums, pagination, back/forward and stale response protection");
         }
         catch (Exception error)

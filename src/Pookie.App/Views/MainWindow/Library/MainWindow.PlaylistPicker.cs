@@ -70,7 +70,7 @@ internal sealed partial class MainWindow
                 var playlist = item.Playlist!;
                 var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
                 SetCollectionArtwork(cover, item);
-                var added = new TextBlock().FontSize(12).Foreground(TrackButtons.OnReposted).CenterVertical();
+                var added = new TextBlock().FontSize(12).Foreground(TrackButtons.OnConfirmed).CenterVertical();
                 Button button = null!;
                 button = TrackButtons.Action(new Grid().Columns("44,*,Auto").Rows("Auto").Spacing(12).Children(
                     new Border().CornerRadius(6).ClipToBounds().Child(ArtworkLayer(cover)).Column(0),
@@ -108,7 +108,7 @@ internal sealed partial class MainWindow
             foreach (var key in collectionDetails.Where(pair => pair.Value.Item.Playlist?.Id == playlistId).Select(pair => pair.Key).ToArray())
                 collectionDetails.Remove(key);
             if (generation == playlistPickerGeneration)
-            { added.Text = "Добавлено"; TrackButtons.SetReposted(button, true, TrackButtons.Text); }
+            { added.Text = "Добавлено"; TrackButtons.SetConfirmed(button, true, TrackButtons.Text); }
             status.Value = "Трек добавлен в плейлист.";
         }
         catch (Exception error)

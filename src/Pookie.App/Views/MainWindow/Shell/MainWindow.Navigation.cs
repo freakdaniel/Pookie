@@ -24,7 +24,6 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<double> volume = new(70);
     private readonly ObservableValue<string> queueStatus = new("Выбери трек, чтобы собрать очередь");
     private readonly HashSet<long> likedIds = [];
-    private readonly Dictionary<Image, long> rowTracks = [];
     private readonly Dictionary<long, ImageSource> coverCache = [];
     private readonly Dictionary<long, ImageSource> libraryCoverCache = [];
     private readonly SemaphoreSlim coverGate = new(4);
@@ -41,13 +40,14 @@ internal sealed partial class MainWindow
     private Task NavigateAsync(Page target)
     {
         if (!CanUseWorkspace) return Task.CompletedTask;
+        if (target == Page.Home) return NavigateHomeAsync();
         if (target == Page.Library) return LikesAsync();
         if (target == Page.LibraryTracks) { ShowLibraryTracks(); return Task.CompletedTask; }
         if (target > Page.LibraryTracks) return ShowLibrarySectionAsync(target);
         return NavigateRouteAsync(new(target), async _ =>
         {
-            eyebrow.Value = target == Page.Home ? "ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ" : "ЛЕНТА / ТВОИ ПОДПИСКИ";
-            heading.Value = target == Page.Home ? "На твоей волне" : "Новое от тех, кого ты слушаешь";
+            eyebrow.Value = "ЛЕНТА / ТВОИ ПОДПИСКИ";
+            heading.Value = "Новое от тех, кого ты слушаешь";
             if (demo) { status.Value = "Демо-режим: локальные тестовые звуки."; return; }
             var token = BeginLoad();
             ReplaceTracks(new([], null));
@@ -56,10 +56,10 @@ internal sealed partial class MainWindow
                 status.Value = "Войди через профиль справа сверху, чтобы увидеть треки и репосты своих подписок.";
                 return;
             }
-            var result = target == Page.Home ? await api.SearchAsync("ambient", token) : await api.GetFeedAsync(token);
+            var result = await api.GetFeedAsync(token);
             token.ThrowIfCancellationRequested();
             ReplaceTracks(result);
-            status.Value = target == Page.Home ? "Начни с ambient или найди музыку под своё настроение." : "Треки и репосты из твоей ленты SoundCloud.";
+            status.Value = "Треки и репосты из твоей ленты SoundCloud.";
         });
     }
 
@@ -95,6 +95,7 @@ internal sealed partial class MainWindow
         token.ThrowIfCancellationRequested();
         if (api.Session != session) return;
         likedIds.Clear(); likedIds.UnionWith(ids); likedIdsReady = true;
+        EnsureWaveTaste(); waveTaste.SyncLikes(likedIds); ScheduleWaveSave(); RerankWaveQueue();
         UpdateLikeState();
     }
 
@@ -117,6 +118,7 @@ internal sealed partial class MainWindow
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
+            WaveLikeChanged(track, liked);
             UpdateLikeState();
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
             await ApplyLibraryLikeAsync(track, liked, session);

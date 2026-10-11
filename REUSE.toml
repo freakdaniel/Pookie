@@ -5,6 +5,7 @@ path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
   "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**",
   "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "tests/**",
+  "src/Pookie.Browser.Electron/Properties/*.json", "src/Pookie.Browser.Electron/README.md",
   "src/Pookie.App/Assets/logo.svg",
 ]
 precedence = "closest"
@@ -25,6 +26,13 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2023 Phosphor Icons"
 SPDX-License-Identifier = "MIT"
 SPDX-FileComment = "Phosphor core commit 2b75f3ad12b420c9504ef05df8d2564a28f8500e; source and asset mappings are documented in LICENSING.md."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Stickle/*.png"
+precedence = "closest"
+SPDX-FileCopyrightText = "Icons8"
+SPDX-License-Identifier = "LicenseRef-Icons8"
+SPDX-FileComment = "User-supplied, unmodified Icons8 Stickle PNGs embedded in wave character and Home shortcut cards. Icons8 attribution appears in application settings. Source and license terms are documented in LICENSING.md."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Fonts/GoogleSans.ttf"
@@ -48,8 +56,17 @@ SPDX-License-Identifier = "LicenseRef-SoundCloud-Marks"
 SPDX-FileComment = "Official six-bar white favicon from the SoundCloud Media Kit, losslessly re-encoded as PNG for native image decoding; brand permission and source are documented in LICENSING.md."
 
 [[annotations]]
-path = "src/Pookie.Audio/Drm/CdmAbi.cs"
+path = "src/Pookie.App/Audio/Drm/CdmAbi.cs"
 precedence = "closest"
 SPDX-FileCopyrightText = ["2012, 2017 The Chromium Authors", "2026 Daniel Freak"]
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "C# translation of the public Host/CDM v10 declarations from Kodi InputStream Adaptive commit e14d199a5ed7224d1c42a36619ab0a67d3d8f3f6; see LICENSING.md."
+
+# Shared attribution notice and restored NuGet assemblies in distributions.
+# The dependency source is not vendored; NOTICE, REUSE.toml and licenses/ ship together.
+[[annotations]]
+path = ["NOTICE", "Serilog.dll", "Serilog.Sinks.Console.dll", "Serilog.Sinks.File.dll"]
+precedence = "closest"
+SPDX-FileCopyrightText = "Serilog Contributors"
+SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileComment = "Unmodified Serilog 4.2.0, Serilog.Sinks.Console 6.1.1 and Serilog.Sinks.File 7.0.0 NuGet dependencies. Their source commits and attribution are retained in NOTICE; complete terms are in licenses/Apache-2.0.txt. Pookie's logging integration is separately licensed under BSD-3-Clause."

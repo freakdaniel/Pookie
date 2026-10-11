@@ -11,14 +11,22 @@ internal sealed partial class MainWindow
         private readonly Image play = Icons.View("play-solid", 23, true).CenterHorizontal().CenterVertical();
         private readonly Image pause = Icons.View("pause-solid", 22, true).CenterHorizontal().CenterVertical().IsVisible(false);
         private bool hovered, active;
+        internal Button? PlaybackButton { get; }
         internal bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
-        public TrackArtworkOverlay()
+        public TrackArtworkOverlay(Action? onPlay = null)
         {
             Background = Color.FromArgb(64, 0, 0, 0);
             Padding = new Thickness(0); BorderThickness = 0; CornerRadius = 0;
-            Content = new Border().Width(46).Height(46).CornerRadius(23).Background(Color.White)
-                .CenterHorizontal().CenterVertical().Child(new Grid().Columns("*").Rows("*").Children(play, pause));
+            var glyphs = new Grid().Columns("*").Rows("*").Children(play, pause);
+            if (onPlay == null)
+                Content = new Border().Width(46).Height(46).CornerRadius(23).Background(Color.White)
+                    .CenterHorizontal().CenterVertical().Child(glyphs);
+            else
+            {
+                PlaybackButton = TrackButtons.Icon(glyphs, onPlay, TrackButtons.Filled, 46).Center();
+                Content = PlaybackButton;
+            }
             Opacity = 0;
             Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(.2, 0, 0, 1))];
         }

@@ -71,6 +71,7 @@ internal sealed partial class MainWindow
             .BindIsVisible(playlistCollectionVisible, value => !value);
         var playlist = PlaylistCollectionPage().BindIsVisible(playlistCollectionVisible);
         collectionLoadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(ordinary, playlist));
+        collectionLoadingView.Skeleton.CompactList = true;
         return collectionLoadingView.Root;
     }
 
@@ -89,9 +90,7 @@ internal sealed partial class MainWindow
             var subtitle = visual.Subtitle; var root = visual.Root;
             AttachTrackQueueMenu(root, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
             AttachTrackTitle(title, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
-            root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryItemAsync(card.Item, collectionCardPositions.GetValueOrDefault(root))); };
-            root.MouseEnter += () => { if (collectionCards.TryGetValue(root, out var card) && card.Item.Track != null) card.Playback.SetHovered(true); };
-            root.MouseLeave += () => playback.SetHovered(false);
+            root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryCardAsync(card.Item)); };
             context.Register("root", root); context.Register("cover", image); context.Register("frame", frame);
             context.Register("playback", playback);
             context.Register("title", title); context.Register("author", author);
@@ -102,10 +101,11 @@ internal sealed partial class MainWindow
             var root = context.Get<Button>("root"); var image = context.Get<Image>("cover"); var frame = context.Get<Border>("frame");
             var title = context.Get<TextBlock>("title"); var author = context.Get<TextBlock>("author");
             var playback = context.Get<TrackArtworkOverlay>("playback");
+            var visual = CollectionCard(root); visual.Item = item;
             playback.Reset();
-            playback.IsVisible = item.Track != null;
+            playback.IsVisible = item.Track != null || item.Playlist != null;
             playback.SetHovered(root.IsMouseOver);
-            playback.SetPlaying(item.Track != null && item.Track.Id == current?.Id, isPlaying.Value, animate: false);
+            RefreshCollectionCardPlayback(visual, animate: false);
             collectionCards[root] = (item, image, frame, title, author, playback);
             collectionCardPositions[root] = index;
             title.Text = item.Title; author.Text = item.Subtitle;
@@ -116,6 +116,7 @@ internal sealed partial class MainWindow
         }, (_, _, _, context) =>
         {
             StopCardArtwork(context.Get<Image>("cover"));
+            CollectionCard(context.Get<Button>("root")).Item = null;
             context.Get<TrackArtworkOverlay>("playback").Reset();
             collectionCards.Remove(context.Get<Button>("root"));
             collectionCardPositions.Remove(context.Get<Button>("root"));
@@ -132,6 +133,7 @@ internal sealed partial class MainWindow
             card.Title.Width = likedArtworkSize;
             card.Author.MaxWidth = likedArtworkSize - (card.Item.User != null ? 17 : 0);
             if (card.Item.User != null) frame.CornerRadius = likedArtworkSize / 2;
+            else frame.CornerRadius = 6;
         }
     }
 
@@ -267,7 +269,8 @@ internal sealed partial class MainWindow
         var detail = routeItem != null ? collectionDetails.GetValueOrDefault(routeItem.Key) : null;
         SetCollectionPresentation(detail?.Item ?? routeItem);
         SetPageItems(collectionGrid, playlistCollectionVisible.Value ? [] : items, LoadingRowStyle.Card);
-        SetPageItems(collectionTrackList, playlistCollectionVisible.Value ? items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() : [], LoadingRowStyle.Waveform);
+        if (playlistCollectionVisible.Value) RefreshCollectionTracks();
+        else SetPageItems(collectionTrackList, Array.Empty<CollectionTrackEntry>(), LoadingRowStyle.Compact);
         RefreshCachedCollectionArtwork();
         librarySectionStatus.Value = items.Length > 0 ? "" : me == null && !demo ? "Войди в SoundCloud, чтобы открыть этот раздел." : "Здесь пока ничего нет.";
     }
@@ -285,6 +288,8 @@ internal sealed partial class MainWindow
         if (target != Page.LibraryCollection) libraryPages[activeLibrarySource] = activeCollection;
         RenderLibrarySection(); RefreshOverviewSections();
     }
+
+    private Task OpenLibraryCardAsync(LibraryItem item) => item.Track is { } track ? OpenTrackPageAsync(track) : OpenLibraryItemAsync(item);
 
     private async Task OpenLibraryItemAsync(LibraryItem item, int? selectedIndex = null)
     {
@@ -305,7 +310,7 @@ internal sealed partial class MainWindow
             librarySectionTitle.Value = item.Title; librarySectionStatus.Value = "Загрузка…";
             activeCollection = null; SetCollectionPresentation(item);
             SetPageItems(collectionGrid, Array.Empty<LibraryItem>(), LoadingRowStyle.Card);
-            SetPageItems(collectionTrackList, Array.Empty<SoundCloudTrack>(), LoadingRowStyle.Waveform);
+            SetPageItems(collectionTrackList, Array.Empty<CollectionTrackEntry>(), LoadingRowStyle.Compact);
             collectionLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, playlistCollectionVisible.Value);
             collectionLoadingView.SetLoading(!demo && me != null);
             var token = BeginLoad(); var session = api.Session;
@@ -324,10 +329,12 @@ internal sealed partial class MainWindow
 
     private void ClearLibraryData()
     {
+        ClearWaveData();
         ++overviewRefreshGeneration;
-        collectionDetails.Clear();
+        collectionDetails.Clear(); ResetCollectionActions();
         libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); collectionCardPositions.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
         overviewPending.Clear(); overviewReady.Clear(); SetLikesLoading(false); collectionLoadingView.SetLoading(false);
+        ClearHome();
         RefreshOverviewSections();
     }
 

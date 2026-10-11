@@ -77,9 +77,9 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
     private static InvalidOperationException PlaybackError(string code) => new(code switch
     {
         "license" or "expired" => "SoundCloud отклонил или завершил браузерную DRM-лицензию.",
-        "unsupported" => "WebView2 не поддерживает защищённое воспроизведение. Обнови WebView2 Runtime.",
+        "unsupported" => "В браузерном процессе Electron недоступен Widevine CDM для защищённого воспроизведения.",
         "network" => "Не удалось загрузить защищённый аудиопоток. Проверь соединение.",
-        "autoplay" => "WebView2 не разрешил запуск звука в приложении.",
+        "autoplay" => "Electron не разрешил запуск звука в приложении.",
         "playlist" => "SoundCloud вернул неподдерживаемый защищённый плейлист.",
         _ => "Браузерный проигрыватель не смог декодировать аудиопоток."
     });

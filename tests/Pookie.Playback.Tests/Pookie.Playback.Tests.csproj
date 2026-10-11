@@ -6,5 +6,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
     <ProjectReference Include="../../src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <Compile Include="../../src/Pookie.App/Playback/Queue/*.cs" Link="Queue/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Pookie.App/Home/*.cs" Link="Home/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

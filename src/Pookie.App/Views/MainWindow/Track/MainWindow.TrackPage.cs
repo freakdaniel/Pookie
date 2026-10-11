@@ -16,6 +16,9 @@ internal sealed partial class MainWindow
         public IReadOnlyDictionary<TrackSection, LibraryPage> Sections { get; init; } = new Dictionary<TrackSection, LibraryPage>();
         public bool SectionLoading { get; init; }
         public string SectionError { get; init; } = "";
+        public string CommentSort { get; init; } = "NEWEST";
+        public string CommentDraft { get; init; } = "";
+        public double? CommentTimestamp { get; init; }
     }
     private TrackDetailState? trackDetailState;
     private ScrollViewer trackDetailScroll = null!;
@@ -30,6 +33,7 @@ internal sealed partial class MainWindow
     private readonly List<CompactTrackRow> trackDetailRelatedRows = [];
     private long renderedCommentsTrack;
     private double renderedCommentsDuration;
+    private long renderedCommentsViewer;
     private SoundCloudComment[] renderedComments = [];
 
     private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview) => NavigateRouteAsync(new(Page.Track, Track: track, TrackSection: section), async generation =>
@@ -57,10 +61,12 @@ internal sealed partial class MainWindow
 
     private async Task LoadTrackDetailMetadataAsync(long id, long generation, CancellationToken token)
     {
+        var commentsRevision = trackCommentCountRevision;
         try
         {
             var track = await api.GetTrackAsync(id, token);
             if (!IsTrackDetailCurrent(id, generation)) return;
+            if (commentsRevision != trackCommentCountRevision) track = track with { CommentCount = trackDetailState!.Track.CommentCount };
             trackDetailState = trackDetailState! with { Track = track, MetadataLoading = false };
             RenderTrackDetailHeader();
             RenderTrackDetailComments();
@@ -77,18 +83,20 @@ internal sealed partial class MainWindow
 
     private async Task LoadTrackDetailCommentsAsync(long id, long generation, CancellationToken token, string? cursor = null)
     {
+        var sort = trackDetailState?.CommentSort ?? "NEWEST";
+        var revision = trackCommentsRevision;
         try
         {
-            var result = cursor == null ? await api.GetTrackCommentsAsync(id, token) : await api.GetTrackCommentsNextAsync(id, cursor, token);
-            if (!IsTrackDetailCurrent(id, generation)) return;
+            var result = cursor == null ? await api.GetTrackCommentsAsync(id, token, sort) : await api.GetTrackCommentsNextAsync(id, cursor, token, sort);
+            if (!IsTrackDetailCurrent(id, generation) || revision != trackCommentsRevision || trackDetailState!.CommentSort != sort) return;
             var comments = cursor == null ? result.Comments : trackDetailState!.Comments.Comments.Concat(result.Comments).DistinctBy(comment => comment.Id).ToArray();
             trackDetailState = trackDetailState! with { Comments = new(comments, result.NextHref == cursor ? null : result.NextHref), CommentsLoading = false, CommentsError = "" };
             RenderTrackDetailComments();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
-        catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
         {
-            if (!IsTrackDetailCurrent(id, generation)) return;
+            if (!IsTrackDetailCurrent(id, generation) || revision != trackCommentsRevision || trackDetailState!.CommentSort != sort) return;
             trackDetailState = trackDetailState! with { CommentsLoading = false, CommentsError = FriendlyError(error) };
             RenderTrackDetailComments();
         }
@@ -155,6 +163,7 @@ internal sealed partial class MainWindow
     {
         if (trackDetailState is not { } state) return;
         var track = state.Track;
+        RenderTrackCommentComposer();
         trackDetailTitle.Text = track.Title; trackDetailAuthor.Text = trackDetailAuthorName.Text = track.Author;
         trackDetailMeta.Text = "· " + string.Join(" · ", new[] { track.Genre, DetailAge(track.CreatedAt) }.Where(value => !string.IsNullOrWhiteSpace(value)));
         trackDetailStats.Text = DetailCompactCount(track.PlaybackCount);
@@ -209,15 +218,18 @@ internal sealed partial class MainWindow
     private void RenderTrackDetailComments()
     {
         if (trackDetailState is not { } state) return;
+        trackCommentSortLabel.Text = CommentSortLabel(state.CommentSort);
         trackDetailCommentsTitle.Text = CommentHeading(state.Track.CommentCount ?? state.Comments.Comments.Length);
         trackDetailCommentsStatus.Text = state.CommentsLoading ? "Загружаем комментарии…" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? "К этому треку ещё нет комментариев." : "";
         trackDetailCommentsStatus.IsVisible = trackDetailCommentsStatus.Text.Length > 0;
         var comments = state.Comments.Comments;
         var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || !comments.SequenceEqual(renderedComments);
-        if (renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || !comments.Take(renderedComments.Length).SequenceEqual(renderedComments))
+        if (renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || renderedCommentsViewer != (me?.Id ?? 0) ||
+            !comments.Take(renderedComments.Length).SequenceEqual(renderedComments))
         {
             trackDetailComments.Clear(); renderedComments = []; renderedCommentsTrack = state.Track.Id;
             renderedCommentsDuration = state.Track.Duration;
+            renderedCommentsViewer = me?.Id ?? 0;
         }
         // Keep existing rows and their decoded avatars when another page arrives.
         foreach (var comment in comments.Skip(renderedComments.Length)) trackDetailComments.Add(TrackCommentView(comment, state.Track));

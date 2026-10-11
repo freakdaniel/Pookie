@@ -8,6 +8,8 @@ namespace Pookie.App;
 internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement side, bool hero = false, params FrameworkElement[] background) : Panel
 {
     private double sideWidth, height;
+    internal double HeroArtworkMinWidth { get; init; } = 280;
+    internal double HeroArtworkMaxWidth { get; init; } = 400;
 
     internal TrackPageColumns Initialize()
     {
@@ -19,7 +21,7 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
     protected override Size MeasureContent(Size availableSize)
     {
         var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 1200;
-        sideWidth = Math.Clamp(Math.Round(width * .27), 280, 400);
+        sideWidth = Math.Clamp(Math.Round(width * .27), hero ? HeroArtworkMinWidth : 280, hero ? HeroArtworkMaxWidth : 400);
         var innerWidth = Math.Max(0, width - 48);
         var mainWidth = Math.Max(0, innerWidth - sideWidth - 32);
         if (hero) side.Width = side.Height = sideWidth;

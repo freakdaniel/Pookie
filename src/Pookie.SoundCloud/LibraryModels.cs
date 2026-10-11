@@ -20,6 +20,8 @@ public sealed record SoundCloudPlaylist
     public double Duration { get; init; }
     public string? Description { get; init; }
     public string? Sharing { get; init; }
+    public string? Genre { get; init; }
+    public string? CreatedAt { get; init; }
     public string? LastModified { get; init; }
     public SoundCloudUser? User { get; init; }
     public SoundCloudTrack[] Tracks { get; init; } = [];

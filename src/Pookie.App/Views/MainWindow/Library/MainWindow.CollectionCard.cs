@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
@@ -8,6 +9,7 @@ internal sealed partial class MainWindow
     private sealed record CollectionCardView(Button Root, Image Cover, Border Frame, TextBlock Title, TextBlock Author,
         StackPanel Subtitle, Image Followers, TrackArtworkOverlay Playback)
     {
+        internal LibraryItem? Item { get; set; }
         internal bool Artist { get; private set; }
 
         internal void SetArtist(bool artist)
@@ -37,7 +39,13 @@ internal sealed partial class MainWindow
     private CollectionCardView CreateCollectionCardView(bool responsive = false)
     {
         var image = new Image().StretchMode(Stretch.UniformToFill);
-        var playback = new TrackArtworkOverlay();
+        CollectionCardView card = null!;
+        var playback = new TrackArtworkOverlay(() =>
+        {
+            if (card.Item?.Playlist != null) Run(() => PlayLibraryCollectionAsync(card.Item));
+            else if (card.Item is { Track: { } track } item)
+                Run(() => page.Value == Page.Home ? PlayHomeTrackAsync(track, card.Root) : OpenLibraryItemAsync(item, collectionCardPositions.GetValueOrDefault(card.Root)));
+        });
         var frame = new Border().CornerRadius(6).ClipToBounds().Child(ArtworkLayer(image).Children(playback));
         var title = new TextBlock().FontSize(13).SemiBold().Height(20).TextTrimming(TextTrimming.CharacterEllipsis);
         var author = new TextBlock().FontSize(12).SemiBold().Height(19).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
@@ -45,7 +53,10 @@ internal sealed partial class MainWindow
         var subtitle = new StackPanel().Horizontal().Spacing(4).Children(followers, author.CenterVertical());
         title.Margin(0, 7, 0, 0);
         var root = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Top();
-        var card = new CollectionCardView(root, image, frame, title, author, subtitle, followers, playback);
+        card = new CollectionCardView(root, image, frame, title, author, subtitle, followers, playback);
+        collectionPlaybackViews.Add(root, card);
+        root.MouseEnter += () => { if (card.Item is { User: null }) playback.SetHovered(true); };
+        root.MouseLeave += () => playback.SetHovered(false);
         root.Content = responsive
             ? new TrackCollectionTile(frame, new StackPanel().Vertical().Spacing(1).Children(title, subtitle), resize: card.SetSize).Initialize()
             : new StackPanel().Vertical().Spacing(1).Children(frame, title, subtitle);

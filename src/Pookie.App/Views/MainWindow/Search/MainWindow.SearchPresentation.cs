@@ -76,6 +76,7 @@ internal sealed partial class MainWindow
 
     private SearchHero CreateSearchHero()
     {
+        SearchHero hero = null!;
         var cover = new Image().Width(96).Height(96).StretchMode(Stretch.UniformToFill);
         var frame = new Border().Width(96).Height(96).CornerRadius(6).ClipToBounds().Child(ArtworkLayer(cover));
         var title = new TextBlock().FontSize(24).Bold().MaxHeight(64).TextWrapping(TextWrapping.Wrap)
@@ -92,7 +93,12 @@ internal sealed partial class MainWindow
         hover.Transitions = [Transition.Create(UIElement.OpacityProperty, 180)];
         var content = new Grid().Columns("*,44").Rows("*").Padding(20).Children(
                 new StackPanel().Vertical().Spacing(12).Column(0).ColumnSpan(2).Children(frame, title, subtitle),
-                new Border().Background(Color.White).CornerRadius(22).Width(44).Height(44).Right().Bottom().Column(1).Child(play));
+                TrackButtons.Icon(play, () =>
+                {
+                    if (hero.Item?.Track is { } track) SelectLibraryTrack(track);
+                    else if (hero.Item?.Playlist != null) Run(() => PlayLibraryCollectionAsync(hero.Item));
+                    else if (hero.Item is { } item) Run(() => OpenLibraryItemAsync(item));
+                }, TrackButtons.Filled, 44).Right().Bottom().Column(1));
         var card = new Border().Background(Color.FromRgb(29, 29, 29)).CornerRadius(12).Height(256).Padding(0).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(backdrop, hover, content));
         var button = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(card);
@@ -107,13 +113,13 @@ internal sealed partial class MainWindow
             new StackPanel().Vertical().Children(rows.Select(row => (Element)row.Root).ToArray()));
         var root = new Grid().Columns("*,1.5*").Rows("Auto").Spacing(28).Margin(0, 0, 0, 32)
             .Children(bestSection.Column(0), songsSection.Column(1));
-        var hero = new SearchHero(root, bestSection, songsSection, card, cover, backdrop, frame, title, subtitle, play, rows);
+        hero = new SearchHero(root, bestSection, songsSection, card, cover, backdrop, frame, title, subtitle, play, rows);
         AttachTrackQueueMenu(button, () => hero.Item?.Track);
         card.SizeChanged += e => subtitle.MaxWidth = Math.Max(0, e.NewSize.Width - 96);
         button.Click += () =>
         {
             if (hero.Item is not { } item) return;
-            if (item.Track is { } track) SelectLibraryTrack(track);
+            if (item.Track is { } track) Run(() => OpenTrackPageAsync(track));
             else Run(() => OpenLibraryItemAsync(item));
         };
         button.MouseEnter += () => hover.Opacity = 1;
@@ -183,7 +189,8 @@ internal sealed partial class MainWindow
 
     private void RefreshSearchHeroPlayback(SearchHero hero) =>
         hero.Play.Source = Icons.Source(hero.Item?.Track is { } track
-            ? current?.Id == track.Id && isPlaying.Value ? "pause-solid" : "play-solid" : "arrow-right", Surface);
+            ? current?.Id == track.Id && isPlaying.Value ? "pause-solid" : "play-solid"
+            : hero.Item?.Playlist != null ? playbackQueue.Context?.Key == hero.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid" : "arrow-right", Surface);
 
     private void RefreshSearchPlayback()
     {

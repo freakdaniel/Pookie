@@ -6,11 +6,14 @@ const querySource = fs.readFileSync(require('node:path').join(__dirname, '../src
 let script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
 for (const name of ['Comments', 'Replies', 'Sidebar'])
   script = script.replace(`__POOKIE_TRACK_${name.toUpperCase()}__`, JSON.stringify(querySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
+const commentQuerySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/CommentWriteRequest.cs'), 'utf8');
+for (const name of ['Create', 'Delete'])
+  script = script.replace(`__POOKIE_COMMENT_${name.toUpperCase()}__`, JSON.stringify(commentQuerySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const command = (n, operation = 'like', liked = true) => ({id:n.toString(16).padStart(32,'0'), operation, user_id:42, track_id:90, liked});
 function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded = true, stored = true, prepared = true, extraAccount = {}, resources = []) {
   const messages = [], events = new Map(), calls = [], timers = [];
-  const window = {infiniframe:{host:{postData:data=>messages.push(data.data)}}, addEventListener:(key,handler)=>events.set(key,handler),
+  const window = {__pookiePost:data=>messages.push(data.data), addEventListener:(key,handler)=>events.set(key,handler),
     ddSbh:true, dataDomeOptions:{}, localStorage:{getItem:()=> stored ? 'own-browser-session' : null,
       setItem:()=>{throw Error('Website storage must not be written by Pookie');}},
     performance:{getEntriesByType:()=>resources},
@@ -23,6 +26,62 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
   return {window,document,messages,calls,timers,emit:(name,type)=>events.get(name)?.({detail:{challengeType:type}})};
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
+
+test('playback history writes a track and optional real context through the live browser session', async () => {
+  const h = harness(() => response(201));
+  const play = (id, context) => ({id:id.toString(16).padStart(32,'0'), operation:'play-history', track_id:90, context_urn:context});
+  h.window.__pookieRequest(play(850, null));
+  h.window.__pookieRequest(play(851, 'soundcloud:playlists:11'));
+  h.window.__pookieRequest(play(852, 'soundcloud:system-playlists:your-moods:42:1'));
+  await tick();
+  assert.equal(h.calls.length, 3);
+  for (const [url, options] of h.calls) {
+    assert.equal(new URL(url).origin, 'https://api-v2.soundcloud.com');
+    assert.equal(new URL(url).pathname, '/me/play-history');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'OAuth secret-token');
+  }
+  assert.deepEqual(JSON.parse(h.calls[0][1].body), {track_urn:'soundcloud:tracks:90'});
+  assert.deepEqual(JSON.parse(h.calls[1][1].body), {track_urn:'soundcloud:tracks:90', context_urn:'soundcloud:playlists:11'});
+  assert.equal(h.messages.at(-1).status, 201);
+  for (const context of ['', 'https://evil.test', 'soundcloud:tracks:90', 'soundcloud:playlists:0',
+    'soundcloud:playlists:9007199254740992', 'soundcloud:playlists:11\n', 'soundcloud:system-playlists:bad/uri'])
+    h.window.__pookieRequest(play(853, context));
+  for (const extra of [{url:'https://api-v2.soundcloud.com/me/play-history'}, {user_id:42}, {audio:{}}, {detail:{}}, {comment:{}}, {track_id:0}])
+    h.window.__pookieRequest({...play(854, null), ...extra});
+  h.window.__pookieRequest({...command(855, 'me'), context_urn:'soundcloud:playlists:11'});
+  await tick();
+  assert.equal(h.calls.length, 3);
+});
+
+test('comment writes use fixed GraphQL mutations, return JSON and keep body out of event metadata', async () => {
+  const h=harness(()=>response(200,{data:{createTrackComment:{comment:{urn:'soundcloud:comments:7',body:'Текст 🎧'}}}}));
+  const write=(id,comment)=>({id:id.toString(16).padStart(32,'0'),operation:'comment-write',comment});
+  h.window.__pookieRequest(write(800,{kind:'create',track_id:90,body:'Текст 🎧',timestamp:12345}));
+  h.window.__pookieRequest(write(801,{kind:'delete',track_id:90,comment_id:7}));
+  await tick();
+  assert.equal(h.calls.length,2);
+  const created=JSON.parse(h.calls[0][1].body),deleted=JSON.parse(h.calls[1][1].body);
+  assert.match(created.query,/mutation PookieCreateTrackComment/);
+  assert.deepEqual(created.variables.input,{trackUrn:'soundcloud:tracks:90',body:'Текст 🎧',timestamp:12345});
+  assert.match(deleted.query,/mutation PookieDeleteTrackComment/);
+  assert.deepEqual(deleted.variables.input,{commentUrn:'soundcloud:comments:7'});
+  for (const [url,options] of h.calls) { assert.equal(new URL(url).origin,'https://graph.soundcloud.com'); assert.equal(options.method,'POST'); }
+  assert.ok(h.messages.some(m=>m.kind==='json-chunk'));assert.equal(h.messages.at(-1).status,200);
+  for(const comment of [{kind:'create',track_id:90,body:' '},{kind:'create',track_id:90,body:'a'.repeat(1001)},
+    {kind:'create',track_id:90,body:'bad\x00'},{kind:'create',track_id:90,body:'text',timestamp:-1},
+    {kind:'delete',track_id:90,comment_id:0},{kind:'delete',track_id:90,comment_id:7,body:'text'}]) h.window.__pookieRequest(write(802,comment));
+  h.window.__pookieRequest({...write(803,{kind:'create',track_id:90,body:'text'}),url:'https://evil.test'});
+  await tick();assert.equal(h.calls.length,2);
+});
+
+test('comment sorting is server-side and rejects arbitrary enum values', async () => {
+  const h=harness(()=>response(200,{data:{trackComments:{comments:[],pageInfo:{endCursor:null}}}}));
+  for(const [index,sort] of ['NEWEST','OLDEST','TIMESTAMP','INVALID'].entries())
+    h.window.__pookieRequest({...command(810+index,'track-read'),detail:{kind:'comments',track_id:90,sort,cursor:'next'}});
+  await tick();assert.equal(h.calls.length,3);
+  assert.deepEqual(h.calls.map(([,o])=>JSON.parse(o.body).variables.options.sort),['NEWEST','OLDEST','TIMESTAMP']);
+});
 
 test('early tag readiness cannot release requests before page and browser session are ready', () => {
   const h=harness(()=>response(200),'https://soundcloud.com',false,false,false,false);
@@ -288,7 +347,7 @@ test('failed API reads never transfer the private error body or repeat 429', asy
 
 test('library reads use the same browser transport and preserve the read-only allowlist', async () => {
   const h = harness(async () => response(200, {collection:[]}));
-  const paths = ['/me/library/all', '/me/library/stations', '/me/play-history/contexts', '/me/play-history/tracks',
+  const paths = ['/mixed-selections', '/me/library/all', '/me/library/stations', '/me/play-history/contexts', '/me/play-history/tracks',
     '/users/42/followings', '/users/42/tracks', '/playlists/42', '/tracks?ids=1,2',
     '/system-playlists/soundcloud%3Asystem-playlists%3Aartist-stations%3A1%3A2'];
   for (let i=0;i<paths.length;i++) { h.window.__pookieRequest(apiRead(100+i, paths[i])); await tick(); }
@@ -402,4 +461,46 @@ test('following and own playlist reads are allowed while writes cannot masquerad
   for(const [i,path] of ['/users/42/playlists','/users/42/followings/ids','/me/followings/7'].entries())
     h.window.__pookieRequest({id:command(1200+i).id,operation:'api-get',url:'https://api-v2.soundcloud.com'+path});
   await tick();await tick();assert.equal(h.calls.length,2);
+});
+
+test('a refreshed website session updates authorization without replacing the page', async () => {
+  const h = harness(() => response(200, {id:42, username:'fixture'}));
+  h.window.__pookieUpdateSession({client_id:'newclient', access_token:'rotated-token'});
+  h.window.__pookieRequest(command(99, 'me'));
+  await tick();
+  assert.equal(h.calls[0][1].headers.Authorization, 'OAuth rotated-token');
+  assert.equal(new URL(h.calls[0][0]).searchParams.get('client_id'), 'newclient');
+});
+
+
+test('playlist likes and reposts use dedicated endpoints and reject mixed identities', async () => {
+  const h=harness(()=>response(204));
+  const like=(n,value)=>({id:command(n).id,operation:'playlist-like',user_id:42,playlist_id:11,track_id:0,liked:value});
+  const repost=(n,value)=>({id:command(n).id,operation:'playlist-repost',user_id:0,playlist_id:11,track_id:0,reposted:value});
+  for(const request of [like(1301,true),like(1302,false),repost(1303,true),repost(1304,false)]) h.window.__pookieRequest(request);
+  await tick();await tick();
+  assert.deepEqual(h.calls.map(call=>call[1].method),['PUT','DELETE','PUT','DELETE']);
+  assert.deepEqual(h.calls.map(call=>new URL(call[0]).pathname),[
+    '/users/42/playlist_likes/11','/users/42/playlist_likes/11','/me/playlist_reposts/11','/me/playlist_reposts/11']);
+  for(const request of [{...like(1305,true),track_id:90},{...like(1306,true),user_id:0},
+    {...like(1307,true),playlist_id:Number.MAX_SAFE_INTEGER+1},{...repost(1308,true),user_id:42},
+    {...repost(1309,true),reposted:'true'}, {...like(1310,true),liked:'true'}]) h.window.__pookieRequest(request);
+  await tick();assert.equal(h.calls.length,4);
+});
+
+test('playlist action state reads are allowed, action endpoints cannot masquerade as GET', async () => {
+  const h=harness(()=>response(200,{collection:[11],next_href:null}));
+  for(const [i,path] of ['/me/playlist_likes/ids','/me/playlist_reposts/ids',
+    '/me/playlist_reposts/11','/users/42/playlist_likes/11'].entries())
+    h.window.__pookieRequest({id:command(1320+i).id,operation:'api-get',url:'https://api-v2.soundcloud.com'+path});
+  await tick();assert.equal(h.calls.length,2);
+  assert.equal(h.messages.filter(message=>message.kind==='complete').every(message=>message.status===200),true);
+});
+
+test('ordinary playlist write failures are not blindly replayed', async () => {
+  for(const operation of ['playlist-like','playlist-repost']) for(const status of [403,401,500]) {
+    const h=harness(()=>response(status));
+    h.window.__pookieRequest({id:command(1330+status).id,operation,user_id:operation==='playlist-like'?42:0,playlist_id:11,liked:true,reposted:true});
+    await tick();assert.equal(h.calls.length,1);assert.equal(h.messages.at(-1).status,status);
+  }
 });

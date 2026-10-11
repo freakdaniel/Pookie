@@ -6,13 +6,17 @@
   const apiOrigin = 'https://api-v2.soundcloud.com';
   const graphOrigin = 'https://graph.soundcloud.com';
   const trackQueries = { comments: __POOKIE_TRACK_COMMENTS__, replies: __POOKIE_TRACK_REPLIES__, sidebar: __POOKIE_TRACK_SIDEBAR__ };
+  const commentQueries = { create: __POOKIE_COMMENT_CREATE__, delete: __POOKIE_COMMENT_DELETE__ };
   if (location.origin !== siteOrigin || window !== window.top || window.__pookieBrowserRequests) return;
   window.__pookieBrowserRequests = true;
   const account = __POOKIE_ACCOUNT__;
+  // A refreshed website token replaces the exported snapshot without reloading the page.
+  window.__pookieUpdateSession = next => Object.assign(account, next);
   // Website storage belongs to the browser and the site's tag. A token exported
   // to .NET is NOT a cookie: restoring it loses expiry/domain/context and can
   // revive a rejected session. Never write it back into cookie/localStorage.
-  const post = window.__pookiePost || (message => window.infiniframe.host.postData(message));
+  const post = window.__pookiePost;
+  if (typeof post !== 'function') return;
   const send = data => post({ id: 'pookie:web-api', version: 1, data });
   let lastProtection = '';
   function persistProtection() {
@@ -27,8 +31,8 @@
     } catch { /* A storage failure must not interrupt website requests. */ }
   }
   // Rotation can happen without a visible challenge, including while the website is idle.
-  let tagReady = false;
-  let protectionReady = false;
+  let tagReady = window.__pookieTagReady === true;
+  let protectionReady = window.__pookieProtectionReady === true;
   let readySent = false;
   let blocked = false;
   let releaseReady, rejectReady;
@@ -37,12 +41,14 @@
   let queue = Promise.resolve();
   const active = new Map();
   let challenge = null;
+  let challengeType = 'unknown';
   let generation = 0;
 
   function checking(event) {
     if (blocked) return;
     const value = event.detail?.challengeType;
     const type = ['device_check', 'device_check_invisible_mode', 'block', 'hard_block'].includes(value) ? value : 'unknown';
+    challengeType = type;
     if (type === 'hard_block' || event.detail?.responseType === 'hardblock') {
       blocked = true;
       const error = new Error('site-blocked');
@@ -65,7 +71,7 @@
   window.addEventListener('load', announceReady);
   window.addEventListener('dd_blocked', checking);
   window.addEventListener('dd_response_displayed', checking);
-  window.addEventListener('dd_response_passed', () => {
+  window.addEventListener('dd_response_passed', event => {
     if (blocked) return;
     protectionReady = true;
     generation++;
@@ -73,21 +79,25 @@
     pending?.resolve();
     persistProtection();
     setTimeout(persistProtection, 0);
-    send({ kind: 'passed' });
+    const type = event.detail?.challengeType;
+    send({ kind: 'passed', challenge_type: ['device_check', 'device_check_invisible_mode', 'block', 'hard_block'].includes(type) ? type : challengeType });
+    challengeType = 'unknown';
     announceReady();
   });
   window.addEventListener('dd_response_error', () => {
     if (blocked) return;
     const pending = challenge; challenge = null;
     pending?.reject(new Error('challenge-error'));
-    send({ kind: 'challenge-error' });
+    send({ kind: 'challenge-error', challenge_type: challengeType });
+    challengeType = 'unknown';
   });
   window.addEventListener('dd_response_unload', () => {
     if (blocked) return;
     if (!challenge) return;
     const pending = challenge; challenge = null;
     pending.reject(new Error('challenge-closed'));
-    send({ kind: 'challenge-error' });
+    send({ kind: 'challenge-error', challenge_type: challengeType });
+    challengeType = 'unknown';
   });
 
   function hasBrowserSession() {
@@ -172,7 +182,7 @@
       const url = new URL(value);
       // Check the real API address before remapping local smoke-test fixtures.
       if (url.origin !== 'https://api-v2.soundcloud.com' || url.username || url.password || url.hash ||
-        !(/^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(me|me\/track_likes\/ids|me\/track_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
+        !(/^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(mixed-selections|me|me\/track_likes\/ids|me\/track_reposts\/ids|me\/playlist_likes\/ids|me\/playlist_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
           /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*\/(likes|followings|followings\/ids|tracks|playlists))$/.test(url.pathname))) return null;
       return new URL(url.pathname + url.search, apiOrigin);
     } catch { return null; }
@@ -243,7 +253,21 @@
 
   async function request(command, context) {
     checkCancelled(context);
+    if (command.operation === 'play-history') {
+      const body = { track_urn: `soundcloud:tracks:${command.track_id}` };
+      if (command.context_urn != null) body.context_urn = command.context_urn;
+      const response = await fetchProtected(new URL('/me/play-history', apiOrigin), 'POST', context, JSON.stringify(body));
+      send({ kind: 'complete', request_id: command.id, status: response.status });
+      return;
+    }
     if (command.operation === 'playlist-add') { await addToPlaylist(command, context); return; }
+    if (command.operation === 'playlist-like' || command.operation === 'playlist-repost') {
+      const like = command.operation === 'playlist-like';
+      const url = new URL(like ? `/users/${command.user_id}/playlist_likes/${command.playlist_id}` : `/me/playlist_reposts/${command.playlist_id}`, apiOrigin);
+      const response = await fetchProtected(url, (like ? command.liked : command.reposted) ? 'PUT' : 'DELETE', context);
+      send({ kind: 'complete', request_id: command.id, status: response.status });
+      return;
+    }
     if (command.operation === 'follow') {
       await wait(ready, context);
       const url = new URL(`/me/followings/${command.artist_id}`, apiOrigin);
@@ -252,12 +276,18 @@
       send({ kind: 'complete', request_id: command.id, status: response.status });
       return;
     }
-    if (command.operation === 'api-get' || command.operation === 'track-read') {
+    if (command.operation === 'api-get' || command.operation === 'track-read' || command.operation === 'comment-write') {
       let response;
-      if (command.operation === 'track-read') {
+      if (command.operation === 'comment-write') {
+        const d = command.comment;
+        const input = d.kind === 'create' ? { trackUrn: `soundcloud:tracks:${d.track_id}`, body: d.body, timestamp: Math.round(d.timestamp ?? 0) } :
+          { commentUrn: `soundcloud:comments:${d.comment_id}` };
+        response = await fetchProtected(new URL('/graphql', graphOrigin), 'POST', context,
+          JSON.stringify({ query: commentQueries[d.kind], variables: { input } }));
+      } else if (command.operation === 'track-read') {
         const d = command.detail;
         const variables = { trackUrn: `soundcloud:tracks:${d.track_id}` };
-        if (d.kind === 'comments') variables.options = { first: 30, repliesFirst: 16, sort: 'NEWEST', repliesSort: 'ASCENDING', after: d.cursor || null };
+        if (d.kind === 'comments') variables.options = { first: 30, repliesFirst: 16, sort: d.sort ?? 'NEWEST', repliesSort: 'ASCENDING', after: d.cursor || null };
         if (d.kind === 'replies') {
           variables.commentUrn = `soundcloud:comments:${d.comment_id}`;
           variables.options = { first: 30, sort: 'ASCENDING', after: d.cursor || null };
@@ -326,17 +356,23 @@
       window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
-      if (context && !['like', 'repost', 'follow', 'playlist-add'].includes(context.operation)) {
+      if (context && !['like', 'repost', 'follow', 'playlist-add', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
         context.controller.abort(); context.rejectCancel(new Error('cancelled'));
       }
       return;
     }
-    if (active.has(command.id) ||
-      !(command.operation === 'track-read' && validTrackRead(command) || command.operation === 'api-get' && readUrl(command.url) ||
+    if (active.has(command.id) || (command.comment != null && command.operation !== 'comment-write') ||
+      (command.context_urn != null && command.operation !== 'play-history') ||
+      !(command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&
+        Number.isSafeInteger(command.track_id) && command.track_id > 0 && validHistoryContext(command.context_urn) ||
+        command.operation === 'comment-write' && validCommentWrite(command) || command.operation === 'track-read' && validTrackRead(command) || command.operation === 'api-get' && readUrl(command.url) ||
         command.operation === 'me' || command.operation === 'liked-ids' || command.operation === 'like' &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.track_id) && command.track_id > 0 &&
         typeof command.liked === 'boolean' || command.operation === 'repost' && !command.user_id &&
-        Number.isSafeInteger(command.track_id) && command.track_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'follow' &&
+        Number.isSafeInteger(command.track_id) && command.track_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'playlist-like' &&
+        Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 &&
+        !command.track_id && typeof command.liked === 'boolean' || command.operation === 'playlist-repost' && !command.user_id && !command.track_id &&
+        Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'follow'  &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.artist_id) && command.artist_id > 0 &&
         command.artist_id !== command.user_id && !command.track_id && typeof command.following === 'boolean' || command.operation === 'playlist-add' &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 &&
@@ -352,12 +388,31 @@
       .finally(() => active.delete(command.id));
   };
 
+  function validHistoryContext(value) {
+    if (value == null) return true;
+    if (typeof value !== 'string' || value.length === 0 || value.length > 2048 || /[^A-Za-z0-9:_-]/.test(value)) return false;
+    if (/^soundcloud:system-playlists:[A-Za-z0-9:_-]+$/.test(value)) return true;
+    const match = /^soundcloud:(?:playlists|users):([0-9]+)$/.exec(value);
+    return !!match && Number.isSafeInteger(Number(match[1])) && Number(match[1]) > 0;
+  }
+
   function validTrackRead(command) {
     const d = command.detail;
     return !command.url && !command.audio && d && ['comments', 'replies', 'sidebar'].includes(d.kind) &&
       Number.isSafeInteger(d.track_id) && d.track_id > 0 &&
+      (d.kind === 'comments' ? ['NEWEST', 'OLDEST', 'TIMESTAMP'].includes(d.sort ?? 'NEWEST') : (d.sort ?? 'NEWEST') === 'NEWEST') &&
       (d.cursor == null || typeof d.cursor === 'string' && d.cursor.length > 0 && d.cursor.length <= 2048 && !/[\x00-\x1f\x7f]/.test(d.cursor)) &&
       (d.kind === 'replies' ? Number.isSafeInteger(d.comment_id) && d.comment_id > 0 :
         !d.comment_id && (d.kind !== 'sidebar' || d.cursor == null));
+  }
+
+  function validCommentWrite(command) {
+    const d = command.comment;
+    return !command.url && !command.audio && !command.detail && !command.user_id && !command.track_id && !command.artist_id && !command.playlist_id && d &&
+      Number.isSafeInteger(d.track_id) && d.track_id > 0 &&
+      (d.kind === 'create' ? !d.comment_id && typeof d.body === 'string' && d.body.length > 0 && d.body.length <= 1000 && d.body.trim().length > 0 &&
+        !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(d.body) &&
+        (d.timestamp == null || Number.isFinite(d.timestamp) && d.timestamp >= 0 && d.timestamp <= 86400000) :
+       d.kind === 'delete' && Number.isSafeInteger(d.comment_id) && d.comment_id > 0 && d.body == null && d.timestamp == null);
   }
 })();

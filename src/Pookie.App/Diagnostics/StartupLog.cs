@@ -12,7 +12,8 @@ namespace Pookie.App.Diagnostics;
 internal static class StartupLog
 {
     private sealed record Entry(string Stage, string State, long Elapsed, LogEventLevel Level = LogEventLevel.Debug,
-        long? Duration = null, int? ChildPid = null, long? ChildElapsed = null, string? ErrorType = null, int? HttpStatus = null);
+        long? Duration = null, int? ChildPid = null, long? ChildElapsed = null, string? ErrorType = null, int? HttpStatus = null,
+        string? ChallengeType = null, bool? Interactive = null);
     private static readonly long started = Stopwatch.GetTimestamp();
     private static readonly object gate = new();
     private static readonly List<Entry> earlyEvents = [];
@@ -89,6 +90,16 @@ internal static class StartupLog
     public static void HttpStatus(string stage, int status) => Write(new(stage, "response", ElapsedMilliseconds(started),
         status is >= 400 and not (401 or 404) ? LogEventLevel.Warning : LogEventLevel.Debug, HttpStatus: status));
 
+    public static void BrowserChallenge(BrowserRequestEvent message)
+    {
+        if (message.Kind is not ("checking" or "blocked" or "passed" or "challenge-error")) return;
+        var type = message.ChallengeType is "device_check" or "device_check_invisible_mode" or "block" or "hard_block"
+            ? message.ChallengeType : "unknown";
+        Write(new("browser.site." + message.Kind, "event", ElapsedMilliseconds(started),
+            message.Kind is "blocked" or "challenge-error" ? LogEventLevel.Warning : LogEventLevel.Debug,
+            ChallengeType: type, Interactive: message.Kind is "checking" or "blocked" ? message.Interactive : null));
+    }
+
     private static long Begin(string stage) { Write(new(stage, "start", ElapsedMilliseconds(started))); return Stopwatch.GetTimestamp(); }
     private static void End(string stage, long at) => Write(new(stage, "end", ElapsedMilliseconds(started), Duration: ElapsedMilliseconds(at)));
     private static void Fail(string stage, long at, Exception error) => Write(new(stage,
@@ -107,8 +118,8 @@ internal static class StartupLog
     }
 
     private static void Emit(Entry entry) => AppLog.For("Pookie.Startup").Write(entry.Level,
-        "stage={Stage} state={State} elapsed_ms={ElapsedMs} duration_ms={DurationMs} child_pid={ChildPid} child_elapsed_ms={ChildElapsedMs} error_type={ErrorType} http_status={HttpStatus}",
-        entry.Stage, entry.State, entry.Elapsed, entry.Duration, entry.ChildPid, entry.ChildElapsed, entry.ErrorType, entry.HttpStatus);
+        "stage={Stage} state={State} elapsed_ms={ElapsedMs} duration_ms={DurationMs} child_pid={ChildPid} child_elapsed_ms={ChildElapsedMs} error_type={ErrorType} http_status={HttpStatus} challenge_type={ChallengeType} interactive={Interactive}",
+        entry.Stage, entry.State, entry.Elapsed, entry.Duration, entry.ChildPid, entry.ChildElapsed, entry.ErrorType, entry.HttpStatus, entry.ChallengeType, entry.Interactive);
 
     private static void WriteMarker(string line)
     {

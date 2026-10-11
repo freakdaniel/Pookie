@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Title>Pookie Browser</Title>
+    <Description>SoundCloud browser process</Description>
+    <ElectronPackageId>pookie-browser</ElectronPackageId>
+    <ElectronVersion>44.7.0</ElectronVersion>
+    <ElectronSingleInstance>false</ElectronSingleInstance>
+    <!-- Ordinary solution builds do not download Chromium or require Node. -->
+    <ElectronSkipExecCommands Condition="'$(PookieInstallElectron)' != 'true'">true</ElectronSkipExecCommands>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ElectronNET.Core" Version="0.6.0" />
+    <ProjectReference Include="../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
+    <None Include="../Pookie.App/Browser/Filtering/blacklist.json" TargetPath=".electron/blacklist.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="electron/*.js" TargetPath=".electron/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- Core's npm target is incremental: an earlier build with SkipExecCommands may
+       already have copied package.json, without installing the runtime. -->
+  <Target Name="EnsurePrototypeElectronRuntime" AfterTargets="Build" Condition="'$(PookieInstallElectron)' == 'true'">
+    <PropertyGroup>
+      <_PrototypeElectronDir>$([System.IO.Path]::GetFullPath('$(TargetDir).electron'))</_PrototypeElectronDir>
+      <_PrototypeBinary>$(_PrototypeElectronDir)/node_modules/electron/dist/electron</_PrototypeBinary>
+      <_PrototypeBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(_PrototypeBinary).exe</_PrototypeBinary>
+      <_PrototypeBinary Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(_PrototypeElectronDir)/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron</_PrototypeBinary>
+    </PropertyGroup>
+    <Exec Command="npm install --no-bin-links" WorkingDirectory="$(_PrototypeElectronDir)" Condition="!Exists('$(_PrototypeBinary)')" />
+    <Exec Command="node node_modules/electron/install.js" WorkingDirectory="$(_PrototypeElectronDir)" Condition="!Exists('$(_PrototypeBinary)')" />
+  </Target>
+</Project>

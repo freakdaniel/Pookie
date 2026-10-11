@@ -26,7 +26,7 @@ internal static class BrowserWorkerSmokeTest
         };
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path != "/")
+            if (context.Request.Path != "/" && context.Request.Path != "/restricted")
             {
                 if (context.Request.Headers.Authorization != "OAuth fixture-token" || context.Request.Query["client_id"] != "fixtureid")
                     throw new InvalidOperationException("API read escaped the browser session");
@@ -38,6 +38,7 @@ internal static class BrowserWorkerSmokeTest
         var interactiveRequests = 0;
         var cancelledRequests = 0;
         var hardBlockedRequests = 0;
+        var playlistWrites = 0; var cancelledPlaylistWrites = 0;
         app.MapGet("/", async context =>
         {
             Interlocked.Increment(ref pages);
@@ -65,6 +66,7 @@ internal static class BrowserWorkerSmokeTest
                 </script></html>
                 """);
         });
+        app.MapGet("/restricted", () => Results.Content("<!doctype html><title>Доступ временно ограничен</title><h1>Доступ временно ограничен</h1>", "text/html; charset=utf-8"));
         app.MapGet("/me", () => Results.Json(new { id = 42, username = "fixture", avatar_url = (string?)null }));
         app.MapGet("/me/track_likes/ids", () => Results.Json(Enumerable.Range(1, 750).ToArray()));
         app.MapGet("/search/tracks", async context =>
@@ -104,11 +106,25 @@ internal static class BrowserWorkerSmokeTest
             if (track == "91") context.Response.Headers["x-fixture-wait"] = "forever";
             return Task.CompletedTask;
         });
+        app.MapMethods("/users/42/playlist_likes/{playlist}", ["PUT", "DELETE"], context =>
+        {
+            if (context.Request.RouteValues["playlist"]!.ToString() == "12")
+            {
+                Interlocked.Increment(ref cancelledPlaylistWrites);
+                context.Response.StatusCode = 403;
+                context.Response.Headers["x-fixture-type"] = "device_check";
+                context.Response.Headers["x-fixture-wait"] = "forever";
+            }
+            else { Interlocked.Increment(ref playlistWrites); context.Response.StatusCode = 204; }
+            return Task.CompletedTask;
+        });
+        app.MapMethods("/me/playlist_reposts/11", ["PUT", "DELETE"], context =>
+        { Interlocked.Increment(ref playlistWrites); context.Response.StatusCode = 204; return Task.CompletedTask; });
         await app.StartAsync();
-        await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit"), app.Urls.Single() + "/");
+        await using var browser = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), app.Urls.Single() + "/");
         var observed = new System.Collections.Concurrent.ConcurrentQueue<BrowserRequestEvent>();
         browser.Changed += observed.Enqueue;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         if ((await browser.GetMeAsync(timeout.Token)).Id != 42) throw new InvalidOperationException("Профиль не передан.");
         var ids = await browser.GetLikedIdsAsync(timeout.Token);
         if (ids.Count != 750 || !ids.Contains(750)) throw new InvalidOperationException("Пакеты ID потеряны при передаче.");
@@ -137,9 +153,25 @@ internal static class BrowserWorkerSmokeTest
         await browser.SetLikedAsync(42, 92, true, timeout.Token);
         await browser.GetMeAsync(timeout.Token);
         if (pages != 1 || deviceRequests != 3 || interactiveRequests != 2 ||
-            !observed.Any(x => x.Kind == "checking" && !x.Interactive) || !observed.Any(x => x.Kind == "checking" && x.Interactive))
+            !observed.Any(x => x.Kind == "checking" && !x.Interactive && x.ChallengeType == "device_check") ||
+            !observed.Any(x => x.Kind == "checking" && x.Interactive && x.ChallengeType == "block") ||
+            !observed.Any(x => x.Kind == "passed" && x.ChallengeType == "device_check") ||
+            !observed.Any(x => x.Kind == "passed" && x.ChallengeType == "block"))
             throw new InvalidOperationException("Контекст не сохранился или проверка не повторила запрос.");
         Console.WriteLine("BROWSER_WORKER_OK: real WebView fetch, persistent context, 403 checks, window reveal/hide, automatic retry, PUT and DELETE");
+        await browser.SetPlaylistLikedAsync(42, 11, true, timeout.Token);
+        await browser.SetPlaylistLikedAsync(42, 11, false, timeout.Token);
+        await browser.SetPlaylistRepostedAsync(11, true, timeout.Token);
+        await browser.SetPlaylistRepostedAsync(11, false, timeout.Token);
+        if (playlistWrites != 4) throw new InvalidOperationException("Playlist actions did not use the Electron transport.");
+        using (var playlistCancel = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            try { await browser.SetPlaylistLikedAsync(42, 12, true, playlistCancel.Token); throw new InvalidOperationException("Playlist write was not cancelled."); }
+            catch (OperationCanceledException) when (playlistCancel.IsCancellationRequested) { }
+        }
+        await browser.GetMeAsync(timeout.Token);
+        if (cancelledPlaylistWrites != 1) throw new InvalidOperationException("Cancelled playlist write replayed after worker restart.");
+        Console.WriteLine("BROWSER_PLAYLIST_ACTIONS_OK: PUT/DELETE and cancelled pending write; no delayed replay");
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         try { await browser.SetLikedAsync(42, 91, true, cancel.Token); throw new InvalidOperationException("Запрос не отменён."); }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
@@ -147,7 +179,7 @@ internal static class BrowserWorkerSmokeTest
         await Task.Delay(800);
         if (cancelledRequests != 1) throw new InvalidOperationException("Отменённый лайк был повторён позже.");
         Console.WriteLine("BROWSER_WORKER_CANCEL_OK: pending check cancelled, worker exited, no delayed write");
-        await using var blocked = new NativeBrowserSession(new("fixtureid", "fixture-token", "WebKit"), app.Urls.Single() + "/");
+        await using var blocked = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), app.Urls.Single() + "/");
         await blocked.GetMeAsync(timeout.Token);
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -156,6 +188,10 @@ internal static class BrowserWorkerSmokeTest
         }
         if (hardBlockedRequests != 1) throw new InvalidOperationException("Hard block was retried");
         Console.WriteLine("BROWSER_WORKER_BLOCK_OK: hard-block page revealed, action failed immediately, subsequent write suppressed");
+        await using var restricted = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), app.Urls.Single() + "/restricted");
+        try { await restricted.GetMeAsync(timeout.Token); throw new InvalidOperationException("Initial restricted document was left hidden"); }
+        catch (SoundCloudException error) when (error.StatusCode == 403) { }
+        Console.WriteLine("BROWSER_DOCUMENT_BLOCK_OK: restricted initial document revealed and request rejected before readiness");
     }
     private sealed class RejectHttp : HttpMessageHandler
     {

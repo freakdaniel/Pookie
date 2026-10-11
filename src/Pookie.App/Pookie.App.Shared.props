@@ -2,36 +2,48 @@
   <!-- Both hosts use the same application dependencies and embedded resources. -->
   <PropertyGroup>
     <RootNamespace>Pookie.App</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <PropertyGroup Condition="('$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))) or ('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win-')))">
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('linux-'))">
-    <DefineConstants>$(DefineConstants);POOKIE_LINUX</DefineConstants>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win-'))">
-    <DefineConstants>$(DefineConstants);POOKIE_WINDOWS</DefineConstants>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('osx-'))">
-    <DefineConstants>$(DefineConstants);POOKIE_MACOS</DefineConstants>
-  </PropertyGroup>
+  <Import Project="Pookie.App.Platform.props" />
   <ItemGroup>
-    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/login-capture.js" LogicalName="Pookie.App.Browser.Scripts.login-capture.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-requests.js" LogicalName="Pookie.App.Browser.Scripts.browser-requests.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-audio.js" LogicalName="Pookie.App.Browser.Scripts.browser-audio.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/audio-normalization.js" LogicalName="Pookie.App.Browser.Scripts.audio-normalization.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Filtering/blacklist.json" LogicalName="Pookie.App.Browser.Filtering.blacklist.json" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Icons/*.svg" LogicalName="Pookie.App.Assets.Icons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Stickle/*.png" LogicalName="Pookie.App.Assets.Stickle.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/logo.svg" LogicalName="Pookie.App.Assets.logo.svg" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Branding/*" LogicalName="Pookie.App.Assets.Branding.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/GoogleSans.ttf" LogicalName="Pookie.App.Assets.Fonts.GoogleSans.ttf" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/Bungee-Regular.ttf" LogicalName="Pookie.App.Assets.Fonts.Bungee-Regular.ttf" />
+
     <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
-    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />
+    <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />
+    <PackageReference Include="SoundFlow.Codecs.FFMpeg" Version="1.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Tmds.DBus" Version="0.95.1" />
+    <PackageReference Include="LibSMTC" Version="1.1.0" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'" />
+
+    <InternalsVisibleTo Include="Pookie.Audio.Tests" />
+    <InternalsVisibleTo Include="Pookie.Discord.Tests" />
+    <InternalsVisibleTo Include="Pookie.App.SmokeTests" />
+
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Browser.Electron/Pookie.Browser.Electron.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Audio/Pookie.Audio.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Discord/Pookie.Discord.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Lyrics/Pookie.Lyrics.csproj" />
   </ItemGroup>
+  <Target Name="CopyPookieBrowserHost" AfterTargets="Build">
+    <PropertyGroup>
+      <_PookieBrowserOutput>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../Pookie.Browser.Electron/bin/$(Configuration)/net10.0/$(RuntimeIdentifier)/'))</_PookieBrowserOutput>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_PookieBrowserOutput)Pookie.Browser.Electron.dll')" Text="The Electron browser helper has not been built." />
+    <ItemGroup>
+      <_PookieBrowserFiles Include="$(_PookieBrowserOutput)**/*" Exclude="$(_PookieBrowserOutput)**/*.pdb;$(_PookieBrowserOutput).electron/node_modules/.cache/**" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PookieBrowserFiles)" DestinationFiles="@(_PookieBrowserFiles->'$(TargetDir)BrowserHost/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishPookieBrowserHost" AfterTargets="Publish" DependsOnTargets="CopyPookieBrowserHost">
+    <Copy SourceFiles="@(_PookieBrowserFiles)" DestinationFiles="@(_PookieBrowserFiles->'$(PublishDir)BrowserHost/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

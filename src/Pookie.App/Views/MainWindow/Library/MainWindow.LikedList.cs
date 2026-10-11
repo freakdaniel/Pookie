@@ -38,7 +38,7 @@ internal sealed partial class MainWindow
 
     private LikedTrackRow CreateLibraryTrackRow()
     {
-        var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => ToggleTrackLikeAsync(track)),
+        var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
             CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
