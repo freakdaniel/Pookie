@@ -14,37 +14,67 @@ const command = (n, operation = 'like', liked = true) => ({id:n.toString(16).pad
 function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded = true, stored = true, prepared = true, extraAccount = {}, resources = []) {
   const messages = [], events = new Map(), calls = [], timers = [];
   const window = {__pookiePost:data=>messages.push(data.data), addEventListener:(key,handler)=>events.set(key,handler),
+    crypto:require('node:crypto').webcrypto,
     ddSbh:true, dataDomeOptions:{}, localStorage:{getItem:()=> stored ? 'own-browser-session' : null,
       setItem:()=>{throw Error('Website storage must not be written by Pookie');}},
     performance:{getEntriesByType:()=>resources},
     fetch:async (...args)=>{calls.push(args); return fetch(...args);}};
   window.top = frame ? {} : window;
   const document={cookie:'',readyState:loaded?'complete':'loading',documentElement:{lang:'ru'}};
-  vm.runInNewContext(script.replace('__POOKIE_ACCOUNT__', JSON.stringify({client_id:'fixtureid', access_token:'secret-token', app_version:'123', app_locale:'en', ...extraAccount})), {window, document, location:{origin}, URL, AbortController, TextDecoder, TextEncoder,
+  vm.runInNewContext(script.replace('__POOKIE_ACCOUNT__', JSON.stringify({client_id:'fixtureid', access_token:'secret-token', app_version:'123', app_locale:'en', ...extraAccount})), {window, document, location:{origin,href:origin+'/you/likes'}, URL, AbortController, TextDecoder, TextEncoder,
     setTimeout, setInterval:callback=>timers.push(callback), clearInterval:()=>{}});
   if (prepared) events.get('dd_post_done')?.({detail:{}});
   return {window,document,messages,calls,timers,emit:(name,type)=>events.get(name)?.({detail:{challengeType:type}})};
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
+function historyResponse(url, options) {
+  const path = new URL(url).pathname;
+  if (options.method === 'GET' && path === '/me') return response(200, {id:42});
+  if (options.method === 'GET' && path === '/tracks/90')
+    return response(200, {id:90,user_id:43,duration:180000,track_authorization:'fixture-track-authorization'});
+  return response(path === '/me/play-history' ? 204 : 201);
+}
 
 test('playback history writes a track and optional real context through the live browser session', async () => {
-  const h = harness(() => response(201));
+  const h = harness(historyResponse);
   const play = (id, context) => ({id:id.toString(16).padStart(32,'0'), operation:'play-history', track_id:90, context_urn:context});
   h.window.__pookieRequest(play(850, null));
   h.window.__pookieRequest(play(851, 'soundcloud:playlists:11'));
   h.window.__pookieRequest(play(852, 'soundcloud:system-playlists:your-moods:42:1'));
   await tick();
-  assert.equal(h.calls.length, 3);
-  for (const [url, options] of h.calls) {
+  assert.equal(h.calls.length, 10);
+  const contexts = h.calls.filter(([url,options]) => new URL(url).pathname === '/me/play-history' && options.method === 'POST');
+  const plays = h.calls.filter(([url,options]) => new URL(url).pathname === '/me' && options.method === 'POST');
+  assert.equal(contexts.length, 3);
+  assert.equal(plays.length, 3);
+  for (const [url, options] of [...contexts, ...plays]) {
     assert.equal(new URL(url).origin, 'https://api-v2.soundcloud.com');
-    assert.equal(new URL(url).pathname, '/me/play-history');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'OAuth secret-token');
     assert.equal(options.headers['apollographql-client-name'], undefined);
-    assert.equal(options.credentials, 'include');
   }
-  assert.deepEqual(JSON.parse(h.calls[0][1].body), {track_urn:'soundcloud:tracks:90'});
-  assert.deepEqual(JSON.parse(h.calls[1][1].body), {track_urn:'soundcloud:tracks:90', context_urn:'soundcloud:playlists:11'});
+  assert.deepEqual(JSON.parse(contexts[0][1].body), {track_urn:'soundcloud:tracks:90'});
+  assert.deepEqual(JSON.parse(contexts[1][1].body), {track_urn:'soundcloud:tracks:90', context_urn:'soundcloud:playlists:11'});
+  assert.equal(contexts[0][1].credentials, 'include');
+  assert.equal(JSON.parse(plays[1][1].body).events[0].payload.in_playlist, 'soundcloud:playlists:11');
+  assert.equal(JSON.parse(plays[0][1].body).events[0].payload.in_playlist, undefined);
+  assert.equal(JSON.parse(plays[2][1].body).events[0].payload.in_playlist, undefined);
+  for (const [,options] of plays) {
+    const body = JSON.parse(options.body);
+    assert.equal(body.auth_token, 'secret-token');
+    assert.equal(body.events.length, 1);
+    const event = body.events[0];
+    assert.equal(event.event, 'audio'); assert.equal(event.version, 'v1.27.47');
+    assert.equal(event.payload.action, 'play'); assert.equal(event.payload.source, 'pookie');
+    assert.equal(event.payload.track, 'soundcloud:tracks:90');
+    assert.equal(event.payload.track_owner, 'soundcloud:users:43');
+    assert.equal(event.payload.user, 'soundcloud:users:42');
+    assert.equal(event.payload.client_id, 46941);
+    assert.equal(event.payload.track_authorization, 'fixture-track-authorization');
+    assert.match(event.payload.session_id, /^[0-9a-f-]{36}$/);
+    assert.equal(event.payload.anonymous_id, event.payload.session_id);
+  }
+  assert.ok(!JSON.stringify(h.messages).includes('secret-token'));
   assert.equal(h.messages.at(-1).status, 201);
   for (const context of ['', 'https://evil.test', 'soundcloud:tracks:90', 'soundcloud:playlists:0',
     'soundcloud:playlists:9007199254740992', 'soundcloud:playlists:11\n', 'soundcloud:system-playlists:bad/uri'])
@@ -53,7 +83,7 @@ test('playback history writes a track and optional real context through the live
     h.window.__pookieRequest({...play(854, null), ...extra});
   h.window.__pookieRequest({...command(855, 'me'), context_urn:'soundcloud:playlists:11'});
   await tick();
-  assert.equal(h.calls.length, 3);
+  assert.equal(h.calls.length, 10);
 });
 
 test('REST JSON writes survive the actual API CORS allowlist while GraphQL keeps its client header', async () => {
@@ -62,15 +92,41 @@ test('REST JSON writes survive the actual API CORS allowlist while GraphQL keeps
     if (new URL(url).origin === 'https://api-v2.soundcloud.com')
       for (const header of Object.keys(options.headers))
         if (!allowed.has(header.toLowerCase())) throw new TypeError('Failed to fetch: disallowed CORS header');
-    return response(201);
+    return historyResponse(url, options);
   });
   h.window.__pookieRequest({id:'a'.repeat(32), operation:'play-history', track_id:90});
   h.window.__pookieRequest({id:'b'.repeat(32), operation:'comment-write', comment:{kind:'create', track_id:90, body:'Fixture'}});
   await tick();
-  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls.length, 5);
   assert.deepEqual(h.messages.filter(m=>m.kind==='complete').map(m=>m.status), [201, 201]);
-  assert.equal(h.calls[0][1].headers['Content-Type'], 'application/json');
-  assert.equal(h.calls[1][1].headers['apollographql-client-name'], 'webi');
+  const rest = h.calls.filter(([url,options]) => new URL(url).origin === 'https://api-v2.soundcloud.com' && options.method === 'POST');
+  for (const [,options] of rest) assert.equal(options.headers['Content-Type'], 'application/json');
+  assert.equal(h.calls.find(([url]) => new URL(url).origin === 'https://graph.soundcloud.com')[1].headers['apollographql-client-name'], 'webi');
+});
+
+test('history reporting does not treat the legacy 204 as success when the audio event fails', async () => {
+  const h = harness((url, options) => new URL(url).pathname === '/me' && options.method === 'POST' ? response(400) : historyResponse(url, options));
+  h.window.__pookieRequest({id:'c'.repeat(32),operation:'play-history',track_id:90});
+  await tick();
+  assert.equal(h.messages.at(-1).status, 400);
+  assert.equal(h.calls.filter(([,options]) => options.method === 'POST').length, 2);
+});
+
+test('history uses the refreshed account and a browser session without writing website storage', async () => {
+  const h = harness(historyResponse);
+  h.document.cookie = 'sc_anonymous_id=existing-anonymous-id';
+  h.window.__pookieRequest({id:'d'.repeat(32),operation:'play-history',track_id:90});
+  await tick();
+  h.window.__pookieUpdateSession({client_id:'freshclient',access_token:'fresh-token',app_version:'124'});
+  h.window.__pookieRequest({id:'f'.repeat(32),operation:'play-history',track_id:90});
+  await tick();
+  const plays = h.calls.filter(([url,options]) => new URL(url).pathname === '/me' && options.method === 'POST');
+  const first = JSON.parse(plays[0][1].body), last = JSON.parse(plays[1][1].body);
+  assert.equal(last.auth_token, 'fresh-token');
+  assert.equal(last.events[0].payload.anonymous_id, 'existing-anonymous-id');
+  assert.equal(first.events[0].payload.session_id, last.events[0].payload.session_id);
+  assert.equal(h.calls.filter(([url,options]) => new URL(url).pathname === '/me' && options.method === 'GET').length, 2);
+  assert.ok(!JSON.stringify(h.messages).includes('fresh-token'));
 });
 
 test('history reads use browser cookies and bypass the HTTP cache after playback', async () => {

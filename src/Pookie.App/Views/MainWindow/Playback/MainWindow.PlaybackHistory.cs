@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
             if (disposed || api.Session != session) return;
             libraryLoadedAt.Remove("recent"); libraryLoadedAt.Remove("history");
             homeLoadedAt = default;
-            AppLog.For("Pookie.History").Debug("Прослушивание трека {TrackId} записано в SoundCloud", track.Id);
+            AppLog.For("Pookie.History").Debug("Событие прослушивания трека {TrackId} отправлено в SoundCloud", track.Id);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception error)

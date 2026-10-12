@@ -10,8 +10,13 @@
   if (location.origin !== siteOrigin || window !== window.top || window.__pookieBrowserRequests) return;
   window.__pookieBrowserRequests = true;
   const account = __POOKIE_ACCOUNT__;
+  let historyUserId = 0;
+  let playbackSessionId;
   // A refreshed website token replaces the exported snapshot without reloading the page.
-  window.__pookieUpdateSession = next => Object.assign(account, next);
+  window.__pookieUpdateSession = next => {
+    if (next.access_token !== account.access_token) historyUserId = 0;
+    Object.assign(account, next);
+  };
   // Website storage belongs to the browser and the site's tag. A token exported
   // to .NET is NOT a cookie: restoring it loses expiry/domain/context and can
   // revive a rejected session. Never write it back into cookie/localStorage.
@@ -259,10 +264,44 @@
   async function request(command, context) {
     checkCancelled(context);
     if (command.operation === 'play-history') {
+      if (!historyUserId) {
+        const response = await fetchProtected(new URL('/me', apiOrigin), 'GET', context);
+        if (!response.ok) { send({ kind: 'complete', request_id: command.id, status: response.status }); return; }
+        const { json: user } = await readJson(response, context);
+        if (!Number.isSafeInteger(user.id) || user.id <= 0) throw new Error('invalid-history-user');
+        historyUserId = user.id;
+      }
+      const metadata = await fetchProtected(new URL(`/tracks/${command.track_id}`, apiOrigin), 'GET', context);
+      if (!metadata.ok) { send({ kind: 'complete', request_id: command.id, status: metadata.status }); return; }
+      const { json: track } = await readJson(metadata, context);
+      const owner = track.user_id || track.user?.id;
+      if (track.id !== command.track_id || !Number.isSafeInteger(owner) || owner <= 0 ||
+        !Number.isFinite(track.duration) || track.duration <= 0) throw new Error('invalid-history-track');
       const body = { track_urn: `soundcloud:tracks:${command.track_id}` };
       if (command.context_urn != null) body.context_urn = command.context_urn;
       const response = await fetchProtected(new URL('/me/play-history', apiOrigin), 'POST', context, JSON.stringify(body));
-      send({ kind: 'complete', request_id: command.id, status: response.status });
+      if (!response.ok) { send({ kind: 'complete', request_id: command.id, status: response.status }); return; }
+      // The legacy history write acknowledges with 204 but does not persist tracks.
+      // SoundCloud persists them from its authenticated audio/play event. Send only
+      // the actual play reported by Pookie after its listened-time threshold.
+      playbackSessionId ||= window.crypto.randomUUID();
+      const cookie = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('sc_anonymous_id='));
+      const hydrated = Array.isArray(window.__sc_hydration) ? window.__sc_hydration.find(entry => entry.hydratable === 'anonymousId')?.data : null;
+      const anonymousId = [hydrated, cookie?.slice('sc_anonymous_id='.length)].find(value =>
+        typeof value === 'string' && value.length <= 256 && /^[A-Za-z0-9._-]+$/.test(value)) || playbackSessionId;
+      const played = await fetchProtected(new URL('/me', apiOrigin), 'POST', context, JSON.stringify({
+        events: [{ event: 'audio', version: 'v1.27.47', payload: {
+          action: 'play', source: 'pookie', player_type: 'native',
+          track: body.track_urn, track_owner: `soundcloud:users:${owner}`,
+          in_playlist: command.context_urn?.startsWith('soundcloud:playlists:') ? command.context_urn : undefined,
+          track_length: track.duration, track_authorization: track.track_authorization,
+          user: `soundcloud:users:${historyUserId}`, playhead_position: 0,
+          anonymous_id: anonymousId, session_id: playbackSessionId, url: new URL(location.href).origin + new URL(location.href).pathname,
+          // The web application's numeric ID differs from the REST client_id.
+          client_id: 46941, ts: Date.now(), app_version: window.__sc_version || account.app_version
+        } }], sent_at: new Date().toISOString(), auth_token: account.access_token
+      }));
+      send({ kind: 'complete', request_id: command.id, status: played.status });
       return;
     }
     if (command.operation === 'playlist-add') { await addToPlaylist(command, context); return; }
@@ -345,6 +384,7 @@
       const result = { kind: 'complete', request_id: command.id, status: response.status };
       if (command.operation === 'me' && response.ok) {
         const { json: user } = await readJson(response, context);
+        if (Number.isSafeInteger(user.id) && user.id > 0) historyUserId = user.id;
         result.user = { id: user.id, username: user.username, avatar_url: user.avatar_url };
       }
       send(result);

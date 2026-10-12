@@ -8,8 +8,7 @@ ElectronNET.Core 0.6.0 + Electron 44.7.0. Основное приложение 
 ## Основное приложение
 
 ```bash
-dotnet build ./src/Pookie.App -p:PookieInstallElectron=true
-dotnet run --no-build --project ./src/Pookie.App
+dotnet run --project ./src/Pookie.App
 ```
 
 Сборка копирует helper и Chromium в `BrowserHost/` рядом с Pookie; публикация
@@ -25,6 +24,14 @@ WebKitGTK P/Invoke или подмены идентичности браузер
 затем очищает профиль Electron. Предыдущий профиль прототипа используется без
 переноса cookies. Старые профили других движков автоматически не импортируются.
 
+После секунды фактического прослушивания Pookie отправляет контекст в
+`POST /me/play-history` и событие `audio/play` в `POST /me` через браузерный transport.
+Один ответ `204` старого endpoint не подтверждает сохранение истории треков:
+SoundCloud сохраняет её по событию воспроизведения. Ошибки события передаются в
+приложение и журнал. В событие входят данные выбранного трека и текущей сессии
+воспроизведения; cookies и хранилище сайта не изменяются. На сайте SoundCloud
+обновлённая история видна после перезагрузки страницы.
+
 Electron по умолчанию не включает Widevine CDM. Браузерный EME-путь Windows
 перенесён на Electron, но защищённое воспроизведение требует подходящего CDM и
 отдельной проверки Windows. Linux использует прежний нативный Widevine/SoundFlow.
@@ -34,7 +41,7 @@ Electron по умолчанию не включает Widevine CDM. Брауз�
 Для первой установки нужны .NET 10, Node.js 22+ и npm. Запускай из корня репозитория:
 
 ```bash
-dotnet build ./src/Pookie.Browser.Electron -p:PookieInstallElectron=true
+dotnet build ./src/Pookie.Browser.Electron
 dotnet run --no-build --project ./src/Pookie.Browser.Electron -- -unpackeddotnet
 ```
 
@@ -57,9 +64,10 @@ dotnet run --no-build --project ./src/Pookie.Browser.Electron -- -unpackeddotnet
 `--profile <путь>` позволяет проверить другой изолированный профиль; одновременное
 использование одного профиля блокируется.
 
-Обычный `dotnet build Pookie.slnx` собирает .NET-код без установки Node/Chromium.
-Для установки браузерного runtime используй команду сборки с
-`-p:PookieInstallElectron=true`, приведённую выше.
+Обычные сборка, запуск проекта и публикация автоматически устанавливают
+недостающий Electron runtime. Для первой установки нужны Node.js и npm.
+Чтобы собрать только .NET-код без установки браузера, используй
+`dotnet build Pookie.slnx -p:PookieInstallElectron=false`.
 
 ## Поведение и границы этапа
 

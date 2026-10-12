@@ -1,7 +1,7 @@
 # Application integration checks
 
 Browser scenarios now use the production Electron.NET/Chromium helper on every
-platform. Build with `-p:PookieInstallElectron=true` once (Node.js/npm required).
+platform. Normal builds install the missing runtime (Node.js/npm required).
 The helper and its runtime are copied into each executable's `BrowserHost/`.
 `node tests/electron-browser.smoke.cjs` additionally checks real Chromium
 isolation, blank OAuth popups, persistent HttpOnly cookies and cold restart.
@@ -190,6 +190,15 @@ remain allowed.
 `--startup-network-probe` validates a saved account with the production Electron
 worker. Close Pookie first to release the persistent profile. Diagnostics record
 only whitelisted startup stages and status codes; no tokens or raw browser output.
+
+`--playback-history-network-probe <SoundCloud track URL> [context URN]` writes one
+play through Pookie's production browser transport, then reads uncached server
+history for up to ten seconds to verify that the track became the latest entry.
+Choose a track other than the current latest entry and close Pookie first to
+release its saved profile. This probe changes real SoundCloud listening history.
+It does not require audio playback. The local `--browser-worker-smoke-test` also
+checks that a legacy `204` alone does not persist track history, that the audio/play
+event does, and that failed events propagate without being replayed.
 
 The session scenario sends an idempotent like request for an already liked track;
 the handoff scenario opens the real sign-in flow. These are not run by `dotnet test`

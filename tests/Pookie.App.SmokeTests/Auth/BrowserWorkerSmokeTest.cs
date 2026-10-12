@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -17,10 +18,14 @@ internal static class BrowserWorkerSmokeTest
         await using var app = builder.Build();
         var readRequests = 0;
         var cancelledReads = 0;
+        var legacyHistoryWrites = 0;
+        var audioHistoryWrites = 0;
+        var historyTrack = 0L;
+        var rejectHistory = false;
         var pages = 0;
         var largeTitle = string.Concat(Enumerable.Repeat("Музыка 🎵 / ", 180));
         var fixtureTrack = new {
-            kind = "track", id = 42, title = largeTitle, duration = 120000, track_authorization = "fixture-track-auth",
+            kind = "track", id = 42, user_id = 47, title = largeTitle, duration = 120000, track_authorization = "fixture-track-auth",
             media = new { transcodings = new[] { new { url = "https://api-v2.soundcloud.com/media/42", snipped = false,
                 format = new { protocol = "hls", mime_type = "audio/mpeg" } } } }
         };
@@ -68,6 +73,38 @@ internal static class BrowserWorkerSmokeTest
         });
         app.MapGet("/restricted", () => Results.Content("<!doctype html><title>Доступ временно ограничен</title><h1>Доступ временно ограничен</h1>", "text/html; charset=utf-8"));
         app.MapGet("/me", () => Results.Json(new { id = 42, username = "fixture", avatar_url = (string?)null }));
+        app.MapPost("/me/play-history", async context =>
+        {
+            using var document = await JsonDocument.ParseAsync(context.Request.Body);
+            if (document.RootElement.GetProperty("track_urn").GetString() != "soundcloud:tracks:42" ||
+                document.RootElement.GetProperty("context_urn").GetString() != "soundcloud:playlists:11")
+                throw new InvalidOperationException("Playback context was lost.");
+            Interlocked.Increment(ref legacyHistoryWrites);
+            // Reproduce the real server: this acknowledgement does not persist tracks.
+            context.Response.StatusCode = 204;
+        });
+        app.MapPost("/me", async context =>
+        {
+            using var document = await JsonDocument.ParseAsync(context.Request.Body);
+            var events = document.RootElement.GetProperty("events");
+            if (events.GetArrayLength() != 1 || document.RootElement.GetProperty("auth_token").GetString() != "fixture-token")
+                throw new InvalidOperationException("Playback event lost its session or included unrelated events.");
+            var message = events[0]; var payload = message.GetProperty("payload");
+            if (message.GetProperty("event").GetString() != "audio" || payload.GetProperty("action").GetString() != "play" ||
+                payload.GetProperty("track").GetString() != "soundcloud:tracks:42" ||
+                payload.GetProperty("track_owner").GetString() != "soundcloud:users:47" ||
+                payload.GetProperty("in_playlist").GetString() != "soundcloud:playlists:11" ||
+                payload.GetProperty("user").GetString() != "soundcloud:users:42" ||
+                payload.GetProperty("track_authorization").GetString() != "fixture-track-auth" ||
+                !Guid.TryParse(payload.GetProperty("session_id").GetString(), out _))
+                throw new InvalidOperationException("Incomplete authenticated playback event.");
+            if (rejectHistory) { context.Response.StatusCode = 400; return; }
+            Interlocked.Increment(ref audioHistoryWrites);
+            historyTrack = 42;
+            context.Response.StatusCode = 202;
+        });
+        app.MapGet("/me/play-history/tracks", () => Results.Json(new
+        { collection = historyTrack > 0 ? new[] { fixtureTrack } : [], next_href = (string?)null }));
         app.MapGet("/me/track_likes/ids", () => Results.Json(Enumerable.Range(1, 750).ToArray()));
         app.MapGet("/search/tracks", async context =>
         {
@@ -148,6 +185,17 @@ internal static class BrowserWorkerSmokeTest
         if ((await api.GetMeAsync(timeout.Token)).Id != 42 || pages != 1 || cancelledReads != 1)
             throw new InvalidOperationException("Cancelling a read discarded the live browser");
         Console.WriteLine($"BROWSER_API_OK: {readRequests} authenticated GETs through the native WebView, large Unicode JSON, search/feed/library/resolve/transcoding; cancelled fetch preserved the same page");
+        await api.RecordPlaybackAsync(42, "soundcloud:playlists:11", timeout.Token);
+        if (legacyHistoryWrites != 1 || audioHistoryWrites != 1 ||
+            (await api.GetLibraryAsync("history", 42, timeout.Token)).Items.FirstOrDefault()?.Track?.Id != 42)
+            throw new InvalidOperationException("A legacy acknowledgement was mistaken for persisted playback history.");
+        rejectHistory = true;
+        var historyRejected = false;
+        try { await api.RecordPlaybackAsync(42, "soundcloud:playlists:11", timeout.Token); }
+        catch (SoundCloudException error) when (error.StatusCode == 400) { historyRejected = true; }
+        if (!historyRejected || legacyHistoryWrites != 2 || audioHistoryWrites != 1)
+            throw new InvalidOperationException("Playback event failure was accepted or replayed.");
+        Console.WriteLine("BROWSER_HISTORY_OK: audio/play persists history after legacy 204; event failure propagates without replay");
         await browser.SetLikedAsync(42, 90, true, timeout.Token);
         await browser.SetLikedAsync(42, 90, false, timeout.Token);
         await browser.SetLikedAsync(42, 92, true, timeout.Token);

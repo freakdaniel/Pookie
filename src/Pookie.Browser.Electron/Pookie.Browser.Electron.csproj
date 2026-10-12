@@ -6,8 +6,9 @@
     <ElectronPackageId>pookie-browser</ElectronPackageId>
     <ElectronVersion>44.7.0</ElectronVersion>
     <ElectronSingleInstance>false</ElectronSingleInstance>
-    <!-- Ordinary solution builds do not download Chromium or require Node. -->
-    <ElectronSkipExecCommands Condition="'$(PookieInstallElectron)' != 'true'">true</ElectronSkipExecCommands>
+    <!-- Normal builds and dotnet run install the browser; code-only builds can opt out. -->
+    <PookieInstallElectron Condition="'$(PookieInstallElectron)' == ''">true</PookieInstallElectron>
+    <ElectronSkipExecCommands Condition="'$(PookieInstallElectron)' == 'false'">true</ElectronSkipExecCommands>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ElectronNET.Core" Version="0.6.0" />
