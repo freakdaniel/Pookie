@@ -40,6 +40,8 @@ test('playback history writes a track and optional real context through the live
     assert.equal(new URL(url).pathname, '/me/play-history');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'OAuth secret-token');
+    assert.equal(options.headers['apollographql-client-name'], undefined);
+    assert.equal(options.credentials, 'include');
   }
   assert.deepEqual(JSON.parse(h.calls[0][1].body), {track_urn:'soundcloud:tracks:90'});
   assert.deepEqual(JSON.parse(h.calls[1][1].body), {track_urn:'soundcloud:tracks:90', context_urn:'soundcloud:playlists:11'});
@@ -52,6 +54,33 @@ test('playback history writes a track and optional real context through the live
   h.window.__pookieRequest({...command(855, 'me'), context_urn:'soundcloud:playlists:11'});
   await tick();
   assert.equal(h.calls.length, 3);
+});
+
+test('REST JSON writes survive the actual API CORS allowlist while GraphQL keeps its client header', async () => {
+  const allowed = new Set(['authorization', 'content-type', 'accept']);
+  const h = harness((url, options) => {
+    if (new URL(url).origin === 'https://api-v2.soundcloud.com')
+      for (const header of Object.keys(options.headers))
+        if (!allowed.has(header.toLowerCase())) throw new TypeError('Failed to fetch: disallowed CORS header');
+    return response(201);
+  });
+  h.window.__pookieRequest({id:'a'.repeat(32), operation:'play-history', track_id:90});
+  h.window.__pookieRequest({id:'b'.repeat(32), operation:'comment-write', comment:{kind:'create', track_id:90, body:'Fixture'}});
+  await tick();
+  assert.equal(h.calls.length, 2);
+  assert.deepEqual(h.messages.filter(m=>m.kind==='complete').map(m=>m.status), [201, 201]);
+  assert.equal(h.calls[0][1].headers['Content-Type'], 'application/json');
+  assert.equal(h.calls[1][1].headers['apollographql-client-name'], 'webi');
+});
+
+test('history reads use browser cookies and bypass the HTTP cache after playback', async () => {
+  const h = harness(() => response(200, {collection:[]}));
+  h.window.__pookieRequest({id:'e'.repeat(32), operation:'api-get', url:'https://api-v2.soundcloud.com/me/play-history/tracks?limit=30'});
+  await tick();
+  assert.equal(h.calls[0][1].credentials, 'include');
+  assert.equal(h.calls[0][1].cache, 'no-store');
+  assert.equal(h.calls[0][1].headers['apollographql-client-name'], undefined);
+  assert.equal(h.messages.at(-1).status, 200);
 });
 
 test('comment writes use fixed GraphQL mutations, return JSON and keep body out of event metadata', async () => {

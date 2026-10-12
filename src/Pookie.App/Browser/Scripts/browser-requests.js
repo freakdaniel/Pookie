@@ -151,8 +151,13 @@
         // Use the live fetch intercepted by the website's DataDome tag, not .NET HTTP or a saved cookie.
         response = await wait(window.fetch(url.href, {
           method,
+          ...(url.origin === apiOrigin && url.pathname.startsWith('/me/play-history') ?
+            { credentials: 'include', ...(method === 'GET' ? { cache: 'no-store' } : {}) } : {}),
           headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1',
-            ...(body ? { 'Content-Type': 'application/json', 'apollographql-client-name': 'webi' } : {}) },
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            // REST preflights do not allow Apollo's client header. Scope it to
+            // GraphQL, including fixtures where both services share an origin.
+            ...(body && url.origin === graphOrigin && url.pathname === '/graphql' ? { 'apollographql-client-name': 'webi' } : {}) },
           ...(body ? { body } : {}),
           redirect: 'error', signal: context.controller.signal
         }), context);
