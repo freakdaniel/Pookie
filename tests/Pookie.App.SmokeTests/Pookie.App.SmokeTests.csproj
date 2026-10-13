@@ -11,4 +11,7 @@
     <Compile Include="../../src/Pookie.App/**/*.cs" Exclude="../../src/Pookie.App/Program.cs;../../src/Pookie.App/bin/**;../../src/Pookie.App/obj/**" Link="App/%(RecursiveDir)%(Filename)%(Extension)" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />
+  </ItemGroup>
 </Project>

@@ -10,6 +10,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (BrowserChildHost.TryRun(args, out var childExitCode)) { Environment.ExitCode = childExitCode; return; }
         try { RunAsync(args).GetAwaiter().GetResult(); }
         catch (Exception error)
         {

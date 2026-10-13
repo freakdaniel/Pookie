@@ -211,7 +211,7 @@ internal static class BrowserWorkerSmokeTest
         await browser.SetPlaylistLikedAsync(42, 11, false, timeout.Token);
         await browser.SetPlaylistRepostedAsync(11, true, timeout.Token);
         await browser.SetPlaylistRepostedAsync(11, false, timeout.Token);
-        if (playlistWrites != 4) throw new InvalidOperationException("Playlist actions did not use the Electron transport.");
+        if (playlistWrites != 4) throw new InvalidOperationException("Playlist actions did not use the WebView transport.");
         using (var playlistCancel = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
         {
             try { await browser.SetPlaylistLikedAsync(42, 12, true, playlistCancel.Token); throw new InvalidOperationException("Playlist write was not cancelled."); }

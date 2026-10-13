@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> shuffle = new(false);
     private readonly ObservableValue<bool> isPlaying = new(false);
     private readonly ObservableValue<bool> isLiked = new(false);
+    private readonly ObservableValue<bool> isDisliked = new(false);
     private readonly ObservableValue<bool> likeAvailable = new(false);
     private readonly ObservableValue<bool> muted = new(false);
     private readonly ObservableValue<double> volume = new(70);
@@ -71,7 +72,8 @@ internal sealed partial class MainWindow
 
     private void UpdateLikeState()
     {
-        isLiked.Value = current != null && likedIds.Contains(current.Id);
+        isDisliked.Value = current != null && waveTaste.IsBlocked(current);
+        isLiked.Value = current != null && !isDisliked.Value && likedIds.Contains(current.Id);
         likeAvailable.Value = current != null && CanLikeTrack(current);
         RefreshLikedRows();
     }
@@ -111,7 +113,7 @@ internal sealed partial class MainWindow
         {
             if (!likedIdsReady) await LoadLikedIdsAsync();
             if (api.Session != session) return;
-            var liked = !likedIds.Contains(track.Id);
+            var liked = waveTaste.IsBlocked(track) || !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
             if (api.BrowserTransport == null) AttachBrowser(new NativeBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";

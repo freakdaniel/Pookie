@@ -58,10 +58,16 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle).Left().Column(0),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
+                new StackPanel().Horizontal().Spacing(4).Right().Column(2).Children(
                 ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                         Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
                         Icons.View("heart-filled", 24, LikedHeart).Center().BindIsVisible(isLiked)),
-                    () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).Right().Column(2)));
+                    () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).ToolTip("Нравится"),
+                ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
+                        Icons.View("thumbs-down", 24, Color.White).Center().BindIsVisible(isDisliked, value => !value),
+                        Icons.View("thumbs-down-filled", 24, LikedHeart).Center().BindIsVisible(isDisliked)),
+                    () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable)
+                    .ToolTip("Не нравится — исключить из волны. Нажми ещё раз, чтобы отменить."))));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>

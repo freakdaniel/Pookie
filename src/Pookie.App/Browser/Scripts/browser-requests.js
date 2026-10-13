@@ -112,6 +112,12 @@
     } catch { return document.cookie.includes('datadome='); }
   }
   function announceReady() {
+    // An initial navigation block may precede installation of our event hooks.
+    // Preserve the native host's visible failure behavior before waiting on the tag.
+    if (!blocked && /Доступ (временно )?ограничен|Access (temporarily )?restricted/i.test(document.title + ' ' + (document.body?.innerText || ''))) {
+      checking({detail:{challengeType:'hard_block'}});
+      return;
+    }
     // dd_ready only means the tag loaded, not that its initial payload returned.
     // For late injection, resource timing can witness the site's completed POST.
     if (!protectionReady) {

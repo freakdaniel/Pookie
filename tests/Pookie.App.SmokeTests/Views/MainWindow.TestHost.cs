@@ -16,6 +16,7 @@ internal sealed partial class MainWindow
     private bool trackPageUiSmoke;
     private bool trackPageLiveUi;
     private bool likesEditsUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
+    private bool waveJournalUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
 
@@ -36,6 +37,7 @@ internal sealed partial class MainWindow
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
         commentsUiSmoke = args.Contains("--comments-ui-smoke-test");
         homeUiSmoke = args.Contains("--home-ui-smoke-test");
+        waveJournalUiSmoke = args.Contains("--wave-journal-ui-smoke-test");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
@@ -72,6 +74,7 @@ internal sealed partial class MainWindow
         if (likesEditsUiSmoke) Run(VerifyLikesEditsUiAsync);
         if (commentsUiSmoke) Run(VerifyCommentsUiAsync);
         if (homeUiSmoke) Run(VerifyHomeUiAsync);
+        if (waveJournalUiSmoke) Run(VerifyWaveJournalOnlyUiAsync);
     }
 
     private sealed class EmptyLyricsProvider : Pookie.Lyrics.ILyricsProvider

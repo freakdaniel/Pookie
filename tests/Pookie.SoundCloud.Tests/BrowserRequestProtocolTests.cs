@@ -148,4 +148,33 @@ public sealed class BrowserRequestProtocolTests
             Assert.False(invalid.IsValid());
     }
 
+    [Fact]
+    public void AnalysisChunksRequireTrustedPairingPlaybackIdAndBoundedFloat32Payload()
+    {
+        var value = new BrowserRequestEvent("audio-sample", Guid.NewGuid().ToString("N"), 200,
+            Sample: new(0, Convert.ToBase64String(new byte[4096])));
+        string Raw(BrowserRequestEvent message) => Message(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
+        Assert.NotNull(BrowserRequestProtocol.Parse(Raw(value), Origin, Origin, "pair"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value), "https://evil.test", Origin, "pair"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value), Origin, Origin, "wrong"));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { RequestId = "bad" }), Origin, Origin));
+        Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Kind = "ready" }), Origin, Origin));
+        foreach (var invalid in new[] { new BrowserAudioSample(-1, "AAAAAA=="), new(144000, "AAAAAA=="),
+            new(143999, value.Sample!.Data), new(0, "bad"), new(0, "AA=="), new(0, Convert.ToBase64String(new byte[4100])) })
+            Assert.Null(BrowserRequestProtocol.Parse(Raw(value with { Sample = invalid }), Origin, Origin));
+    }
+
+    [Fact]
+    public void AudioPageMustBeAnUnsignedSoundCloudPageAndOnlyAccompanyStart()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var start = new BrowserAudioCommand("start", id, "https://media.sndcdn.com/track.m3u8", "fixture",
+            PageUrl: "https://soundcloud.com/whyspurky-sc/toshno-1");
+        Assert.True(start.IsValid());
+        foreach (var url in new[] { "https://evil.test/track", "https://soundcloud.com.evil.test/track",
+            "https://user:secret@soundcloud.com/track", "https://soundcloud.com/track?token=secret", "https://soundcloud.com/track#fragment" })
+            Assert.False((start with { PageUrl = url }).IsValid());
+        Assert.False(new BrowserAudioCommand("stop", id, PageUrl: start.PageUrl).IsValid());
+    }
+
 }

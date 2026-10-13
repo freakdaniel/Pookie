@@ -1,8 +1,0 @@
-{
-  "appId": "app.pookie.browser",
-  "productName": "Pookie Browser",
-  "directories": { "output": "artifacts" },
-  "linux": { "target": "dir" },
-  "win": { "target": "dir" },
-  "mac": { "target": "dir" }
-}

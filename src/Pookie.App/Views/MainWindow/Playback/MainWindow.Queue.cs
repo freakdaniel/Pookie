@@ -104,11 +104,12 @@ internal sealed partial class MainWindow
             {
                 progress.Value = 0; FlushSeek(); return;
             }
+            FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Previous);
             var previous = playbackQueue.Previous();
             if (previous != null) await PlayAsync(previous.Track);
             return;
         }
-        FinishWaveListening(skipped: !naturalEnd);
+        FinishWaveListening(skipped: !naturalEnd, reason: naturalEnd ? Pookie.Recommendations.ListeningEndReason.NaturalEnd : Pookie.Recommendations.ListeningEndReason.Skip);
         // Never wrap past an unloaded page. The loading token belongs to this
         // context and survives navigation away from its originating screen.
         var sourceVersion = playbackQueue.SourceVersion;
@@ -120,13 +121,13 @@ internal sealed partial class MainWindow
             if (disposed || sourceVersion != playbackQueue.SourceVersion || selectionGeneration != playGeneration) return;
         }
         var next = playbackQueue.Next(naturalEnd);
-        if (next != null) await PlayAsync(next.Track);
+        if (next != null) await PlayAsync(next.Track, queueAdvance: true);
         else EndPlayback();
     }
 
     private void EndPlayback()
     {
-        FinishWaveListening();
+        FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Stopped);
         ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();
         audioReady = audioPreparing = paused = false;
         isPlaying.Value = playbackLoading.Value = false;

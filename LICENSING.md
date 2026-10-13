@@ -5,6 +5,16 @@ Pookie is distributed under [BSD-3-Clause](licenses/BSD-3-Clause.txt) and uses
 copyright notices and SPDX license identifiers. `licenses/` contains one complete
 text per license used by repository files.
 
+The embedded MSD MusiCNN weights are separately licensed under CC BY-NC-SA 4.0.
+Their complete license is in [licenses/CC-BY-NC-SA-4.0.txt](licenses/CC-BY-NC-SA-4.0.txt);
+source, authors and the ONNX conversion are recorded in
+[NOTICE](NOTICE). Both accompany builds.
+
+The browser host restores InfiniLore.InfiniFrame 0.62.1 from NuGet under Apache-2.0.
+Its package attribution is retained in `NOTICE` and full terms are in
+`licenses/Apache-2.0.txt`. It uses system WebView2 on Windows, WebKitGTK on Linux
+and WKWebView on macOS. Pookie does not bundle a separate Chromium runtime.
+
 | Files | License | Attribution |
 | --- | --- | --- |
 | Project code, configuration, tests, documentation, and logo | BSD-3-Clause | Richard Habitzreuter; Daniel Freak |
@@ -43,7 +53,8 @@ assets; `arrows-out` and `text-align-left` are also upstream duotone
 assets for the expanded player. `paper-plane-tilt` uses `assets/duotone/paper-plane-tilt-duotone.svg`
 for comment submission. `clock-counter-clockwise` uses `assets/regular/clock-counter-clockwise.svg`
 for the Home history card. `user` uses `assets/fill/user-fill.svg`. The SVGs are embedded, with no
-runtime CDN dependency.
+runtime CDN dependency. Player dislike uses `assets/regular/thumbs-down.svg` and
+`assets/fill/thumbs-down-fill.svg` from the same upstream commit.
 
 `GoogleSans.ttf` is the unmodified `GoogleSans[GRAD,opsz,wght].ttf` from
 [Google Fonts](https://github.com/google/fonts/tree/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesans),

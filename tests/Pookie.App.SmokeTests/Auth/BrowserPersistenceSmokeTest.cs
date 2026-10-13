@@ -86,7 +86,7 @@ internal static class BrowserPersistenceSmokeTest
             var login = await NativeWebLogin.ConnectAsync(timeout.Token, uri + "/login", profile);
             if (login.DataDomeClientId != "fixture-initial") throw new InvalidOperationException("Login protection state missing");
             var restored = await NativeWebLogin.TryRestoreAsync(timeout.Token, uri + "/login", profile);
-            if (restored?.AccessToken != login.AccessToken) throw new InvalidOperationException("Persistent Electron profile could not restore without a session vault");
+            if (restored?.AccessToken != login.AccessToken) throw new InvalidOperationException("Persistent WebView profile could not restore without a session vault");
             var staleLogin = login with { };
             var paths = new AppDataPaths(root);
             if (OperatingSystem.IsWindows())

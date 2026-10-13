@@ -143,6 +143,10 @@ public sealed class SoundFlowPlayer : IAudioPlayer
             };
         }
     }
+    public Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample()
+    {
+        lock (stateSync) return provider?.TakeAnalysisSample();
+    }
     private void CancelPreparation()
     {
         Interlocked.Increment(ref generation);

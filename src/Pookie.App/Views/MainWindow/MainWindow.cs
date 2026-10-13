@@ -186,7 +186,7 @@ internal sealed partial class MainWindow : IDisposable
             contentFrame.Width = Math.Min(1440, availableWidth);
             playerContentFrame.Width = Math.Min(1440, availableWidth);
             var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
-            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 12 - 4, 60, 180);
+            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 18 - 4, 60, 180);
         }
     }
 
@@ -327,7 +327,7 @@ internal sealed partial class MainWindow : IDisposable
         RefreshLikedViews();
     }
 
-    private async Task PlayAsync(SoundCloudTrack track)
+    private async Task PlayAsync(SoundCloudTrack track, bool queueAdvance = false)
     {
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
@@ -396,6 +396,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
+            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Mood == null, BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -404,7 +405,11 @@ internal sealed partial class MainWindow : IDisposable
             var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
             EnsureWaveTaste();
-            waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context, waveTime.Elapsed);
+            waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context,
+                waveTime.Elapsed, WaveListeningSource(queueEntry), waveTaste.Mode,
+                selection: queueAdvance ? Pookie.Recommendations.PlaybackSelection.QueueAdvance : Pookie.Recommendations.PlaybackSelection.TrackSelection,
+                features: waveLearning?.Evaluate(Pookie.App.Home.WaveTrack.From(track), likedIds.Contains(track.Id), waveTaste.Mood, waveListening.SessionId),
+                mood: waveTaste.Mood);
             BeginPlaybackHistory(queueEntry);
             RefreshLyricsMetadata(track);
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
@@ -455,7 +460,7 @@ internal sealed partial class MainWindow : IDisposable
         {
             if (playbackQueue.Snapshot.CanNext) return SkipAsync(1);
             if (tracks.Count == 0) return Task.CompletedTask;
-            SetQueue(tracks[0]); return PlayAsync(tracks[0]);
+            SetQueue(tracks[0]); return PlayAsync(tracks[0], queueAdvance: true);
         }
         if (!audioPreparing && !audioReady) return PlayAsync(current);
         paused = !paused;
@@ -584,7 +589,13 @@ internal sealed partial class MainWindow : IDisposable
         if (player == null || current == null || disposed || audioPreparing || !audioReady) return;
         RunSync(() =>
         {
-            var state = player.Poll();
+            AudioState state;
+            try { state = player.Poll(); }
+            catch
+            {
+                FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.PlaybackError);
+                throw;
+            }
             waveListening.Poll(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null, waveTime.Elapsed);
             PollPlaybackHistory();
             UpdateSystemMedia(state);
@@ -663,7 +674,7 @@ internal sealed partial class MainWindow : IDisposable
     public void Dispose()
     {
         if (disposed) return;
-        FinishWaveListening(); SaveWaveProfile(); waveSaveTimer.Dispose();
+        FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Shutdown); SaveWaveProfile(); waveSaveTimer.Dispose();
         disposed = true;
         ResetExpandedPlayer();
         DisposeSystemMedia();
@@ -695,6 +706,7 @@ internal sealed partial class MainWindow : IDisposable
     internal async Task FinishShutdownAsync()
     {
         Dispose();
+        await FinishWaveJournalAsync().ConfigureAwait(false);
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);
         foreach (var file in demoFiles)

@@ -3,6 +3,10 @@ using Aprillz.MewUI;
 using Pookie.App.Home;
 using Pookie.App.Playback;
 using Pookie.SoundCloud;
+using Pookie.Recommendations.Storage;
+using Pookie.Recommendations;
+using WaveMode = Pookie.App.Home.WaveMode;
+using WaveTaste = Pookie.App.Home.WaveTaste;
 
 namespace Pookie.App;
 
@@ -20,12 +24,17 @@ internal sealed partial class MainWindow
     private readonly HashSet<string> waveMixesLoaded = [];
     private Task? waveCandidateFetch;
     private string? waveLikesCursor;
+    private ListeningJournal? waveJournal;
+    private string waveJournalPath = "";
+    private RecommendationSnapshot? waveLearning;
+    private readonly List<Task> waveJournalWrites = [];
 
     private void InitializeWave()
     {
         var directory = Path.Combine(dataPaths.Root, "Wave");
         Storage.AppDataPaths.CreatePrivateDirectory(directory);
         waveStore = new(directory);
+        waveJournalPath = Path.Combine(directory, "events.sqlite3");
         waveSaveTimer = new DispatcherTimer(TimeSpan.FromSeconds(2));
         waveSaveTimer.Tick += SaveWaveProfile;
         page.Changed += RefreshWaveMotion;
@@ -36,7 +45,9 @@ internal sealed partial class MainWindow
         if (account == waveAccount) return;
         ClearWaveData(); waveAccount = account;
         if (account > 0 && !demo) waveTaste = waveStore.Load(account);
+        waveTaste.SessionId = waveListening.SessionId;
         AddWaveCandidates(waveTaste.KnownTracks);
+        if (account > 0 && !demo) Run(LoadWaveLearningAsync);
     }
     private void SaveWaveProfile()
     {
@@ -47,16 +58,97 @@ internal sealed partial class MainWindow
         { Pookie.Logging.AppLog.For("Pookie.Wave").Debug(error, "Не удалось сохранить профиль волны"); }
     }
     private void ScheduleWaveSave() { waveSaveTimer.Stop(); waveSaveTimer.Start(); }
-    private void FinishWaveListening(bool skipped = false)
+    private void FinishWaveListening(bool skipped = false, ListeningEndReason? reason = null)
     {
         if (waveListening.Track == null) return;
-        waveListening.Finish(waveTaste, skipped, DateTimeOffset.UtcNow); ScheduleWaveSave();
+        var observation = waveListening.Finish(waveTaste,
+            reason ?? (skipped ? ListeningEndReason.Skip : ListeningEndReason.TrackChanged), DateTimeOffset.UtcNow);
+        if (observation != null && waveAccount > 0) RecordWaveEvent(WaveEvent.FromListening(waveAccount, observation), player?.TakeAnalysisSample());
+        ScheduleWaveSave();
         RerankWaveQueue();
+    }
+    private void RecordWaveEvent(WaveEvent message, Pookie.Recommendations.Audio.AudioSample? sample = null)
+    {
+        if (demo || message.AccountId <= 0) return;
+        EnsureWaveJournal();
+        var tracks = waveCandidates.Values.Take(1999).Select(Home.WaveTrack.From)
+            .Concat(message.Track == null ? [] : new[] { message.Track }).DistinctBy(track => track.Id).ToArray();
+        var pending = PersistWaveLearningAsync(message, sample, tracks, waveGeneration);
+        waveJournalWrites.RemoveAll(task => task.IsCompleted);
+        waveJournalWrites.Add(pending);
+        Run(async () => await pending);
+    }
+    private void EnsureWaveJournal()
+    {
+        if (waveJournal == null)
+        {
+            waveJournal = new(waveJournalPath);
+            waveJournal.AnalysisFailed += error => Pookie.Logging.AppLog.For("Pookie.Wave").Warning(error, "Не удалось вычислить аудиовектор; продолжаем обработку события без него");
+        }
+    }
+    private async Task LoadWaveLearningAsync()
+    {
+        var account = waveAccount; var generation = waveGeneration;
+        if (account <= 0 || disposed) return;
+        EnsureWaveJournal();
+        var snapshot = await waveJournal!.SnapshotAsync(account, waveCandidates.Values.Take(2000).Select(Home.WaveTrack.From).ToArray());
+        ApplyWaveLearning(account, generation, snapshot, rerank: false);
+    }
+    private async Task PersistWaveLearningAsync(WaveEvent message, Pookie.Recommendations.Audio.AudioSample? sample,
+        Pookie.Recommendations.WaveTrack[] tracks, long generation)
+    {
+        var write = waveJournal!.AppendAsync(message, sample);
+        sample = null;
+        await write.ConfigureAwait(false);
+        var snapshot = await waveJournal.SnapshotAsync(message.AccountId, tracks).ConfigureAwait(false);
+        PublishWaveLearning(message.AccountId, generation, snapshot);
+        Pookie.Logging.AppLog.For("Pookie.Wave").Debug("Профиль обучен: примеров {Samples}, аудиовекторов кандидатов {Vectors}, ошибка прогноза {Error:F3}",
+            snapshot.Model.Samples, snapshot.Vectors.Count, snapshot.Model.PredictionError);
+    }
+    private void PublishWaveLearning(long account, long generation, RecommendationSnapshot snapshot)
+    {
+        if (disposed) return;
+        Application.Current.Dispatcher?.BeginInvoke(() =>
+        {
+            ApplyWaveLearning(account, generation, snapshot);
+        });
+    }
+    private void ApplyWaveLearning(long account, long generation, RecommendationSnapshot snapshot, bool rerank = true)
+    {
+        if (disposed || waveAccount != account || waveGeneration != generation ||
+            snapshot.Model.Sequence < (waveLearning?.Model.Sequence ?? 0)) return;
+        var previous = waveLearning;
+        var changed = previous == null || previous.Model.Sequence != snapshot.Model.Sequence ||
+            previous.Vectors.Count != snapshot.Vectors.Count || snapshot.Vectors.Keys.Any(id => !previous.Vectors.ContainsKey(id));
+        waveLearning = snapshot; waveTaste.Learning = snapshot;
+        var neighbors = snapshot.Neighbors.Select(match => match.Track.ToTrack()).Where(HomeRecommendations.Playable).ToArray();
+        AddWaveCandidates(neighbors);
+        // Refreshing a refill's snapshot must not replace its own queue cursor.
+        // Several committed events may publish the same batch checkpoint; apply its queue changes once.
+        if (rerank && changed) RerankWaveQueue();
+    }
+    private async Task FinishWaveJournalAsync()
+    {
+        if (waveJournal == null) return;
+        try { await Task.WhenAll(waveJournalWrites).ConfigureAwait(false); }
+        catch (Exception error) { Pookie.Logging.AppLog.For("Pookie.Wave").Warning(error, "Не удалось сохранить события волны"); }
+        try { await waveJournal.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception error) { Pookie.Logging.AppLog.For("Pookie.Wave").Warning(error, "Не удалось закрыть журнал волны"); }
+    }
+    private void RecordWavePreference(WaveEventKind kind, SoundCloudTrack? track = null)
+    {
+        if (waveAccount > 0) RecordWaveEvent(new(Guid.NewGuid(), waveAccount, DateTimeOffset.UtcNow, kind,
+            track == null ? null : Home.WaveTrack.From(track), Mood: playbackQueue.Context?.Key == WaveQueueKey ? waveTaste.Mood : WaveMood.Auto));
+    }
+    private void ResetWaveBlocks()
+    {
+        EnsureWaveTaste(); waveTaste.ResetBlocks(); RecordWavePreference(WaveEventKind.ResetBlocks);
+        ScheduleWaveSave(); RerankWaveQueue(); UpdateLikeState();
     }
     private void ClearWaveData()
     {
-        FinishWaveListening(); SaveWaveProfile();
-        ++waveGeneration; waveAccount = 0; waveTaste = new(); waveCandidates.Clear(); waveRelated.Clear();
+        FinishWaveListening(reason: ListeningEndReason.AccountChanged); SaveWaveProfile();
+        ++waveGeneration; waveAccount = 0; waveTaste = new(); waveLearning = null; waveCandidates.Clear(); waveRelated.Clear();
         waveMixesLoaded.Clear(); waveCandidateFetch = null; waveLikesCursor = null;
         homeLikesCount = null;
         if (waveSettingsOpen != null) waveSettingsOpen.Value = false;
@@ -157,6 +249,8 @@ internal sealed partial class MainWindow
         {
             await FetchWaveCandidatesAsync(token);
             if (generation != waveGeneration || api.Session != session || token.IsCancellationRequested) return new([], null);
+            if (!demo) await LoadWaveLearningAsync();
+            if (generation != waveGeneration || api.Session != session || token.IsCancellationRequested) return new([], null);
             var pending = playbackQueue.Snapshot.Upcoming.Select(entry => entry.Track);
             var ranked = waveTaste.Rank(waveCandidates.Values, WavePlayed().Concat(pending), 20, DateTimeOffset.UtcNow,
                 reserved: WaveReserved().Concat(pending));
@@ -179,15 +273,38 @@ internal sealed partial class MainWindow
         RefreshWaveSettings(); RefreshHomeHeroPlayback();
         if (playbackQueue.Context?.Key == WaveQueueKey) Run(() => queueLoader.EnsureAheadAsync(force: true));
     }
+    private void SetWaveMood(Pookie.Recommendations.WaveMood mood)
+    {
+        EnsureWaveTaste(); waveTaste.Mood = mood;
+        waveListening.NewSession(); waveTaste.SessionId = waveListening.SessionId;
+        RerankWaveQueue(); RefreshWaveSettings();
+        if (playbackQueue.Context?.Key == WaveQueueKey) Run(() => queueLoader.EnsureAheadAsync(force: true));
+    }
     private async Task RejectWaveTrackAsync()
     {
-        if (current is not { } track || playbackQueue.Context?.Key != WaveQueueKey) return;
-        FinishWaveListening(); waveTaste.Block(track); ScheduleWaveSave(); RerankWaveQueue();
-        await SkipAsync(1);
+        if (current is not { } track || !CanLikeTrack(track)) return;
+        EnsureWaveTaste();
+        if (waveTaste.IsBlocked(track)) { UnblockWaveTrack(track); UpdateLikeState(); return; }
+        var account = waveAccount;
+        if (likedIds.Contains(track.Id)) await ToggleTrackLikeAsync(track);
+        if (disposed || account != waveAccount || likedIds.Contains(track.Id)) return;
+        if (current?.Id == track.Id) FinishWaveListening(reason: ListeningEndReason.Rejected);
+        waveTaste.Block(track);
+        RecordWavePreference(WaveEventKind.Block, track); ScheduleWaveSave(); RerankWaveQueue();
+        UpdateLikeState();
+        if (current?.Id == track.Id && playbackQueue.Context?.Key == WaveQueueKey) await SkipAsync(1);
+    }
+    private void UnblockWaveTrack(SoundCloudTrack track)
+    {
+        foreach (var previous in waveTaste.Unblock(track)) RecordWavePreference(WaveEventKind.Unblock, previous);
+        ScheduleWaveSave(); RerankWaveQueue();
     }
     private void WaveLikeChanged(SoundCloudTrack track, bool liked)
     {
-        EnsureWaveTaste(); waveTaste.Import(track, true, liked); AddWaveCandidates([track]);
+        EnsureWaveTaste();
+        if (liked) UnblockWaveTrack(track);
+        waveTaste.Import(track, true, liked); AddWaveCandidates([track]);
+        RecordWavePreference(liked ? WaveEventKind.Like : WaveEventKind.Unlike, track);
         ScheduleWaveSave(); RerankWaveQueue();
         RefreshHomeShortcuts();
     }

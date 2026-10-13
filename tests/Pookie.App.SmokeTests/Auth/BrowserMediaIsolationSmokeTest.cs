@@ -107,7 +107,7 @@ internal static class BrowserMediaIsolationSmokeTest
         }
         finally { File.Delete(audioPath); }
 #else
-        throw new PlatformNotSupportedException("This check uses Windows SMTC and Electron.");
+        throw new PlatformNotSupportedException("This check uses Windows SMTC and WebView2.");
 #endif
     }
 }

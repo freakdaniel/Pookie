@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Models/musicnn-msd.onnx" />
+    <EmbeddedResource Include="Models/musicnn-msd.json" />
+    <EmbeddedResource Include="Models/musicnn-moods.onnx" />
+    <EmbeddedResource Include="Models/musicnn-moods.json" />
+    <EmbeddedResource Include="../../NOTICE" LogicalName="Pookie.Recommendations.Models.NOTICE" />
+    <EmbeddedResource Include="../../licenses/CC-BY-NC-SA-4.0.txt" LogicalName="Pookie.Recommendations.Models.LICENSE" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+</Project>

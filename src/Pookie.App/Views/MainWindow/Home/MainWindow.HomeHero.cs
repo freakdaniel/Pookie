@@ -9,7 +9,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private Border homeHero = null!;
-    private Button wavePlay = null!, waveReject = null!, waveSettingsButton = null!;
+    private Button wavePlay = null!, waveSettingsButton = null!;
     private TextBlock wavePlayLabel = null!;
     private Image wavePlayGlyph = null!;
     private WaveBackdrop waveBackdrop = null!;
@@ -23,8 +23,6 @@ internal sealed partial class MainWindow
         wavePlayLabel = new TextBlock().Text("Слушать").FontSize(16).SemiBold().Foreground(TrackButtons.OnPrimary).CenterVertical();
         wavePlay = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(wavePlayGlyph, wavePlayLabel),
             () => Run(PlayHomeHeroAsync), TrackButtons.Filled, 56).Padding(24, 0);
-        waveReject = TrackButtons.Action(new TextBlock().Text("Не моё").FontSize(13).SemiBold(),
-            () => Run(RejectWaveTrackAsync), TrackButtons.Glass, 36);
         waveSettingsButton = TrackButtons.Icon(Icons.View("gear", 24),
             () => { EnsureWaveTaste(); RefreshWaveSettings(); waveSettingsOpen.Value = !waveSettingsOpen.Value; }, TrackButtons.Glass, 56)
             .ToolTip("Настроить волну");
@@ -32,8 +30,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*").Rows("*").Children(waveBackdrop,
                 new StackPanel().Vertical().Spacing(14).Center().Children(
                     new TextBlock().Text("Твоя волна").FontSize(38).Bold().CenterHorizontal(),
-                    TrackButtons.Connected(wavePlay, waveSettingsButton).CenterHorizontal(),
-                    waveReject.CenterHorizontal())));
+                    TrackButtons.Connected(wavePlay, waveSettingsButton).CenterHorizontal())));
         return homeHero;
     }
     private void RenderHomeHero()
@@ -48,13 +45,18 @@ internal sealed partial class MainWindow
         if (homeHeroPlaying) return;
         if (playbackQueue.Context?.Key == WaveQueueKey && current != null) { await ToggleAsync(); return; }
         SeedWaveFromHome();
+        waveListening.NewSession(); waveTaste.SessionId = waveListening.SessionId;
         var request = ++homeHeroPlayRequest;
         var session = api.Session; var generation = playGeneration; var sourceVersion = playbackQueue.SourceVersion;
         homeHeroPlaying = true; RefreshHomeHeroPlayback();
         try
         {
+            if (!demo) await LoadWaveLearningAsync();
             if (waveTaste.Rank(waveCandidates.Values, [], 20, DateTimeOffset.UtcNow).Length < 3)
+            {
                 await FetchWaveCandidatesAsync(lifetime.Token);
+                if (!demo) await LoadWaveLearningAsync();
+            }
             if (disposed || request != homeHeroPlayRequest || api.Session != session || generation != playGeneration || sourceVersion != playbackQueue.SourceVersion) return;
             var ranked = waveTaste.Rank(waveCandidates.Values, [], 20, DateTimeOffset.UtcNow);
             if (ranked.Length == 0)
@@ -65,11 +67,12 @@ internal sealed partial class MainWindow
             }
             StartQueueContext(new(WaveQueueKey, "Твоя волна", "Сейчас играет твоя волна", "pookie:wave:" + ++waveCursor,
                 Kind: PlaybackContextKind.Wave), ranked, ranked[0]);
-            await PlayAsync(ranked[0]);
+            await PlayAsync(ranked[0], queueAdvance: true);
             Run(async () =>
             {
                 var waveVersion = playbackQueue.SourceVersion;
                 await FetchWaveCandidatesAsync(lifetime.Token);
+                if (!demo) await LoadWaveLearningAsync();
                 if (!disposed && request == homeHeroPlayRequest && api.Session == session && playbackQueue.SourceVersion == waveVersion)
                     RerankWaveQueue();
             });
@@ -84,7 +87,6 @@ internal sealed partial class MainWindow
         wavePlayLabel.Text = homeHeroPlaying ? "Подбираем музыку…" : playing ? "Пауза" : "Слушать";
         wavePlayGlyph.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
         TrackButtons.SetAvailability(wavePlay, !homeHeroPlaying && (selected || waveCandidates.Count > 0 || HomeItems("mixes").Length > 0), homeHeroPlaying);
-        waveReject.IsVisible = selected;
         RefreshWaveMotion();
     }
     private void RefreshWaveMotion()

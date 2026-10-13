@@ -13,6 +13,7 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }
         if (args.Length is 2 or 3 && args[0] == "--playback-history-network-probe") { await PlaybackHistoryNetworkProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }
         if (args.Length == 2 && args[0] == "--track-page-network-probe") { await TrackPageNetworkProbe.RunAsync(args[1]); return true; }
@@ -41,6 +42,8 @@ internal static class DiagnosticsRunner
         if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--browser-audio-capture-smoke-test")) { await BrowserAudioCaptureSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--browser-drm-capability-probe")) { await BrowserDrmCapabilityProbe.RunAsync(); return true; }
         if (args.Contains("--protected-audio-smoke-test"))
         {
             var flag = Array.IndexOf(args, "--protected-audio-smoke-test");
@@ -50,27 +53,51 @@ internal static class DiagnosticsRunner
             using var vault = SessionVault.Open(new AppDataPaths());
             using var protectedHttp = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
             var protectedAccount = vault?.Load() ?? await NativeWebLogin.ConnectAsync(timeout.Token, resetSession: false);
-            await using var protectedBrowser = new NativeBrowserSession(protectedAccount);
+            var diagnosticProfile = args.Contains("--isolated-browser-profile")
+                ? Path.Combine(Path.GetFullPath("artifacts"), "drm-probe-" + Guid.NewGuid().ToString("N")) : null;
+            var profileFlag = Array.IndexOf(args, "--browser-profile");
+            if (profileFlag >= 0 && profileFlag + 1 < args.Length) diagnosticProfile = Path.GetFullPath(args[profileFlag + 1]);
+            await using var protectedBrowser = new NativeBrowserSession(protectedAccount, profilePath: diagnosticProfile);
             string? audioStage = null;
             if (Environment.GetEnvironmentVariable("POOKIE_DRM_DIAGNOSTICS") == "1")
                 protectedBrowser.Changed += message =>
                 {
                     if (message.Kind == "audio-state" && message.Audio?.Error is { } error)
-                        Console.WriteLine($"DRM_BROWSER_AUDIO_ERROR: {error}; stage={message.Audio.Stage}; media={message.Audio.MediaError}; ready={message.Audio.ReadyState}; network={message.Audio.NetworkState}; credentials redacted");
+                        Console.WriteLine($"DRM_BROWSER_AUDIO_ERROR: {error}; stage={message.Audio.Stage}; media={message.Audio.MediaError}; ready={message.Audio.ReadyState}; network={message.Audio.NetworkState}; license_http={message.Audio.LicenseHttpStatus}; message_type={message.Audio.LicenseMessageType}; cdm_error={message.Audio.CdmError}; license_failure={message.Audio.LicenseFailure}; credentials redacted");
                     else if (message.Kind == "audio-state" && message.Audio is { Stage: { } stage } && stage != audioStage)
                     {
                         audioStage = stage;
                         Console.WriteLine($"DRM_BROWSER_AUDIO_STAGE: {stage}; credentials redacted");
                     }
-                    else if (message.Kind is not ("json-chunk" or "audio-state"))
+                    else if (message.Kind is not ("json-chunk" or "audio-state" or "audio-sample"))
                         Console.WriteLine($"DRM_BROWSER_EVENT: {message.Kind}; http={message.Status}; interactive={message.Interactive}");
                 };
             var protectedApi = new SoundCloudWebClient(protectedHttp)
                 { Session = protectedAccount, BrowserTransport = protectedBrowser, RequireBrowserTransport = true };
-            var track = await protectedApi.ResolveAsync(args[flag + 1], timeout.Token);
+            SoundCloudTrack? track = null;
+            if (args[flag + 1] == "history")
+            {
+                var user = await protectedBrowser.GetMeAsync(timeout.Token);
+                var history = await protectedApi.GetLibraryAsync("history", user.Id, timeout.Token);
+                foreach (var candidate in history.Items.Select(item => item.Track).OfType<SoundCloudTrack>().Take(20))
+                {
+                    var detail = await protectedApi.GetTrackAsync(candidate.Id, timeout.Token);
+                    if (detail.Access is "blocked" or "preview" || detail.Policy is "BLOCK" or "SNIP") continue;
+                    if (detail.Media?.Transcodings?.Any(t => !t.Snipped && t.Format?.Protocol == "ctr-encrypted-hls") == true)
+                    { track = detail; break; }
+                }
+                if (track == null) throw new InvalidOperationException("The recent history has no accessible protected track for the probe.");
+            }
+            else track = await protectedApi.ResolveAsync(args[flag + 1], timeout.Token);
             Console.WriteLine($"PROTECTED_TRACK_OK: track {track.Id}; credentials redacted");
-            var resolved = await new SoundCloudStreamResolver(protectedApi).ResolveAsync(track.Id, timeout.Token, ["ctr-encrypted-hls"]);
+            var resolved = await new SoundCloudStreamResolver(protectedApi).ResolveAsync(track.Id, timeout.Token,
+                args.Contains("--default-stream-selection") ? null : ["ctr-encrypted-hls"]);
             Console.WriteLine($"PROTECTED_STREAM_OK: track {track.Id}; {resolved.Stream.Protocol}; credentials redacted");
+            if (!resolved.Stream.Protected)
+            {
+                Console.WriteLine("STREAM_SELECTION_PROBE_OK: production resolver selected an ordinary stream; DRM playback not attempted");
+                return true;
+            }
             if (args.Contains("--drm-service-certificate"))
             {
                 await protectedBrowser.DisposeAsync();
@@ -113,11 +140,22 @@ internal static class DiagnosticsRunner
             await using var player = protectedPlayer;
             player.Volume(args.Contains("--system-audio") ? 15 : 0);
             var protectedSource = new AudioSource(resolved.Stream.Uri.AbsoluteUri, AudioTransport.WidevineHls, resolved.Stream.Duration)
-                { LicenseAuthToken = resolved.Stream.LicenseAuthToken,
+                { LicenseAuthToken = resolved.Stream.LicenseAuthToken, CaptureAnalysis = args.Contains("--analysis-probe"), BrowserPage = track.PermalinkUrl,
                   NormalizationGainDb = args.Contains("--normalization-probe")
                     ? await new WaveformGainResolver(protectedHttp, new AppDataPaths()).ResolveAsync(track.WaveformUrl, timeout.Token) : 0 };
             await player.PlayAsync(protectedSource, timeout.Token);
             await WaitForPlaybackAsync(player);
+            if (args.Contains("--analysis-probe"))
+            {
+                using var analysisTimeout = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                analysisTimeout.CancelAfter(TimeSpan.FromSeconds(20));
+                using var sampleTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
+                while (player.Poll().Position < 10) await sampleTimer.WaitForNextTickAsync(analysisTimeout.Token);
+                var sample = player.TakeAnalysisSample() ?? throw new InvalidOperationException("The protected browser player supplied no PCM.");
+                using var encoder = new Pookie.Recommendations.Audio.MusicnnEncoder();
+                var vector = encoder.Encode(sample) ?? throw new InvalidOperationException("The protected browser player supplied silence instead of audio.");
+                Console.WriteLine($"BROWSER_ANALYSIS_PROBE_OK: {sample.Mono.Length} mono PCM samples; {vector.Values.Length} embedding dimensions; volume remains zero");
+            }
             if (args.Contains("--normalization-probe"))
             {
                 using var meterTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));

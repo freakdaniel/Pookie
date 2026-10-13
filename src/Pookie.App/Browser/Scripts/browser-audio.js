@@ -23,6 +23,7 @@
   function valid(c) {
     return c && /^[a-f0-9]{32}$/.test(c.playback_id || '') && Number.isFinite(c.position) && c.position >= 0 && c.position <= 86400 &&
       Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 100 &&
+      (c.capture_analysis == null || typeof c.capture_analysis === 'boolean') &&
       (c.normalization_gain_db == null || Number.isFinite(c.normalization_gain_db) && c.normalization_gain_db >= -24 && c.normalization_gain_db <= 6) && (c.action === 'start'
       ? typeof c.source === 'string' && c.source.length <= 8192 && typeof c.authorization === 'string' &&
         c.authorization.length > 0 && c.authorization.length <= 16384 && !/[\x00-\x1f\x7f]/.test(c.authorization)
@@ -44,13 +45,15 @@
       playing: !st.paused && !st.audio.paused && !st.audio.ended && st.audio.readyState >= 3 && !st.error,
       buffering: !st.paused && !st.audio.ended && st.audio.readyState < 3 && !st.error,
       ended: st.audio.ended, error: st.error, stage:st.stage,
-      media_error:st.audio.error?.code || 0, ready_state:st.audio.readyState, network_state:st.audio.networkState};
+      media_error:st.audio.error?.code || 0, ready_state:st.audio.readyState, network_state:st.audio.networkState,
+      license_http_status:st.licenseHttpStatus || 0,license_message_type:st.licenseMessageType ?? null,cdm_error:st.cdmError ?? null,license_failure:st.licenseFailure ?? null};
   }
   function publish(st) {
     if (current === st) st.send({kind:'audio-state', request_id:st.id, status:200, audio:state(st)});
   }
   function fail(st, error) {
     if (current !== st || st.controller.signal.aborted || st.error) return;
+    if(['NotSupportedError','InvalidStateError','InvalidAccessError','QuotaExceededError','TypeError','OperationError','NotAllowedError'].includes(error.name))st.cdmError=error.name;
     st.error = ['unsupported','network','playlist','decode','license','expired','autoplay'].includes(error.message) ? error.message : 'decode';
     clearInterval(st.timer);
     st.audio.pause(); publish(st);
@@ -79,7 +82,10 @@
     audio.style.display='none'; document.body.append(audio);
     audio.addEventListener('error',()=>{if(st.audio===audio)fail(st,new Error('decode'));});
     for(const name of ['playing','pause','waiting','ended','seeked'])
-      audio.addEventListener(name,()=>{if(st.audio===audio)publish(st);});
+      audio.addEventListener(name,()=>{if(st.audio===audio) {
+        st.normalization?.node.port.postMessage({active:name!=='waiting' && !st.paused && !audio.paused && !audio.ended && audio.readyState>=3});
+        publish(st);
+      }});
   }
   function directVolume(st) {
     return Math.min(1, st.volume / 100 * Math.pow(10, st.gainDb / 20));
@@ -87,7 +93,7 @@
   async function setupNormalization(st) {
     // Attenuation stays in the media element: it needs neither PCM access nor
     // a Worklet and applies equally to every protected frame from the start.
-    if (st.gainDb <= 0 || !window.AudioContext || !window.AudioWorkletNode) return;
+    if (st.gainDb <= 0 && !st.captureAnalysis || !window.AudioContext || !window.AudioWorkletNode) return;
     const context = new AudioContext();
     let source;
     const url = URL.createObjectURL(new Blob([normalizationModule], {type:'text/javascript'}));
@@ -95,7 +101,17 @@
       await context.audioWorklet.addModule(url);
       await context.resume();
       if (current !== st || st.controller.signal.aborted) { await context.close(); return; }
-      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb}});
+      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb,captureAnalysis:st.captureAnalysis}});
+      let sampleOffset=0;
+      node.port.onmessage=event=>{
+        const {offset,samples}=event.data ?? {};
+        if(current!==st || !st.captureAnalysis || offset!==sampleOffset || !(samples instanceof Float32Array) ||
+          !samples.length || samples.length>1024 || offset+samples.length>144000 || samples.some(v=>!Number.isFinite(v))) return;
+        const bytes=new Uint8Array(samples.length*4), view=new DataView(bytes.buffer);
+        for(let i=0;i<samples.length;i++) view.setFloat32(i*4,samples[i],true);
+        sampleOffset+=samples.length;
+        st.send({kind:'audio-sample',request_id:st.id,status:200,sample:{offset,data:btoa(String.fromCharCode(...bytes))}});
+      };
       const master = context.createGain(); master.gain.value = st.volume / 100;
       source = context.createMediaElementSource(st.audio);
       source.connect(node).connect(master).connect(context.destination);
@@ -197,7 +213,12 @@
       xhr.onprogress = e => { if (e.loaded > 65536) { finish(); xhr.abort(); reject(new Error('license')); } };
       xhr.onload = () => {
         finish();
-        if (xhr.status < 200 || xhr.status >= 300 || !xhr.response || xhr.response.byteLength > 65536) reject(new Error('license'));
+        st.licenseHttpStatus=Math.max(0,Math.min(599,xhr.status));
+        if (xhr.status < 200 || xhr.status >= 300 || !xhr.response || xhr.response.byteLength > 65536) {
+          const reason=xhr.response && xhr.response.byteLength<=65536 ? new TextDecoder().decode(xhr.response).toLowerCase() : '';
+          st.licenseFailure=/vmp|certificate|signature|security.level|untrusted/.test(reason) ? 'client-validation' : /token|auth/.test(reason) ? 'authorization' : /datadome|captcha/.test(reason) ? 'protection' : 'unknown';
+          reject(new Error('license'));
+        }
         else resolve(xhr.response);
       };
       xhr.send(challenge);
@@ -208,8 +229,15 @@
     const p = st.playlist;
     st.playlist = p; st.duration = p.duration;
     st.stage = 'eme';
-    const access = await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{initDataTypes:['cenc'],
-      audioCapabilities:[{contentType:mime}], distinctiveIdentifier:'not-allowed', persistentState:'not-allowed'}]);
+    if (current !== st || st.controller.signal.aborted) throw new Error('closed');
+    let access;
+    try {
+      access = await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{initDataTypes:['cenc'],
+        audioCapabilities:[{contentType:mime}], sessionTypes:['temporary']}]);
+    } catch (error) {
+      if (['NotSupportedError','NotAllowedError','SecurityError'].includes(error.name)) throw new Error('unsupported');
+      throw error;
+    }
     if (current !== st || st.controller.signal.aborted) throw new Error('closed');
     const keys = await access.createMediaKeys();
     if (current !== st || st.controller.signal.aborted) throw new Error('closed');
@@ -225,6 +253,7 @@
     let exchangeQueue = Promise.resolve(), exchanges = 0;
     session.addEventListener('message', e => {
       if (st.session !== session) return;
+      if(['license-request','license-renewal','individualization-request','license-release'].includes(e.messageType))st.licenseMessageType=e.messageType;
       if (!['license-request','license-renewal'].includes(e.messageType) || ++exchanges > 64) { fail(st, new Error('license')); return; }
       exchangeQueue = exchangeQueue.then(async () => {
         const response = await license(st, e.message, command.authorization);
@@ -312,7 +341,7 @@
     try {
       if (c.action === 'start') {
         mediaUrl(c.source); stop(current);
-        st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, duration:0, index:0,
+        st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, captureAnalysis:c.capture_analysis === true, duration:0, index:0,
           controller:new AbortController(), operations:Promise.resolve(), error:null, stage:'manifest', seekRevision:0};
         st.keys = new Promise((resolve, reject) => { st.resolveKeys = resolve; st.rejectKeys = reject; }); st.keys.catch(() => {});
         st.ready = new Promise((resolve, reject) => { st.resolveReady = resolve; st.rejectReady = reject; }); st.ready.catch(() => {});

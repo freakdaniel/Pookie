@@ -1,0 +1,13 @@
+{
+  "source": "https://essentia.upf.edu/models/feature-extractors/musicnn/msd-musicnn-1.pb",
+  "source_sha256": "cdea0722bcee7f731286843f2233e3aa69887bb5c3e2dce011eff55f38d04f3e",
+  "onnx_sha256": "5e828561ea880f6b90d17b01e05a7c92fa5fde14a19a0b11a1700300b0a11dfd",
+  "dimensions": 200,
+  "sample_rate": 16000,
+  "frames": 187,
+  "bands": 96,
+  "license": "CC-BY-NC-SA-4.0",
+  "attribution": "Music Technology Group, Universitat Pompeu Fabra",
+  "conversion": "TensorFlow embedding head to ONNX opset 17",
+  "max_reference_error": 6.4373016357421875e-06
+}

@@ -67,21 +67,21 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал ответ SoundCloud.")); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
     public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал страницу трека.")); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал страницу трека.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
     public async Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "comment-write", Comment: request), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("Electron не передал ответ SoundCloud.")); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
@@ -138,7 +138,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         403 => new SoundCloudException("SoundCloud отклонил запрос в браузере. Проверка могла не завершиться или ресурс недоступен.", 403),
                         404 => new SoundCloudException("Трек или ресурс SoundCloud не найден.", 404),
                         429 => new SoundCloudException("SoundCloud ограничил частоту запросов. Повтори позже.", 429),
-                        0 => new SoundCloudException("Electron не завершил запрос. Проверь соединение и окно проверки SoundCloud."),
+                        0 => new SoundCloudException("WebView не завершил запрос. Проверь соединение и окно проверки SoundCloud."),
                         _ => new SoundCloudException($"SoundCloud не выполнил действие (HTTP {result.Status}).", result.Status)
                     };
                 }
@@ -176,10 +176,38 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         foreach (var item in all) await item.Completion.ConfigureAwait(false);
     }
 
+    public static int RunChild(string handle, string profile, string? fixture)
+    {
+        StartupLog.UseChildOutput();
+        StartupLog.Event("browser.child-start");
+        try
+        {
+            ValidateFixture(fixture);
+            // Keep native browser initialization on the entry STA/GTK thread.
+            var line = Console.In.ReadLine();
+            if (line is not { Length: > 0 and <= 10000 }) return 2;
+            var session = JsonSerializer.Deserialize(line, SoundCloudJson.Default.WebSession);
+            if (session?.IsValid() != true) return 2;
+            using var pipe = new AnonymousPipeClientStream(PipeDirection.Out, handle);
+            StartupLog.Event("browser.child-input-ready");
+            using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
+            void Received(BrowserRequestEvent message) => writer.WriteLine(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
+            if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe")
+                WebKitLoginWindow.RunRequests(session, Received, profile, fixture);
+            else InfiniFrameLoginWindow.RunRequests(session, Received, profile, fixture);
+            return 0;
+        }
+        catch (Exception error)
+        {
+            AppLog.Failure("Pookie.Browser", "Браузерный процесс завершился с ошибкой", error);
+            return 2;
+        }
+    }
+
     private static void ValidateFixture(string? fixture)
     {
         if (fixture != null && (!Uri.TryCreate(fixture, UriKind.Absolute, out var uri) || !uri.IsLoopback || uri.Scheme != "http" || uri.UserInfo != ""))
-            throw new ArgumentException("Тестовый Electron допускает только локальный HTTP адрес.");
+            throw new ArgumentException("Тестовый WebView допускает только локальный HTTP адрес.");
     }
 
     private sealed class Worker
@@ -209,11 +237,16 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
             try
             {
-                var start = ElectronProcess.Create("--app-worker", pipe.GetClientHandleAsString(), profile.Path, fixture);
+                var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException("Не найден исполняемый файл Pookie."))
+                { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet")
+                    start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(NativeBrowserSession).Assembly.GetName().Name + ".dll"));
+                foreach (var argument in new[] { "--web-requests", pipe.GetClientHandleAsString(), "--login-profile", profile.Path }) start.ArgumentList.Add(argument);
+                if (fixture != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixture); }
                 AppLog.ConfigureChild(start);
-                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить Electron."));
+                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView."));
                 pipe.DisposeLocalCopyOfClientHandle();
-                Process.StandardInput.WriteLine(JsonSerializer.Serialize(new { Account = account, Script = BrowserRequestScript.Read(null, fixture == null ? "https://soundcloud.com" : new Uri(fixture).GetLeftPart(UriPartial.Authority)) }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+                Process.StandardInput.WriteLine(JsonSerializer.Serialize(account, SoundCloudJson.Default.WebSession));
                 Process.StandardInput.Flush();
                 Completion = ReadAsync(pipe, profile, changed);
             }
@@ -260,7 +293,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         public void Stop()
         {
             if (Interlocked.Exchange(ref stopped, 1) != 0) return;
-            // EOF lets Electron close normally and persist website storage.
+            // EOF lets the native WebView close normally and persist website storage.
             try { Process.StandardInput.Close(); }
             catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { }
             _ = KillIfStillRunningAsync();
@@ -328,7 +361,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         if (bodies.Remove(message.RequestId, out var body)) message = message with { Json = body.Text.ToString() };
                         pending.TrySetResult(message);
                     }
-                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state")
+                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state" or "audio-sample")
                         try { changed(message); } catch (InvalidOperationException) { }
                 }
             }
@@ -337,7 +370,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             {
                 Stop();
                 changed(new("audio-closed"));
-                var error = new InvalidOperationException("Окно SoundCloud закрыто или Electron завершился. Повтори действие, чтобы открыть его снова.");
+                var error = new InvalidOperationException("Окно SoundCloud закрыто или WebView завершился. Повтори действие, чтобы открыть его снова.");
                 Ready.TrySetException(error);
                 foreach (var pending in Pending.Values) pending.TrySetException(error);
                 await Process.WaitForExitAsync().ConfigureAwait(false);

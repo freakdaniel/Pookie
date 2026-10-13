@@ -45,7 +45,7 @@ internal static class StorageSmokeTest
             if (await waveforms.ReadAsync(waveUrl, default) != null) throw new InvalidOperationException("Expired waveform cache reused");
             await waveforms.WriteAsync("oversized", new byte[WaveformDiskCache.MaxEntrySize + 1], default);
             if (await waveforms.ReadAsync("oversized", default) != null) throw new InvalidOperationException("Unbounded waveform cache accepted");
-            var profilePath = Path.Combine(paths.Browser, "Electron");
+            var profilePath = Path.Combine(paths.Browser, "InfiniFrame");
             using (var profile = BrowserProfile.Open(path: profilePath))
             {
                 try { using var second = BrowserProfile.Open(path: profilePath); throw new IOException("Concurrent profile accepted"); }

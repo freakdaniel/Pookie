@@ -145,14 +145,26 @@ public sealed class WaveTests
         finally { if (Directory.Exists(path)) Directory.Delete(path, true); }
     }
     [Fact]
-    public void RelatedSourcesReactToSessionPreferenceInsteadOfRandomlyMixingAllCandidates()
+    public void LearnedAudioPreferenceSelectsLiveQueueAndSeedsInsteadOfLegacyRelatedWeights()
     {
         var taste = new WaveTaste(); var seed = Track(1, "A"); var other = Track(3, "B");
         taste.Import(seed, true, true);
         taste.Relate(seed, [Track(2, "Candidate A")]); taste.Relate(other, [Track(4, "Candidate B")]);
         taste.SetMode(WaveMode.Discoveries);
+        var model = Pookie.Recommendations.Learning.RankerState.Empty();
+        var positive = new float[200]; positive[0] = 1;
+        var negative = new float[200]; negative[1] = 1;
+        model.Weights[4] = 5; model.Weights[5] = -5;
+        model = model with { Samples = 20, AudioModel = Pookie.Recommendations.Audio.MusicnnEncoder.ModelId,
+            PositiveAudio = [positive], NegativeAudio = negative };
+        var vectors = new Dictionary<long, Pookie.Recommendations.Audio.AudioVector> {
+            [2] = new(model.AudioModel!, negative), [4] = new(model.AudioModel!, positive) };
+        taste.Learning = new(model, vectors, [], []);
+        Assert.Equal(4, taste.Rank([Track(2, "Candidate A"), Track(4, "Candidate B")], [], 1, Now, new Random(1))[0].Id);
+        Assert.Equal(4, taste.Seeds([Track(2, "Candidate A"), Track(4, "Candidate B")], 1)[0].Id);
+        taste.Learning = taste.Learning with { Model = model with { PositiveAudio = [negative], NegativeAudio = positive } };
         Assert.Equal(2, taste.Rank([Track(2, "Candidate A"), Track(4, "Candidate B")], [], 1, Now, new Random(1))[0].Id);
-        for (var i = 0; i < 3; i++) taste.Record(other, 90, false, Now);
+        taste.Block(Track(2, "Candidate A"));
         Assert.Equal(4, taste.Rank([Track(2, "Candidate A"), Track(4, "Candidate B")], [], 1, Now, new Random(1))[0].Id);
     }
     [Fact]

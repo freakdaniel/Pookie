@@ -1,0 +1,39 @@
+{
+  "sources": [
+    {
+      "name": "relaxed",
+      "source": "https://essentia.upf.edu/models/classification-heads/mood_relaxed/mood_relaxed-msd-musicnn-1.pb",
+      "source_sha256": "1252d28ca7d2204e34e0cdf84a00aa2bc9627a87bdcf923df3aad39cfa69d2d9",
+      "positive_class": 1
+    },
+    {
+      "name": "party",
+      "source": "https://essentia.upf.edu/models/classification-heads/mood_party/mood_party-msd-musicnn-1.pb",
+      "source_sha256": "765b096300ee1d92103cb0a122fc12c33882166fb94d37875284e82ce06322a1",
+      "positive_class": 1
+    },
+    {
+      "name": "sad",
+      "source": "https://essentia.upf.edu/models/classification-heads/mood_sad/mood_sad-msd-musicnn-1.pb",
+      "source_sha256": "a5e908cf7f59e8c379ff7c7d138dd85416985fddaebb5de14ca4193200411f61",
+      "positive_class": 1
+    },
+    {
+      "name": "aggressive",
+      "source": "https://essentia.upf.edu/models/classification-heads/mood_aggressive/mood_aggressive-msd-musicnn-1.pb",
+      "source_sha256": "3b6eb5645e4b47a2ceb28ef3f8612f224640c583048770791b9fc6e8e5627a67",
+      "positive_class": 0
+    }
+  ],
+  "onnx_sha256": "6ac745dba997710bfb1ea89af60fc8c63a4b4a0f1a027ebc59425c311ecbb905",
+  "input": "raw msd-musicnn-1 model/dense/BiasAdd:0 (before L2 normalisation)",
+  "outputs": [
+    "relaxed",
+    "party",
+    "sad",
+    "aggressive"
+  ],
+  "license": "CC-BY-NC-SA-4.0",
+  "attribution": "Pablo Alonso; Music Technology Group, Universitat Pompeu Fabra",
+  "max_reference_error": 4.656612873077393e-10
+}

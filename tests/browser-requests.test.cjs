@@ -27,6 +27,16 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
   return {window,document,messages,calls,timers,emit:(name,type)=>events.get(name)?.({detail:{challengeType:type}})};
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
+test('an initially restricted document reports a hard block without waiting for protection readiness or sending an API request', async () => {
+  const h = harness(async()=>{throw Error('Blocked document must not send requests');}, 'https://soundcloud.com', false, true, true, false);
+  h.document.title='Access temporarily restricted';
+  for (const timer of h.timers) timer();
+  const blocked=h.messages.find(m=>m.kind==='blocked');
+  assert.equal(blocked.interactive,true);assert.equal(blocked.challenge_type,'hard_block');
+  h.window.__pookieRequest(command(900,'me'));
+  await tick();
+  assert.equal(h.calls.length,0);assert.equal(h.messages.at(-1).status,403);
+});
 function historyResponse(url, options) {
   const path = new URL(url).pathname;
   if (options.method === 'GET' && path === '/me') return response(200, {id:42});

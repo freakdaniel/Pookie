@@ -6,6 +6,8 @@ public sealed record AudioSource(string Location, AudioTransport Transport, doub
 {
     public string? LicenseAuthToken { get; init; }
     public double NormalizationGainDb { get; init; }
+    public bool CaptureAnalysis { get; init; }
+    public string? BrowserPage { get; init; }
     public override string ToString() => $"Audio source ({Transport}, location redacted)";
 }
 
@@ -27,4 +29,5 @@ public interface IAudioPlayer : IDisposable, IAsyncDisposable
     void Pause(bool paused);
     void Volume(double percent);
     AudioState Poll();
+    Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample() => null;
 }

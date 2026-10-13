@@ -21,7 +21,7 @@ internal static class NativeWebLogin
     public static async Task<WebSession?> TryRestoreAsync(CancellationToken token, string? fixtureUri = null, string? profilePath = null)
     {
         var path = profilePath ?? BrowserProfile.DefaultPath();
-        if (!Directory.Exists(Path.Combine(path, "Partitions", "soundcloud"))) return null;
+        if (!Directory.Exists(path)) return null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         try
@@ -36,8 +36,16 @@ internal static class NativeWebLogin
     private static async Task<WebSession> RunProcessAsync(CancellationToken token, string profilePath, string? fixtureUri, bool hidden = false)
     {
         using var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        var start = ElectronProcess.Create("--app-login", pipe.GetClientHandleAsString(), profilePath, fixtureUri);
-        if (hidden) start.ArgumentList.Add("--verify-session");
+        var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException("Не найден исполняемый файл Pookie."))
+        { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet")
+            start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(NativeWebLogin).Assembly.GetName().Name + ".dll"));
+        start.ArgumentList.Add("--web-login");
+        start.ArgumentList.Add(pipe.GetClientHandleAsString());
+        start.ArgumentList.Add("--login-profile");
+        start.ArgumentList.Add(profilePath);
+        if (fixtureUri != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixtureUri); }
+        if (hidden) start.ArgumentList.Add("--restore-session");
         StartupLog.EnsureInitialized();
         AppLog.ConfigureChild(start);
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить окно входа.");
@@ -62,7 +70,7 @@ internal static class NativeWebLogin
                 await child.WaitForExitAsync(token);
                 if (fixtureUri != null) Console.Error.WriteLine($"LOGIN_CHILD_EXIT: {child.ExitCode}");
                 throw new InvalidOperationException(child.ExitCode == 2
-                    ? "Не удалось открыть окно входа. Проверь наличие браузерного процесса Electron в установке Pookie."
+                    ? "Не удалось открыть окно входа. На Linux нужен libwebkit2gtk-4.1-0, на Windows — WebView2 Runtime."
                     : child.ExitCode == 3 ? "Не удалось передать сессию SoundCloud в Pookie. Перезапустите окно входа."
                     : child.ExitCode == 1 ? "Окно входа закрыто. Подключение к SoundCloud отменено."
                     : "Окно входа аварийно завершилось.");
@@ -75,10 +83,38 @@ internal static class NativeWebLogin
         finally
         {
             if (!child.HasExited && !token.IsCancellationRequested)
-                try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); } catch (TimeoutException) { }
+                try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
+                catch (TimeoutException) { StartupLog.Event("browser.login-exit-timeout"); }
             if (!child.HasExited) child.Kill(entireProcessTree: true);
             await child.WaitForExitAsync();
             await Task.WhenAll(stdout, stderr);
+        }
+    }
+
+    public static int RunChild(string handle, string profilePath, string? fixtureUri, bool hidden = false)
+    {
+        AppLog.Initialize(Pookie.App.Storage.AppDataPaths.DefaultRoot(), worker: true);
+        try
+        {
+            using var pipe = new AnonymousPipeClientStream(PipeDirection.Out, handle);
+            void Connected(WebSession session)
+            {
+                using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 1024, leaveOpen: true);
+                writer.Write(JsonSerializer.Serialize(session, SoundCloudJson.Default.WebSession));
+            }
+            var useWebKit = OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe";
+            var connected = useWebKit ? WebKitLoginWindow.Run(Connected, profilePath, fixtureUri, hidden) : InfiniFrameLoginWindow.Run(Connected, profilePath, fixtureUri, hidden);
+            return connected ? 0 : 1;
+        }
+        catch (InfiniFrameLoginWindow.BridgeException error)
+        {
+            AppLog.Failure("Pookie.Login", "Ошибка обмена с окном входа", error);
+            return 3;
+        }
+        catch (Exception error)
+        {
+            AppLog.Failure("Pookie.Login", "Не удалось открыть окно входа", error);
+            return 2;
         }
     }
 

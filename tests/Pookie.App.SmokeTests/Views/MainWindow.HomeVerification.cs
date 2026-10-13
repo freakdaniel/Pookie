@@ -46,8 +46,8 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => libraryColumns == 6);
             player = null; // Exercise actual mouse routing without requesting audio.
             await WaitForLikedLayoutAsync(() => wavePlay.ActualWidth > 40);
-            if (homeHero.ActualHeight != 320 || homeHero.ActualWidth < 1200)
-                throw new InvalidOperationException("Wave hero no longer fills the available width.");
+            if (Math.Abs(homeHero.ActualHeight - 320) > 1 / Window.DpiScale || homeHero.ActualWidth < 1200)
+                throw new InvalidOperationException($"Wave hero no longer fills the available width: hero={homeHero.Bounds}, client={Window.ClientSize}, content={contentSurface.Bounds}.");
             ClickHomeElement(wavePlay);
             await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == WaveQueueKey && !homeHeroPlaying);
             if (page.Value != Page.Home || playbackQueue.Snapshot.Source.Count < 3)
@@ -60,6 +60,11 @@ internal sealed partial class MainWindow
             ClickHomeElement(waveSettingsButton);
             await WaitForLikedLayoutAsync(() => waveSettingsOpen.Value && homeWaveLayout.Expansion > .999999 && waveModeButtons[WaveMode.Favorites].ActualWidth > 60);
             VerifyWaveDrawerBounds();
+            ClickHomeElement(waveMoodButtons[Pookie.Recommendations.WaveMood.Calm]);
+            if (waveTaste.Mood != Pookie.Recommendations.WaveMood.Calm || playbackQueue.Current != selected ||
+                !playbackQueue.Snapshot.ManualUpcoming.Contains(manual))
+                throw new InvalidOperationException("Mood selection changed the current/manual queue or ignored the native click.");
+            ClickHomeElement(waveMoodButtons[Pookie.Recommendations.WaveMood.Auto]);
             var paletteBefore = waveBackdrop.Colors;
             var paletteFrames = new HashSet<PlayerGradient>();
             void SampleWaveColor() => paletteFrames.Add(waveBackdrop.Colors);
@@ -89,10 +94,12 @@ internal sealed partial class MainWindow
                 if (playbackQueue.Snapshot.ContextUpcoming.Any(entry => entry.Track.Id is >= 101 and <= 106))
                     throw new InvalidOperationException("Discovery mode included familiar tracks.");
                 await WaitForLikedLayoutAsync(() => !waveBackdrop.ChangingColor);
+                // Native windows may cap the requested height to the monitor work area.
+                var tallHeight = Math.Min(980, Window.ClientSize.Height);
                 for (var index = 0; index < 9; index++)
                 {
-                    var width = index == 8 ? 1760 : index % 2 == 0 ? 1000 : 1400;
-                    var height = index == 8 ? 980 : index % 2 == 0 ? 680 : 980;
+                    var width = index == 8 ? 1600 : index % 2 == 0 ? 1000 : 1400;
+                    var height = index == 8 ? tallHeight : index % 2 == 0 ? 680 : tallHeight;
                     Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
                     await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(Window.ClientSize.Height - height) < 1 &&
                         Math.Abs(homeWaveLayout.ActualHeight - waveSettingsPanel.ActualHeight - HomeWaveLayout.DrawerInset * 2) < 1);
@@ -155,6 +162,7 @@ internal sealed partial class MainWindow
             current = null; isPlaying.Value = false; playbackQueue.Clear(); RefreshLikedPlayback();
             var root = collectionCards.Keys.First(root => homeSections[0].Cards.IsAncestorOf(root) && root.ActualWidth > 100);
             var card = CollectionCard(root)!; var id = card.Item!.Track!.Id;
+            CaptureUiPreview("home-card-before-hover");
             RouteWaveformPointer(new(card.Frame.Bounds.X + 12, card.Frame.Bounds.Y + 12));
             await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999);
             ClickHomeElement(card.Playback.PlaybackButton!);
@@ -222,6 +230,7 @@ internal sealed partial class MainWindow
             if (homeContent != null || homeSession != null) throw new InvalidOperationException("Cleared account retained personal Home data.");
             if (waveTaste.Snapshot().Tracks.Length > 0 || waveCandidates.Count > 0 || waveStore.Load(43).Snapshot().Tracks.Length > 0)
                 throw new InvalidOperationException("Another account inherited wave preferences or stale candidates.");
+            await VerifyWaveJournalAsync();
             Console.WriteLine("HOME_UI_OK: personal shortcut cards, inline responsive drawer with independent scrolling, continuous and interrupted wave color transitions while playing/paused, animated wave, favorite/discovery settings, preserved current/manual queue, dislike, continuous refill, account persistence, fallback without mixes, bounded compact title links, independent sections and loading, responsive grids, scrolling, cache, partial failure/retry, stale account replies and real card/play clicks for Home, compact rows and liked tiles");
         }
         catch (Exception error)

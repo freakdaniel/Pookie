@@ -3,9 +3,8 @@ version = 1
 [[annotations]]
 path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
-  "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**",
-  "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "tests/**",
-  "src/Pookie.Browser.Electron/Properties/*.json", "src/Pookie.Browser.Electron/README.md",
+  "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**", "tools/**",
+  "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "src/**/*.md", "src/**/*.json", "tests/**",
   "src/Pookie.App/Assets/logo.svg",
 ]
 precedence = "closest"
@@ -19,6 +18,13 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Daniel Freak"
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie configuration containing literal advertising and analytics request hosts and path prefixes."
+
+[[annotations]]
+path = ["src/Pookie.Recommendations/Models/musicnn-msd.onnx", "src/Pookie.Recommendations/Models/musicnn-moods.onnx"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["Music Technology Group, Universitat Pompeu Fabra", "2026 Daniel Freak"]
+SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
+SPDX-FileComment = "MSD MusiCNN and MTG mood classifiers converted to ONNX without retraining weights. Attribution, sources and modifications: NOTICE. Full license: licenses/CC-BY-NC-SA-4.0.txt."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Icons/*.svg"

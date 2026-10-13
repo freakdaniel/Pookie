@@ -8,7 +8,11 @@ using Pookie.Logging;
 internal static class Program
 {
     [STAThread]
-    private static void Main(string[] args) => RunAsync(args).GetAwaiter().GetResult();
+    private static void Main(string[] args)
+    {
+        if (BrowserChildHost.TryRun(args, out var childExitCode)) { Environment.ExitCode = childExitCode; return; }
+        RunAsync(args).GetAwaiter().GetResult();
+    }
 
     private static async Task RunAsync(string[] args)
     {
@@ -17,11 +21,11 @@ internal static class Program
             if (args.Length == 2 && args[0] == "--session-vault-child")
             { SessionVaultSmokeTest.RunChild(args[1]); return; }
             if (await DiagnosticsRunner.TryRunAsync(args)) return;
-            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--track-page-live-ui-probe" or "--likes-edits-ui-smoke-test" or "--collections-ui-smoke-test" or "--comments-ui-smoke-test" or "--home-ui-smoke-test"))
+            if (!args.Any(arg => arg is "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--track-page-live-ui-probe" or "--likes-edits-ui-smoke-test" or "--collections-ui-smoke-test" or "--comments-ui-smoke-test" or "--home-ui-smoke-test" or "--wave-journal-ui-smoke-test"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
             var liveTrackUi = args.Contains("--track-page-live-ui-probe");
-            var likesEditsUi = args.Contains("--likes-edits-ui-smoke-test") || args.Contains("--collections-ui-smoke-test") || args.Contains("--comments-ui-smoke-test") || args.Contains("--home-ui-smoke-test");
+            var likesEditsUi = args.Contains("--likes-edits-ui-smoke-test") || args.Contains("--collections-ui-smoke-test") || args.Contains("--comments-ui-smoke-test") || args.Contains("--home-ui-smoke-test") || args.Contains("--wave-journal-ui-smoke-test");
             var options = AppRunOptions.FromArgs(args) with
             {
                 Preview = !liveTrackUi && !likesEditsUi, RequireSignIn = loginUi, SkipSessionRestore = loginUi || liveTrackUi || likesEditsUi,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WaveProfile = Pookie.Recommendations.WaveProfile;
 
 namespace Pookie.App.Home;
 

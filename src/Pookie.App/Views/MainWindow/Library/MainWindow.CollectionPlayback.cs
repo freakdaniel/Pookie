@@ -44,6 +44,6 @@ internal sealed partial class MainWindow
             item.IsAlbum ? "Сейчас играет альбом" : "Сейчас играет плейлист", detail.Tracks.NextHref,
             Kind: item.IsAlbum ? PlaybackContextKind.Album : PlaybackContextKind.Playlist,
             ResourceUrn: PlaybackHistoryContextUrn(detail.Item)), tracks, tracks[0], 0);
-        await PlayAsync(tracks[0]);
+        await PlayAsync(tracks[0], queueAdvance: true);
     }
 }

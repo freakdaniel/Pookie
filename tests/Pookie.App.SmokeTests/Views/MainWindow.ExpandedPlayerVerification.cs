@@ -145,7 +145,8 @@ internal sealed partial class MainWindow
             var nextRow = expandedQueueRows.Values.Single(row => row.Track?.Id == 3);
             var pixelTolerance = 1 / Window.DpiScale;
             if (Math.Abs(nextRow.Cover.ActualWidth - 44) > pixelTolerance || Math.Abs(nextRow.Root.ActualHeight - 64) > pixelTolerance ||
-                nextRow.Title.FontSize != 14 || nextRow.Author.FontSize != 12 || Math.Abs(nextRow.Duration.ActualWidth - 48) > pixelTolerance)
+                nextRow.Title.FontSize != 14 || nextRow.Author.FontSize != 12 || nextRow.Duration.FontSize != 12 ||
+                Math.Abs(nextRow.Duration.Bounds.Right - (nextRow.Root.Bounds.Right - 8)) > pixelTolerance)
                 throw new InvalidOperationException($"Fullscreen queue does not share the compact search row layout: cover={nextRow.Cover.ActualWidth}, row={nextRow.Root.ActualHeight}, duration={nextRow.Duration.ActualWidth}, dpi={Window.DpiScale}.");
             RouteWaveformClick(new Point(nextRow.Cover.Bounds.X + 22, nextRow.Cover.Bounds.Y + 22));
             await WaitForLikedLayoutAsync(() => current?.Id == 3 && audioReady);
@@ -364,6 +365,7 @@ internal sealed partial class MainWindow
         {
             if (ready()) return;
             var next = new Point(point.X + (attempt % 2), point.Y);
+            MoveLikedActionCursor(next);
             SendLikedActionMouse(0x200, 0, next);
             await WaitForLoginFrameAsync();
         }

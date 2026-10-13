@@ -13,12 +13,22 @@ internal static class BrowserAudioStateSmokeTest
         var browser = new FakeBrowser();
         await using var player = new WindowsAudioPlayer(native, () => browser);
         var source = new AudioSource("https://media.sndcdn.com/track.m3u8", AudioTransport.WidevineHls, 120)
-            { LicenseAuthToken = "fixture-authorization", NormalizationGainDb = -10 };
+            { LicenseAuthToken = "fixture-authorization", NormalizationGainDb = -10, CaptureAnalysis = true };
         player.Volume(0);
         await player.PlayAsync(source);
         var first = browser.Commands.Last(c => c.Action == "start");
         Require(native.Played == null && first.Volume == 0, "Protected audio must use browser EME with configured volume.");
         Require(first.NormalizationGainDb == -10, "The waveform correction must be supplied before protected playback starts.");
+        Require(first.CaptureAnalysis, "The browser must receive the opt-in analysis flag.");
+        browser.Sample(Guid.NewGuid().ToString("N"), 0, 1024);
+        browser.Sample(first.PlaybackId, 1024, 1024);
+        Require(player.TakeAnalysisSample() == null, "Stale and out-of-order PCM must be ignored.");
+        for (var offset = 0; offset < 48000; offset += 1024) browser.Sample(first.PlaybackId, offset, Math.Min(1024, 48000 - offset));
+        var analysis = player.TakeAnalysisSample();
+        Require(analysis?.Mono.Length == 48000 && analysis.Mono.All(value => value == .25f), "Browser PCM must reach the native analyzer unchanged.");
+        using (var encoder = new Pookie.Recommendations.Audio.MusicnnEncoder())
+            Require(encoder.Encode(analysis!)?.Values.Length == 200, "Browser samples must be accepted by the real neural encoder.");
+        Require(player.TakeAnalysisSample() == null, "The analysis sample must be delivered once.");
         browser.State(first.PlaybackId, new(3, 120, true, false, false)
             { BufferedStart = 0, BufferedEnd = 45, NormalizationGainDb = -10 });
         Require(player.Poll().Playing && player.Poll().Position == 3, "Browser state must reach the player.");
@@ -70,6 +80,12 @@ internal static class BrowserAudioStateSmokeTest
         }
         public void State(string id, BrowserAudioState state) => Changed?.Invoke(new("audio-state", id, 200, Audio: state));
         public void Closed() => Changed?.Invoke(new("audio-closed"));
+        public void Sample(string id, int offset, int count)
+        {
+            var bytes = new byte[count * 4];
+            for (var i = 0; i < count; i++) System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(i * 4), .25f);
+            Changed?.Invoke(new("audio-sample", id, 200, Sample: new(offset, Convert.ToBase64String(bytes))));
+        }
     }
 
     private sealed class FakeNative : IAudioPlayer

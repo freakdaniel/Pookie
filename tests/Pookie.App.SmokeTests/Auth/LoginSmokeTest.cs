@@ -103,7 +103,7 @@ internal static class LoginSmokeTest
             context.Response.Cookies.Append("datadome", "fixture-protection");
             var html = """
                 <!doctype html><html lang="ru"><title>Pookie: проверка окна входа</title>
-                <h1>Тест передачи сессии Electron</h1><p>Используются вымышленные данные, без SoundCloud.</p>
+                <h1>Тест передачи сессии WebView</h1><p>Используются вымышленные данные, без SoundCloud.</p>
                 <script>
                 window.ddoptions = {sessionByHeader:true};
                 window.__sc_version = '123';
@@ -146,6 +146,17 @@ internal static class LoginSmokeTest
                 !session.UserAgent.Contains("Windows", StringComparison.Ordinal) || !session.UserAgent.Contains("Chrome/", StringComparison.Ordinal)))
                 throw new InvalidOperationException("Окно входа потеряло штатный User-Agent Chromium.");
             Console.WriteLine($"LOGIN_SMOKE_OK: WebView {mode}, origin check, anonymous pipe, window close");
+        }
+        if (OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") == "infiniframe")
+        {
+            using var failureTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await NativeWebLogin.ConnectAsync(failureTimeout.Token, app.Urls.Single() + "/bridge-error");
+                throw new InvalidOperationException("Ошибка JavaScript не остановила передачу сессии.");
+            }
+            catch (InvalidOperationException error) when (error.Message.Contains("Не удалось передать сессию", StringComparison.Ordinal))
+            { Console.WriteLine("LOGIN_BRIDGE_ERROR_OK: evaluation failure reaches caller and closes the host without hanging"); }
         }
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         try

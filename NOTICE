@@ -16,3 +16,35 @@ NuGet source commit: 23c732a8658a0df2a5434fe69b0011800b14f0da
 These unmodified NuGet dependencies are licensed under the Apache License,
 Version 2.0. The complete license accompanies this distribution in
 licenses/Apache-2.0.txt. Pookie's integration code is licensed separately.
+
+MSD MusiCNN model
+Music Technology Group, Universitat Pompeu Fabra
+https://essentia.upf.edu/models/feature-extractors/musicnn/msd-musicnn-1.pb
+Converted by Pookie to an ONNX embedding head, under CC BY-NC-SA 4.0.
+Complete model license and disclaimer: licenses/CC-BY-NC-SA-4.0.txt.
+Model licensing: https://essentia.upf.edu/models/LICENSE
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+The converted model retains 200 embedding outputs, without retraining weights.
+Conversion and numerical verification: tools/audio-embeddings/prepare_musicnn.py.
+Checksums and conversion error: src/Pookie.Recommendations/Models/musicnn-msd.json.
+Reference: Pons, J. and Serra, X. (2019), musicnn: Pre-trained convolutional neural
+networks for music audio tagging. https://arxiv.org/abs/1909.06654
+
+MusiCNN mood classification heads (relaxed, party, sad, aggressive)
+Pablo Alonso; Music Technology Group, Universitat Pompeu Fabra
+https://essentia.upf.edu/models/classification-heads/
+Converted by Pookie into one ONNX classifier over raw MSD MusiCNN embeddings,
+without retraining weights. Licensed under CC BY-NC-SA 4.0; complete terms:
+licenses/CC-BY-NC-SA-4.0.txt. Original model licensing:
+https://essentia.upf.edu/models/LICENSE
+Sources, hashes, class indices and numerical conversion error:
+src/Pookie.Recommendations/Models/musicnn-moods.json.
+Conversion and reference verification: tools/audio-embeddings/prepare_moods.py.
+
+InfiniLore.InfiniFrame 0.62.1
+InfiniFrame and TryPhotino contributors; licensed under Apache-2.0.
+https://github.com/InfiniLore/InfiniFrame
+NuGet source commit: 3b6b0e1ad9430ad5ea70296c7746aef63b82d1c2
+Complete terms: licenses/Apache-2.0.txt.
+Uses the operating system's browser runtime. Proprietary Widevine binaries are
+not redistributed by Pookie.

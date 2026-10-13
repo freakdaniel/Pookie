@@ -3,5 +3,8 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>Pookie</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" />
+  </ItemGroup>
   <Import Project="Pookie.App.Shared.props" />
 </Project>

@@ -217,7 +217,7 @@ internal sealed partial class MainWindow
         if (displayedCollection == null || page.Value != Page.LibraryCollection) return;
         if (playbackQueue.Context?.Key == displayedCollection.Key && current != null) { await ToggleAsync(); return; }
         if (activeCollection?.Items.FirstOrDefault(item => item.Track != null)?.Track is not { } first) return;
-        SetQueue(first, 0); await PlayAsync(first);
+        SetQueue(first, 0); await PlayAsync(first, queueAdvance: true);
     }
 
     private static string RussianPlural(long count, string one, string few, string many) => count % 100 is >= 11 and <= 14

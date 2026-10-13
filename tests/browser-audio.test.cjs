@@ -46,7 +46,7 @@ test('audio events report the actual buffered interval at the playhead, includin
   await starting;
 });
 
-function normalizationFixture(db, blockedModule=false) {
+function normalizationFixture(db, blockedModule=false, emeError=null) {
   const messages=[], audios=[], contexts=[], sessions=[];
   const urls=new Map(); let node;
   class Media extends EventTarget {
@@ -92,16 +92,42 @@ function normalizationFixture(db, blockedModule=false) {
     session.close=async()=>{session.closed=true;};sessions.push(session);return session;
   }})};
   vm.runInNewContext(script,{window,location:{origin:'https://soundcloud.com'},URL:LocalURL,Blob,AbortController,TextDecoder,
-    atob,HTMLMediaElement:Media,MediaSource:Source,AudioContext:Context,AudioWorkletNode:Node,
-    navigator:{requestMediaKeySystemAccess:async()=>access},
+    atob,btoa,Float32Array,HTMLMediaElement:Media,MediaSource:Source,AudioContext:Context,AudioWorkletNode:Node,
+    navigator:{requestMediaKeySystemAccess:async()=>{if(emeError)throw Object.assign(new Error('EME unavailable'),{name:emeError});return access;}},
     document:{addEventListener:()=>{},querySelectorAll:()=>[],createElement:()=>{const audio=new Media();audios.push(audio);return audio;},body:{append:()=>{}}},
     fetch:async url=>new Response(url.endsWith('.m3u8') ? manifest : new Uint8Array(32)),
     setInterval:()=>1,clearInterval:()=>{},setTimeout,clearTimeout});
   const id='2'.repeat(32);
   const command=(action,values={})=>window.__pookieAudioRequest({id,audio:{action,playback_id:id,position:0,volume:70,...values}},m=>messages.push(m));
-  const start=(paused=false)=>command('start',{source:'https://media.sndcdn.com/track.m3u8',authorization:'fixture',normalization_gain_db:db,paused});
-  return {command,start,messages,audios,contexts,sessions};
+  const start=(paused=false,capture=false)=>command('start',{source:'https://media.sndcdn.com/track.m3u8',authorization:'fixture',normalization_gain_db:db,paused,capture_analysis:capture});
+  return {command,start,messages,audios,contexts,sessions,get node(){return node;}};
 }
+
+test('the analysis graph transmits bounded little-endian PCM and rejects stale or out-of-order chunks',async()=>{
+  const f=normalizationFixture(-12);await f.start(false,true);
+  assert.equal(f.contexts.length,1);assert.equal(f.audios[0].volume,1);
+  const samples=new Float32Array(1024).fill(.25);
+  f.node.port.onmessage({data:{offset:0,samples}});
+  const message=f.messages.findLast(m=>m.kind==='audio-sample');
+  assert.equal(message.request_id,'2'.repeat(32));assert.equal(message.sample.offset,0);
+  const bytes=Buffer.from(message.sample.data,'base64');assert.equal(bytes.length,4096);assert.equal(bytes.readFloatLE(0),.25);
+  assert.ok(JSON.stringify(message).length<10000);
+  f.node.port.onmessage({data:{offset:0,samples}});f.node.port.onmessage({data:{offset:2048,samples}});
+  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
+  f.node.port.onmessage({data:{offset:1024,samples}});assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,2);
+  await f.command('stop');f.node.port.onmessage({data:{offset:2048,samples}});
+  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,2);
+});
+
+test('missing or disabled Widevine is reported as unsupported at EME instead of a decoding failure',async()=>{
+  for(const error of ['NotSupportedError','NotAllowedError','SecurityError']){
+    const f=normalizationFixture(0,false,error);await f.start();
+    const failed=f.messages.findLast(m=>m.kind==='audio-state' && m.audio.error);
+    assert.equal(failed.audio.error,'unsupported');assert.equal(failed.audio.stage,'eme');
+    assert.equal(f.sessions.length,0);assert.equal(f.audios[0].paused,true);
+    assert.equal(f.messages.at(-1).status,0);await f.command('stop');
+  }
+});
 
 test('negative DRM correction applies before playback without a graph or calibration',async()=>{
   const f=normalizationFixture(-12);

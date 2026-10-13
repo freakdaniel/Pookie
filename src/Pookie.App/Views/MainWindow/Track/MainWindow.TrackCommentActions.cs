@@ -151,7 +151,7 @@ internal sealed partial class MainWindow
         if (body.Length == 0 || !pendingCommentPosts.Add((session, state.Track.Id))) return;
         var generation = navigationGeneration;
         // A navigation read can be cancelled independently. Cancelling a write
-        // terminates the shared Electron worker, including current playback.
+        // terminates the shared browser worker, including current playback.
         var token = lifetime.Token;
         RefreshCommentSendAvailability();
         try

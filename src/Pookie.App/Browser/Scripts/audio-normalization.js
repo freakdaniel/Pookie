@@ -1,6 +1,6 @@
 'use strict';
 
-// A fixed correction supplied before playback. No analysis or priming.
+// Fixed playback correction and an optional bounded tap before gain/volume.
 // The limiter only protects boosted sample peaks from clipping.
 class PookieGainProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -9,10 +9,35 @@ class PookieGainProcessor extends AudioWorkletProcessor {
     if (!Number.isFinite(db) || db < -24 || db > 6) throw new Error('Invalid track gain');
     this.gain=Math.pow(10,db/20); this.limit=1;
     this.release=1-Math.exp(-128/(sampleRate*.5));
+    this.capture=options.processorOptions?.captureAnalysis === true;
+    this.active=false; this.count=0; this.chunk=new Float32Array(1024); this.used=0;
+    this.ratio=sampleRate/16000; this.remaining=this.ratio; this.sum=0;
+    this.port.onmessage=event=>{this.active=event.data?.active === true;};
+  }
+  analyze(input) {
+    if (!this.capture || !this.active || this.count>=144000) return;
+    for(let frame=0;frame<input[0].length;frame++) {
+      let value=0;
+      for(const channel of input) value+=Number.isFinite(channel[frame]) ? channel[frame] : 0;
+      value/=input.length;
+      let available=1;
+      while(available>1e-9) {
+        const used=Math.min(available,this.remaining);
+        this.sum+=value*used; available-=used; this.remaining-=used;
+        if(this.remaining>1e-9) continue;
+        this.chunk[this.used++]=this.sum/this.ratio; this.sum=0; this.remaining=this.ratio; this.count++;
+        if(this.used===1024 || this.count===144000) {
+          const samples=this.chunk.slice(0,this.used);
+          this.port.postMessage({offset:this.count-this.used,samples},[samples.buffer]); this.used=0;
+        }
+        if(this.count===144000) return;
+      }
+    }
   }
   process(inputs,outputs) {
     const input=inputs[0],output=outputs[0];
     if (!input?.length) return true;
+    this.analyze(input);
     const length=input[0].length;
     if (this.gain<=1) {
       for(let ch=0;ch<output.length;ch++) for(let frame=0;frame<length;frame++) {

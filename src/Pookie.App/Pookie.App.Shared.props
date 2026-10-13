@@ -6,6 +6,7 @@
   </PropertyGroup>
   <Import Project="Pookie.App.Platform.props" />
   <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/login-capture.js" LogicalName="Pookie.App.Browser.Scripts.login-capture.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-requests.js" LogicalName="Pookie.App.Browser.Scripts.browser-requests.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-audio.js" LogicalName="Pookie.App.Browser.Scripts.browser-audio.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/audio-normalization.js" LogicalName="Pookie.App.Browser.Scripts.audio-normalization.js" />
@@ -30,20 +31,7 @@
     <InternalsVisibleTo Include="Pookie.Discord.Tests" />
     <InternalsVisibleTo Include="Pookie.App.SmokeTests" />
 
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Browser.Electron/Pookie.Browser.Electron.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Recommendations/Pookie.Recommendations.csproj" />
   </ItemGroup>
-  <Target Name="CopyPookieBrowserHost" AfterTargets="Build">
-    <PropertyGroup>
-      <_PookieBrowserOutput>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../Pookie.Browser.Electron/bin/$(Configuration)/net10.0/$(RuntimeIdentifier)/'))</_PookieBrowserOutput>
-    </PropertyGroup>
-    <Error Condition="!Exists('$(_PookieBrowserOutput)Pookie.Browser.Electron.dll')" Text="The Electron browser helper has not been built." />
-    <ItemGroup>
-      <_PookieBrowserFiles Include="$(_PookieBrowserOutput)**/*" Exclude="$(_PookieBrowserOutput)**/*.pdb;$(_PookieBrowserOutput).electron/node_modules/.cache/**" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_PookieBrowserFiles)" DestinationFiles="@(_PookieBrowserFiles->'$(TargetDir)BrowserHost/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-  </Target>
-  <Target Name="PublishPookieBrowserHost" AfterTargets="Publish" DependsOnTargets="CopyPookieBrowserHost">
-    <Copy SourceFiles="@(_PookieBrowserFiles)" DestinationFiles="@(_PookieBrowserFiles->'$(PublishDir)BrowserHost/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-  </Target>
 </Project>
