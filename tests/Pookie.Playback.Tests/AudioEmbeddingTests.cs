@@ -28,8 +28,12 @@ public sealed class AudioEmbeddingTests(ITestOutputHelper output)
         Assert.InRange(AudioVectorCodec.Dot(expectedEmbedding, vector.Values), .99999, 1);
         var expectedMood = reference.RootElement.GetProperty("moods").EnumerateArray().Select(item => item.GetSingle()).ToArray();
         Assert.NotNull(vector.Mood);
-        var actualMood = new[] { vector.Mood.Calm, vector.Mood.Energetic, vector.Mood.Melancholic, vector.Mood.Aggressive };
-        for (var i = 0; i < 4; i++) Assert.InRange(Math.Abs(actualMood[i] - expectedMood[i]), 0, 2e-5);
+        Assert.True(vector.Mood.IsCurrent);
+        expectedMood[4] = Math.Clamp((expectedMood[4] - 1) / 8, 0, 1);
+        expectedMood[5] = Math.Clamp((expectedMood[5] - 1) / 8, 0, 1);
+        var actualMood = new[] { vector.Mood.Calm, vector.Mood.Party!.Value, vector.Mood.Melancholic,
+            vector.Mood.Aggressive, vector.Mood.Valence!.Value, vector.Mood.Energetic };
+        for (var i = 0; i < 6; i++) Assert.InRange(Math.Abs(actualMood[i] - expectedMood[i]), 0, 2e-5);
         watch.Restart(); var repeat = encoder.Encode(sample)!;
         output.WriteLine($"Warm 3-second embedding: {watch.Elapsed.TotalMilliseconds:F1} ms");
         Assert.InRange(AudioVectorCodec.Dot(vector.Values, repeat.Values), .999999, 1);

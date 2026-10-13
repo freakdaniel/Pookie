@@ -30,6 +30,9 @@ try {
         mkdirSync(dirname(target), { recursive: true });
         copyFileSync(source, target);
     }
+    // REUSE skips its own configuration. Also audit the redistributed attribution
+    // in it as ordinary TOML, including its original SPDX headers and notices.
+    copyFileSync(join(root, 'REUSE.toml'), join(staging, 'reuse-attribution.toml'));
     const result = spawnSync('uvx', ['--from', 'reuse[charset-normalizer]==6.2.0',
         'reuse', '--root', staging, 'lint'], { cwd: staging, stdio: 'inherit' });
     if (result.error) console.error(result.error.message);

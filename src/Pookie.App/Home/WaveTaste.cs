@@ -25,6 +25,9 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
     internal Core.Storage.RecommendationSnapshot? Learning { get; set; }
     internal Core.WaveMood Mood { get; set; }
     internal Guid? SessionId { get; set; }
+    private double MinimumMoodMatch => Mood == Core.WaveMood.Energetic ? .6 : .4;
+    private Func<Core.WaveTrack, double?>? MoodMatcher() => Mood == Core.WaveMood.Auto ? null : track =>
+        Learning?.Vectors.GetValueOrDefault(track.Id)?.Mood is { IsCurrent: true } descriptor ? descriptor.Match(Mood) : null;
     private Func<Core.WaveTrack, double> LearnedScorer()
     {
         var learner = new Core.Learning.OnlineRanker(Learning?.Model);
@@ -48,14 +51,14 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
     internal SoundCloudTrack[] Seeds(IEnumerable<SoundCloudTrack> candidates, int count = 3)
     {
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
-        return taste.Seeds(originals.Values.Select(WaveTrack.From), count, LearnedScorer()).Select(track => originals[track.Id]).ToArray();
+        return taste.Seeds(originals.Values.Select(WaveTrack.From), count, LearnedScorer(), MoodMatcher(), MinimumMoodMatch).Select(track => originals[track.Id]).ToArray();
     }
     internal SoundCloudTrack[] Rank(IEnumerable<SoundCloudTrack> candidates, IEnumerable<SoundCloudTrack> recent,
         int count, DateTimeOffset now, Random? random = null, IEnumerable<SoundCloudTrack>? reserved = null)
     {
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
         return taste.Rank(originals.Values.Select(WaveTrack.From), recent.Select(WaveTrack.From), count, now,
-            random, reserved?.Select(WaveTrack.From), LearnedScorer()).Select(track => originals[track.Id]).ToArray();
+            random, reserved?.Select(WaveTrack.From), LearnedScorer(), MoodMatcher(), MinimumMoodMatch).Select(track => originals[track.Id]).ToArray();
     }
     internal static string ArtistKey(SoundCloudTrack track) => Core.WaveTaste.ArtistKey(WaveTrack.From(track));
     internal static string WorkKey(SoundCloudTrack track) => Core.WaveTaste.WorkKey(WaveTrack.From(track));

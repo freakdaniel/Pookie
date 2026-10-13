@@ -46,6 +46,7 @@ internal sealed partial class MainWindow
         if (playbackQueue.Context?.Key == WaveQueueKey && current != null) { await ToggleAsync(); return; }
         SeedWaveFromHome();
         waveListening.NewSession(); waveTaste.SessionId = waveListening.SessionId;
+        ResetWaveCandidateAnalysis();
         var request = ++homeHeroPlayRequest;
         var session = api.Session; var generation = playGeneration; var sourceVersion = playbackQueue.SourceVersion;
         homeHeroPlaying = true; RefreshHomeHeroPlayback();
@@ -57,6 +58,8 @@ internal sealed partial class MainWindow
                 await FetchWaveCandidatesAsync(lifetime.Token);
                 if (!demo) await LoadWaveLearningAsync();
             }
+            await AnalyzeWaveCandidatesAsync(lifetime.Token);
+            if (!demo) await LoadWaveLearningAsync();
             if (disposed || request != homeHeroPlayRequest || api.Session != session || generation != playGeneration || sourceVersion != playbackQueue.SourceVersion) return;
             var ranked = waveTaste.Rank(waveCandidates.Values, [], 20, DateTimeOffset.UtcNow);
             if (ranked.Length == 0)

@@ -1,4 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Daniel Freak
+# SPDX-FileCopyrightText: Serilog Contributors
+# SPDX-FileCopyrightText: InfiniFrame and TryPhotino contributors
+# SPDX-License-Identifier: BSD-3-Clause AND Apache-2.0
 version = 1
+
+# Copyright, license assignments, attribution and provenance are maintained here.
+# Complete license texts are in licenses/. Validate with npm run license:check;
+# the checker maps licenses/ to the LICENSES/ directory required by REUSE only
+# in its temporary validation copy. Builds ship REUSE.toml and licenses/ together.
+# This metadata preserves the Apache-2.0 dependency attribution previously
+# distributed separately; Pookie source retains its file-level license assignments.
 
 [[annotations]]
 path = [
@@ -24,55 +35,151 @@ path = ["src/Pookie.Recommendations/Models/musicnn-msd.onnx", "src/Pookie.Recomm
 precedence = "closest"
 SPDX-FileCopyrightText = ["Music Technology Group, Universitat Pompeu Fabra", "2026 Daniel Freak"]
 SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
-SPDX-FileComment = "MSD MusiCNN and MTG mood classifiers converted to ONNX without retraining weights. Attribution, sources and modifications: NOTICE. Full license: licenses/CC-BY-NC-SA-4.0.txt."
+SPDX-FileComment = """
+MSD MusiCNN, MTG mood classifiers and DEAM arousal/valence regression converted
+by Pookie to ONNX without retraining weights. The embedding head retains 200 outputs.
+Original MSD model: https://essentia.upf.edu/models/feature-extractors/musicnn/msd-musicnn-1.pb
+Mood heads: relaxed, party, sad and aggressive; author Pablo Alonso, Music Technology
+Group, Universitat Pompeu Fabra. Sources: https://essentia.upf.edu/models/classification-heads/
+DEAM: https://essentia.upf.edu/models/classification-heads/deam/deam-msd-musicnn-2.pb
+Original model licensing: https://essentia.upf.edu/models/LICENSE
+Full license and disclaimer: licenses/CC-BY-NC-SA-4.0.txt.
+Conversion and numerical verification: tools/audio-embeddings/prepare_musicnn.py
+and prepare_moods.py. Source hashes, class indices and conversion errors:
+src/Pookie.Recommendations/Models/musicnn-msd.json and musicnn-moods.json.
+Reference: Pons, J. and Serra, X. (2019), musicnn: Pre-trained convolutional neural
+networks for music audio tagging. https://arxiv.org/abs/1909.06654
+"""
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Icons/*.svg"
 precedence = "closest"
 SPDX-FileCopyrightText = "2023 Phosphor Icons"
 SPDX-License-Identifier = "MIT"
-SPDX-FileComment = "Phosphor core commit 2b75f3ad12b420c9504ef05df8d2564a28f8500e; source and asset mappings are documented in LICENSING.md."
+SPDX-FileComment = """
+Embedded SVGs from https://github.com/phosphor-icons/core at commit
+2b75f3ad12b420c9504ef05df8d2564a28f8500e; no runtime CDN dependency.
+Most icons are upstream duotone assets, including squares-four, list-bullets, copy,
+chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
+Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
+clock-counter-clockwise and thumbs-down use assets/regular/ variants;
+the filled dislike variant is assets/fill/thumbs-down-fill.svg.
+Full terms and attribution: licenses/MIT.txt.
+"""
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Stickle/*.png"
 precedence = "closest"
 SPDX-FileCopyrightText = "Icons8"
 SPDX-License-Identifier = "LicenseRef-Icons8"
-SPDX-FileComment = "User-supplied, unmodified Icons8 Stickle PNGs embedded in wave character and Home shortcut cards. Icons8 attribution appears in application settings. Source and license terms are documented in LICENSING.md."
+SPDX-FileComment = """
+User-supplied, unmodified Icons8 Stickle PNGs: heart.png, star.png, tranding.png,
+pixel-heart.png and pixel-clock.png, scaled proportionally in Wave and Home cards.
+User-identified source: https://icons8.com/i; individual download URLs and account
+plan were not supplied. Application settings include a clickable Icons8 credit:
+https://icons8.com/license. Full terms: licenses/LicenseRef-Icons8.txt, Universal
+Multimedia License Agreement published 2025-11-27 and retrieved 2026-10-12 from
+https://intercom.help/icons8-7fb7577e8170/en/articles/5534926-universal-multimedia-license-agreement-for-icons8
+Original assets may not be redistributed as standalone downloads; public source
+distribution of these PNGs requires appropriate separate permission.
+"""
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Fonts/GoogleSans.ttf"
 precedence = "closest"
 SPDX-FileCopyrightText = "2025 The Google Sans Project Authors (https://github.com/googlefonts/googlesans)"
 SPDX-License-Identifier = "OFL-1.1"
-SPDX-FileComment = "Unmodified GoogleSans[GRAD,opsz,wght].ttf from google/fonts commit a0e3dbcdc3a3ecfafff3f071159ae0221628922d, stored as GoogleSans.ttf and embedded as the UI font. See LICENSING.md."
+SPDX-FileComment = """
+Unmodified GoogleSans[GRAD,opsz,wght].ttf, stored as GoogleSans.ttf and embedded as
+the UI font; Cyrillic and variable weights 400-700. Source: Google Fonts commit
+a0e3dbcdc3a3ecfafff3f071159ae0221628922d, ofl/googlesans:
+https://github.com/google/fonts/tree/a0e3dbcdc3a3ecfafff3f071159ae0221628922d/ofl/googlesans
+Full terms: licenses/OFL-1.1.txt; upstream copyright also remains in font metadata.
+Google and Google Sans are Google LLC trademarks; font use implies no affiliation
+or sponsorship. Upstream trademark notice: ofl/googlesans/TRADEMARKS.md at that commit.
+"""
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Fonts/Bungee-Regular.ttf"
 precedence = "closest"
 SPDX-FileCopyrightText = "2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)"
 SPDX-License-Identifier = "OFL-1.1"
-SPDX-FileComment = "Unmodified Bungee Regular from Google Fonts, used only for the Pookie wordmark. See LICENSING.md."
+SPDX-FileComment = "Unmodified Bungee Regular 2.000 from https://github.com/google/fonts/tree/main/ofl/bungee; upstream commit eb03cf69adab5094f6b84e95357789cdf3bfeb99. Used only for the Pookie wordmark. Full terms: licenses/OFL-1.1.txt; upstream copyright also remains in font metadata."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Branding/soundcloud-mark-white.png"
 precedence = "closest"
 SPDX-FileCopyrightText = "SoundCloud"
 SPDX-License-Identifier = "LicenseRef-SoundCloud-Marks"
-SPDX-FileComment = "Official six-bar white favicon from the SoundCloud Media Kit, losslessly re-encoded as PNG for native image decoding; brand permission and source are documented in LICENSING.md."
+SPDX-FileComment = """
+Official six-bar white favicon from https://community.soundcloud.com/company/media-kit,
+losslessly re-encoded from WebP to PNG for native image decoding. Pixels, colors
+and proportions are preserved; used above the kit's 24px minimum on the orange
+SoundCloud sign-in button. Original transparent asset:
+https://cdn.prod.website-files.com/62a0a0168756b795debc65bc/69ef2abba42d7532aff4793c_Favicon%20Colors%20white%20(transparent)%20-%20download.webp
+Limited brand permission under SoundCloud API Terms of Use (Attribution and
+Branding, SoundCloud Marks and Design Assets) and Buttons & Logos guidance;
+not an open-source license or trademark sublicense. Pookie is an unofficial client.
+Terms retrieved 2026-10-05 and retained in licenses/LicenseRef-SoundCloud-Marks.txt.
+"""
 
 [[annotations]]
 path = "src/Pookie.App/Audio/Drm/CdmAbi.cs"
 precedence = "closest"
 SPDX-FileCopyrightText = ["2012, 2017 The Chromium Authors", "2026 Daniel Freak"]
 SPDX-License-Identifier = "BSD-3-Clause"
-SPDX-FileComment = "C# translation of the public Host/CDM v10 declarations from Kodi InputStream Adaptive commit e14d199a5ed7224d1c42a36619ab0a67d3d8f3f6; see LICENSING.md."
+SPDX-FileComment = """
+C# translation of public Chromium Host/CDM v10 layouts and unmanaged function
+pointers from Kodi InputStream Adaptive commit e14d199a5ed7224d1c42a36619ab0a67d3d8f3f6:
+https://github.com/xbmc/inputstream.adaptive/blob/e14d199a5ed7224d1c42a36619ab0a67d3d8f3f6/lib/cdm/cdm/media/cdm/api/content_decryption_module.h
+No Kodi implementation code or proprietary Widevine binary is bundled. The host
+is implemented in C#, using the installed native Google CDM on supported platforms.
+Interop targets 64-bit x64/ARM64 instance-call conventions. Full terms:
+licenses/BSD-3-Clause.txt; original Chromium attribution remains in this metadata.
+"""
 
-# Shared attribution notice and restored NuGet assemblies in distributions.
-# The dependency source is not vendored; NOTICE, REUSE.toml and licenses/ ship together.
+# Restored NuGet assemblies in distributions; dependency source is not vendored.
 [[annotations]]
-path = ["NOTICE", "Serilog.dll", "Serilog.Sinks.Console.dll", "Serilog.Sinks.File.dll"]
+path = "Serilog.dll"
 precedence = "closest"
 SPDX-FileCopyrightText = "Serilog Contributors"
 SPDX-License-Identifier = "Apache-2.0"
-SPDX-FileComment = "Unmodified Serilog 4.2.0, Serilog.Sinks.Console 6.1.1 and Serilog.Sinks.File 7.0.0 NuGet dependencies. Their source commits and attribution are retained in NOTICE; complete terms are in licenses/Apache-2.0.txt. Pookie's logging integration is separately licensed under BSD-3-Clause."
+SPDX-FileComment = "Unmodified Serilog 4.2.0; https://github.com/serilog/serilog; source commit c00e17fdeb615d36c062569f7342f72c9ece4aa7. Complete terms: licenses/Apache-2.0.txt. Pookie's logging integration is separately licensed under BSD-3-Clause."
+
+[[annotations]]
+path = "Serilog.Sinks.Console.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = "Serilog Contributors"
+SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileComment = "Unmodified Serilog.Sinks.Console 6.1.1; https://github.com/serilog/serilog-sinks-console; source commit b3cb1f042f5636161b831fa8816d70d865a5eec4. Complete terms: licenses/Apache-2.0.txt."
+
+[[annotations]]
+path = "Serilog.Sinks.File.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = "Serilog Contributors"
+SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileComment = "Unmodified Serilog.Sinks.File 7.0.0; https://github.com/serilog/serilog-sinks-file; source commit 23c732a8658a0df2a5434fe69b0011800b14f0da. Complete terms: licenses/Apache-2.0.txt."
+
+[[annotations]]
+path = ["InfiniFrame.dll", "InfiniFrame.Js.dll", "InfiniFrame.Native.dll", "InfiniFrame.NativeBridge.dll", "InfiniFrame.Shared.dll", "libInfiniFrame.Native.so", "libInfiniFrame.Native.dylib"]
+precedence = "closest"
+SPDX-FileCopyrightText = "InfiniFrame and TryPhotino contributors"
+SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileComment = "Unmodified InfiniLore.InfiniFrame 0.62.1; https://github.com/InfiniLore/InfiniFrame; source commit 3b6b0e1ad9430ad5ea70296c7746aef63b82d1c2. Complete terms: licenses/Apache-2.0.txt. Uses system WebView2, WebKitGTK or WKWebView; no separate Chromium or proprietary Widevine binary is bundled."
+
+[[annotations]]
+path = "LibSMTC.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Abhinav Pandey"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Unmodified LibSMTC 1.1.0; https://github.com/itsAbhi650/LibSMTC/tree/687133e3e8fdc55103a0502f4c6640bb5fe934bc. Full copyright and terms: licenses/MIT.txt."
+
+[[annotations]]
+path = "Tmds.DBus.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2006 Alp Toker <alp@atoker.com>", "2010 Other Contributors", "2016 Tom Deseyn <tom.deseyn@gmail.com>"]
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Unmodified Tmds.DBus 0.95.1; https://github.com/tmds/Tmds.DBus/tree/491bde2c16d65a7904397933cffa24e15e45eb2a. Full copyright and terms: licenses/MIT.txt. Windows SDK projections use Microsoft's SDK redistribution terms; macOS MediaPlayer/AppKit frameworks are supplied by the system."
+
+# SoundFlow and FFmpeg/native dependency license texts and notices are read from
+# their restored packages during build and shipped in licenses/THIRD-PARTY-NOTICES.txt.

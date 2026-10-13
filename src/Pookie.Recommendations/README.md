@@ -53,8 +53,10 @@ Microsoft.Data.Sqlite 10.0.0 contains a known vulnerable SQLite build.
 
 MSD MusiCNN's frozen embedding head is bundled as a 3.1 MB ONNX model. The decoder
 worker captures at most nine seconds of mono 16 kHz PCM from already decoded audio,
-before playback gain. There are no additional media downloads and PCM is not saved.
-The sample is consumed at the end of listening; cached vectors avoid repeat inference.
+before playback gain. This playback tap makes no additional media downloads; PCM is not saved.
+The sample is consumed after nine listened seconds so upcoming songs can be
+reranked during playback, with end-of-listening capture as a fallback. Cached
+current mood vectors avoid repeat inference.
 The journal permits at most four pending audio jobs; excess samples defer analysis
 but their events still commit. Inference has one CPU thread, no GPU and disabled
 thread spinning. Inference sessions and batch PCM references are released after use.
@@ -84,8 +86,13 @@ rerank upcoming recommendations while preserving the current track and manual qu
 Vector-search neighbors now enter the candidate pool with their cached audio
 features. All portrait centers are searched in one SIMD SQL pass, with up to 40
 matches and a four-account cache invalidated by model/vector/preference changes.
-Audio indexing grows from played tracks; unheard candidates without vectors use
-the learned metadata features until they have been analyzed.
+Audio indexing grows from played tracks. With an explicit mood the application
+also previews up to three unclassified candidates per refill, sequentially,
+with a ten-second batch deadline and 24 attempts per wave session. Each preview
+decodes nine seconds starting at min(30 seconds, duration / 4), without an output
+device, full-track prefetch or saved PCM. Protected previews are skipped; their
+audio is analyzed only during actual playback. Preview analysis writes vectors,
+not listening events, history or training rewards. Auto does not download previews.
 Windows protected playback uses InfiniFrame's system WebView2 runtime. It opts
 into an AudioWorklet tap before gain/master volume.
 It downsamples to 16 kHz mono and transmits at most nine seconds in 1024-sample
@@ -94,15 +101,26 @@ The normal browser EME session continues to own licenses/decryption. If a browse
 does not expose PCM or returns silence, no vector is created; playback and
 metadata learning continue.
 
-A 329 KB ONNX model combines MTG's relaxed, party, sad and aggressive classification
-heads. It consumes the raw per-patch MusiCNN output before L2 normalisation; the
-same audio pass produces both search vectors and independent mood probabilities.
-Probabilities are cached in SQLite (version-2 caches migrate without losing
-embeddings). Old vectors acquire mood on the next sufficiently long playback,
-without background downloads. Mood selection is a soft ranking preference;
-unknown mood remains neutral and eligible. The classifier observes a short audio
-excerpt, not the user's emotional state or a guaranteed whole-song label.
-The energetic option uses the party classifier as an approximation, not BPM.
+A 411 KB ONNX graph combines MTG's relaxed, party, sad and aggressive classifiers
+with DEAM arousal/valence regression. It consumes raw per-patch MusiCNN outputs
+before L2 normalisation; the same audio pass produces search vectors and mood
+features. Energy uses arousal, with relaxed/aggressive evidence and a small party
+contribution. Arousal and valence are normalised from [1,9] to [0,1]. These are
+estimates of activation and emotional tone, not calibrated mood probabilities or BPM.
+Mood cache version `musicnn-moods-arousal-v2` marks old party-based predictions
+for refresh while preserving similarity embeddings and the general user portrait.
+The old Energetic training context is ignored and replaced on the next event.
+Strongly incompatible tracks (match < .4) are excluded from mood selection and
+candidate-fetch anchors; matching tracks (>= .6) precede familiar/new lanes.
+Explicit mood ranking assigns 65% to audio fit and 35% to personalized preference.
+Unknowns stay eligible, with at most ceil(requested count / 5) unknown slots per
+page; a small cache yields a shorter queue instead of 20 unclassified songs.
+Energetic uses the stricter .6 minimum, including refill/cooldown fallback and
+candidate-fetch seeds. The other moods permit uncertain .4-.6 fallback choices
+after matching and unknown candidates.
+Conflicting long plays can still teach general taste, but do not reward the mood
+context. The classifier observes a short excerpt, not the user's emotional state
+or a guaranteed whole-song label.
 
 Player Like and Dislike icons are mutually exclusive. Dislike works outside Wave;
 only Wave advances automatically. Repeating Dislike cancels the work's exclusion,
@@ -117,7 +135,7 @@ SIMD dot products. Database search and training stay on the journal worker;
 live selection evaluates the small model from its published in-memory snapshot.
 The C# frontend is checked against independent NumPy inputs; ONNX conversion is checked numerically against
 the original TensorFlow model. Model attribution and CC BY-NC-SA 4.0 terms are in
-../../NOTICE; the full license is in
+../../REUSE.toml; the full license is in
 ../../licenses/CC-BY-NC-SA-4.0.txt. Python/TensorFlow are optional model-conversion
 tools, described in ../../tools/audio-embeddings/README.md. They are not invoked
 by build, run, tests, publication or inference. No Python interpreter is embedded.

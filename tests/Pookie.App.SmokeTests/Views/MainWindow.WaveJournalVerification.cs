@@ -119,7 +119,18 @@ internal sealed partial class MainWindow
         if (playbackQueue.Context.NextHref != cursor) throw new InvalidOperationException("Snapshot refresh invalidated the in-flight refill cursor.");
         ApplyWaveLearning(42, waveGeneration, snapshot with { Model = model with { Sequence = 102 } });
         if (waveLearning?.Model.Sequence != 101) throw new InvalidOperationException("Another account replaced the active learned model.");
-        Console.WriteLine("WAVE_LIVE_RANKING_OK: learned sound changes native recommendations; current/manual preserved; stale/account snapshots ignored; refill cursor stable");
+        waveTaste.Mood = Pookie.Recommendations.WaveMood.Energetic;
+        var withMoods = reversed with { Vectors = new() {
+            [first.Id] = new(MusicnnEncoder.ModelId, positive, new(.02f, .95f, .1f, .7f, .6f, .5f, Pookie.Recommendations.AudioMood.AnalysisVersion)),
+            [second.Id] = new(MusicnnEncoder.ModelId, negative, new(.9f, .2f, .1f, .05f, .6f, .99f, Pookie.Recommendations.AudioMood.AnalysisVersion)) } };
+        ApplyWaveLearning(43, waveGeneration, withMoods);
+        if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != first.Id ||
+            playbackQueue.Snapshot.ContextUpcoming.Any(entry => entry.Track.Id == second.Id) ||
+            playbackQueue.Current?.Track.Id != anchor.Id || playbackQueue.Snapshot.ManualUpcoming.Single() != manual ||
+            waveLearning?.Model.Sequence != 101)
+            throw new InvalidOperationException("New audio moods did not rerank at the same training checkpoint or disturbed current/manual entries.");
+        waveTaste.Mood = Pookie.Recommendations.WaveMood.Auto;
+        Console.WriteLine("WAVE_LIVE_RANKING_OK: learned sound and new mood cache change recommendations; current/manual preserved; stale/account snapshots ignored; refill cursor stable");
     }
 
     private sealed class AnalysisFixturePlayer : IAudioPlayer

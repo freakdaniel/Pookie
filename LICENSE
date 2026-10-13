@@ -4,5 +4,4 @@ recorded in REUSE.toml.
 
 The full project license is in licenses/BSD-3-Clause.txt. Other license texts
 are in licenses/. Copyright notices and file-level
-SPDX license assignments are in REUSE.toml. See LICENSING.md for provenance,
-validation commands, and notices included with binary distributions.
+SPDX license assignments, attribution and provenance are in REUSE.toml.

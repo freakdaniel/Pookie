@@ -105,18 +105,20 @@ public sealed class WaveTaste
     private void AddSession(WaveTrack track, double weight)
     { session.Add((track, weight)); if (session.Count > 8) session.RemoveAt(0); }
     private bool Favorite(WaveTrack track) => tracks.TryGetValue(track.Id, out var item) && (item.Liked || item.GoodPlays > 0);
-    public WaveTrack[] Seeds(IEnumerable<WaveTrack> candidates, int count = 3, Func<WaveTrack, double>? learnedScore = null)
+    public WaveTrack[] Seeds(IEnumerable<WaveTrack> candidates, int count = 3, Func<WaveTrack, double>? learnedScore = null,
+        Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4)
     {
         var score = learnedScore ?? Scorer();
         var blocked = tracks.Values.Where(item => item.Blocked).Select(item => WorkKey(item.Track)).ToHashSet();
         return candidates.Where(IsPlayable).Where(track => tracks.GetValueOrDefault(track.Id)?.Blocked != true)
-            .Where(track => !blocked.Contains(WorkKey(track))).OrderByDescending(score).DistinctBy(ArtistKey).Take(count).ToArray();
+            .Where(track => !blocked.Contains(WorkKey(track))).Where(track => moodMatch?.Invoke(track) is not { } match || match >= minimumMoodMatch)
+            .OrderByDescending(track => moodMatch?.Invoke(track) is >= .6).ThenByDescending(score).DistinctBy(ArtistKey).Take(count).ToArray();
     }
-    private sealed record Candidate(WaveTrack Track, string Work, string Artist, bool Familiar, double Score);
+    private sealed record Candidate(WaveTrack Track, string Work, string Artist, bool Familiar, double Score, double? Mood);
 
     public WaveTrack[] Rank(IEnumerable<WaveTrack> candidates, IEnumerable<WaveTrack> recent,
         int count, DateTimeOffset now, Random? random = null, IEnumerable<WaveTrack>? reserved = null,
-        Func<WaveTrack, double>? learnedScore = null)
+        Func<WaveTrack, double>? learnedScore = null, Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4)
     {
         random ??= Random.Shared;
         var played = recent.ToArray();
@@ -130,6 +132,7 @@ public sealed class WaveTaste
             .Where(track => !reservedWorks.Contains(WorkKey(track)))
             .Where(track => Mode != WaveMode.Discoveries || !familiarWorks.Contains(WorkKey(track)))
             .Where(track => Mode != WaveMode.Favorites || Favorite(track)).ToArray();
+        eligible = eligible.Where(track => moodMatch?.Invoke(track) is not { } match || match >= minimumMoodMatch).ToArray();
         // Relax only the repetition cooldown when a small library cannot fill a stream.
         // Discovery and explicit dislike constraints remain strict in every pass.
         var excluded = played.TakeLast(24).Select(WorkKey).ToHashSet();
@@ -144,18 +147,31 @@ public sealed class WaveTaste
         var cooldown = learnedScore == null ? 1 : .05;
         var diversity = learnedScore == null ? 3 : .08;
         var weighted = pool.Select(track => new Candidate(track, WorkKey(track), ArtistKey(track), familiarWorks.Contains(WorkKey(track)),
-            preference(track) + random.NextDouble() * exploration - RecencyPenalty(track, now) * cooldown)).ToArray();
+            preference(track) + random.NextDouble() * exploration - RecencyPenalty(track, now) * cooldown, moodMatch?.Invoke(track))).ToArray();
         var result = new List<WaveTrack>();
+        var unknownSlots = Math.Max(1, (count + 4) / 5);
+        var unknownSelected = 0;
         var works = new HashSet<string>();
         var artists = played.TakeLast(3).Select(ArtistKey).ToList();
         while (result.Count < count)
         {
             var available = weighted.Where(candidate => !works.Contains(candidate.Work)).ToArray();
             if (available.Length == 0) break;
+            if (moodMatch != null)
+            {
+                var matching = available.Where(candidate => candidate.Mood is >= .6).ToArray();
+                var unknown = unknownSelected < unknownSlots ? available.Where(candidate => candidate.Mood == null).ToArray() : [];
+                var uncertain = available.Where(candidate => candidate.Mood is >= .4 and < .6).ToArray();
+                // Mood takes precedence over the familiar/new split. Leave one exploration slot per five songs.
+                available = matching.Length > 0 ? result.Count % 5 == 4 && unknown.Length > 0 ? unknown : matching
+                    : unknown.Length > 0 ? unknown : uncertain;
+                if (available.Length == 0) break;
+            }
             var freshSlot = result.Count % 3 != 0;
             var lane = Mode == WaveMode.Balance ? available.Where(candidate => candidate.Familiar != freshSlot).ToArray() : available;
             if (lane.Length == 0) lane = available;
             var next = lane.MaxBy(candidate => candidate.Score - artists.Count(artist => artist == candidate.Artist) * diversity)!;
+            if (moodMatch != null && next.Mood == null) unknownSelected++;
             works.Add(next.Work); result.Add(next.Track); artists.Add(next.Artist);
             if (artists.Count > 3) artists.RemoveAt(0);
         }

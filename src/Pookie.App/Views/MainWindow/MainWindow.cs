@@ -396,7 +396,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
-            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Mood == null, BrowserPage = track.PermalinkUrl };
+            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Mood?.IsCurrent != true, BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -410,6 +410,7 @@ internal sealed partial class MainWindow : IDisposable
                 selection: queueAdvance ? Pookie.Recommendations.PlaybackSelection.QueueAdvance : Pookie.Recommendations.PlaybackSelection.TrackSelection,
                 features: waveLearning?.Evaluate(Pookie.App.Home.WaveTrack.From(track), likedIds.Contains(track.Id), waveTaste.Mood, waveListening.SessionId),
                 mood: waveTaste.Mood);
+            waveAnalyzedTrack = null;
             BeginPlaybackHistory(queueEntry);
             RefreshLyricsMetadata(track);
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
@@ -597,6 +598,7 @@ internal sealed partial class MainWindow : IDisposable
                 throw;
             }
             waveListening.Poll(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null, waveTime.Elapsed);
+            AnalyzePlayingWaveTrack();
             PollPlaybackHistory();
             UpdateSystemMedia(state);
             var seekPreview = seekDragging || pendingSeek != null || seeking;

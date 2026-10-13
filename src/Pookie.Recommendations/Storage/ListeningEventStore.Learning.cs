@@ -157,6 +157,12 @@ public sealed partial class ListeningEventStore
         command.Parameters.AddWithValue("$at", now.ToUniversalTime().ToString("O")); command.ExecuteNonQuery();
     }
 
+    internal void CacheAudio(long account, WaveTrack track, AudioVector vector)
+    {
+        CheckWriteBudget(); PutVector(account, track, vector, DateTimeOffset.UtcNow);
+        if (++pendingMaintenance >= 256) { Maintain(); pendingMaintenance = 0; }
+    }
+
     public VectorMatch[] SearchAudio(long account, float[] vector, int count = 20)
         => SearchCenters(account, [vector], count);
 

@@ -9,6 +9,7 @@ public sealed class ListeningJournal : IAsyncDisposable
     private abstract record Work;
     private sealed record Write(WaveEvent Event, AudioSample? Sample, TaskCompletionSource Completion) : Work;
     private sealed record ReadSnapshot(long Account, WaveTrack[] Tracks, TaskCompletionSource<RecommendationSnapshot> Completion) : Work;
+    private sealed record Analyze(long Account, WaveTrack Track, AudioSample Sample, TaskCompletionSource<bool> Completion) : Work;
     private readonly Channel<Work> writes;
     private readonly Task worker;
     private int pendingAudio;
@@ -50,16 +51,47 @@ public sealed class ListeningJournal : IAsyncDisposable
         return await read.Completion.Task.ConfigureAwait(false);
     }
 
+    // Classify already decoded audio while it plays, without inventing a listening reward.
+    public async Task<bool> AnalyzeAsync(long account, WaveTrack track, AudioSample sample, CancellationToken token = default)
+    {
+        if (account <= 0 || !WaveTaste.IsPlayable(track)) throw new ArgumentException("Invalid analysis track.");
+        if (Interlocked.Increment(ref pendingAudio) > 4) { Interlocked.Decrement(ref pendingAudio); return false; }
+        var request = new Analyze(account, track, sample, new(TaskCreationOptions.RunContinuationsAsynchronously));
+        try { await writes.Writer.WriteAsync(request, token).ConfigureAwait(false); }
+        catch { Interlocked.Decrement(ref pendingAudio); throw; }
+        return await request.Completion.Task.ConfigureAwait(false);
+    }
+
     private async Task ProcessAsync(string path)
     {
         var batch = new List<Write>(64);
         ReadSnapshot? activeRead = null;
+        Analyze? activeAnalysis = null;
         try
         {
             using var store = new ListeningEventStore(path);
             while (await writes.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
                 batch.Clear();
+                if (writes.Reader.TryPeek(out var analysisWork) && analysisWork is Analyze)
+                {
+                    writes.Reader.TryRead(out var request); activeAnalysis = (Analyze)request!;
+                    try
+                    {
+                        if (store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)?.Mood?.IsCurrent != true)
+                        {
+                            using var analysisEncoder = new MusicnnEncoder();
+                            var vector = analysisEncoder.Encode(activeAnalysis.Sample);
+                            if (vector != null) store.CacheAudio(activeAnalysis.Account, activeAnalysis.Track, vector);
+                        }
+                        activeAnalysis.Completion.TrySetResult(store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)?.Mood?.IsCurrent == true);
+                    }
+                    catch (Exception error) when (error is OnnxRuntimeException or ArgumentException or InvalidDataException or
+                        DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or InvalidOperationException)
+                    { AnalysisFailed?.Invoke(error); activeAnalysis.Completion.TrySetResult(false); }
+                    finally { Interlocked.Decrement(ref pendingAudio); }
+                    activeAnalysis = null; continue;
+                }
                 if (writes.Reader.TryPeek(out var next) && next is ReadSnapshot)
                 {
                     writes.Reader.TryRead(out var request);
@@ -81,7 +113,7 @@ public sealed class ListeningJournal : IAsyncDisposable
                         if (item.Sample == null) continue;
                         try
                         {
-                            if (item.Event.Track == null || store.GetVector(item.Event.AccountId, item.Event.Track.Id)?.Mood != null) continue;
+                            if (item.Event.Track == null || store.GetVector(item.Event.AccountId, item.Event.Track.Id)?.Mood?.IsCurrent == true) continue;
                             encoder ??= new();
                             var vector = encoder.Encode(item.Sample);
                             if (vector != null) vectors[item.Event.EventId] = vector;
@@ -102,12 +134,14 @@ public sealed class ListeningJournal : IAsyncDisposable
         {
             writes.Writer.TryComplete(error);
             activeRead?.Completion.TrySetException(error);
+            activeAnalysis?.Completion.TrySetException(error);
             foreach (var item in batch) item.Completion.TrySetException(error);
             while (writes.Reader.TryRead(out var pending))
                 switch (pending)
                 {
                     case Write write: write.Completion.TrySetException(error); break;
                     case ReadSnapshot read: read.Completion.TrySetException(error); break;
+                    case Analyze analysis: analysis.Completion.TrySetException(error); break;
                 }
             throw;
         }

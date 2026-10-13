@@ -13,6 +13,8 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length > 1 && args[0] == "--audio-mood-probe")
+        { await AudioMoodProbe.RunAsync(args[1..].Where(arg => arg is not "--cache-results" and not "--preview").ToArray(), args.Contains("--cache-results"), args.Contains("--preview")); return true; }
         if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }
         if (args.Length is 2 or 3 && args[0] == "--playback-history-network-probe") { await PlaybackHistoryNetworkProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }

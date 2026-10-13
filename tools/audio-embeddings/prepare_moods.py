@@ -32,6 +32,18 @@ with tf.Graph().as_default() as combined:
                                         return_elements=["model/Softmax:0"], name=name)[0]
         outputs.append(prediction[:, positive:positive + 1])
         sources.append({"name": name, "source": url, "source_sha256": hashlib.sha256(data).hexdigest(), "positive_class": positive})
+    url = "https://essentia.upf.edu/models/classification-heads/deam/deam-msd-musicnn-2.pb"
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024:
+        raise ValueError("Unexpected arousal model size")
+    graph = tf.compat.v1.GraphDef()
+    graph.ParseFromString(data)
+    emotion = tf.import_graph_def(graph, input_map={"model/Placeholder:0": embedding},
+                                 return_elements=["model/Identity:0"], name="deam")[0]
+    outputs.append(emotion)
+    sources.append({"name": "deam", "source": url, "source_sha256": hashlib.sha256(data).hexdigest(),
+                    "classes": ["valence", "arousal"], "range": [1, 9]})
     moods = tf.concat(outputs, axis=1, name="moods")
     definition = combined.as_graph_def()
     # Verify the head using real, raw outputs of the exact bundled embedding model.
@@ -49,7 +61,8 @@ actual = head.run(None, {"embedding:0": raw})[0]
 np.testing.assert_allclose(actual, expected, atol=2e-5, rtol=2e-5)
 metadata = {"sources": sources, "onnx_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "input": "raw msd-musicnn-1 model/dense/BiasAdd:0 (before L2 normalisation)",
-            "outputs": names, "license": "CC-BY-NC-SA-4.0", "attribution": "Pablo Alonso; Music Technology Group, Universitat Pompeu Fabra",
+            "outputs": names + ["valence", "arousal"], "analysis_version": "musicnn-moods-arousal-v2",
+            "license": "CC-BY-NC-SA-4.0", "attribution": "Pablo Alonso; Music Technology Group, Universitat Pompeu Fabra",
             "max_reference_error": float(np.max(np.abs(actual - expected)))}
 (DEST / "musicnn-moods.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 # Golden reference uses independent NumPy input preparation, not the C# frontend.

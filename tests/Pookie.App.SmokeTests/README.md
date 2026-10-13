@@ -44,6 +44,15 @@ account checkpoint through the production journal pipeline, the actual player
 dislike icon, cancellation outside Wave, mutual exclusion with Like, and restoring
 a rejected song through Like. Home checks native mood selection while preserving
 the current track and manual queue, including the settings drawer at narrow widths.
+The journal scenario also verifies a mood-cache update reranking the queue at an
+unchanged model checkpoint, without replacing current/manual entries.
+
+`--audio-mood-probe URL... [--preview] [--cache-results]` uses the saved account
+and production resolver/decoder to inspect short audio excerpts of real tracks.
+Preview samples start at min(30 seconds, duration / 4); protected tracks use
+ordinary silent playback instead. Without `--cache-results` the wave database
+is untouched; that flag refreshes only vectors, never listening rewards or likes.
+Console output contains public track identity and scores, no session/stream tokens.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
 responsive reference hero, metadata/artwork/waveform, threaded comments and replies,

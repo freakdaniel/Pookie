@@ -15,6 +15,8 @@ internal sealed class MoodEncoder : IDisposable
         using var manifestStream = typeof(MoodEncoder).Assembly.GetManifestResourceStream(resource + ".json")
             ?? throw new InvalidOperationException("The mood manifest is missing.");
         using var manifest = JsonDocument.Parse(manifestStream);
+        if (manifest.RootElement.GetProperty("analysis_version").GetString() != AudioMood.AnalysisVersion)
+            throw new InvalidDataException("The mood analysis version differs.");
         using var stream = typeof(MoodEncoder).Assembly.GetManifestResourceStream(resource + ".onnx")
             ?? throw new InvalidOperationException("The mood model is missing.");
         using var memory = new MemoryStream(); stream.CopyTo(memory);
@@ -31,11 +33,14 @@ internal sealed class MoodEncoder : IDisposable
     {
         using var output = session.Run([NamedOnnxValue.CreateFromTensor("embedding:0", new DenseTensor<float>(raw, [patches, 200]))]);
         var values = output.First().AsTensor<float>().ToArray();
-        if (values.Length != patches * 4) throw new InvalidDataException("Invalid mood model output.");
-        var mean = new float[4];
+        if (values.Length != patches * 6 || values.Any(value => !float.IsFinite(value))) throw new InvalidDataException("Invalid mood model output.");
+        var mean = new float[6];
         for (var patch = 0; patch < patches; patch++)
-        for (var i = 0; i < 4; i++) mean[i] += values[patch * 4 + i] / patches;
-        var result = new AudioMood(mean[0], mean[1], mean[2], mean[3]); result.Validate(); return result;
+        for (var i = 0; i < 6; i++) mean[i] += values[patch * 6 + i] / patches;
+        // DEAM reports valence/arousal on [1,9], not Softmax probabilities.
+        var result = new AudioMood(mean[0], Math.Clamp((mean[5] - 1) / 8, 0, 1), mean[2], mean[3],
+            Math.Clamp((mean[4] - 1) / 8, 0, 1), mean[1], AudioMood.AnalysisVersion);
+        result.Validate(); return result;
     }
     public void Dispose() => session.Dispose();
 }

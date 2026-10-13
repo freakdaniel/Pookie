@@ -23,17 +23,33 @@
       "source": "https://essentia.upf.edu/models/classification-heads/mood_aggressive/mood_aggressive-msd-musicnn-1.pb",
       "source_sha256": "3b6eb5645e4b47a2ceb28ef3f8612f224640c583048770791b9fc6e8e5627a67",
       "positive_class": 0
+    },
+    {
+      "name": "deam",
+      "source": "https://essentia.upf.edu/models/classification-heads/deam/deam-msd-musicnn-2.pb",
+      "source_sha256": "beb5eeb0909266eeb78b8d6bb1323b10829cf2fe55e3c01a13fa1846fa98b371",
+      "classes": [
+        "valence",
+        "arousal"
+      ],
+      "range": [
+        1,
+        9
+      ]
     }
   ],
-  "onnx_sha256": "6ac745dba997710bfb1ea89af60fc8c63a4b4a0f1a027ebc59425c311ecbb905",
+  "onnx_sha256": "8fe2853b5074c0e29ce1535013f60aa82c649930d4a2ef009c6c47e824a5ee1c",
   "input": "raw msd-musicnn-1 model/dense/BiasAdd:0 (before L2 normalisation)",
   "outputs": [
     "relaxed",
     "party",
     "sad",
-    "aggressive"
+    "aggressive",
+    "valence",
+    "arousal"
   ],
+  "analysis_version": "musicnn-moods-arousal-v2",
   "license": "CC-BY-NC-SA-4.0",
   "attribution": "Pablo Alonso; Music Technology Group, Universitat Pompeu Fabra",
-  "max_reference_error": 4.656612873077393e-10
+  "max_reference_error": 4.76837158203125e-07
 }

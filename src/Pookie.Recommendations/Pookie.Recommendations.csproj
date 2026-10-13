@@ -5,7 +5,7 @@
     <EmbeddedResource Include="Models/musicnn-msd.json" />
     <EmbeddedResource Include="Models/musicnn-moods.onnx" />
     <EmbeddedResource Include="Models/musicnn-moods.json" />
-    <EmbeddedResource Include="../../NOTICE" LogicalName="Pookie.Recommendations.Models.NOTICE" />
+    <EmbeddedResource Include="../../REUSE.toml" LogicalName="Pookie.Recommendations.Models.REUSE" />
     <EmbeddedResource Include="../../licenses/CC-BY-NC-SA-4.0.txt" LogicalName="Pookie.Recommendations.Models.LICENSE" />
   </ItemGroup>
   <ItemGroup>

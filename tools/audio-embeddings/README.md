@@ -8,10 +8,15 @@ These developer scripts are only needed when deliberately regenerating the model
 or its independent numerical reference. `prepare_musicnn.py` converts the official
 TensorFlow GraphDef using tf2onnx, then compares TensorFlow and ONNX outputs.
 `reference_input.py` generates an independent NumPy frontend/reference fixture.
-`prepare_moods.py` converts four MTG mood classification heads into one ONNX graph,
+`prepare_moods.py` converts four MTG mood classification heads and the DEAM
+arousal/valence regression head into one ONNX graph,
 checks TensorFlow/ONNX agreement on raw outputs of the bundled encoder, and adds
 mood predictions to the same independent frontend fixture. The classification
 heads must receive raw embeddings; normalised search vectors are incompatible.
+DEAM outputs are ordered valence/arousal on the original [1,9] scale. The C#
+consumer normalises them to [0,1]; energy no longer substitutes party probability.
+The mood cache has a separate analysis version, so older embeddings stay usable
+for similarity search while their obsolete mood predictions are refreshed.
 
 To regenerate, use an isolated Python 3.11 environment outside the application:
 
@@ -30,5 +35,5 @@ Python.NET would still require a compatible Python runtime and the same converte
 packages. It would add interop and interpreter lifetime management to a one-time
 conversion without removing those dependencies, so it is not used here.
 
-Model attribution and full license: `NOTICE` and
+Model attribution and full license: `REUSE.toml` and
 `licenses/CC-BY-NC-SA-4.0.txt` at the repository root.

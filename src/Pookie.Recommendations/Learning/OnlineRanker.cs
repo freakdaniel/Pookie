@@ -11,7 +11,7 @@ public sealed record RankerState(long Sequence, int Samples, float[] Weights, fl
     Dictionary<string, Affinity> Affinities, Dictionary<long, RewardQuota> Rewards,
     float[][] PositiveAudio, float[]? NegativeAudio, float[]? RecentAudio, double PredictionError, string? AudioModel = null,
     Dictionary<WaveMood, RankerState>? Contexts = null, Dictionary<long, SkipEvidence>? Skips = null,
-    Guid? Session = null, float[]? SessionNegativeAudio = null, float[][]? NegativeAudioGroups = null)
+    Guid? Session = null, float[]? SessionNegativeAudio = null, float[][]? NegativeAudioGroups = null, string? MoodVersion = null)
 {
     public static RankerState Empty() => new(0, 0, new float[OnlineRanker.Dimensions], new float[OnlineRanker.Dimensions],
         [], [], [], null, null, 0);
@@ -33,7 +33,7 @@ public sealed class OnlineRanker(RankerState? state = null)
     public FeatureSnapshot Evaluate(WaveTrack track, AudioVector? audio, bool liked = false, WaveMood mood = WaveMood.Auto, Guid? session = null)
     {
         var features = EvaluateBase(track, audio, liked, session);
-        if (mood == WaveMood.Auto || current.Contexts?.GetValueOrDefault(mood) is not { } context)
+        if (mood == WaveMood.Auto || Context(mood) is not { } context)
             return features with { Mood = mood };
         var contextual = new OnlineRanker(context).EvaluateBase(track, audio, liked, session);
         return features with { Mood = mood, ContextValues = contextual.Values, ContextPrediction = contextual.Prediction };
@@ -43,17 +43,21 @@ public sealed class OnlineRanker(RankerState? state = null)
     public double Score(WaveTrack track, AudioVector? audio, bool liked = false, WaveMood mood = WaveMood.Auto, Guid? session = null)
     {
         var features = Evaluate(track, audio, liked, mood, session);
-        var context = current.Contexts?.GetValueOrDefault(mood);
+        var context = Context(mood);
         var trust = context == null ? 0 : .3 * Math.Min(1, context.Samples / 12d);
         var score = features.Prediction * (1 - trust) + features.ContextPrediction * trust;
-        if (audio?.Model == MusicnnEncoder.ModelId && audio.Mood is { } descriptor && mood != WaveMood.Auto)
-            score += .16 * (descriptor.Match(mood) - .5);
+        if (mood != WaveMood.Auto)
+            score = .35 * score + .65 * (audio?.Model == MusicnnEncoder.ModelId && audio.Mood is { IsCurrent: true } descriptor
+                ? descriptor.Match(mood) : .5);
         var active = context ?? current;
         var sessionNegative = session == null || active.Session == session ? active.SessionNegativeAudio : null;
         if (audio != null && audio.Model == current.AudioModel && sessionNegative != null)
             score -= .05 * Math.Max(0, AudioVectorCodec.Dot(sessionNegative, audio.Values));
         return Math.Clamp(score, 0, 1);
     }
+
+    private RankerState? Context(WaveMood mood) => mood == WaveMood.Energetic && current.MoodVersion != AudioMood.AnalysisVersion
+        ? null : current.Contexts?.GetValueOrDefault(mood);
 
     private FeatureSnapshot EvaluateBase(WaveTrack track, AudioVector? audio, bool liked, Guid? session = null)
     {
@@ -83,11 +87,19 @@ public sealed class OnlineRanker(RankerState? state = null)
         if (track == null) return;
         // Explicit rejection cannot also become a reward for having listened long enough.
         if (item.Listening?.EndReason == ListeningEndReason.Rejected) return;
+        if (!contextual && current.MoodVersion != AudioMood.AnalysisVersion)
+        {
+            var contexts = current.Contexts == null ? [] : new Dictionary<WaveMood, RankerState>(current.Contexts);
+            contexts.Remove(WaveMood.Energetic); // The old context was learned using party as energy.
+            current = current with { Contexts = contexts, MoodVersion = AudioMood.AnalysisVersion };
+        }
         if (audio != null && audio.Model != current.AudioModel)
             current = current with { AudioModel = audio.Model, PositiveAudio = [], NegativeAudio = null, RecentAudio = null,
                 NegativeAudioGroups = null, SessionNegativeAudio = null };
 
-        if (!contextual && item.Mood != WaveMood.Auto)
+        var rewarding = item.Kind == WaveEventKind.Like || item.Listening is { EarlySkip: false };
+        var conflicts = audio?.Mood is { IsCurrent: true } known && known.Match(item.Mood) < (item.Mood == WaveMood.Energetic ? .6 : .4);
+        if (!contextual && item.Mood != WaveMood.Auto && !(rewarding && conflicts))
         {
             var contexts = current.Contexts ?? [];
             var learner = new OnlineRanker(contexts.GetValueOrDefault(item.Mood));
