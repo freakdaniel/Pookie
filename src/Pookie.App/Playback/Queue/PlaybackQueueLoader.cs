@@ -22,7 +22,9 @@ internal sealed class PlaybackQueueLoader(PlaybackQueue queue,
         if (version != queue.SourceVersion) ContextChanged();
         if (pending is { IsCompleted: false }) return pending;
         var state = queue.Snapshot;
-        if (state.Context?.NextHref is not { } cursor || !force && state.ContextUpcoming.Count > 5) return Task.CompletedTask;
+        if (state.Context?.NextHref is not { } cursor || !force &&
+            (state.Context.Kind == PlaybackContextKind.Wave ? state.ContextUpcoming.Count >= PlaybackQueue.WaveUpcomingLimit : state.ContextUpcoming.Count > 5))
+            return Task.CompletedTask;
         return pending = LoadAsync(state.SourceVersion, state.Context, cursor, cancellation!.Token);
     }
     private async Task LoadAsync(long sourceVersion, PlaybackContext context, string cursor, CancellationToken token)

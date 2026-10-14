@@ -101,7 +101,7 @@ internal sealed partial class MainWindow
 
             var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var loaded = new TaskCompletionSource<TrackPage>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var fixtureLoader = new PlaybackQueueLoader(playbackQueue, (_, _, _) => { requested.TrySetResult(); return loaded.Task; }, RefreshQueue, lifetime.Token);
+            using var fixtureLoader = new PlaybackQueueLoader(playbackQueue, (_, _, _) => { requested.TrySetResult(); return loaded.Task; }, () => RefreshQueue(), lifetime.Token);
             queueLoader = fixtureLoader;
             shuffle.Value = false; playbackQueue.SetRepeat(RepeatMode.Off);
             StartQueueContext(new("paged", "Плейлист", "Сейчас играет из плейлиста", "page2"), [data[0]], data[0]);

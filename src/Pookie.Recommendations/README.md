@@ -54,8 +54,8 @@ Microsoft.Data.Sqlite 10.0.0 contains a known vulnerable SQLite build.
 MSD MusiCNN's frozen embedding head is bundled as a 3.1 MB ONNX model. The decoder
 worker captures at most nine seconds of mono 16 kHz PCM from already decoded audio,
 before playback gain. This playback tap makes no additional media downloads; PCM is not saved.
-The sample is consumed after nine listened seconds so upcoming songs can be
-reranked during playback, with end-of-listening capture as a fallback. Cached
+The sample is consumed after nine listened seconds so later uncommitted recommendations
+can use it during playback, with end-of-listening capture as a fallback. Cached
 compatible sound vectors avoid repeat inference, even when their mood metadata is
 absent or obsolete. Production inference does not load the mood classifier.
 The journal permits at most four pending audio jobs; excess samples defer analysis
@@ -93,8 +93,12 @@ predictions and small random exploration. Removed likes and blocked seeds stop
 contributing to the prior. Discoveries fetch personal seed candidates before
 starting, even when Home already has enough tracks to fill a queue.
 Modes, blocked works, reserved tracks, repetition cooldown and
-artist diversity remain selection constraints. Published training checkpoints
-rerank upcoming recommendations while preserving the current track and manual queue.
+artist diversity remain selection constraints. The live wave commits only three upcoming
+recommendations. Published training checkpoints update the scores/candidate pool without
+replacing those displayed entries. Advancing fills a free slot from the latest scores,
+preserving remaining occurrence identities and the familiar/new balance across single-slot
+refills. Explicit mode changes or rejection rebuild this horizon, retaining surviving
+identities and the current/manual/forward entries; old refill responses are rejected.
 Vector-search neighbors now enter the candidate pool with their cached audio
 features. General taste centers are searched in one SIMD SQL pass, with up to 40
 matches and a four-account cache invalidated by model/vector/preference changes.
@@ -107,8 +111,8 @@ website playback, listening event, reward or SoundCloud history write is created
 Protected candidates are skipped and classified during normal playback instead.
 Pause, playback preparation, Favorites, account changes and shutdown cancel the
 batch; its decoder must finish disposal before another batch can start. Selection
-never awaits a preview. Cached sound reranks only future recommendations, keeping
-the current/manual/forward entries. A missing embedding leaves a track eligible;
+never awaits a preview. Cached sound affects new recommendations beyond the committed
+horizon, keeping displayed/current/manual/forward entries. A missing embedding leaves a track eligible;
 there are no mood thresholds or unknown-audio quota. Existing experimental mood
 centers are not searched by the base candidate retrieval.
 Windows protected playback uses InfiniFrame's system WebView2 runtime. It opts

@@ -32,6 +32,13 @@ and refresh, stale account replies, and native play/card clicks for Home, compac
 rows and liked tiles, including compact title hit bounds. It uses local account
 data and requests no real audio.
 
+`--wave-queue-ui-smoke-test` checks the actual three-track committed horizon in the
+popup and fullscreen queue. Background checkpoints leave rows/keys/animations alone;
+advancing retains remaining rows, animates their movement and adds one candidate.
+Manual entries have a separate heading, mode changes dissolve changed recommendations,
+and advancing does not move a viewport reading playback history. It uses isolated demo
+data and a fixture player, with no SoundCloud requests or account writes.
+
 The Home scenario also checks the local wave journal: native dislike, like/unlike,
 reset exclusions, actual listened time, shutdown classification and account isolation.
 Journal/storage regression checks run in `tests/Pookie.Playback.Tests` without a window.
@@ -102,6 +109,13 @@ narrow/wide hero layout, back-navigation filter/scroll, playlist likes/reposts,
 following/unfollowing, isolated pending states, playlist selection and stale account
 replies. All writes use a local fixture transport.
 
+`--memory-ui-smoke-test` creates and discards three batches of 100 sidebar cards with
+500px artwork, including cards removed during an active loading shimmer. Weak-reference
+checks verify that removed controls/pixels collect, cached SVG icons do not retain views,
+and live/recycled loading layers stop and resume their clocks. It prints managed memory
+and process RSS for diagnostics; assertions check object lifetimes rather than OS memory
+thresholds. It uses isolated app data and makes no SoundCloud requests.
+
 `--playlist-page-network-probe <SoundCloud playlist URL>` verifies real playlist
 metadata, ordered track loading and playlist like/repost state reads through the native WebView.
 Close the normal app first: this probe preserves and leases the saved browser profile.
@@ -119,6 +133,8 @@ Run from the repository root:
 
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --memory-ui-smoke-test
+dotnet run --project tests/Pookie.App.SmokeTests -- --wave-queue-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --scrolling-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --track-page-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --likes-edits-ui-smoke-test

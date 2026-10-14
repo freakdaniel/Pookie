@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
             card.Item.Track?.Id == track.Id && card.Cover.ActualWidth > 100));
         var history = collectionCards.Values.Single(card => collectionGrid.IsAncestorOf(card.Frame) && card.Item.Track?.Id == track.Id);
         if (history.Item.ArtworkUrl != null || history.Item.Track!.ArtworkUrl != null ||
-            !ReferenceEquals(history.Cover.Source, likes.Cover.Source) || artworkLoading[history.Cover].IsVisible)
+            !ReferenceEquals(history.Cover.Source, likes.Cover.Source) || ArtworkSkeleton(history.Cover).IsVisible)
             throw new InvalidOperationException("Sparse history metadata lost the same track's cached likes cover");
         await Task.Delay(300, lifetime.Token);
         history = collectionCards.Values.Single(card => collectionGrid.IsAncestorOf(card.Frame) && card.Item.Track?.Id == track.Id);
@@ -56,11 +56,11 @@ internal sealed partial class MainWindow
         var cover = new Image(); _ = ArtworkLayer(cover);
         SetCollectionArtwork(cover, nested);
         var request = GetCollectionArtworkAsync(nested);
-        if (request.IsCompleted || cover.Source != null || !artworkLoading[cover].IsVisible)
+        if (request.IsCompleted || cover.Source != null || !ArtworkSkeleton(cover).IsVisible)
             throw new InvalidOperationException("History did not retain a skeleton while nested track artwork was pending");
         gate.SetResult(source);
         SetCollectionArtwork(cover, nested, await request, finished: true);
-        if (!ReferenceEquals(cover.Source, source) || artworkLoading[cover].IsVisible ||
+        if (!ReferenceEquals(cover.Source, source) || ArtworkSkeleton(cover).IsVisible ||
             !ReferenceEquals(libraryCoverCache[nested.Track!.Id], source))
             throw new InvalidOperationException("History did not resolve nested artwork directly into the shared track cache");
         artworkLoading.Remove(cover);

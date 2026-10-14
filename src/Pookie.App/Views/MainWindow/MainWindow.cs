@@ -344,6 +344,7 @@ internal sealed partial class MainWindow : IDisposable
         var queueEntry = SelectPlaybackTrack(track);
         playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
         current = track;
+        RerankWaveQueue();
         BeginLyricsTrack(track);
         audioPreparing = true; audioReady = false;
         paused = false; isPlaying.Value = true; playbackLoading.Value = true;
@@ -688,6 +689,7 @@ internal sealed partial class MainWindow : IDisposable
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
         expandedQueueAnimation.Dispose();
+        popupQueueAnimation.Dispose();
         expandedQueueFade.Dispose();
         OnDisposed();
         loginSpinner.IsActive = false;

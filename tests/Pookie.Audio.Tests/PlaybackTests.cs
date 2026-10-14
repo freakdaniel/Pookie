@@ -209,6 +209,37 @@ public sealed class PlaybackTests
         Assert.Equal(byteRanges ? 3 : 1, server.SegmentRequests.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HlsInitializationIsCombinedWithFragmentsAndReusedAcrossSeek(bool range)
+    {
+        await using var server = await MediaServer.StartAsync(2, 44100);
+        await using var player = new SoundFlowPlayer(silent: true);
+        await player.PlayAsync(new(server.Url + (range ? "/map-range.m3u8" : "/map.m3u8"), AudioTransport.Hls));
+        await WaitAsync(player, state => state.Playing && state.Position > .1);
+        Assert.Equal(6, player.Poll().Duration);
+        player.Pause(true); await player.SeekAsync(4.5);
+        Assert.False(player.Poll().Playing);
+        player.Pause(false); await WaitAsync(player, state => state.Playing && state.Position > 4.6);
+        Assert.Single(server.SegmentRequests, item => item == "init");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CandidatePreviewHandlesInitializationMapsWithoutAnEncodedCache(bool range)
+    {
+        await using var server = await MediaServer.StartAsync(2, 44100);
+        using var http = new HttpClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var sample = await AudioPreviewSampler.CaptureAsync(http,
+            new(server.Url + (range ? "/map-range.m3u8" : "/map.m3u8"), AudioTransport.Hls, 6), uri => uri.IsLoopback, timeout.Token);
+        Assert.NotNull(sample); Assert.InRange(sample.Mono.Length, 48000, 144000);
+        Assert.Contains(sample.Mono, value => Math.Abs(value) > .001);
+        Assert.Single(server.SegmentRequests, item => item == "init");
+    }
+
     [Fact]
     public async Task CancellingPreparationAllowsNextTrackToPlay()
     {
@@ -257,6 +288,14 @@ public sealed class PlaybackTests
             app.MapGet("/track.wav", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(track, "audio/wav", enableRangeProcessing: true); });
             app.MapGet("/track.mp3", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(mp3.Value, "audio/mpeg", enableRangeProcessing: true); });
             app.MapGet("/segment.wav", () => { segments.Add("segment"); return Results.File(segment, "audio/wav"); });
+            // A synthetic WAV header/PCM split tests the same initialization+fragment assembly with the real decoder.
+            // Fragmented MP4 is additionally verified against real SoundCloud streams by the network probe.
+            app.MapGet("/init.wav", () => { segments.Add("init"); return Results.File(segment[..44], "application/octet-stream"); });
+            app.MapGet("/init-range.wav", () => { segments.Add("init"); return Results.File(new byte[5].Concat(segment[..44]).ToArray(),
+                "application/octet-stream", enableRangeProcessing: true); });
+            app.MapGet("/fragment.pcm", () => Results.File(segment[44..], "application/octet-stream"));
+            app.MapGet("/map.m3u8", () => Results.Text("#EXTM3U\n#EXT-X-MAP:URI=\"init.wav\"\n#EXTINF:2,\nfragment.pcm\n#EXTINF:2,\nfragment.pcm\n#EXTINF:2,\nfragment.pcm\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
+            app.MapGet("/map-range.m3u8", () => Results.Text("#EXTM3U\n#EXT-X-MAP:URI=\"init-range.wav\",BYTERANGE=\"44@5\"\n#EXTINF:2,\nfragment.pcm\n#EXTINF:2,\nfragment.pcm\n#EXTINF:2,\nfragment.pcm\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/combined.wav", (HttpContext context) => { segments.Add(context.Request.Headers.Range.ToString()); return Results.File(segment.Concat(segment).Concat(segment).ToArray(), "audio/wav", enableRangeProcessing: true); });
             app.MapGet("/playlist.m3u8", () => Results.Text("#EXTM3U\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXTINF:2,\nsegment.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/ranges.m3u8", () => Results.Text($"#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}@0\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXTINF:2,\n#EXT-X-BYTERANGE:{segment.Length}\ncombined.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));

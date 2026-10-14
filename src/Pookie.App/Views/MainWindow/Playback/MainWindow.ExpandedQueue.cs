@@ -14,6 +14,7 @@ internal sealed partial class MainWindow
     private readonly Dictionary<string, double> expandedQueuePositions = [];
     private QueueBlock[] expandedQueueData = [];
     private HashSet<string> expandedNewKeys = [];
+    private HashSet<string> expandedDissolvingKeys = [];
     private long expandedQueueChangedAt;
     private ScrollViewer expandedQueueScroll = null!;
     private QueueRowAnimation expandedQueueAnimation = null!;
@@ -81,7 +82,7 @@ internal sealed partial class MainWindow
             // Layout/binding refreshes for the same retained item must not stop
             // an in-flight translation (for example when its artwork arrives).
             if (motion.RetainedKey != block.Key)
-                motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null, QueueEntryIsNew(block));
+                RetargetExpandedQueueRow(motion, block);
             motion.RetainedKey = block.Key;
             var row = expandedQueueRows[context.Get<Grid>("row")];
             row.Root.IsVisible = block.Kind == QueueBlockKind.Track;
@@ -150,7 +151,15 @@ internal sealed partial class MainWindow
     private bool QueueEntryIsNew(QueueBlock block) => expandedOpen && expandedPanelMode == PlayerPanel.Queue && panelReveal > .999 &&
         Environment.TickCount64 - expandedQueueChangedAt < 500 && expandedNewKeys.Contains(block.Key);
 
-    private void RefreshExpandedQueue()
+    private void RetargetExpandedQueueRow(QueueRowMotion motion, QueueBlock block)
+    {
+        var dissolve = expandedOpen && expandedPanelMode == PlayerPanel.Queue && panelReveal > .999 &&
+            Environment.TickCount64 - expandedQueueChangedAt < 500 && expandedDissolvingKeys.Contains(block.Key);
+        motion.Retarget(!dissolve && expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null,
+            dissolve || QueueEntryIsNew(block));
+    }
+
+    private void RefreshExpandedQueue(bool dissolveWave = false)
     {
         if (expandedQueue == null) return;
         var state = playbackQueue.Snapshot;
@@ -158,15 +167,17 @@ internal sealed partial class MainWindow
         static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
         var next = state.History.Select(TrackBlock).ToList();
         var manualCurrent = state.Current?.Origin == PlaybackEntryOrigin.Manual;
+        var wave = state.Context?.Kind == PlaybackContextKind.Wave;
         next.Add(new("source", QueueBlockKind.Source,
             Title: manualCurrent ? "Сейчас играет" : state.Context?.Title ?? queueOriginTitle,
             Subtitle: manualCurrent ? "" : state.Context?.Subtitle ?? queueOriginKind));
         if (state.Current is { } playing) next.Add(TrackBlock(playing));
         next.Add(new("upcoming", QueueBlockKind.Upcoming,
-            Title: expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
+            Title: state.ManualUpcoming.Count > 0 ? "Добавлено тобой" : wave ? "Далее на твоей волне" :
+                expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
         next.AddRange(state.ManualUpcoming.Select(TrackBlock));
         if (state.ManualUpcoming.Count > 0 && state.ContextUpcoming.Count + state.Forward.Count > 0)
-            next.Add(new("context", QueueBlockKind.Context, Title: "Очередь воспроизведения"));
+            next.Add(new("context", QueueBlockKind.Context, Title: wave ? "Далее на твоей волне" : "Очередь воспроизведения"));
         next.AddRange(state.Forward.Select(TrackBlock));
         next.AddRange(state.ContextUpcoming.Select(TrackBlock));
         var data = next.ToArray();
@@ -185,8 +196,12 @@ internal sealed partial class MainWindow
             foreach (var (motion, block) in expandedQueueBlocks)
                 if (block != null) expandedQueuePositions[block.Key] = motion.VisualY;
         }
-        expandedQueueAnimation.Begin();
-        var followCurrent = expandedQueueStartPending || expandedCurrentEntry != state.Current?.EntryId || expandedSourceVersion != state.SourceVersion;
+        expandedQueueAnimation.Begin(wave ? dissolveWave ? 220 : 280 : 460);
+        // With a short wave horizon the source cannot always align to the viewport top.
+        // Follow playback at the live end; scrolling up into history keeps that viewport anchored.
+        var followingWave = SmoothScroll.Maximum(expandedQueueScroll) - expandedQueueScroll.VerticalOffset < 48;
+        var followCurrent = expandedQueueStartPending || expandedSourceVersion != state.SourceVersion ||
+            expandedCurrentEntry != state.Current?.EntryId && (!wave || followingWave);
         if (followCurrent)
         {
             // Advancing playback follows the source heading. Appending a page or
@@ -201,13 +216,15 @@ internal sealed partial class MainWindow
             if (visible.Key != null) expandedQueueAnchor = (visible.Value!.Key, visible.Key.Bounds.Y - expandedQueueScroll.Bounds.Y);
         }
         expandedNewKeys = data.Select(block => block.Key).Except(expandedQueueData.Select(block => block.Key)).ToHashSet();
+        expandedDissolvingKeys = dissolveWave ? state.ContextUpcoming.Select(entry => $"entry:{entry.EntryId}")
+            .Where(key => Array.FindIndex(data, block => block.Key == key) != Array.FindIndex(expandedQueueData, block => block.Key == key)).ToHashSet() : [];
         expandedQueueChangedAt = Environment.TickCount64;
         expandedCurrentEntry = state.Current?.EntryId; expandedSourceVersion = state.SourceVersion;
         expandedQueueData = data;
         expandedQueueSource.SetData(data);
         if (followCurrent) expandedQueue.ScrollIntoView(Array.FindIndex(data, block => block.Kind == QueueBlockKind.Source));
         foreach (var (motion, block) in expandedQueueBlocks)
-            if (block != null) motion.Retarget(expandedQueuePositions.TryGetValue(block.Key, out var y) ? y : null, QueueEntryIsNew(block));
+            if (block != null) RetargetExpandedQueueRow(motion, block);
         expandedQueue.InvalidateMeasure();
     }
 }

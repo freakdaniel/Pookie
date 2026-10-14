@@ -120,7 +120,8 @@ public sealed class WaveTaste
 
     public WaveTrack[] Rank(IEnumerable<WaveTrack> candidates, IEnumerable<WaveTrack> recent,
         int count, DateTimeOffset now, Random? random = null, IEnumerable<WaveTrack>? reserved = null,
-        Func<WaveTrack, double>? learnedScore = null, Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4)
+        Func<WaveTrack, double>? learnedScore = null, Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4,
+        int startIndex = 0)
     {
         random ??= Random.Shared;
         var played = recent.ToArray();
@@ -169,7 +170,7 @@ public sealed class WaveTaste
                     : unknown.Length > 0 ? unknown : uncertain;
                 if (available.Length == 0) break;
             }
-            var freshSlot = result.Count % 3 != 0;
+            var freshSlot = (startIndex + result.Count) % 3 != 0;
             var lane = Mode == WaveMode.Balance ? available.Where(candidate => candidate.Familiar != freshSlot).ToArray() : available;
             if (lane.Length == 0) lane = available;
             var next = lane.MaxBy(candidate => candidate.Score - artists.Count(artist => artist == candidate.Artist) * diversity)!;

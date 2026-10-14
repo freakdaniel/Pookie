@@ -27,6 +27,42 @@ public sealed class HlsTests
         Assert.Equal("https://cf-hls-media.sndcdn.com/audio.mp3", playlist.Segments[1].Uri.AbsoluteUri);
     }
 
+    [Fact]
+    public void InitializationMapIsResolvedAndAppliesToEveryFollowingFragmentUntilItChanges()
+    {
+        var playlist = HlsPlaylist.Parse("""
+            #EXTM3U
+            #EXT-X-MAP:URI="init.mp4?version=1,2",BYTERANGE="44@5"
+            #EXTINF:2,
+            one.m4s
+            #EXTINF:2,
+            two.m4s
+            #EXT-X-MAP:URI="next-init.mp4"
+            #EXTINF:2,
+            three.m4s
+            #EXT-X-ENDLIST
+            """, Origin, Allowed);
+        Assert.Equal(6, playlist.Duration);
+        var first = playlist.Segments[0].Initialization!;
+        Assert.Equal("https://cf-hls-media.sndcdn.com/init.mp4?version=1,2", first.Uri.AbsoluteUri);
+        Assert.Equal(5, first.Offset); Assert.Equal(44, first.Length);
+        Assert.Equal(first, playlist.Segments[1].Initialization);
+        Assert.EndsWith("next-init.mp4", playlist.Segments[2].Initialization!.Uri.AbsoluteUri);
+        Assert.Null(playlist.Segments[2].Initialization!.Offset);
+    }
+
+    [Theory]
+    [InlineData("URI=\"file:///etc/passwd\"")]
+    [InlineData("URI=\"https://evil.test/init.mp4\"")]
+    [InlineData("BYTERANGE=\"44@0\"")]
+    [InlineData("URI=\"init.mp4\",BYTERANGE=\"0@0\"")]
+    [InlineData("URI=\"init.mp4\",BYTERANGE=\"44@-1\"")]
+    [InlineData("URI=\"init.mp4\",BYTERANGE=\"1048577@0\"")]
+    [InlineData("URI=\"init.mp4\",BYTERANGE=\"44@9223372036854775807\"")]
+    [InlineData("URI=\"init.mp4\",URI=\"other.mp4\"")]
+    public void InitializationMapRejectsInvalidAddressesRangesAndDuplicateAttributes(string map) =>
+        Assert.Throws<InvalidOperationException>(() => HlsPlaylist.Parse($"#EXTM3U\n#EXT-X-MAP:{map}\n#EXTINF:2,\nfragment.m4s\n#EXT-X-ENDLIST", Origin, Allowed));
+
     [Theory]
     [InlineData("#EXT-X-KEY:METHOD=AES-128,URI=\"secret.key\"\n#EXTINF:1,\nseg.mp3\n#EXT-X-ENDLIST")]
     [InlineData("#EXTINF:1,\nhttp://evil.test/seg.mp3\n#EXT-X-ENDLIST")]

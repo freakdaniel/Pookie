@@ -289,24 +289,31 @@ internal sealed partial class MainWindow
             if (generation != waveGeneration || api.Session != session || token.IsCancellationRequested) return new([], null);
             var pending = playbackQueue.Snapshot.Upcoming.Select(entry => entry.Track);
             var ranked = waveTaste.Rank(waveCandidates.Values, WavePlayed().Concat(pending), 20, DateTimeOffset.UtcNow,
-                reserved: WaveReserved().Concat(pending));
+                reserved: WaveReserved().Concat(pending), startIndex: playbackQueue.Snapshot.Source.Count);
             ScheduleWaveCandidateAnalysis();
             if (ranked.Length > 0) return new(ranked, "pookie:wave:" + ++waveCursor);
             if (waveTaste.Mode == WaveMode.Favorites && waveLikesCursor == null) break;
         }
         return new([], null);
     }
-    private void RerankWaveQueue()
+    private void RerankWaveQueue(bool rebuild = false)
     {
         if (playbackQueue.Context?.Key != WaveQueueKey) return;
-        var reserved = WaveReserved();
-        var ranked = waveTaste.Rank(waveCandidates.Values, WavePlayed(), 20, DateTimeOffset.UtcNow, reserved: reserved);
-        playbackQueue.ReplaceRecommendations(playbackQueue.SourceVersion, ranked);
-        RefreshQueue();
+        var before = playbackQueue.Snapshot;
+        if (!rebuild && before.ContextUpcoming.Count >= PlaybackQueue.WaveUpcomingLimit) return;
+        var committed = rebuild ? [] : before.ContextUpcoming.Select(entry => entry.Track).ToArray();
+        var reserved = WaveReserved().Concat(committed);
+        var ranked = waveTaste.Rank(waveCandidates.Values, WavePlayed().Concat(committed),
+            PlaybackQueue.WaveUpcomingLimit - committed.Length, DateTimeOffset.UtcNow, reserved: reserved,
+            startIndex: before.Source.Count - (rebuild ? before.ContextUpcoming.Count : 0));
+        playbackQueue.ReplaceRecommendations(playbackQueue.SourceVersion, ranked, rebuild);
+        if (!ReferenceEquals(before, playbackQueue.Snapshot)) RefreshQueue(dissolveWave: rebuild);
     }
     private void SetWaveMode(WaveMode mode)
     {
-        EnsureWaveTaste(); waveTaste.SetMode(mode); ScheduleWaveSave(); RerankWaveQueue();
+        EnsureWaveTaste();
+        if (waveTaste.Mode == mode) return;
+        waveTaste.SetMode(mode); ScheduleWaveSave(); RerankWaveQueue(rebuild: true);
         RefreshWaveSettings(); RefreshHomeHeroPlayback();
         ScheduleWaveCandidateAnalysis();
         if (playbackQueue.Context?.Key == WaveQueueKey) Run(() => queueLoader.EnsureAheadAsync(force: true));
@@ -321,7 +328,7 @@ internal sealed partial class MainWindow
         if (disposed || account != waveAccount || likedIds.Contains(track.Id)) return;
         if (current?.Id == track.Id) FinishWaveListening(reason: ListeningEndReason.Rejected);
         waveTaste.Block(track);
-        RecordWavePreference(WaveEventKind.Block, track); ScheduleWaveSave(); RerankWaveQueue();
+        RecordWavePreference(WaveEventKind.Block, track); ScheduleWaveSave(); RerankWaveQueue(rebuild: true);
         UpdateLikeState();
         if (current?.Id == track.Id && playbackQueue.Context?.Key == WaveQueueKey) await SkipAsync(1);
     }

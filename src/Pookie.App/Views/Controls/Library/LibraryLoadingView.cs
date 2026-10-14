@@ -56,6 +56,7 @@ internal sealed class LibraryLoadingView : IDisposable
 
 internal sealed class LibrarySkeleton : Control
 {
+    internal bool Running => shimmer.IsRunning;
     public bool Preview { get; set; }
     public int PreviewItems { get; set; } = 6;
     public bool ListView { get; set; }
@@ -65,6 +66,7 @@ internal sealed class LibrarySkeleton : Control
     private double artworkSize = 176;
     private int columns = 6;
     private double phase;
+    private bool active;
     private readonly AnimationClock shimmer;
 
     public LibrarySkeleton()
@@ -93,7 +95,24 @@ internal sealed class LibrarySkeleton : Control
         Height = style switch { LoadingRowStyle.Compact => 64, LoadingRowStyle.Waveform => TrackRowLayout.Stride, _ => size + 90 };
     }
 
-    public void SetActive(bool active) { if (active) shimmer.Start(); else shimmer.Stop(); }
+    public void SetActive(bool active)
+    {
+        this.active = active;
+        RefreshAnimation();
+    }
+
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        // Infinite clocks retain their callbacks. A discarded loading card must stop its clock,
+        // even if navigation prevents the image request from publishing its completion.
+        RefreshAnimation();
+    }
+
+    private void RefreshAnimation()
+    {
+        if (active && FindVisualRoot() is Window) shimmer.Start(); else shimmer.Stop();
+    }
     protected override Size MeasureContent(Size availableSize) => new(0,
         Preview ? Math.Ceiling(PreviewItems / (double)columns) * (artworkSize + 90) : 0);
 

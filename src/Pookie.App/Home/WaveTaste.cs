@@ -52,11 +52,11 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
         return taste.Seeds(originals.Values.Select(WaveTrack.From), count, LearnedScorer()).Select(track => originals[track.Id]).ToArray();
     }
     internal SoundCloudTrack[] Rank(IEnumerable<SoundCloudTrack> candidates, IEnumerable<SoundCloudTrack> recent,
-        int count, DateTimeOffset now, Random? random = null, IEnumerable<SoundCloudTrack>? reserved = null)
+        int count, DateTimeOffset now, Random? random = null, IEnumerable<SoundCloudTrack>? reserved = null, int startIndex = 0)
     {
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
         return taste.Rank(originals.Values.Select(WaveTrack.From), recent.Select(WaveTrack.From), count, now,
-            random, reserved?.Select(WaveTrack.From), LearnedScorer()).Select(track => originals[track.Id]).ToArray();
+            random, reserved?.Select(WaveTrack.From), LearnedScorer(), startIndex: startIndex).Select(track => originals[track.Id]).ToArray();
     }
     internal static string ArtistKey(SoundCloudTrack track) => Core.WaveTaste.ArtistKey(WaveTrack.From(track));
     internal static string WorkKey(SoundCloudTrack track) => Core.WaveTaste.WorkKey(WaveTrack.From(track));

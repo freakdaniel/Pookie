@@ -104,6 +104,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
                     var bytes = await HttpRangeStream.ReadBoundedAsync(response.Content, 1024 * 1024, stop);
                     var playlist = HlsPlaylist.Parse(Encoding.UTF8.GetString(bytes), uri, allowed);
                     Duration = playlist.Duration;
+                    HlsInitialization? loadedInitialization = null;
+                    byte[]? initializationBytes = null;
                     var cacheSegments = playlist.Segments.Select(segment =>
                         (segment.Start, segment.Duration, Request: new EncodedTrackCache.Request(segment.Uri, 16 * 1024 * 1024, segment.Offset, segment.Length))).ToArray();
                     if (cache != null) cachedEnd = () => CachedSegmentEnd(cache, cacheSegments, Seconds);
@@ -128,6 +130,19 @@ internal sealed class StreamingProvider : ISoundDataProvider
                             if (segment.Length != null && data.Length != segment.Length) throw new IOException("Incomplete HLS segment.");
                         }
                         Volatile.Write(ref downloadedEnd, segment.Start + segment.Duration);
+                        if (segment.Initialization is { } map)
+                        {
+                            if (loadedInitialization != map)
+                            {
+                                var request = new EncodedTrackCache.Request(map.Uri, 1024 * 1024, map.Offset, map.Length);
+                                initializationBytes = cache == null ? await FetchInitializationAsync(http, request, stop) : await cache.ReadAsync(request, stop);
+                                if (initializationBytes.Length == 0) throw new IOException("Empty HLS initialization block.");
+                                loadedInitialization = map;
+                            }
+                            var combined = new byte[checked(initializationBytes!.Length + data.Length)];
+                            initializationBytes.CopyTo(combined, 0); data.CopyTo(combined, initializationBytes.Length);
+                            data = combined;
+                        }
                         using var stream = new MemoryStream(data, writable: false);
                         await DecodeAsync(stream, Math.Max(0, offset - segment.Start), offset, stop);
                     }
@@ -156,6 +171,23 @@ internal sealed class StreamingProvider : ISoundDataProvider
         (double Start, double Duration, EncodedTrackCache.Request Request)[] segments, double position, CancellationToken token) =>
         cache?.Prefetch(segments.Where(segment => segment.Start + segment.Duration > position && segment.Start < position + 45)
             .Select(segment => segment.Request).ToArray(), token);
+
+    private static async Task<byte[]> FetchInitializationAsync(HttpClient http, EncodedTrackCache.Request request, CancellationToken token)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, request.Uri);
+        if (request.Offset is { } start && request.Length is { } count)
+            message.Headers.Range = new RangeHeaderValue(start, checked(start + count - 1));
+        using var response = await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
+        response.EnsureSuccessStatusCode();
+        if (request.Offset is { } offset && request.Length is { } length &&
+            (response.StatusCode != HttpStatusCode.PartialContent || response.Content.Headers.ContentRange?.From != offset ||
+                response.Content.Headers.ContentRange?.To != offset + length - 1))
+            throw new IOException("Server did not honor the HLS initialization byte range.");
+        var data = await HttpRangeStream.ReadBoundedAsync(response.Content, request.Maximum, token);
+        if (data.Length == 0 || request.Length is { } expected && data.Length != expected)
+            throw new IOException("Incomplete HLS initialization block.");
+        return data;
+    }
 
     private static double CachedSegmentEnd(EncodedTrackCache cache,
         (double Start, double Duration, EncodedTrackCache.Request Request)[] segments, double position)

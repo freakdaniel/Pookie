@@ -106,13 +106,20 @@ internal sealed partial class MainWindow
         model.Weights[4] = 5; model.Weights[5] = -5;
         var snapshot = new RecommendationSnapshot(model, new() { [first.Id] = new(MusicnnEncoder.ModelId, positive),
             [second.Id] = new(MusicnnEncoder.ModelId, negative) }, [], []);
+        var committed = playbackQueue.Snapshot.ContextUpcoming.ToArray();
         ApplyWaveLearning(43, waveGeneration, snapshot);
+        if (!committed.SequenceEqual(playbackQueue.Snapshot.ContextUpcoming))
+            throw new InvalidOperationException("Learning replaced already displayed wave entries.");
+        RerankWaveQueue(rebuild: true);
         if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != first.Id || playbackQueue.Current?.Track.Id != anchor.Id ||
             playbackQueue.Snapshot.ManualUpcoming.Single() != manual)
             throw new InvalidOperationException("Learned audio scores did not rerank the native queue while retaining current/manual entries.");
         var reversed = snapshot with { Model = model with { Sequence = 101, PositiveAudio = [negative], NegativeAudio = positive } };
         ApplyWaveLearning(43, waveGeneration, reversed);
         ApplyWaveLearning(43, waveGeneration, snapshot);
+        if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != first.Id)
+            throw new InvalidOperationException("A background preference update reordered the committed wave.");
+        RerankWaveQueue(rebuild: true);
         if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != second.Id || waveLearning?.Model.Sequence != 101)
             throw new InvalidOperationException("A newer learned preference did not change the queue or a stale checkpoint overwrote it.");
         var cursor = playbackQueue.Context!.NextHref;
@@ -131,10 +138,13 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Mood metadata changed the base recommendations or disturbed current/manual entries.");
         ApplyWaveLearning(43, waveGeneration, withMoods with { Vectors = new() {
             [first.Id] = new(MusicnnEncoder.ModelId, negative), [second.Id] = new(MusicnnEncoder.ModelId, positive) } });
+        if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != second.Id)
+            throw new InvalidOperationException("Background sound analysis reordered a displayed recommendation.");
+        RerankWaveQueue(rebuild: true);
         if (playbackQueue.Snapshot.ContextUpcoming.First().Track.Id != first.Id ||
             playbackQueue.Current?.Track.Id != anchor.Id || playbackQueue.Snapshot.ManualUpcoming.Single() != manual)
             throw new InvalidOperationException("New sound vectors did not rerank at the same training checkpoint.");
-        Console.WriteLine("WAVE_LIVE_RANKING_OK: learned sound changes recommendations independently of mood; current/manual preserved; stale/account snapshots ignored; refill cursor stable");
+        Console.WriteLine("WAVE_LIVE_RANKING_OK: displayed wave stays committed during learning; explicit rebuild uses latest sound; mood-independent; current/manual preserved; stale/account snapshots ignored; refill cursor stable");
     }
 
     private sealed class AnalysisFixturePlayer : IAudioPlayer

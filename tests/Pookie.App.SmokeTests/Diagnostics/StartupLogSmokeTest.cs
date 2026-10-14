@@ -43,6 +43,8 @@ internal static class StartupLogSmokeTest
             AppLog.For("Pookie.Probe").Information("probe-information");
             AppLog.For("Pookie.Probe").Warning("probe-warning");
             AppLog.Failure("Pookie.Probe", "probe-error", new InvalidOperationException(privateValue));
+            AppLog.Failure("Pookie.Probe", "probe-wrapped-error", new InvalidOperationException(privateValue,
+                new HttpRequestException(privateValue, null, System.Net.HttpStatusCode.Forbidden)));
             AppLog.For("Pookie.Probe").Fatal("probe-critical");
             AppLog.Shutdown();
             var log = File.ReadAllText(Directory.GetFiles(Path.Combine(root, "Logs"), "pookie-*.log").Single());
@@ -57,6 +59,10 @@ internal static class StartupLogSmokeTest
             foreach (var level in new[] { "Debug", "Information", "Warning", "Error", "Fatal" })
                 if (!events.Any(entry => entry.GetProperty("Level").GetString() == level)) throw new InvalidOperationException("Missing log level: " + level);
             if (log.Contains(privateValue, StringComparison.Ordinal)) throw new InvalidOperationException("Private text reached startup logs.");
+            if (!events.Any(entry => entry.GetProperty("Properties") is var properties &&
+                properties.TryGetProperty("RootErrorType", out var rootType) && rootType.GetString() == "HttpRequestException" &&
+                properties.GetProperty("HttpStatus").GetInt32() == 403))
+                throw new InvalidOperationException("Wrapped audio/network failure lost its safe root type or HTTP status.");
             foreach (var (type, interactive) in new[] { ("device_check", false), ("block", true) })
                 if (!events.Any(entry => entry.GetProperty("Properties") is var properties &&
                     properties.TryGetProperty("Stage", out var stage) && stage.GetString() == "browser.site.checking" &&

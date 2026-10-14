@@ -9,7 +9,13 @@ internal sealed partial class MainWindow
 {
     private readonly PlaybackQueue playbackQueue = new();
     private PlaybackQueueLoader queueLoader = null!;
-    private readonly PaginationItems popupQueueSource = new(LoadingRowStyle.Compact, item => ((PlaybackEntry)item).EntryId);
+    private readonly PaginationItems popupQueueSource = new(LoadingRowStyle.Compact, item => ((QueueBlock)item).Key);
+    private readonly Dictionary<QueueRowMotion, QueueBlock?> popupQueueBlocks = [];
+    private readonly Dictionary<string, double> popupQueuePositions = [];
+    private QueueBlock[] popupQueueData = [];
+    private HashSet<string> popupQueueEntering = [];
+    private QueueRowAnimation popupQueueAnimation = null!;
+    private long popupQueueChangedAt;
     private readonly ObservableValue<bool> repeatActive = new(false), repeatTrack = new(false);
 
     private void InitializePlaybackQueue()
@@ -24,7 +30,7 @@ internal sealed partial class MainWindow
                 return new(page.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray(), page.NextHref);
             }
             return await api.GetNextPageAsync(cursor, token);
-        }, RefreshQueue, lifetime.Token);
+        }, () => RefreshQueue(), lifetime.Token);
         shuffle.Changed += () => { playbackQueue.SetShuffle(shuffle.Value); RefreshQueue(); UpdateSystemMedia(); };
         RefreshRepeatState();
     }
@@ -85,15 +91,51 @@ internal sealed partial class MainWindow
         if (entry != null) await PlayAsync(entry.Track);
     }
 
-    private void RefreshQueue()
+    private void RefreshQueue(bool dissolveWave = false)
     {
         if (queueList == null) return;
         var state = playbackQueue.Snapshot;
-        var data = state.Current is { } selected ? new[] { selected }.Concat(state.Upcoming).ToArray() : state.Upcoming.ToArray();
-        popupQueueSource.SetData(data);
+        static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
+        var data = new List<QueueBlock>();
+        if (state.Current is { } selected) data.Add(TrackBlock(selected));
+        var wave = state.Context?.Kind == PlaybackContextKind.Wave;
+        if (wave && state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: "Добавлено тобой"));
+        data.AddRange(state.ManualUpcoming.Select(TrackBlock));
+        if (wave) data.Add(new("wave", QueueBlockKind.Context, Title: "Далее на твоей волне"));
+        data.AddRange(state.Forward.Concat(state.ContextUpcoming).Select(TrackBlock));
+        RefreshPopupQueue(data.ToArray(), wave, dissolveWave);
         queueStatus.Value = state.Context?.Title ?? "Очередь воспроизведения";
-        RefreshExpandedQueue(); UpdateSystemMedia();
+        RefreshExpandedQueue(dissolveWave); UpdateSystemMedia();
     }
+
+    private void RefreshPopupQueue(QueueBlock[] data, bool wave, bool dissolveWave)
+    {
+        if (popupQueueData.SequenceEqual(data)) return;
+        if (popupQueueData.Select(block => block.Key).SequenceEqual(data.Select(block => block.Key)))
+        { popupQueueData = data; popupQueueSource.SetData(data); return; }
+        popupQueuePositions.Clear();
+        if (wave && queueOpen.Value)
+            foreach (var (row, block) in popupQueueBlocks)
+                if (block != null) popupQueuePositions[block.Key] = row.VisualY;
+        popupQueueAnimation.Begin(dissolveWave ? 220 : 280);
+        popupQueueEntering = data.Select(block => block.Key).Except(popupQueueData.Select(block => block.Key)).ToHashSet();
+        if (dissolveWave)
+            foreach (var entry in playbackQueue.Snapshot.ContextUpcoming)
+            {
+                var key = $"entry:{entry.EntryId}";
+                if (Array.FindIndex(data, block => block.Key == key) != Array.FindIndex(popupQueueData, block => block.Key == key))
+                { popupQueueEntering.Add(key); popupQueuePositions.Remove(key); }
+            }
+        popupQueueChangedAt = Environment.TickCount64;
+        popupQueueData = data; popupQueueSource.SetData(data);
+        foreach (var (row, block) in popupQueueBlocks)
+            if (block != null) RetargetPopupQueueRow(row, block);
+    }
+
+    private void RetargetPopupQueueRow(QueueRowMotion row, QueueBlock block) =>
+        row.Retarget(popupQueuePositions.TryGetValue(block.Key, out var y) ? y : null,
+            queueOpen.Value && playbackQueue.Context?.Kind == PlaybackContextKind.Wave &&
+            Environment.TickCount64 - popupQueueChangedAt < 500 && popupQueueEntering.Contains(block.Key));
 
     private async Task SkipAsync(int offset, bool naturalEnd = false)
     {
@@ -186,21 +228,34 @@ internal sealed partial class MainWindow
 
     private ItemsControl CreatePlaybackQueueList()
     {
-        var result = new ItemsControl().ItemHeight(64).Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0));
+        var result = new ItemsControl().ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0));
         result.ItemsSource = popupQueueSource.View;
-        result.ItemTemplate = new DelegateTemplate<PlaybackEntry>(context =>
+        popupQueueAnimation = new QueueRowAnimation(result.InvalidateVisual);
+        result.ItemTemplate = new DelegateTemplate<QueueBlock>(context =>
         {
             CompactTrackRow row = null!;
             row = CreateCompactTrackRow(_ => { if (row.EntryId is { } id) Run(() => PlayQueueEntryAsync(id)); }, queueRow: true);
             AttachTrackQueueMenu(row.Root, () => row.Track, () => row.EntryId);
-            context.Register("row", row.Root); return row.Root;
-        }, (_, entry, _, context) =>
+            var heading = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).Margin(8, 16, 8, 8);
+            var motion = new QueueRowMotion(popupQueueAnimation).Content(new Grid().Columns("*").Rows("Auto").Children(row.Root, heading));
+            popupQueueBlocks[motion] = null;
+            context.Register("motion", motion);
+            context.Register("row", row.Root); context.Register("heading", heading);
+            return motion;
+        }, (_, block, _, context) =>
         {
             var row = compactTrackRows.Single(row => row.Root == context.Get<Grid>("row"));
-            row.EntryId = entry.EntryId; BindCompactTrackRow(row, entry.Track);
+            var motion = context.Get<QueueRowMotion>("motion"); popupQueueBlocks[motion] = block;
+            if (motion.RetainedKey != block.Key) RetargetPopupQueueRow(motion, block);
+            motion.RetainedKey = block.Key;
+            row.Root.IsVisible = block.Kind == QueueBlockKind.Track;
+            row.EntryId = block.EntryId; BindCompactTrackRow(row, block.Track);
+            var heading = context.Get<TextBlock>("heading");
+            heading.Text = block.Title; heading.IsVisible = block.Kind != QueueBlockKind.Track;
         }, (_, _, _, context) =>
         {
             var row = compactTrackRows.Single(row => row.Root == context.Get<Grid>("row"));
+            popupQueueBlocks[context.Get<QueueRowMotion>("motion")] = null;
             row.EntryId = null; BindCompactTrackRow(row, null);
         });
         return result;

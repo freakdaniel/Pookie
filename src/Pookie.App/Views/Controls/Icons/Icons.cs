@@ -9,14 +9,14 @@ namespace Pookie.App;
 
 internal static class Icons
 {
-    private static readonly Dictionary<(string, uint), SimpleSvgSource> sources = [];
-    private static SimpleSvgSource? logoSource;
+    private static readonly Dictionary<(string, uint), IVectorImageSource> sources = [];
+    private static IVectorImageSource? logoSource;
     private static PathGeometry? logoGeometry;
 
-    internal static SimpleSvgSource Source(string name, bool dark = false) =>
+    internal static IVectorImageSource Source(string name, bool dark = false) =>
         Source(name, dark ? Color.FromRgb(32, 32, 32) : Color.FromRgb(222, 222, 222));
 
-    internal static SimpleSvgSource Source(string name, Color color)
+    internal static IVectorImageSource Source(string name, Color color)
     {
         var key = (name, color.ToArgb());
         if (sources.TryGetValue(key, out var cached)) return cached;
@@ -25,7 +25,7 @@ internal static class Icons
         using var stream = assembly.GetManifestResourceStream(resource)!;
         using var reader = new StreamReader(stream);
         var tint = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-        var svg = SimpleSvgSource.FromString(reader.ReadToEnd().Replace("currentColor", tint));
+        var svg = new ImmutableIconSource(SimpleSvgSource.FromString(reader.ReadToEnd().Replace("currentColor", tint)));
         sources.Add(key, svg);
         return svg;
     }
@@ -62,9 +62,18 @@ internal static class Icons
             var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith(".Assets.logo.svg", StringComparison.Ordinal));
             using var stream = assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);
-            logoSource = SimpleSvgSource.FromString(reader.ReadToEnd());
+            logoSource = new ImmutableIconSource(SimpleSvgSource.FromString(reader.ReadToEnd()));
         }
         return new Image().Source(logoSource).Width(width).Height(height).StretchMode(Stretch.Uniform);
+    }
+
+    // These cached SVGs never mutate. Exposing SimpleSvgSource's Changed event would let
+    // each Image subscribe to a process-wide source and retain its removed parent card.
+    private sealed class ImmutableIconSource(SimpleSvgSource source) : IVectorImageSource
+    {
+        public Size IntrinsicSize => source.IntrinsicSize;
+        public void Render(IGraphicsContext context, Rect destRect) => source.Render(context, destRect);
+        public IImage CreateImage(IGraphicsFactory factory) => source.CreateImage(factory);
     }
 
     internal static PathShape LogoMark(double width, double height)

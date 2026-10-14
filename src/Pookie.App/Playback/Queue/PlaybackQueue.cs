@@ -22,9 +22,11 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
 // snapshot; a track ID is metadata, never the identity of a queue position.
 internal sealed class PlaybackQueue
 {
+    internal const int WaveUpcomingLimit = 3;
     private readonly Random random;
     private readonly List<PlaybackEntry> source = [], upcoming = [], manual = [], history = [], forward = [];
     private long entrySequence;
+    private long waveRevision;
     private PlaybackQueueSnapshot? snapshot;
     internal long SourceVersion { get; private set; }
     internal PlaybackContext? Context { get; private set; }
@@ -46,6 +48,12 @@ internal sealed class PlaybackQueue
         Current = source[selectedIndex];
         upcoming.AddRange(Shuffle ? source.Where(entry => entry != Current) : source.Skip(selectedIndex + 1));
         if (Shuffle) Mix(upcoming);
+        if (context.Kind == PlaybackContextKind.Wave)
+        {
+            upcoming.RemoveRange(Math.Min(WaveUpcomingLimit, upcoming.Count), Math.Max(0, upcoming.Count - WaveUpcomingLimit));
+            var retained = upcoming.Select(entry => entry.EntryId).Append(Current.EntryId).ToHashSet();
+            source.RemoveAll(entry => !retained.Contains(entry.EntryId));
+        }
         Preparation = PlaybackPreparation.Preparing; Changed();
         return Current;
     }
@@ -150,6 +158,12 @@ internal sealed class PlaybackQueue
     internal bool Append(long version, string cursor, TrackPage page)
     {
         if (version != SourceVersion || Context?.NextHref != cursor) return false;
+        if (Context.Kind == PlaybackContextKind.Wave)
+        {
+            UpdateWaveUpcoming(page.Tracks, rebuild: false);
+            Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
+            Changed(); return true;
+        }
         var added = page.Tracks.Select((track, index) => NewEntry(track, PlaybackEntryOrigin.Context, source.Count + index)).ToList();
         source.AddRange(added);
         if (Shuffle) Mix(added);
@@ -157,20 +171,40 @@ internal sealed class PlaybackQueue
         Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
         Changed(); return true;
     }
-    internal bool ReplaceRecommendations(long version, IEnumerable<SoundCloudTrack> tracks)
+    internal bool ReplaceRecommendations(long version, IEnumerable<SoundCloudTrack> tracks, bool rebuild = false)
     {
         if (version != SourceVersion || Context?.Kind != PlaybackContextKind.Wave) return false;
-        var removed = upcoming.Select(entry => entry.EntryId).ToHashSet();
-        source.RemoveAll(entry => removed.Contains(entry.EntryId));
-        upcoming.Clear();
+        var changed = UpdateWaveUpcoming(tracks, rebuild);
+        // Ordinary model updates leave both displayed entries and an in-flight refill alone.
+        // Explicit mode/dislike changes invalidate old fetches, even if their retained rows match.
+        if (rebuild || Context.NextHref == null)
+        {
+            Context = Context with { NextHref = "pookie:wave:rerank:" + ++waveRevision };
+            changed = true;
+        }
+        if (changed) Changed();
+        return true;
+    }
+
+    private bool UpdateWaveUpcoming(IEnumerable<SoundCloudTrack> tracks, bool rebuild)
+    {
+        var previous = upcoming.ToArray();
+        var next = rebuild ? new List<PlaybackEntry>() : previous.ToList();
+        var reserved = manual.Concat(forward).Concat(next).Select(entry => entry.Track.Id).ToHashSet();
+        if (Current != null) reserved.Add(Current.Track.Id);
         foreach (var track in tracks)
         {
-            var entry = NewEntry(track, PlaybackEntryOrigin.Context, source.Count);
-            source.Add(entry); upcoming.Add(entry);
+            if (next.Count >= WaveUpcomingLimit) break;
+            if (!reserved.Add(track.Id)) continue;
+            var retained = previous.FirstOrDefault(entry => entry.Track.Id == track.Id);
+            next.Add(retained == null ? NewEntry(track, PlaybackEntryOrigin.Context, source.Count + next.Count)
+                : retained with { Track = track });
         }
-        // Retain a refill marker after an empty local pool so newly fetched candidates can revive it.
-        Context = Context with { NextHref = "pookie:wave:rerank:" + entrySequence };
-        Changed(); return true;
+        if (previous.SequenceEqual(next)) return false;
+        var removed = previous.Select(entry => entry.EntryId).ToHashSet();
+        source.RemoveAll(entry => removed.Contains(entry.EntryId));
+        source.AddRange(next); upcoming.Clear(); upcoming.AddRange(next);
+        return true;
     }
     internal void SetPreparation(long entryId, PlaybackPreparation state, SoundCloudTrack? resolved = null)
     {

@@ -65,10 +65,16 @@ public static class AppLog
         start.Environment["POOKIE_LOG_CONSOLE_LEVEL"] = "None";
     }
 
-    public static void Failure(string category, string action, Exception error, LogEventLevel level = LogEventLevel.Error, int? httpStatus = null) =>
+    public static void Failure(string category, string action, Exception error, LogEventLevel level = LogEventLevel.Error, int? httpStatus = null)
+    {
+        var root = error.GetBaseException();
+        var rootOperation = root.TargetSite == null ? null : root.TargetSite.DeclaringType?.Name + "." + root.TargetSite.Name;
+        httpStatus ??= root is HttpRequestException { StatusCode: { } status } ? (int)status : null;
         For(category).ForContext("ErrorType", error.GetType().Name).ForContext("HttpStatus", httpStatus)
-            .ForContext("StackTrace", error.StackTrace)
-            .Write(level, "{Action}: {ErrorType}; HTTP {HttpStatus}", action, error.GetType().Name, httpStatus);
+            .ForContext("StackTrace", error.StackTrace).ForContext("RootStackTrace", root.StackTrace)
+            .Write(level, "{Action}: {ErrorType}; причина {RootErrorType} ({RootOperation}); HTTP {HttpStatus}",
+                action, error.GetType().Name, root.GetType().Name, rootOperation, httpStatus);
+    }
 
     public static void Shutdown()
     {

@@ -14,11 +14,12 @@ internal sealed class QueueRowAnimation(Action redraw) : IDisposable
     internal double Progress { get; private set; }
     internal bool Contains(QueueRowMotion row) => rows.Contains(row);
 
-    internal void Begin()
+    internal void Begin(int durationMs = 460)
     {
         clock.Stop();
         foreach (var row in rows) row.FinishMotion();
         rows.Clear(); Progress = 0;
+        clock.Duration = TimeSpan.FromMilliseconds(durationMs);
     }
 
     internal void Join(QueueRowMotion row)

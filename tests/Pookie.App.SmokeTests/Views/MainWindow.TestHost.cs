@@ -16,12 +16,14 @@ internal sealed partial class MainWindow
     private bool trackPageUiSmoke;
     private bool trackPageLiveUi;
     private bool likesEditsUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
-    private bool waveJournalUiSmoke;
+    private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
 
     internal void ConfigureVerification(string[] args)
     {
+        waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
+        memoryUiSmoke = args.Contains("--memory-ui-smoke-test");
         uiSmoke = args.Contains("--ui-smoke-test");
         loginUiSmoke = args.Contains("--login-ui-smoke-test");
         browserShutdownSmoke = args.Contains("--browser-shutdown-smoke-test");
@@ -59,6 +61,8 @@ internal sealed partial class MainWindow
             lyricsService.Dispose();
             lyricsService = new(new EmptyLyricsProvider(), Path.Combine(dataPaths.Cache, "FixtureLyrics"));
         }
+        if (waveQueueUiSmoke) Run(VerifyWaveQueueUiAsync);
+        if (memoryUiSmoke) Run(VerifyArtworkLifetimeAsync);
         if (uiSmoke) Run(VerifyUiAsync);
         if (loginUiSmoke) Run(VerifyLoginUiAsync);
         if (browserShutdownSmoke) Run(StartBrowserShutdownCheckAsync);

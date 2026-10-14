@@ -238,7 +238,7 @@ public sealed class WaveTests
             return new([Track(9)], "next");
         }, () => { }, CancellationToken.None);
         var load = loader.EnsureAheadAsync(); await entered.Task;
-        var manual = queue.Enqueue(Track(50)); queue.ReplaceRecommendations(queue.SourceVersion, [Track(8)]);
+        var manual = queue.Enqueue(Track(50)); queue.ReplaceRecommendations(queue.SourceVersion, [Track(8)], rebuild: true);
         release.SetResult(); await load;
         Assert.Equal(2, requests); Assert.Equal(1, queue.Current!.Track.Id);
         Assert.Equal(manual, Assert.Single(queue.Snapshot.ManualUpcoming));
@@ -251,7 +251,7 @@ public sealed class WaveTests
         queue.StartContext(new("wave", "Wave", "", "pookie:wave:1", Kind: PlaybackContextKind.Wave), [Track(1), Track(2), Track(3)], 0);
         queue.Next(); queue.Previous(); var manual = queue.Enqueue(Track(50));
         var snapshot = queue.Snapshot;
-        Assert.True(queue.ReplaceRecommendations(queue.SourceVersion, [Track(4), Track(5)]));
+        Assert.True(queue.ReplaceRecommendations(queue.SourceVersion, [Track(4), Track(5)], rebuild: true));
         Assert.Equal(snapshot.Current, queue.Current); Assert.Equal(snapshot.Forward, queue.Snapshot.Forward);
         Assert.Equal(manual, Assert.Single(queue.Snapshot.ManualUpcoming));
         Assert.Equal(new long[] { 4, 5 }, queue.Snapshot.ContextUpcoming.Select(entry => entry.Track.Id));

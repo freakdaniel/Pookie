@@ -214,6 +214,6 @@ internal sealed partial class MainWindow
         { viewer.ScrollChanged -= CheckPageEnd; viewer.MouseWheel -= OnPageWheel; motion.Dispose(); }
         smoothScrolls.Clear();
         foreach (var (skeleton, _) in pageSkeletons) skeleton.SetActive(false);
-        foreach (var skeleton in artworkLoading.Values) skeleton.SetActive(false);
+        foreach (var (_, skeleton) in artworkLoading) skeleton.SetActive(false);
     }
 }

@@ -41,11 +41,11 @@ internal sealed partial class MainWindow
         var prepared = PrepareTrackArtworkAsync([track], lifetime.Token);
         var cover = new Image(); _ = ArtworkLayer(cover);
         SetCardArtwork(cover, null, url);
-        if (prepared.IsCompleted || cover.Source != null || !artworkLoading[cover].IsVisible || !ReferenceEquals(SharedArtworkAsync(url), artGate.Task))
+        if (prepared.IsCompleted || cover.Source != null || !ArtworkSkeleton(cover).IsVisible || !ReferenceEquals(SharedArtworkAsync(url), artGate.Task))
             throw new InvalidOperationException("Pending artwork became a placeholder or did not share its request");
         artGate.SetResult(art); await prepared;
         SetCardArtwork(cover, await GetLibraryArtworkAsync(track), url, finished: true);
-        if (!ReferenceEquals(cover.Source, art) || artworkLoading[cover].IsVisible)
+        if (!ReferenceEquals(cover.Source, art) || ArtworkSkeleton(cover).IsVisible)
             throw new InvalidOperationException("Artwork shimmer did not resolve directly to the cover");
 
         var user = new SoundCloudUser { Id = 70, Username = "Исполнитель", FollowersCount = 1234, AvatarUrl = url };

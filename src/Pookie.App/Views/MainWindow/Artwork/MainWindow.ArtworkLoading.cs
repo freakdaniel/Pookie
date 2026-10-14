@@ -1,18 +1,20 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
+using System.Runtime.CompilerServices;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private readonly Dictionary<Image, LibrarySkeleton> artworkLoading = [];
+    // A cover owns its loading layer. Registering it must not keep removed sidebar cards alive.
+    private readonly ConditionalWeakTable<Image, LibrarySkeleton> artworkLoading = new();
     private readonly Dictionary<string, Task<ImageSource?>> artworkRequests = [];
 
     private Grid ArtworkLayer(Image cover)
     {
         var skeleton = new LibrarySkeleton { ArtworkOnly = true, IsVisible = false };
-        artworkLoading[cover] = skeleton;
+        artworkLoading.Add(cover, skeleton);
         return new Grid().Columns("*").Rows("*").Children(cover, skeleton);
     }
 
