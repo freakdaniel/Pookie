@@ -189,8 +189,7 @@ public sealed partial class ListeningEventStore
     {
         if (account <= 0 || candidates.Count > 2000) throw new ArgumentOutOfRangeException(nameof(account));
         var model = LoadModel(account);
-        var centers = (model.AudioModel == MusicnnEncoder.ModelId ? model.PositiveAudio : [])
-            .Concat(model.Contexts?.Values.Where(context => context.AudioModel == MusicnnEncoder.ModelId).SelectMany(context => context.PositiveAudio) ?? []);
+        var centers = model.AudioModel == MusicnnEncoder.ModelId ? model.PositiveAudio : [];
         if (!neighborCache.TryGetValue(account, out var cached) || cached.Sequence != model.Sequence)
         {
             cached = (model.Sequence, SearchCenters(account, centers.Take(15).ToArray(), 40));

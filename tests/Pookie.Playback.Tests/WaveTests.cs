@@ -173,6 +173,58 @@ public sealed class WaveTests
         var taste = new WaveTaste(); taste.Import(Track(1), true, true); taste.SetMode(WaveMode.Favorites);
         taste.SyncLikes(new HashSet<long>()); Assert.Empty(taste.Rank([Track(1)], [], 10, Now));
     }
+
+    [Fact]
+    public void ColdStartUsesRealLikesAndTheirRelatedTracksWithoutFabricatingLearning()
+    {
+        var taste = new WaveTaste();
+        var favorite = Track(1, "Favorite artist"); var merelyHeard = Track(2, "Other artist");
+        var fitting = Track(3, "New artist"); var unrelated = Track(4, "Another new artist");
+        taste.Import(favorite, true, true); taste.Import(merelyHeard, true);
+        taste.Relate(favorite, [fitting]); taste.Relate(merelyHeard, [unrelated]);
+        taste.SetMode(WaveMode.Discoveries);
+        Assert.Equal(favorite.Id, taste.Seeds([merelyHeard, favorite], 1).Single().Id);
+        Assert.Equal(fitting.Id, taste.Rank([unrelated, fitting], [], 1, Now, new Random(1)).Single().Id);
+        Assert.Null(taste.Learning);
+        Assert.All(taste.Snapshot().Tracks, item => Assert.Equal(0, item.Plays));
+
+        taste.SyncLikes(new HashSet<long>());
+        Assert.Equal(merelyHeard.Id, taste.Seeds([merelyHeard, favorite], 1).Single().Id);
+    }
+
+    [Fact]
+    public void MaturePersonalModelOverridesTheColdStartPrior()
+    {
+        var taste = new WaveTaste(); var favorite = Track(1, "Previously liked"); var learned = Track(2, "New preference");
+        taste.Import(favorite, true, true);
+        taste.Import(learned, true);
+        var model = Pookie.Recommendations.Learning.RankerState.Empty() with { Samples = 24 };
+        model.Weights[7] = -5;
+        taste.Learning = new(model, [], [], []);
+        Assert.Equal(learned.Id, taste.Seeds([favorite, learned], 1).Single().Id);
+        Assert.Equal(learned.Id, taste.Rank([favorite, learned], [], 1, Now, new Random(1)).Single().Id);
+    }
+
+    [Fact]
+    public void BaseDiscoveriesKeepUnknownAudioEligibleAndIgnoreCachedMoodContexts()
+    {
+        var taste = new WaveTaste(); taste.SetMode(WaveMode.Discoveries);
+        var tracks = Enumerable.Range(1, 20).Select(id => Track(id, "Artist " + id)).ToArray();
+        var values = new float[200]; values[0] = 1;
+        var contextual = Pookie.Recommendations.Learning.RankerState.Empty() with { Samples = 100 };
+        contextual.Weights[0] = 20;
+        var model = Pookie.Recommendations.Learning.RankerState.Empty() with { Samples = 24, Contexts = new() {
+            [Pookie.Recommendations.WaveMood.Aggressive] = contextual } };
+        taste.Learning = new(model, new() { [1] = new(Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, values,
+            new(1, 0, 1, 0, 0, 0, Pookie.Recommendations.AudioMood.AnalysisVersion)) }, [], []);
+        var before = taste.Rank(tracks, [], 20, Now, new Random(1)).Select(track => track.Id).ToArray();
+        Assert.Equal(20, before.Length);
+        taste.Learning = taste.Learning with { Vectors = new() { [1] = new(Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, values,
+            new(0, 1, 0, 1, 1, 1, Pookie.Recommendations.AudioMood.AnalysisVersion)) } };
+        Assert.Equal(before, taste.Rank(tracks, [], 20, Now, new Random(1)).Select(track => track.Id));
+        taste.Block(tracks[1]);
+        Assert.DoesNotContain(taste.Rank(tracks, [], 20, Now), track => track.Id == tracks[1].Id);
+    }
     [Fact]
     public async Task RefillRetargetsFeedbackCursorWithoutAppendingAnOldBatch()
     {

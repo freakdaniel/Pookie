@@ -13,6 +13,16 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length is 1 or 2 && args[0] == "--wave-quality-report")
+        {
+            var days = args.Length == 2 && int.TryParse(args[1], out var value) ? value : args.Length == 1 ? 7 : 0;
+            if (days is < 1 or > 90) throw new ArgumentException("Укажи период отчёта от 1 до 90 дней.");
+            var until = DateTimeOffset.UtcNow;
+            var path = Path.Combine(new AppDataPaths().Root, "Wave", "events.sqlite3");
+            Console.WriteLine(Pookie.Recommendations.Storage.WaveQualityReportReader.ToJson(
+                Pookie.Recommendations.Storage.WaveQualityReportReader.Read(path, until.AddDays(-days), until)));
+            return true;
+        }
         if (args.Length > 1 && args[0] == "--audio-mood-probe")
         { await AudioMoodProbe.RunAsync(args[1..].Where(arg => arg is not "--cache-results" and not "--preview").ToArray(), args.Contains("--cache-results"), args.Contains("--preview")); return true; }
         if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }

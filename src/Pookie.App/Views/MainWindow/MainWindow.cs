@@ -76,7 +76,8 @@ internal sealed partial class MainWindow : IDisposable
         enableSystemMedia = options.SystemMediaSession;
         dataPaths = new AppDataPaths(isolatedRun ? Path.Combine(Path.GetTempPath(), "pookie-ui-" + Guid.NewGuid().ToString("N")) : null);
         StartupLog.Initialize(dataPaths);
-        StartupLog.Event("platform.browser.electron");
+        StartupLog.Event(OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe"
+            ? "platform.browser.webkit" : "platform.browser.infiniframe");
         configuration = new ConfigurationStore(dataPaths);
         imageDiskCache = new ImageDiskCache(dataPaths);
         imageDiskCache.Prune();
@@ -396,7 +397,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
-            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Mood?.IsCurrent != true, BrowserPage = track.PermalinkUrl };
+            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Model != Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -408,8 +409,8 @@ internal sealed partial class MainWindow : IDisposable
             waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context,
                 waveTime.Elapsed, WaveListeningSource(queueEntry), waveTaste.Mode,
                 selection: queueAdvance ? Pookie.Recommendations.PlaybackSelection.QueueAdvance : Pookie.Recommendations.PlaybackSelection.TrackSelection,
-                features: waveLearning?.Evaluate(Pookie.App.Home.WaveTrack.From(track), likedIds.Contains(track.Id), waveTaste.Mood, waveListening.SessionId),
-                mood: waveTaste.Mood);
+                features: waveLearning?.Evaluate(Pookie.App.Home.WaveTrack.From(track), likedIds.Contains(track.Id), session: waveListening.SessionId),
+                familiarAtSelection: waveTaste.IsFamiliar(track));
             waveAnalyzedTrack = null;
             BeginPlaybackHistory(queueEntry);
             RefreshLyricsMetadata(track);

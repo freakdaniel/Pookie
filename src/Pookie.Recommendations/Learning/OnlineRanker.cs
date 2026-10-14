@@ -142,10 +142,14 @@ public sealed class OnlineRanker(RankerState? state = null)
         if (item.Kind == WaveEventKind.Listening && count >= 3) return;
         current.Rewards[track.Id] = new(day, count + 1);
         if (current.Rewards.Count > 256) current.Rewards.Remove(current.Rewards.MinBy(pair => pair.Value.Day).Key);
-        var input = item.Listening?.Features is { Version: FeatureVersion or "wave-features-v1" } captured ? captured : EvaluateBase(track, audio, false);
-        if (input.Values.Length != Dimensions || input.Values.Any(value => !float.IsFinite(value)) ||
-            !double.IsFinite(input.Prediction) || input.Prediction is < 0 or > 1) throw new InvalidDataException("Invalid training features.");
+        var captured = item.Listening?.Features is { Version: FeatureVersion or "wave-features-v1" } saved ? saved : null;
+        if (captured != null && (captured.Values.Length != Dimensions || captured.Values.Any(value => !float.IsFinite(value)) ||
+            !double.IsFinite(captured.Prediction) || captured.Prediction is < 0 or > 1)) throw new InvalidDataException("Invalid training features.");
+        // Evaluate the enriched input BEFORE incorporating this reaction into affinities/centers.
+        // The selection-time snapshot may have no audio yet, or belong to an older checkpoint.
+        var input = EvaluateBase(track, audio, captured?.Values[7] == 1, item.Listening?.SessionId);
         var error = target - input.Prediction;
+        var predictionError = target - (captured?.Prediction ?? input.Prediction);
         for (var i = 0; i < Dimensions; i++)
         {
             var gradient = confidence * error * input.Values[i] - .001 * current.Weights[i];
@@ -169,7 +173,7 @@ public sealed class OnlineRanker(RankerState? state = null)
                 (current.NegativeAudio == null ? [] : [current.NegativeAudio]), audio.Values) };
         }
         current = current with { Samples = current.Samples + 1,
-            PredictionError = current.Samples == 0 ? error * error : current.PredictionError * .99 + .01 * error * error };
+            PredictionError = current.Samples == 0 ? predictionError * predictionError : current.PredictionError * .99 + .01 * predictionError * predictionError };
     }
 
     private static float[][] UpdateCenters(float[][] existing, float[] values)

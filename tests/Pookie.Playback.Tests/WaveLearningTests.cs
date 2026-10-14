@@ -57,6 +57,48 @@ public sealed class WaveLearningTests : IDisposable
     }
 
     [Fact]
+    public void LateAudioTeachesSimilarityWhileKeepingTheOriginalPredictionError()
+    {
+        var state = RankerState.Empty() with { AudioModel = MusicnnEncoder.ModelId, PositiveAudio = [Unit(0)] };
+        state.Weights[4] = 2;
+        var learner = new OnlineRanker(state);
+        var captured = learner.Evaluate(Track(2), null);
+        Assert.Equal(0, captured.Values[4]); Assert.Equal(0, captured.Values[8]);
+        var item = Play(DateTimeOffset.UtcNow, 2);
+        item = item with { Listening = item.Listening! with { Features = captured } };
+        learner.Observe(1, item, new(MusicnnEncoder.ModelId, Unit(0)));
+        var learned = learner.Snapshot();
+        Assert.True(learned.Weights[4] > 2); Assert.True(learned.Weights[8] > 0);
+        Assert.Equal(Math.Pow(1 - captured.Prediction, 2), learned.PredictionError, 6);
+        Assert.Equal(0, captured.Values[4]); Assert.Equal(0, captured.Values[8]);
+    }
+
+    [Fact]
+    public void FeedbackCannotCreateItsOwnPositiveSimilarityBeforeTheGradient()
+    {
+        var learner = new OnlineRanker();
+        var item = Play(DateTimeOffset.UtcNow);
+        item = item with { Listening = item.Listening! with { Features = learner.Evaluate(Track(), null) } };
+        learner.Observe(1, item, new(MusicnnEncoder.ModelId, Unit(0)));
+        var learned = learner.Snapshot();
+        Assert.Equal(0, learned.Weights[4]); Assert.True(learned.Weights[8] > 0);
+        Assert.Single(learned.PositiveAudio);
+    }
+
+    [Fact]
+    public void LateAudioOnASkipLearnsAgainstExistingPositiveSoundWithoutRewardingIt()
+    {
+        var learner = new OnlineRanker(RankerState.Empty() with { AudioModel = MusicnnEncoder.ModelId, PositiveAudio = [Unit(0)] });
+        var item = Play(DateTimeOffset.UtcNow, 2, 5);
+        item = item with { Listening = item.Listening! with { EndReason = ListeningEndReason.Skip,
+            Features = learner.Evaluate(Track(2), null) } };
+        learner.Observe(1, item, new(MusicnnEncoder.ModelId, Unit(0)));
+        Assert.True(learner.Snapshot().Weights[4] < 0);
+        Assert.Single(learner.Snapshot().PositiveAudio);
+        Assert.Single(learner.Snapshot().NegativeAudioGroups!);
+    }
+
+    [Fact]
     public void CleaningOldObservationsPreservesTheLearnedCheckpointAcrossRestart()
     {
         var item = Play(DateTimeOffset.UtcNow.AddDays(-100));

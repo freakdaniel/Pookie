@@ -42,10 +42,24 @@ switch. It uses isolated data, no real audio or SoundCloud requests.
 It also checks captured PCM reaching the MusiCNN vector index and the learned
 account checkpoint through the production journal pipeline, the actual player
 dislike icon, cancellation outside Wave, mutual exclusion with Like, and restoring
-a rejected song through Like. Home checks native mood selection while preserving
+a rejected song through Like. Home checks native wave mode selection while preserving
 the current track and manual queue, including the settings drawer at narrow widths.
-The journal scenario also verifies a mood-cache update reranking the queue at an
-unchanged model checkpoint, without replacing current/manual entries.
+The journal scenario also verifies audio-vector updates reranking the queue at an
+unchanged model checkpoint, without replacing current/manual entries. Cached mood
+metadata must not affect the base wave's order or eligibility.
+The journal scenario also checks sequential background candidate analysis,
+nonblocking scheduling, 24 attempts per session, cancellation in Favorites,
+unchanged listening/rewards and preserved current/manual entries. All previews
+use injected local PCM; no real media is downloaded by UI checks.
+
+`--wave-quality-report [days]` reads the existing wave journal without changing it
+or contacting SoundCloud. The default is 7 days; allowed periods are 1-90 days.
+JSON groups actual automatic Wave plays by account, algorithm version, mode and
+familiar/new/unknown cohort, with early skips, >=60% listening, natural ends,
+rejections, linked likes, distinct tracks/artists and prediction audio coverage.
+Short interrupted plays are excluded from the evaluated denominator. Older
+versions have null like rates because their feedback lacked playback identities.
+This describes retained observations; it is not a causal A/B quality comparison.
 
 `--audio-mood-probe URL... [--preview] [--cache-results]` uses the saved account
 and production resolver/decoder to inspect short audio excerpts of real tracks.

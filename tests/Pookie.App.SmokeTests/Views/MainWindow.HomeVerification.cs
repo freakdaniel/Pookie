@@ -60,11 +60,6 @@ internal sealed partial class MainWindow
             ClickHomeElement(waveSettingsButton);
             await WaitForLikedLayoutAsync(() => waveSettingsOpen.Value && homeWaveLayout.Expansion > .999999 && waveModeButtons[WaveMode.Favorites].ActualWidth > 60);
             VerifyWaveDrawerBounds();
-            ClickHomeElement(waveMoodButtons[Pookie.Recommendations.WaveMood.Calm]);
-            if (waveTaste.Mood != Pookie.Recommendations.WaveMood.Calm || playbackQueue.Current != selected ||
-                !playbackQueue.Snapshot.ManualUpcoming.Contains(manual))
-                throw new InvalidOperationException("Mood selection changed the current/manual queue or ignored the native click.");
-            ClickHomeElement(waveMoodButtons[Pookie.Recommendations.WaveMood.Auto]);
             var paletteBefore = waveBackdrop.Colors;
             var paletteFrames = new HashSet<PlayerGradient>();
             void SampleWaveColor() => paletteFrames.Add(waveBackdrop.Colors);

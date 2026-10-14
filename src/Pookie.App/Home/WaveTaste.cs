@@ -23,16 +23,13 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
 {
     private readonly Core.WaveTaste taste = new(profile);
     internal Core.Storage.RecommendationSnapshot? Learning { get; set; }
-    internal Core.WaveMood Mood { get; set; }
     internal Guid? SessionId { get; set; }
-    private double MinimumMoodMatch => Mood == Core.WaveMood.Energetic ? .6 : .4;
-    private Func<Core.WaveTrack, double?>? MoodMatcher() => Mood == Core.WaveMood.Auto ? null : track =>
-        Learning?.Vectors.GetValueOrDefault(track.Id)?.Mood is { IsCurrent: true } descriptor ? descriptor.Match(Mood) : null;
     private Func<Core.WaveTrack, double> LearnedScorer()
     {
         var learner = new Core.Learning.OnlineRanker(Learning?.Model);
         var liked = taste.Snapshot().Tracks.Where(item => item.Liked).Select(item => item.Track.Id).ToHashSet();
-        return track => learner.Score(track, Learning?.Vectors.GetValueOrDefault(track.Id), liked.Contains(track.Id), Mood, SessionId);
+        return taste.PersonalizedScorer(track => learner.Score(track, Learning?.Vectors.GetValueOrDefault(track.Id),
+            liked.Contains(track.Id), session: SessionId), Learning?.Model.Samples ?? 0);
     }
     internal WaveMode Mode => (WaveMode)taste.Mode;
     internal bool Dirty => taste.Dirty;
@@ -45,20 +42,21 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
     internal void Import(SoundCloudTrack track, bool familiar, bool? liked = null) => taste.Import(WaveTrack.From(track), familiar, liked);
     internal void Block(SoundCloudTrack track) => taste.Block(WaveTrack.From(track));
     internal bool IsBlocked(SoundCloudTrack track) => taste.IsBlocked(WaveTrack.From(track));
+    internal bool IsFamiliar(SoundCloudTrack track) => taste.IsFamiliar(WaveTrack.From(track));
     internal SoundCloudTrack[] Unblock(SoundCloudTrack track) => taste.Unblock(WaveTrack.From(track)).Select(WaveTrack.ToTrack).ToArray();
     internal void ResetBlocks() => taste.ResetBlocks();
     internal void Record(SoundCloudTrack track, double seconds, bool earlySkip, DateTimeOffset now, bool rejected = false) => taste.Record(WaveTrack.From(track), seconds, earlySkip, now, rejected);
     internal SoundCloudTrack[] Seeds(IEnumerable<SoundCloudTrack> candidates, int count = 3)
     {
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
-        return taste.Seeds(originals.Values.Select(WaveTrack.From), count, LearnedScorer(), MoodMatcher(), MinimumMoodMatch).Select(track => originals[track.Id]).ToArray();
+        return taste.Seeds(originals.Values.Select(WaveTrack.From), count, LearnedScorer()).Select(track => originals[track.Id]).ToArray();
     }
     internal SoundCloudTrack[] Rank(IEnumerable<SoundCloudTrack> candidates, IEnumerable<SoundCloudTrack> recent,
         int count, DateTimeOffset now, Random? random = null, IEnumerable<SoundCloudTrack>? reserved = null)
     {
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
         return taste.Rank(originals.Values.Select(WaveTrack.From), recent.Select(WaveTrack.From), count, now,
-            random, reserved?.Select(WaveTrack.From), LearnedScorer(), MoodMatcher(), MinimumMoodMatch).Select(track => originals[track.Id]).ToArray();
+            random, reserved?.Select(WaveTrack.From), LearnedScorer()).Select(track => originals[track.Id]).ToArray();
     }
     internal static string ArtistKey(SoundCloudTrack track) => Core.WaveTaste.ArtistKey(WaveTrack.From(track));
     internal static string WorkKey(SoundCloudTrack track) => Core.WaveTaste.WorkKey(WaveTrack.From(track));

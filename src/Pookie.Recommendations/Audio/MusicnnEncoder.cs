@@ -29,7 +29,7 @@ public sealed class MusicnnEncoder : IDisposable
         session = new(bytes, options);
     }
 
-    public AudioVector? Encode(AudioSample sample)
+    public AudioVector? Encode(AudioSample sample, bool includeMood = true)
     {
         if (sample.SampleRate != 16000) throw new ArgumentException("The model needs 16 kHz mono PCM.");
         if (sample.Mono.Length > 144000) throw new ArgumentException("The audio analysis budget is nine seconds.");
@@ -46,8 +46,9 @@ public sealed class MusicnnEncoder : IDisposable
         var mean = new float[AudioVectorCodec.Dimensions];
         for (var patch = 0; patch < patches; patch++)
         for (var i = 0; i < mean.Length; i++) mean[i] += data[patch * mean.Length + i] / patches;
-        moods ??= new();
-        return new(ModelId, AudioVectorCodec.Normalize(mean), moods.Encode(data, patches));
+        AudioMood? mood = null;
+        if (includeMood) { moods ??= new(); mood = moods.Encode(data, patches); }
+        return new(ModelId, AudioVectorCodec.Normalize(mean), mood);
     }
 
     private static string ReadHash()

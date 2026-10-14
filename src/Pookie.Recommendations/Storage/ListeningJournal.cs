@@ -13,12 +13,14 @@ public sealed class ListeningJournal : IAsyncDisposable
     private readonly Channel<Work> writes;
     private readonly Task worker;
     private int pendingAudio;
+    private readonly bool analyzeMoods;
     public Task Completion => worker;
     public event Action<Exception>? AnalysisFailed;
 
-    public ListeningJournal(string path, int capacity = 256)
+    public ListeningJournal(string path, int capacity = 256, bool analyzeMoods = false)
     {
         if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
+        this.analyzeMoods = analyzeMoods;
         writes = Channel.CreateBounded<Work>(new BoundedChannelOptions(capacity) {
             SingleReader = true, FullMode = BoundedChannelFullMode.Wait, AllowSynchronousContinuations = false });
         worker = Task.Run(() => ProcessAsync(path));
@@ -51,7 +53,10 @@ public sealed class ListeningJournal : IAsyncDisposable
         return await read.Completion.Task.ConfigureAwait(false);
     }
 
-    // Classify already decoded audio while it plays, without inventing a listening reward.
+    private bool HasAnalysis(AudioVector? vector) => vector?.Model == MusicnnEncoder.ModelId &&
+        (!analyzeMoods || vector.Mood?.IsCurrent == true);
+
+    // Analyze already decoded audio while it plays, without inventing a listening reward.
     public async Task<bool> AnalyzeAsync(long account, WaveTrack track, AudioSample sample, CancellationToken token = default)
     {
         if (account <= 0 || !WaveTaste.IsPlayable(track)) throw new ArgumentException("Invalid analysis track.");
@@ -78,13 +83,13 @@ public sealed class ListeningJournal : IAsyncDisposable
                     writes.Reader.TryRead(out var request); activeAnalysis = (Analyze)request!;
                     try
                     {
-                        if (store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)?.Mood?.IsCurrent != true)
+                        if (!HasAnalysis(store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)))
                         {
                             using var analysisEncoder = new MusicnnEncoder();
-                            var vector = analysisEncoder.Encode(activeAnalysis.Sample);
+                            var vector = analysisEncoder.Encode(activeAnalysis.Sample, includeMood: analyzeMoods);
                             if (vector != null) store.CacheAudio(activeAnalysis.Account, activeAnalysis.Track, vector);
                         }
-                        activeAnalysis.Completion.TrySetResult(store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)?.Mood?.IsCurrent == true);
+                        activeAnalysis.Completion.TrySetResult(HasAnalysis(store.GetVector(activeAnalysis.Account, activeAnalysis.Track.Id)));
                     }
                     catch (Exception error) when (error is OnnxRuntimeException or ArgumentException or InvalidDataException or
                         DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or InvalidOperationException)
@@ -113,9 +118,9 @@ public sealed class ListeningJournal : IAsyncDisposable
                         if (item.Sample == null) continue;
                         try
                         {
-                            if (item.Event.Track == null || store.GetVector(item.Event.AccountId, item.Event.Track.Id)?.Mood?.IsCurrent == true) continue;
+                            if (item.Event.Track == null || HasAnalysis(store.GetVector(item.Event.AccountId, item.Event.Track.Id))) continue;
                             encoder ??= new();
-                            var vector = encoder.Encode(item.Sample);
+                            var vector = encoder.Encode(item.Sample, includeMood: analyzeMoods);
                             if (vector != null) vectors[item.Event.EventId] = vector;
                         }
                         catch (Exception error) when (error is OnnxRuntimeException or ArgumentException or InvalidDataException or

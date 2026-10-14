@@ -8,7 +8,8 @@ public enum WaveEventKind { Listening, Like, Unlike, Block, ResetBlocks, Unblock
 public sealed record ListeningObservation(Guid PlaybackId, Guid SessionId, WaveTrack Track,
     DateTimeOffset StartedAt, DateTimeOffset FinishedAt, double ListenedSeconds,
     ListeningSource Source, ListeningEndReason EndReason, WaveMode Mode, string AlgorithmVersion = "rules-v1",
-    PlaybackSelection Selection = PlaybackSelection.Unknown, Learning.FeatureSnapshot? Features = null, WaveMood Mood = WaveMood.Auto)
+    PlaybackSelection Selection = PlaybackSelection.Unknown, Learning.FeatureSnapshot? Features = null, WaveMood Mood = WaveMood.Auto,
+    bool? FamiliarAtSelection = null)
 {
     public double ListenedFraction => Track.DurationSeconds > 0 ? Math.Clamp(ListenedSeconds / Track.DurationSeconds, 0, 1) : 0;
     public bool EarlySkip => Source == ListeningSource.Wave && EndReason == ListeningEndReason.Skip &&
@@ -17,14 +18,14 @@ public sealed record ListeningObservation(Guid PlaybackId, Guid SessionId, WaveT
 
 // Events contain a projection of public metadata, never a web session or stream credentials.
 public sealed record WaveEvent(Guid EventId, long AccountId, DateTimeOffset OccurredAt, WaveEventKind Kind,
-    WaveTrack? Track = null, ListeningObservation? Listening = null, WaveMood Mood = WaveMood.Auto)
+    WaveTrack? Track = null, ListeningObservation? Listening = null, WaveMood Mood = WaveMood.Auto, Guid? PlaybackId = null)
 {
     public static WaveEvent FromListening(long accountId, ListeningObservation observation) =>
         new(observation.PlaybackId, accountId, observation.FinishedAt, WaveEventKind.Listening, observation.Track, observation, observation.Mood);
 
     public void Validate()
     {
-        if (EventId == Guid.Empty || AccountId <= 0 || !Enum.IsDefined(Kind) || !Enum.IsDefined(Mood))
+        if (EventId == Guid.Empty || PlaybackId == Guid.Empty || AccountId <= 0 || !Enum.IsDefined(Kind) || !Enum.IsDefined(Mood))
             throw new ArgumentException("Invalid event identity.");
         if (Kind == WaveEventKind.ResetBlocks)
         {

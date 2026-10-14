@@ -12,8 +12,13 @@ for a normal .NET build. Windows needs WebView2 Runtime; Linux needs
 
 Local wave storage, audio-vector search and incremental preference learning are
 documented in [Pookie.Recommendations](src/Pookie.Recommendations/README.md).
-Wave settings offer Auto, Calm, Energetic, Melancholic and Aggressive moods.
+Wave settings offer Balance, Favorites and Discoveries, without mood filtering.
 Like/Dislike icons in both players supply explicit feedback; Dislike excludes a
 song from Wave and can be cancelled. A bounded personal portrait learns several
-sound preferences and separate mood contexts. Mood and audio features share one
-background analysis pass and are cached locally; unknown songs remain eligible.
+sound preferences. During the first 24 learned reactions, existing likes and
+confirmed good plays provide a fading cold-start prior. Background analysis caches
+sound embeddings without running the mood classifier; unknown songs remain eligible.
+Upcoming candidates receive bounded background sound analysis while the wave plays.
+Feedback training uses newly obtained audio while retaining the original forecast
+for evaluation. Local quality reports are available through the smoke-test host's
+`--wave-quality-report [days]` command, without contacting SoundCloud.

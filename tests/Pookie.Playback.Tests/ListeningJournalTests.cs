@@ -35,7 +35,8 @@ public sealed class ListeningJournalTests : IDisposable
         var value = listening.Finish(taste, ListeningEndReason.Skip, Now.AddSeconds(5))!;
         Assert.Equal(2, value.ListenedSeconds); Assert.True(value.EarlySkip);
         Assert.Equal(2d / 180, value.ListenedFraction, 8);
-        Assert.Equal(ListeningSource.Wave, value.Source); Assert.Equal("learned-v2", value.AlgorithmVersion);
+        Assert.Equal(ListeningSource.Wave, value.Source); Assert.Equal("learned-base-v2", value.AlgorithmVersion);
+        Assert.Equal(Pookie.Recommendations.WaveMood.Auto, value.Mood);
         Assert.Null(listening.Finish(taste, ListeningEndReason.Skip, Now.AddSeconds(6)));
         Assert.Equal(1, Assert.Single(taste.Snapshot().Tracks).Plays);
     }

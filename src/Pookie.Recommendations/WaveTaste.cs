@@ -105,6 +105,8 @@ public sealed class WaveTaste
     private void AddSession(WaveTrack track, double weight)
     { session.Add((track, weight)); if (session.Count > 8) session.RemoveAt(0); }
     private bool Favorite(WaveTrack track) => tracks.TryGetValue(track.Id, out var item) && (item.Liked || item.GoodPlays > 0);
+    public bool IsFamiliar(WaveTrack track) => tracks.Values.Any(item =>
+        (item.Familiar || item.Liked || item.GoodPlays > 0) && WorkKey(item.Track) == WorkKey(track));
     public WaveTrack[] Seeds(IEnumerable<WaveTrack> candidates, int count = 3, Func<WaveTrack, double>? learnedScore = null,
         Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4)
     {
@@ -179,9 +181,20 @@ public sealed class WaveTaste
     }
     private double RecencyPenalty(WaveTrack track, DateTimeOffset now) => tracks.GetValueOrDefault(track.Id)?.LastPlayed is { } last
         ? Math.Max(0, 2 - (now - last).TotalHours / 12) : 0;
+    // Remote likes and confirmed good plays are useful before the local learner has examples.
+    // This prior does not invent journal events or modify the learned checkpoint.
+    public Func<WaveTrack, double> PersonalizedScorer(Func<WaveTrack, double> learnedScore, int samples)
+    {
+        const int warmupSamples = 24;
+        if (samples >= warmupSamples || !tracks.Values.Any(item => !item.Blocked && (item.Liked || item.GoodPlays > 0)))
+            return learnedScore;
+        var prior = Scorer();
+        var trust = Math.Clamp(samples / (double)warmupSamples, 0, 1);
+        return track => trust * learnedScore(track) + (1 - trust) * (.5 + .45 * Math.Tanh(prior(track) / 4));
+    }
     private Func<WaveTrack, double> Scorer()
     {
-        var positives = tracks.Values.Where(entry => entry.Liked || entry.GoodPlays > 0).ToArray();
+        var positives = tracks.Values.Where(entry => !entry.Blocked && (entry.Liked || entry.GoodPlays > 0)).ToArray();
         var artists = positives.GroupBy(entry => ArtistKey(entry.Track)).ToDictionary(group => group.Key, group => group.Count());
         var genres = positives.GroupBy(entry => Clean(entry.Track.Genre)).ToDictionary(group => group.Key, group => group.Count());
         var sessionArtists = session.GroupBy(entry => ArtistKey(entry.Track)).ToDictionary(group => group.Key, group => group.Sum(entry => entry.Weight));
@@ -196,9 +209,10 @@ public sealed class WaveTaste
             if (genre.Length > 0) score += Math.Min(1.5, genres.GetValueOrDefault(genre) * .1) + sessionGenres.GetValueOrDefault(genre) * .4;
             return score;
         }
-        var seeds = tracks.ToDictionary(pair => pair.Key, pair => BaseScore(pair.Value.Track));
+        var seeds = positives.ToDictionary(item => item.Track.Id, item => BaseScore(item.Track));
         return track => BaseScore(track) + (related.TryGetValue(track.Id, out var sources)
-            ? sources.Max(source => (1 + Math.Max(0, seeds.GetValueOrDefault(source.Key))) / (1 + source.Value * .05)) : 0);
+            ? sources.Where(source => seeds.ContainsKey(source.Key))
+                .Select(source => (1 + Math.Max(0, seeds[source.Key])) / (1 + source.Value * .05)).DefaultIfEmpty(0).Max() : 0);
     }
     public static string ArtistKey(WaveTrack track) => Clean(track.Artist);
     public static string WorkKey(WaveTrack track)

@@ -56,7 +56,8 @@ worker captures at most nine seconds of mono 16 kHz PCM from already decoded aud
 before playback gain. This playback tap makes no additional media downloads; PCM is not saved.
 The sample is consumed after nine listened seconds so upcoming songs can be
 reranked during playback, with end-of-listening capture as a fallback. Cached
-current mood vectors avoid repeat inference.
+compatible sound vectors avoid repeat inference, even when their mood metadata is
+absent or obsolete. Production inference does not load the mood classifier.
 The journal permits at most four pending audio jobs; excess samples defer analysis
 but their events still commit. Inference has one CPU thread, no GPU and disabled
 thread spinning. Inference sessions and batch PCM references are released after use.
@@ -64,35 +65,52 @@ thread spinning. Inference sessions and batch PCM references are released after 
 Frozen neural weights are not retrained. A ten-feature adaptive logistic ranker
 learns the user's reactions, bounded artist/genre affinities, up to three long-term
 positive audio centers, up to three negative audio centers and a recent positive center.
-Four bounded mood profiles (calm, energetic, melancholic and aggressive) learn
-context-specific reactions alongside the general portrait. Explicit mood skips
-update that context and current-session direction without punishing the general
-taste. Auto skips start weak and gain confidence across different sessions;
+The live application records all reactions in the general portrait (`WaveMood.Auto`);
+it exposes only Balance, Favorites and Discoveries. Existing experimental mood
+contexts remain readable but do not participate in selection or new app events.
+Early skips start weak and gain confidence across different sessions;
 skipping a liked track affects the session, not the general portrait. Session
-effects do not carry into a new wave session or mood selection. Explicit rejection
+effects do not carry into a new wave session. Explicit rejection
 never also becomes a positive listening example.
 Versioned features/predictions are captured before listening when a model snapshot
-is available. Prequential prediction error is recorded. Repeated implicit plays
+is available. At feedback time, training features are recomputed from the current
+checkpoint and any audio obtained during that play, before its reaction updates
+affinities or audio centers. Captured liked state still protects an early skip of
+a liked track. The original selection-time prediction remains immutable and is
+used for prequential error; the enriched training prediction is not substituted
+into that metric. Repeated implicit plays
 have at most three training updates per track/day within the bounded quota cache.
 Unlike, unblock and reset are state changes, not negative listening labels. Weights and the event
 cursor persist together; restarting does not replay previously learned events.
 
 The learned ranker chooses the live queue and candidate-fetch seeds. SoundCloud
-relationships supply candidates, not ranking weights. The empty model starts at
-equal predictions with small random exploration; there is no fallback to the old
-scoring formula. Modes, blocked works, reserved tracks, repetition cooldown and
+relationships supply candidates. Before 24 local learned reactions, a bounded
+cold-start prior uses real likes, confirmed good plays, artist/genre affinity and
+relationships to those positive seeds. The prior fades linearly to zero as the
+personal model learns; it writes no fabricated events and does not mutate model
+checkpoints. Without positive evidence, selection uses the learner's neutral
+predictions and small random exploration. Removed likes and blocked seeds stop
+contributing to the prior. Discoveries fetch personal seed candidates before
+starting, even when Home already has enough tracks to fill a queue.
+Modes, blocked works, reserved tracks, repetition cooldown and
 artist diversity remain selection constraints. Published training checkpoints
 rerank upcoming recommendations while preserving the current track and manual queue.
 Vector-search neighbors now enter the candidate pool with their cached audio
-features. All portrait centers are searched in one SIMD SQL pass, with up to 40
+features. General taste centers are searched in one SIMD SQL pass, with up to 40
 matches and a four-account cache invalidated by model/vector/preference changes.
-Audio indexing grows from played tracks. With an explicit mood the application
-also previews up to three unclassified candidates per refill, sequentially,
-with a ten-second batch deadline and 24 attempts per wave session. Each preview
-decodes nine seconds starting at min(30 seconds, duration / 4), without an output
-device, full-track prefetch or saved PCM. Protected previews are skipped; their
-audio is analyzed only during actual playback. Preview analysis writes vectors,
-not listening events, history or training rewards. Auto does not download previews.
+Audio indexing grows from played tracks and bounded background candidate previews.
+While Balance/Discoveries is playing, upcoming unclassified candidates are decoded
+sequentially: at most three per batch, 20 seconds between batch starts, six seconds
+per candidate, twelve seconds per batch and 24 attempts per wave session. All
+batches share a 12 MiB budget for consumed CDN response bodies. No output device,
+website playback, listening event, reward or SoundCloud history write is created.
+Protected candidates are skipped and classified during normal playback instead.
+Pause, playback preparation, Favorites, account changes and shutdown cancel the
+batch; its decoder must finish disposal before another batch can start. Selection
+never awaits a preview. Cached sound reranks only future recommendations, keeping
+the current/manual/forward entries. A missing embedding leaves a track eligible;
+there are no mood thresholds or unknown-audio quota. Existing experimental mood
+centers are not searched by the base candidate retrieval.
 Windows protected playback uses InfiniFrame's system WebView2 runtime. It opts
 into an AudioWorklet tap before gain/master volume.
 It downsamples to 16 kHz mono and transmits at most nine seconds in 1024-sample
@@ -101,31 +119,44 @@ The normal browser EME session continues to own licenses/decryption. If a browse
 does not expose PCM or returns silence, no vector is created; playback and
 metadata learning continue.
 
-A 411 KB ONNX graph combines MTG's relaxed, party, sad and aggressive classifiers
+The retained experimental 411 KB ONNX graph combines MTG's relaxed, party, sad and aggressive classifiers
 with DEAM arousal/valence regression. It consumes raw per-patch MusiCNN outputs
-before L2 normalisation; the same audio pass produces search vectors and mood
-features. Energy uses arousal, with relaxed/aggressive evidence and a small party
+before L2 normalisation. It is used only when explicitly requested by diagnostics
+or classifier tests, not by the production listening journal. Energy uses arousal, with relaxed/aggressive evidence and a small party
 contribution. Arousal and valence are normalised from [1,9] to [0,1]. These are
 estimates of activation and emotional tone, not calibrated mood probabilities or BPM.
-Mood cache version `musicnn-moods-arousal-v2` marks old party-based predictions
-for refresh while preserving similarity embeddings and the general user portrait.
-The old Energetic training context is ignored and replaced on the next event.
-Strongly incompatible tracks (match < .4) are excluded from mood selection and
-candidate-fetch anchors; matching tracks (>= .6) precede familiar/new lanes.
-Explicit mood ranking assigns 65% to audio fit and 35% to personalized preference.
-Unknowns stay eligible, with at most ceil(requested count / 5) unknown slots per
-page; a small cache yields a shorter queue instead of 20 unclassified songs.
-Energetic uses the stricter .6 minimum, including refill/cooldown fallback and
-candidate-fetch seeds. The other moods permit uncertain .4-.6 fallback choices
-after matching and unknown candidates.
-Conflicting long plays can still teach general taste, but do not reward the mood
-context. The classifier observes a short excerpt, not the user's emotional state
-or a guaranteed whole-song label.
+Mood cache version `musicnn-moods-arousal-v2` is preserved for diagnostic comparisons.
+Changing those scores cannot reorder or exclude tracks in the base wave. Future
+mood experiments must be validated independently of recommendation preference;
+the classifier observes a short excerpt, not the user's emotional state or a
+guaranteed whole-song label. `ListeningJournal(analyzeMoods: true)` explicitly
+enables diagnostic mood-cache refresh; the default analyzes sound embeddings only.
 
 Player Like and Dislike icons are mutually exclusive. Dislike works outside Wave;
 only Wave advances automatically. Repeating Dislike cancels the work's exclusion,
 and a later Like also restores it. Unblock/reset restore eligibility; they do not
 reconstruct a counterfactual model with historical feedback removed.
+
+## Quality measurements
+
+`learned-base-v2` observations record whether a work was familiar BEFORE listening.
+Confirmed like/unlike actions carry their playback identity, so a reaction cannot
+be attributed to another play of the same track. Preview jobs write only vectors.
+`WaveQualityReportReader` opens SQLite read-only and aggregates retained automatic
+wave plays by account, algorithm version, mode and familiar/new/unknown cohort.
+It reports early skips, listening >=60% (at least 15 seconds, excluding rejection),
+natural ends, explicit rejections, likes remaining after unlike, unique tracks/
+artists and the fraction whose prediction had audio features. Short interrupted
+plays (shutdown, pause/stop, playback error, account change, Previous) do not count
+as failures; they remain visible in the interrupted count. A confirmed like or
+sufficient listening makes such an observation evaluable. Like rates for older
+versions are null because their actions did not carry a playback identity.
+
+Use `dotnet run --project tests/Pookie.App.SmokeTests -- --wave-quality-report 7`
+to print JSON for the last seven days (1-90 days supported). This makes no network
+requests and does not train, migrate or prune the journal. Reports cover retained
+observations/feedback, not deleted history, and are descriptive comparisons rather
+than a randomized A/B experiment or proof of improved subjective recommendations.
 
 On the development machine a synthetic three-second sample measured approximately
 181 ms cold (both models loaded) and 58 ms warm, including mood classification. This is a local benchmark, not

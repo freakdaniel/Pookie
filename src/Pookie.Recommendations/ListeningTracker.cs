@@ -13,6 +13,7 @@ public sealed class ListeningTracker
     private TimeSpan time;
     private bool audible;
     public double Seconds { get; private set; }
+    public Guid? PlaybackId => track == null ? null : playbackId;
 
     public void Begin(WaveTrack value, Guid session, ListeningSource origin, WaveMode waveMode,
         DateTimeOffset started, TimeSpan now, PlaybackSelection selection = PlaybackSelection.Unknown)

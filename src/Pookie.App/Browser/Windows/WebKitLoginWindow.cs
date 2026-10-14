@@ -44,7 +44,7 @@ internal sealed partial class WebKitLoginWindow
         CustomizeScript(ref scriptBody, account == null);
         script = "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) { (()=>{" +
             "const pairing=" + JsonSerializer.Serialize(pairing) + ";" +
-            "window.infiniframe={host:{postData:message=>window.webkit.messageHandlers.pookie.postMessage(JSON.stringify({...message,pookie_pairing:pairing}))}};" +
+            "window.__pookiePost=message=>window.webkit.messageHandlers.pookie.postMessage(JSON.stringify({...message,pookie_pairing:pairing}));" +
             scriptBody + "})(); }";
     }
 

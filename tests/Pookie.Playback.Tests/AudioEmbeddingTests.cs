@@ -40,6 +40,18 @@ public sealed class AudioEmbeddingTests(ITestOutputHelper output)
         Assert.Null(encoder.Encode(new(new float[48000])));
     }
 
+    [Fact]
+    public void BaseAudioAnalysisProducesTheSameEmbeddingWithoutMoodClassification()
+    {
+        using var encoder = new MusicnnEncoder();
+        var baseVector = encoder.Encode(Sample(), includeMood: false)!;
+        Assert.Null(baseVector.Mood);
+        var fullVector = encoder.Encode(Sample())!;
+        Assert.NotNull(fullVector.Mood);
+        Assert.Equal(fullVector.Model, baseVector.Model);
+        Assert.Equal(fullVector.Values, baseVector.Values);
+    }
+
     [Theory]
     [InlineData(16000, 1)]
     [InlineData(22050, 1)]
@@ -75,7 +87,8 @@ public sealed class AudioEmbeddingTests(ITestOutputHelper output)
                 Assert.Equal(1, (await journal.SnapshotAsync(42, [track])).Model.Samples);
             }
             using var store = new ListeningEventStore(path);
-            Assert.NotNull(store.GetVector(42, 1)?.Mood); Assert.Equal(1, store.Snapshot(42, []).Model.Samples);
+            Assert.NotNull(store.GetVector(42, 1)); Assert.Null(store.GetVector(42, 1)!.Mood);
+            Assert.Equal(1, store.Snapshot(42, []).Model.Samples);
         }
         finally { Directory.Delete(directory, true); }
     }

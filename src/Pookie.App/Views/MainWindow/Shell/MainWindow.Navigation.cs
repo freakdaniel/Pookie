@@ -108,6 +108,7 @@ internal sealed partial class MainWindow
         if (demo || me == null || api.Session == null || !pendingLikes.Add((api.Session, track.Id))) return;
         likedActionError.Value = "";
         var user = me; var session = api.Session;
+        var playbackId = waveListening.Track?.Id == track.Id ? waveListening.PlaybackId : null;
         UpdateLikeState();
         try
         {
@@ -120,7 +121,7 @@ internal sealed partial class MainWindow
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
-            WaveLikeChanged(track, liked);
+            WaveLikeChanged(track, liked, playbackId);
             UpdateLikeState();
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
             await ApplyLibraryLikeAsync(track, liked, session);

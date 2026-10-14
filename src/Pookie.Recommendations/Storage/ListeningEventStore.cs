@@ -161,4 +161,5 @@ public sealed partial class ListeningEventStore : IDisposable
 [JsonSerializable(typeof(Learning.RankerState))]
 [JsonSerializable(typeof(long[]))]
 [JsonSerializable(typeof(AudioMood))]
+[JsonSerializable(typeof(WaveQualityRow[]))]
 internal partial class JournalJson : JsonSerializerContext;
