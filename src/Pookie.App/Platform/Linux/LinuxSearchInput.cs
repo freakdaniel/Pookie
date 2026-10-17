@@ -11,11 +11,11 @@ namespace Pookie.App.Platform;
 internal sealed class LinuxSearchInput : IDisposable
 {
     private readonly Window window;
-    private readonly TextBox[] fields;
+    private readonly TextBase[] fields;
     private PendingKey? pending;
     private bool disposed;
 
-    public LinuxSearchInput(Window window, params TextBox[] fields)
+    public LinuxSearchInput(Window window, params TextBase[] fields)
     {
         this.window = window;
         this.fields = fields;
@@ -30,7 +30,7 @@ internal sealed class LinuxSearchInput : IDisposable
         // ASCII, backspace or mouse input; dispatcher-only delivery reorders it.
         CompletePending();
         if (e is not X11NativeMessageEventArgs { EventType: 2 } x11 ||
-            window.FocusManager.FocusedElement is not TextBox field || !fields.Contains(field) ||
+            window.FocusManager.FocusedElement is not TextBase field || !fields.Contains(field) ||
             field.IsReadOnly || ((ITextCompositionClient)field).IsComposing) return;
         var key = Marshal.PtrToStructure<XKeyEvent>(x11.EventPointer);
         if ((key.State & (4 | 8 | 64)) != 0) return; // Ctrl, Alt and Super shortcuts; allow AltGr.
@@ -78,9 +78,9 @@ internal sealed class LinuxSearchInput : IDisposable
         foreach (var field in fields) field.TextInput -= OnTextInput;
     }
 
-    private sealed class PendingKey(TextBox field, string text)
+    private sealed class PendingKey(TextBase field, string text)
     {
-        public TextBox Field { get; } = field;
+        public TextBase Field { get; } = field;
         public string Text { get; } = text;
         public KeyEventArgs? ForwardedKey;
         public bool Delivered;

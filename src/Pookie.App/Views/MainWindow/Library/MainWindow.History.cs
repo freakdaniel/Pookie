@@ -39,6 +39,7 @@ internal sealed partial class MainWindow
         Page.Library => overviewScroll,
         Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.Track => trackDetailScroll,
+        Page.Chats => null,
         Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
         > Page.LibraryTracks => CollectionScroll,
         _ => (ScrollViewer?)list.FindVisualChild<ScrollViewer>()
@@ -136,6 +137,7 @@ internal sealed partial class MainWindow
         ReplaceTracks((entry.Route.Page is Page.Library or Page.LibraryTracks) && libraryLikes != null ? libraryLikes : state.Tracks);
         if (entry.Route.Page == Page.Home) RefreshCachedHome();
         else if (entry.Route.Page == Page.Library) { RefreshLibraryCards(); RefreshOverviewSections(); }
+        else if (entry.Route.Page == Page.Chats) Run(RefreshChatsAsync);
         else if (entry.Route.Page > Page.LibraryTracks)
         { RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; }
         // Restore against arranged virtualized extents, rather than a guessed delay.

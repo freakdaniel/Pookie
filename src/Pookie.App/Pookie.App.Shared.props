@@ -19,6 +19,7 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/Bungee-Regular.ttf" LogicalName="Pookie.App.Assets.Fonts.Bungee-Regular.ttf" />
 
     <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
+    <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />
     <PackageReference Include="SoundFlow.Codecs.FFMpeg" Version="1.4.0" GeneratePathProperty="true" />
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />

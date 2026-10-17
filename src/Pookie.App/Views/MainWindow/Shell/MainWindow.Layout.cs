@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
         return new Grid().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0));
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), ChatGifsView().Row(0));
     }
 
     private FrameworkElement StartupSplash()
@@ -122,8 +122,8 @@ internal sealed partial class MainWindow
 
     private FrameworkElement Header()
     {
-        topNavigation = new StackPanel().Horizontal().Spacing(5).CenterHorizontal().CenterVertical().Width(390).Height(44).Children(
-            Nav("house-simple", "Главная", Page.Home), Nav("broadcast", "Лента", Page.Feed), Nav("books", "Библиотека", Page.Library),
+        topNavigation = new StackPanel().Horizontal().Spacing(5).CenterHorizontal().CenterVertical().Width(480).Height(44).Children(
+            Nav("house-simple", "Главная", Page.Home), Nav("broadcast", "Лента", Page.Feed), Nav("books", "Библиотека", Page.Library), Nav("chat-circle", "Чаты", Page.Chats),
             NavAction("magnifying-glass", "Поиск", OpenTopSearch));
         topSearchInput = new TextBox().BindText(query).Placeholder("Треки, люди, альбомы, плейлисты")
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
@@ -241,7 +241,7 @@ internal sealed partial class MainWindow
         query.Value = "";
         searching.Value = true;
         topNavigation.Width = 0; topNavigation.Opacity = 0; topNavigation.IsHitTestVisible = false;
-        topSearchBar.Width = 390; topSearchBar.Opacity = 1; topSearchBar.IsHitTestVisible = true;
+        topSearchBar.Width = 480; topSearchBar.Opacity = 1; topSearchBar.IsHitTestVisible = true;
         topSearchInput.Focus();
     }
 
@@ -250,7 +250,7 @@ internal sealed partial class MainWindow
         if (!searching.Value) return;
         searching.Value = false;
         topSearchBar.Width = 0; topSearchBar.Opacity = 0; topSearchBar.IsHitTestVisible = false;
-        topNavigation.Width = 390; topNavigation.Opacity = 1; topNavigation.IsHitTestVisible = true;
+        topNavigation.Width = 480; topNavigation.Opacity = 1; topNavigation.IsHitTestVisible = true;
         if (clear) query.Value = "";
     }
 
@@ -268,13 +268,14 @@ internal sealed partial class MainWindow
             HomePageView().BindIsVisible(page, value => value == Page.Home),
             CreateHomeLoadingView().BindIsVisible(page, value => value == Page.Feed),
             SearchPage().BindIsVisible(page, value => value == Page.Search),
+            ChatsPage().BindIsVisible(page, value => value == Page.Chats),
             TrackDetailPageView().BindIsVisible(page, value => value == Page.Track),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
             CollectionPage().BindIsVisible(page, value => value > Page.LibraryTracks));
         return new DockPanel().LastChildFill().Spacing(18).Children(
             new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading)
-                .BindIsVisible(page, value => value is not (Page.Home or Page.Search or Page.Track)),
+                .BindIsVisible(page, value => value is not (Page.Home or Page.Search or Page.Track or Page.Chats)),
             listBody);
     }
 

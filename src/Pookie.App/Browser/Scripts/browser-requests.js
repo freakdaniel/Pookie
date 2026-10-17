@@ -143,7 +143,7 @@
   function wait(promise, context) { return Promise.race([promise, context.cancelled]); }
   function checkCancelled(context) { if (context.controller.signal.aborted) throw new Error('cancelled'); }
 
-  async function fetchProtected(url, method, context, body) {
+  async function fetchProtected(url, method, context, body, replay = true) {
     checkCancelled(context);
     await wait(ready, context);
     if (blocked) throw new Error('site-blocked');
@@ -176,14 +176,14 @@
         checkCancelled(context);
         if (blocked) throw new Error('site-blocked');
         // The tag can abort Fetch while its challenge remains active.
-        if (attempt === 0 && (challenge || generation !== initialGeneration)) {
+        if (replay && attempt === 0 && (challenge || generation !== initialGeneration)) {
           if (challenge) await wait(challenge.promise, context);
           continue;
         }
         throw error;
       }
       if (blocked) throw new Error('site-blocked');
-      if (response.status === 403 && attempt === 0 && (challenge || generation !== initialGeneration)) {
+      if (replay && response.status === 403 && attempt === 0 && (challenge || generation !== initialGeneration)) {
         if (challenge) await wait(challenge.promise, context);
         continue;
       }
@@ -268,6 +268,32 @@
   }
 
   async function request(command, context) {
+    if (command.operation === 'chat') {
+      const d = command.chat;
+      if (!historyUserId) {
+        const me = await fetchProtected(new URL('/me', apiOrigin), 'GET', context);
+        if (!me.ok) { send({ kind: 'complete', request_id: command.id, status: me.status }); return; }
+        historyUserId = (await readJson(me, context)).json.id;
+      }
+      if (historyUserId !== d.user_id) throw new Error('chat-account-mismatch');
+      const path = `/users/${d.user_id}/conversations` + (d.kind === 'list' ? '' : `/${d.recipient_id}`) + (d.kind === 'thread' ? '/messages' : '');
+      const url = d.cursor ? new URL(new URL(d.cursor).pathname + new URL(d.cursor).search, apiOrigin) : new URL(path, apiOrigin);
+      if (d.kind === 'list' || d.kind === 'thread') { url.searchParams.set('limit', '30'); url.searchParams.set('linked_partitioning', '1'); }
+      const response = await fetchProtected(url, d.kind === 'send' ? 'POST' : d.kind === 'read' ? 'PUT' : 'GET', context,
+        d.kind === 'send' ? JSON.stringify({ contents: d.body }) : d.kind === 'read' ? JSON.stringify({ read: true }) : undefined, d.kind !== 'send');
+      if (response.ok) {
+        const text = d.kind === 'read' ? '{}' : (await readJson(response, context)).text;
+        let index = 0;
+        for (let start = 0; start < text.length;) {
+          let end = Math.min(start + 1024, text.length);
+          if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+          send({ kind: 'json-chunk', request_id: command.id, chunk_index: index++, chunk: text.slice(start, end) });
+          start = end;
+        }
+      }
+      send({ kind: 'complete', request_id: command.id, status: response.status });
+      return;
+    }
     checkCancelled(context);
     if (command.operation === 'play-history') {
       if (!historyUserId) {
@@ -407,14 +433,14 @@
       window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
-      if (context && !['like', 'repost', 'follow', 'playlist-add', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
+      if (context && !context.chatWrite && !['like', 'repost', 'follow', 'playlist-add', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
         context.controller.abort(); context.rejectCancel(new Error('cancelled'));
       }
       return;
     }
-    if (active.has(command.id) || (command.comment != null && command.operation !== 'comment-write') ||
+    if (active.has(command.id) || (command.chat != null && command.operation !== 'chat') || (command.comment != null && command.operation !== 'comment-write') ||
       (command.context_urn != null && command.operation !== 'play-history') ||
-      !(command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&
+      !(command.operation === 'chat' && validChat(command) || command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&
         Number.isSafeInteger(command.track_id) && command.track_id > 0 && validHistoryContext(command.context_urn) ||
         command.operation === 'comment-write' && validCommentWrite(command) || command.operation === 'track-read' && validTrackRead(command) || command.operation === 'api-get' && readUrl(command.url) ||
         command.operation === 'me' || command.operation === 'liked-ids' || command.operation === 'like' &&
@@ -431,13 +457,30 @@
     let rejectCancel;
     const cancelled = new Promise((_, reject) => { rejectCancel = reject; });
     cancelled.catch(() => {});
-    const context = { operation: command.operation, controller: new AbortController(), cancelled, rejectCancel };
+    const context = { operation: command.operation, chatWrite: command.operation === 'chat' && ['send', 'read'].includes(command.chat.kind), controller: new AbortController(), cancelled, rejectCancel };
     active.set(command.id, context);
     // Preserve order even when a check interrupts a request or arrives between requests.
     queue = queue.then(() => request(command, context)).catch(() =>
       send({ kind: 'complete', request_id: command.id, status: blocked ? 403 : 0 }))
       .finally(() => active.delete(command.id));
   };
+
+  function validChat(command) {
+    const d = command.chat;
+    if (command.url != null || command.audio != null || command.detail != null || command.comment != null || command.context_urn != null ||
+      command.user_id || command.track_id || command.artist_id || command.playlist_id || !d || !['list', 'thread', 'send', 'read'].includes(d.kind) ||
+      !Number.isSafeInteger(d.user_id) || d.user_id <= 0) return false;
+    if (d.kind === 'list' ? d.recipient_id || d.body != null :
+      !Number.isSafeInteger(d.recipient_id) || d.recipient_id <= 0 || d.recipient_id === d.user_id ||
+      (d.kind === 'send' ? typeof d.body !== 'string' || d.body.length > 20000 || !d.body.trim() || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(d.body) : d.body != null)) return false;
+    if (d.cursor == null) return true;
+    if (['send', 'read'].includes(d.kind) || typeof d.cursor !== 'string' || d.cursor.length > 8192) return false;
+    try {
+      const url = new URL(d.cursor);
+      return url.origin === 'https://api-v2.soundcloud.com' && !url.username && !url.password && !url.hash &&
+        url.pathname === `/users/${d.user_id}/conversations` + (d.kind === 'thread' ? `/${d.recipient_id}/messages` : '');
+    } catch { return false; }
+  }
 
   function validHistoryContext(value) {
     if (value == null) return true;

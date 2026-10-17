@@ -10,7 +10,8 @@ internal sealed partial class MainWindow
         trackDetailCover = new Image().StretchMode(Stretch.UniformToFill);
         trackDetailBackdrop = new Image().StretchMode(Stretch.UniformToFill);
         trackDetailBackdrop.IsHitTestVisible = false;
-        trackDetailTitle = new TextBlock().FontSize(28).Bold().TextWrapping(TextWrapping.Wrap).MaxHeight(70).TextTrimming(TextTrimming.CharacterEllipsis);
+        // One title line plus the metadata line always occupies the play button's 64px header.
+        trackDetailTitle = new TextBlock().FontSize(28).Bold().Height(36).TextWrapping(TextWrapping.NoWrap).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailAuthor = new TextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailMeta = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnPrimary).Center();
@@ -26,7 +27,7 @@ internal sealed partial class MainWindow
             new StackPanel().Vertical().Spacing(12).Margin(0, 91, 0, 0).Column(1).Children(trackDetailPosition, trackDetailDuration));
         var titleBlock = new Grid().Columns("64,*").Rows("Auto").Spacing(18).Children(trackDetailPlay.Column(0).Top(),
             new StackPanel().Vertical().Spacing(7).Column(1).Children(trackDetailTitle,
-                new StackPanel().Horizontal().Spacing(6).Children(trackDetailAuthor, trackDetailMeta)));
+                new TrackMetadataLine(trackDetailAuthor, trackDetailMeta)));
         trackDetailHeart = Icons.View("heart", 18, TrackButtons.OnSurface).CenterVertical();
         trackDetailLikeCount = new TextBlock().FontSize(14).Bold().CenterVertical();
         trackDetailLike = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(trackDetailHeart, trackDetailLikeCount),

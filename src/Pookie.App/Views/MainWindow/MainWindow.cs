@@ -131,6 +131,7 @@ internal sealed partial class MainWindow : IDisposable
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
         Window.FrameRendered += RestoreNavigationScroll;
+        Window.FrameRendered += ArrangeChatScroll;
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
         Window.ClientSizeChanged += size =>
@@ -140,13 +141,14 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && chatGifsOpen.Value) { e.Handled = true; CloseChatGifs(); return; }
             if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
             if (e.Key == Key.Escape && waveSettingsOpen.Value) { e.Handled = true; waveSettingsOpen.Value = false; return; }
             if (e.Key == Key.Escape && CancelTrackCommentInput()) { e.Handled = true; return; }
             if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
-        InitializeSearchInput();
+        InitializeChatComposer(); InitializeSearchInput();
     }
 
     private void OnWindowLoaded()
@@ -543,6 +545,7 @@ internal sealed partial class MainWindow : IDisposable
             var closedBrowser = browser; browser = null; api.BrowserTransport = null;
             closedBrowser?.Dispose();
             ++playGeneration;
+            ResetChats();
             api.Session = null; me = null;
             ClearLibraryData();
             ResetNavigationHistory();
@@ -683,7 +686,7 @@ internal sealed partial class MainWindow : IDisposable
         ResetExpandedPlayer();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing();
+        ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         DisposePageScrolling();

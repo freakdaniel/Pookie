@@ -57,6 +57,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDetailRepostCount.IsVisible && trackDetailRepostCount.Text == "28" && trackDetailRepost.ActualWidth > 44);
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
                 trackDetailCommentsTitle.ActualHeight > 0);
+            await VerifyLongTrackHeroResizeAsync();
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
             if (trackDetailTitle.Bounds.Y >= trackDetailAuthor.Bounds.Y || trackDetailPlay.Bounds.X >= trackDetailTitle.Bounds.X ||
                 trackDetailLike.Bounds.Bottom > trackDetailCover.Bounds.Bottom + 1 || trackDetailLike.Bounds.Y <= trackDetailWaveform.Bounds.Y)
@@ -139,6 +140,52 @@ internal sealed partial class MainWindow
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("TRACK_PAGE_UI_FAILED: " + error); }
         finally { api.Session = oldSession; api.BrowserTransport = oldTransport; Window.Close(); }
+    }
+
+    private async Task VerifyLongTrackHeroResizeAsync()
+    {
+        var title = trackDetailTitle.Text; var author = trackDetailAuthor.Text; var meta = trackDetailMeta.Text;
+        var longTitle = "wtwice, plusix, lusgardd — Бай бай " + string.Concat(Enumerable.Repeat("очень длинное название трека ", 8));
+        var longAuthor = string.Concat(Enumerable.Repeat("Исполнитель с длинным именем, ", 8));
+        try
+        {
+            foreach (var width in new[] { 1600, 1320, 1160, 1000, 1120, 1400, 1000, 1160 })
+            {
+                Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 1000, minHeight: 680);
+                trackDetailTitle.Text = title; trackDetailAuthor.Text = author; trackDetailMeta.Text = meta;
+                await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 &&
+                    Window.Content is Aprillz.MewUI.Controls.FrameworkElement root && Math.Abs(root.ActualWidth - width) < 1 &&
+                    !trackDetailScroll.IsMeasureDirty && !trackDetailScroll.IsArrangeDirty);
+                await WaitForLoginFrameAsync();
+                var titleY = trackDetailTitle.Bounds.Y; var authorY = trackDetailAuthor.Bounds.Y;
+                var waveY = trackDetailWaveform.Bounds.Y; var waveHeight = trackDetailWaveform.ActualHeight;
+                var actionsY = trackCommentActions.Bounds.Y;
+                foreach (var names in new[] { (longTitle, author, meta), (title, longAuthor, meta),
+                    (longTitle, longAuthor, "· " + string.Concat(Enumerable.Repeat("Длинный жанр · ", 8)) + "3 месяца назад") })
+                {
+                    trackDetailTitle.Text = names.Item1; trackDetailAuthor.Text = names.Item2; trackDetailMeta.Text = names.Item3;
+                    await WaitForLikedLayoutAsync(() => !trackDetailScroll.IsMeasureDirty && !trackDetailScroll.IsArrangeDirty);
+                    await WaitForLoginFrameAsync();
+                    var right = trackDetailCover.Bounds.X - 32;
+                    if (Math.Abs(trackDetailTitle.Bounds.Y - titleY) > 1 || Math.Abs(trackDetailAuthor.Bounds.Y - authorY) > 1 ||
+                        Math.Abs(trackDetailWaveform.Bounds.Y - waveY) > 1 || Math.Abs(trackDetailWaveform.ActualHeight - waveHeight) > 1 ||
+                        Math.Abs(trackCommentActions.Bounds.Y - actionsY) > 1 || trackDetailAuthor.Bounds.Bottom > trackDetailWaveform.Bounds.Y ||
+                        trackDetailTitle.Bounds.Right > right + 1 || trackDetailAuthor.Bounds.Right > right + 1 || trackDetailMeta.Bounds.Right > right + 1)
+                    {
+                        CaptureUiPreview("track-page-long-title-failed");
+                        throw new InvalidOperationException($"Long track names changed hero geometry at width {width}: title={trackDetailTitle.Bounds.Y - titleY:F1}, author={trackDetailAuthor.Bounds.Y - authorY:F1}, wave={trackDetailWaveform.Bounds.Y - waveY:F1}, titleBounds={trackDetailTitle.Bounds}, titleDesired={trackDetailTitle.DesiredSize}, heading={trackDetailTitle.Parent!.Bounds}, headingDesired={trackDetailTitle.Parent!.DesiredSize}, waveBounds={trackDetailWaveform.Bounds}, cover={trackDetailCover.Bounds}, actions={trackCommentActions.Bounds}.");
+                    }
+                }
+                if (width == 1000) CaptureUiPreview("track-page-long-title-narrow");
+            }
+            Console.WriteLine("TRACK_HERO_RESIZE_OK: short/long titles, artists and metadata retain vertical positions and fit the text column across repeated 1000–1600px resizes");
+        }
+        finally
+        {
+            trackDetailTitle.Text = title; trackDetailAuthor.Text = author; trackDetailMeta.Text = meta;
+            Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
+            await WaitForLikedLayoutAsync(() => !trackDetailScroll.IsMeasureDirty && !trackDetailScroll.IsArrangeDirty);
+        }
     }
 
     private async Task VerifyTrackPlaylistButtonAsync(Aprillz.MewUI.Controls.Button button, SoundCloudTrack track)

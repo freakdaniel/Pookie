@@ -76,7 +76,8 @@ is untouched; that flag refreshes only vectors, never listening rewards or likes
 Console output contains public track identity and scores, no session/stream tokens.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
-responsive reference hero, metadata/artwork/waveform, threaded comments and replies,
+responsive reference hero, stable single-line title/artist/metadata geometry across
+repeated narrow/wide resizes with long text, metadata/artwork/waveform, threaded comments and replies,
 sidebar fans and 2x2 playlist previews, shared library profile/playlist cards and
 waveform rows in related tracks, compact preview alignment and duration spacing,
 continuous resize in both directions, nonpersistent action focus, track subsections
@@ -350,3 +351,33 @@ compiler removes unimplemented hooks from the production assembly
 
 The production app keeps its standalone `--demo` preview mode. It contains no
 verification methods, test fixture servers, or diagnostic scenario runner
+
+`--chats-ui-smoke-test --no-audio` verifies the Chats navigation immediately after
+Library, virtualized inbox/thread, responsive two-pane/single-pane layout, stable
+polling while reading history, older-message pagination, per-conversation drafts,
+duplicate-submit prevention, durable unknown sends and reconciliation. Uses only a
+local fake SoundCloud transport. `POOKIE_UI_PREVIEW` saves synthetic UI previews.
+Also checks the loading skeleton, local sending spinner and failure state, persisted
+pre-send IDs (an older identical message cannot confirm a failed send), media
+thumbnails in inbox/composer/bubbles, date-only sticky separators, time-only message
+footers, image send round trips through a fake host, and bottom anchoring after resize.
+Media regressions cover a 4K JPEG, small images without upscaling, circular avatar
+frames, one check mark for sent messages, and a file button when an image cannot
+be decoded. Also checks media skeletons without technical labels, caption previews
+in the inbox, blurred backdrops, bounded unbroken captions and hover-only timestamps
+on image-only messages. Optional `POOKIE_CHAT_IMAGE_PROBE=/absolute/path/to/photo.jpg` checks
+a local image in the bubble, inbox and composer through the fake host only.
+Stability regressions keep the same photo/source objects across sends and acknowledgements,
+exercise clock skew and coarse server timestamps, verify inline text/time bounds,
+unindented text previews and the date overlay's horizontal alignment and idle fade.
+The browser worker fixture also exercises chat list/thread/POST/mark-read over the
+real browser bridge, without sending messages to actual SoundCloud users.
+Protocol, privacy boundaries, hosting limits and KLIPY setup: [MESSAGES.md](../../MESSAGES.md).
+
+`--chat-media-hosting-live-probe pomf` explicitly uploads a small encrypted test
+package to the public primary host, downloads it and verifies authenticated
+decryption and exact file bytes. `--chat-media-hosting-live-probe quax` simulates
+an HTTP 503 from Pomf and exercises the real ZIP fallback and its download referrer.
+An optional final file path replaces the synthetic payload (up to 16 MiB).
+These live probes upload only ciphertext and do not log keys, codes or object IDs;
+they do not access SoundCloud or send messages. They are never run by unit/UI tests.

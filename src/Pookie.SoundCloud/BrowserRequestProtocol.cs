@@ -5,11 +5,15 @@ using System.Text.Json.Serialization;
 
 namespace Pookie.SoundCloud;
 
-public sealed record BrowserRequestCommand(string Id, string Operation, long UserId = 0, long TrackId = 0, bool Liked = false, string? Url = null, BrowserAudioCommand? Audio = null, TrackReadRequest? Detail = null, bool Reposted = false, long ArtistId = 0, bool Following = false, long PlaylistId = 0, CommentWriteRequest? Comment = null, string? ContextUrn = null)
+public sealed record BrowserRequestCommand(string Id, string Operation, long UserId = 0, long TrackId = 0, bool Liked = false, string? Url = null, BrowserAudioCommand? Audio = null, TrackReadRequest? Detail = null, bool Reposted = false, long ArtistId = 0, bool Following = false, long PlaylistId = 0, CommentWriteRequest? Comment = null, string? ContextUrn = null, ChatRequest? Chat = null)
 {
-    public const int MaxLength = 65536;
+    // 20,000 UTF-16 chat characters may expand to 120 KB in escaped JSON.
+    public const int MaxLength = 131072;
     public bool IsValid() => Id is { Length: 32 } && Id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
-        (ContextUrn == null || Operation == "play-history") &&
+        (Operation == "chat" ? Chat?.IsValid() == true && Url == null && Audio == null && Detail == null && Comment == null && ContextUrn == null &&
+            UserId == 0 && TrackId == 0 && ArtistId == 0 && PlaylistId == 0 : Chat == null && IsOtherValid());
+
+    private bool IsOtherValid() => (ContextUrn == null || Operation == "play-history") &&
         (Operation == "comment-write" ? Url == null && Audio == null && Detail == null && UserId == 0 && TrackId == 0 && ArtistId == 0 && PlaylistId == 0 && Comment?.IsValid() == true : Comment == null &&
         (Operation == "track-read" ? Url == null && Audio == null && Detail?.IsValid() == true : Detail == null &&
         (Operation == "audio" ? Url == null && Audio?.IsValid() == true : Audio == null &&

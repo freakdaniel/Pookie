@@ -13,6 +13,8 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Length is 2 or 3 && args[0] == "--chat-media-hosting-live-probe")
+        { await ChatMediaHostingLiveProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length is 1 or 2 && args[0] == "--wave-quality-report")
         {
             var days = args.Length == 2 && int.TryParse(args[1], out var value) ? value : args.Length == 1 ? 7 : 0;
@@ -34,6 +36,7 @@ internal static class DiagnosticsRunner
         if (args.Contains("--browser-media-isolation-smoke-test")) { await BrowserMediaIsolationSmokeTest.RunAsync(); return true; }
         if (args.Contains("--system-media-smoke-test")) { await SystemMediaSmokeTest.RunAsync(); return true; }
         if (args.Length == 2 && args[0] == "--clipboard-fixture") { ClipboardFixture.Run(args[1]); return true; }
+        if (args.Length == 4 && args[0] == "--chat-clipboard-fixture") { ChatClipboardFixture.Run(args[1], args[2], args[3]); return true; }
         if (args.Length == 2 && args[0] == "--clipboard-read-fixture") { ClipboardFixture.Read(args[1]); return true; }
         if (args.Contains("--content-blocker-smoke-test")) { await ContentBlockerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--startup-network-probe"))

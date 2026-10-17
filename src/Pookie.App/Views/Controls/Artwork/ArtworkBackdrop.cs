@@ -4,7 +4,7 @@ namespace Pookie.App;
 
 internal static class ArtworkBackdrop
 {
-    internal static ImageSource? Create(ImageSource source)
+    internal static ImageSource? Create(ImageSource source, double visibility = .24)
     {
         var sourceWidth = source.PixelWidth; var sourceHeight = source.PixelHeight;
         if (sourceWidth <= 0 || sourceHeight <= 0 || (long)sourceWidth * sourceHeight > 4_000_000) return null;
@@ -40,7 +40,7 @@ internal static class ArtworkBackdrop
         for (var i = 0; i < width * height; i++)
         {
             for (var channel = 0; channel < 3; channel++)
-                result[i * 4 + channel] = (byte)Math.Round(blurred[i * 3 + channel] * .24 + 29 * .76);
+                result[i * 4 + channel] = (byte)Math.Round(blurred[i * 3 + channel] * visibility + 29 * (1 - visibility));
             result[i * 4 + 3] = 255;
         }
         return ImageSource.FromBgraPixels(width, height, result, hasAlpha: false);

@@ -4,13 +4,6 @@
 # SPDX-License-Identifier: BSD-3-Clause AND Apache-2.0
 version = 1
 
-# Copyright, license assignments, attribution and provenance are maintained here.
-# Complete license texts are in licenses/. Validate with npm run license:check;
-# the checker maps licenses/ to the LICENSES/ directory required by REUSE only
-# in its temporary validation copy. Builds ship REUSE.toml and licenses/ together.
-# This metadata preserves the Apache-2.0 dependency attribution previously
-# distributed separately; Pookie source retains its file-level license assignments.
-
 [[annotations]]
 path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
@@ -62,7 +55,7 @@ Embedded SVGs from https://github.com/phosphor-icons/core at commit
 Most icons are upstream duotone assets, including squares-four, list-bullets, copy,
 chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
 Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
-clock-counter-clockwise and thumbs-down use assets/regular/ variants;
+clock-counter-clockwise, thumbs-down and paperclip use assets/regular/ variants;
 the filled dislike variant is assets/fill/thumbs-down-fill.svg.
 Full terms and attribution: licenses/MIT.txt.
 """
@@ -183,3 +176,10 @@ SPDX-FileComment = "Unmodified Tmds.DBus 0.95.1; https://github.com/tmds/Tmds.DB
 
 # SoundFlow and FFmpeg/native dependency license texts and notices are read from
 # their restored packages during build and shipped in licenses/THIRD-PARTY-NOTICES.txt.
+
+[[annotations]]
+path = "StbImageSharp.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = "StbImageSharpTeam"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Unmodified StbImageSharp 2.30.16, source commit 125af70cb557033f2c46aec8e82eaaf72ac49817; https://github.com/StbSharp/StbImageSharp. NuGet offers Unlicense OR MIT; Pookie uses the MIT option. Complete terms: licenses/MIT.txt. Used for bounded, incremental GIF decoding in chats."

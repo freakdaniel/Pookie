@@ -599,3 +599,41 @@ test('ordinary playlist write failures are not blindly replayed', async () => {
     await tick();assert.equal(h.calls.length,1);assert.equal(h.messages.at(-1).status,status);
   }
 });
+
+test('chat reads and writes stay in the authenticated account and send the native contents field', async () => {
+  const h = harness((url, options) => response(200, new URL(url).pathname === '/me' ? {id:42} : {collection:[]}));
+  const chat = (id, kind, extra={}) => ({id:id.toString(16).padStart(32,'0'), operation:'chat', chat:{kind,user_id:42,recipient_id:kind==='list'?0:90,...extra}});
+  h.window.__pookieRequest(chat(1100,'list'));
+  h.window.__pookieRequest(chat(1101,'thread'));
+  h.window.__pookieRequest(chat(1102,'send',{body:'Привет 🎵'}));
+  h.window.__pookieRequest(chat(1103,'read'));
+  await tick();
+  assert.equal(h.calls.length,5);
+  assert.equal(new URL(h.calls[1][0]).pathname,'/users/42/conversations');
+  assert.equal(new URL(h.calls[2][0]).pathname,'/users/42/conversations/90/messages');
+  assert.equal(h.calls[3][1].method,'POST');
+  assert.deepEqual(JSON.parse(h.calls[3][1].body),{contents:'Привет 🎵'});
+  assert.deepEqual(JSON.parse(h.calls[4][1].body),{read:true});
+  for(const [,options] of h.calls){assert.equal(options.headers.Authorization,'OAuth secret-token');assert.equal(options.redirect,'error');}
+  for(const extra of [{user_id:43},{recipient_id:42},{body:'\0'},{body:'a'.repeat(20001)},{cursor:'https://evil.test/'}])
+    h.window.__pookieRequest(chat(1104,'send',{body:'message',...extra}));
+  for(const cursor of ['https://api-v2.soundcloud.com/users/43/conversations/90/messages',
+    'https://api-v2.soundcloud.com/users/42/conversations/91/messages','https://evil@api-v2.soundcloud.com/users/42/conversations/90/messages'])
+    h.window.__pookieRequest(chat(1105,'thread',{cursor}));
+  h.window.__pookieRequest({...chat(1106,'list'),url:'https://evil.test/'});
+  await tick();
+  // A claimed account mismatch may read /me but must never reach another conversation.
+  assert.equal(h.calls.length,5);
+});
+
+test('an interrupted chat POST is not replayed after a browser check', async () => {
+  let h, posts=0;
+  h=harness((url,options)=>{
+    if(new URL(url).pathname==='/me')return response(200,{id:42});
+    posts++;h.emit('dd_blocked','device_check');h.emit('dd_response_passed','device_check');
+    throw new TypeError('Connection interrupted after POST');
+  });
+  h.window.__pookieRequest({id:'c'.repeat(32),operation:'chat',chat:{kind:'send',user_id:42,recipient_id:90,body:'Once'}});
+  await tick();
+  assert.equal(posts,1);assert.equal(h.messages.at(-1).status,0);
+});

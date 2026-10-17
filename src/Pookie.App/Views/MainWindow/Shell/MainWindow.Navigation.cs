@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum Page { Home, Feed, Search, Track, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection }
+    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection }
     private readonly ObservableValue<Page> page = new(Page.Home);
     private readonly ObservableValue<string> eyebrow = new("ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ");
     private readonly ObservableValue<bool> profileOpen = new(false);
@@ -42,6 +42,7 @@ internal sealed partial class MainWindow
     {
         if (!CanUseWorkspace) return Task.CompletedTask;
         if (target == Page.Home) return NavigateHomeAsync();
+        if (target == Page.Chats) return OpenChatsAsync();
         if (target == Page.Library) return LikesAsync();
         if (target == Page.LibraryTracks) { ShowLibraryTracks(); return Task.CompletedTask; }
         if (target > Page.LibraryTracks) return ShowLibrarySectionAsync(target);

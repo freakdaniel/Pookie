@@ -129,6 +129,7 @@ public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 [JsonSerializable(typeof(BrowserRequestCommand))]
 [JsonSerializable(typeof(TrackReadRequest))]
 [JsonSerializable(typeof(CommentWriteRequest))]
+[JsonSerializable(typeof(ChatRequest))]
 [JsonSerializable(typeof(BrowserRequestEvent))]
 public partial class SoundCloudJson : JsonSerializerContext;
 

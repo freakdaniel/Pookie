@@ -17,8 +17,11 @@ internal sealed partial class MainWindow
         windowClipboard = new(Window, nativeClipboard);
         topSearchInput.ClipboardService = windowClipboard;
         likedFilter.ClipboardService = windowClipboard;
+        chatInput.ClipboardService = windowClipboard;
+        chatSearch.ClipboardService = windowClipboard;
+        chatGifSearch.ClipboardService = windowClipboard;
         clipboardTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(20));
         clipboardTimer.Tick += () => { nativeClipboard?.Pump(); windowClipboard?.Pump(); };
-        searchInput = new(Window, topSearchInput, likedFilter);
+        searchInput = new(Window, topSearchInput, likedFilter, chatInput, chatSearch, chatGifSearch);
     }
 }

@@ -85,6 +85,13 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
+    public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "chat", Chat: request), cancellationToken);
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал переписку.")); }
+        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректную переписку."); }
+    }
+
     private async Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
     {
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
@@ -111,7 +118,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
-            var write = command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
+            var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
             using var cancellation = write ? timeout.Token.Register(current.Abort) : default;
             try
             {

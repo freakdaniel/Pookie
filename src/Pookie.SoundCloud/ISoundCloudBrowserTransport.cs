@@ -4,6 +4,8 @@ namespace Pookie.SoundCloud;
 
 public interface ISoundCloudBrowserTransport
 {
+    Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support chats.");
     Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default);
     Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default);
     Task RecordPlaybackAsync(long trackId, string? contextUrn = null, CancellationToken cancellationToken = default) =>

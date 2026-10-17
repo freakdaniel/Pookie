@@ -128,6 +128,7 @@ internal sealed partial class MainWindow
         Page.Home => null,
         Page.Library => null,
         Page.Track => null,
+        Page.Chats => null,
         Page.Search => searchResults?.NextHref,
         > Page.LibraryTracks => activeCollection?.NextHref,
         _ => nextHref
