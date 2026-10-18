@@ -15,6 +15,39 @@ public sealed record ChatMessagePage(ChatMessage[] Messages, string? NextHref);
 
 public sealed partial class SoundCloudWebClient
 {
+    public async Task<LibraryItem> ResolveChatMusicAsync(string url, CancellationToken token = default)
+    {
+        var uri = await ExpandSoundCloudUrlAsync(url, token);
+        using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), token);
+        var item = LibraryData.ParseItem(document.RootElement);
+        return item is { Track: not null } or { Playlist: not null } ? item : throw new SoundCloudException("Нужна ссылка на трек или плейлист.");
+    }
+
+    private static bool IsSoundCloudLink(Uri uri) => uri.Scheme == "https" && uri.UserInfo.Length == 0 && uri.IsDefaultPort &&
+        uri.Host is "soundcloud.com" or "www.soundcloud.com" or "on.soundcloud.com";
+
+    private async Task<Uri> ExpandSoundCloudUrlAsync(string url, CancellationToken token)
+    {
+        if (url.Length > 4096 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !IsSoundCloudLink(uri))
+            throw new SoundCloudException("Нужна ссылка SoundCloud.");
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        // The API does not expand mobile share links. Read only their redirect
+        // headers, without sending the account's API credentials or loading a page.
+        while (uri.Host == "on.soundcloud.com")
+        {
+            if (visited.Count >= 5 || !visited.Add(uri.AbsoluteUri)) throw new SoundCloudException("Не удалось раскрыть короткую ссылку SoundCloud.");
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.UserAgent.ParseAdd(DefaultUserAgent);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            var location = response.Headers.Location;
+            if (response.StatusCode is not (System.Net.HttpStatusCode.MovedPermanently or System.Net.HttpStatusCode.Found or
+                System.Net.HttpStatusCode.SeeOther or System.Net.HttpStatusCode.TemporaryRedirect or System.Net.HttpStatusCode.PermanentRedirect) || location == null)
+                throw new SoundCloudException("Не удалось раскрыть короткую ссылку SoundCloud.", (int)response.StatusCode);
+            uri = new Uri(uri, location);
+            if (uri.AbsoluteUri.Length > 4096 || !IsSoundCloudLink(uri)) throw new SoundCloudException("Короткая ссылка ведёт за пределы SoundCloud.");
+        }
+        return new UriBuilder(uri) { Fragment = "" }.Uri;
+    }
     public async Task<ChatConversationPage> GetConversationsAsync(long userId, string? cursor = null, CancellationToken token = default)
     {
         using var json = await RequestChatAsync(new("list", userId, Cursor: cursor), token);

@@ -111,7 +111,7 @@ internal sealed partial class MainWindow : IDisposable
             { AppLog.Failure("Pookie.Discord", "Discord Presence недоступен", error, LogEventLevel.Debug); }
         }
         if (presence != null) presence.Enabled = discordEnabled.Value;
-        player?.Volume(volume.Value);
+        ApplyMusicVolume();
 
         list = CreateTrackList();
         queueList = CreatePlaybackQueueList();
@@ -141,6 +141,11 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && chatAttachMenu.IsOpen) { e.Handled = true; CloseChatAttachMenu(); return; }
+            if (e.Key == Key.Escape && chatVideoOpen.Value) { e.Handled = true; if (chatVideoExpanded.Value) SetChatVideoExpanded(false); else CloseChatVideo(); return; }
+            if (chatVideoOpen.Value && e.Key is Key.Left or Key.Right) { e.Handled = true; Run(() => NavigateChatVideoAsync(e.Key == Key.Left ? -1 : 1)); return; }
+            if (chatVideoOpen.Value && e.Key == Key.Space) { e.Handled = true; if (chatVideoSession is { } video) Run(video.ToggleAsync); RevealChatVideoControls(); return; }
+            if (e.Key == Key.Escape && chatMusicOpen.Value) { e.Handled = true; CloseChatMusicPicker(); return; }
             if (e.Key == Key.Escape && chatGifsOpen.Value) { e.Handled = true; CloseChatGifs(); return; }
             if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
             if (e.Key == Key.Escape && waveSettingsOpen.Value) { e.Handled = true; waveSettingsOpen.Value = false; return; }
@@ -149,6 +154,8 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
+        chatTimer.Start();
+        Window.Activated += () => { chatNextPoll = default; if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync); };
     }
 
     private void OnWindowLoaded()
@@ -461,6 +468,8 @@ internal sealed partial class MainWindow : IDisposable
     }
     private Task ToggleAsync()
     {
+        // An explicit transport action takes ownership from automatic video suspension.
+        videoMusicGeneration = null; videoMusicPaused = false;
         if (current == null)
         {
             if (playbackQueue.Snapshot.CanNext) return SkipAsync(1);
@@ -468,13 +477,17 @@ internal sealed partial class MainWindow : IDisposable
             SetQueue(tracks[0]); return PlayAsync(tracks[0], queueAdvance: true);
         }
         if (!audioPreparing && !audioReady) return PlayAsync(current);
-        paused = !paused;
+        SetPlaybackPaused(!paused);
+        return Task.CompletedTask;
+    }
+    private void SetPlaybackPaused(bool value)
+    {
+        paused = value;
         if (audioReady) player?.Pause(paused);
         isPlaying.Value = !paused;
         RefreshLikedPlayback();
         if (paused) presence?.Clear();
         UpdateSystemMedia();
-        return Task.CompletedTask;
     }
     private async Task ConnectSoundCloudAsync()
     {
@@ -706,6 +719,7 @@ internal sealed partial class MainWindow : IDisposable
         playerBackdrop.Reset();
         avatarLoading?.Cancel(); lifetime.Cancel(); loading?.Cancel(); login?.Cancel(); playLoading?.Cancel(); likedLoading?.Cancel();
         foreach (var session in browserSessions) session.Dispose();
+        videoMusicFade.Stop();
         timer.Dispose(); player?.Dispose(); presence?.Dispose();
         // An outstanding libsecret operation may still be completing on its worker; process teardown releases it.
         http.Dispose();

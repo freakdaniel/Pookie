@@ -613,7 +613,10 @@ test('chat reads and writes stay in the authenticated account and send the nativ
   assert.equal(new URL(h.calls[2][0]).pathname,'/users/42/conversations/90/messages');
   assert.equal(h.calls[3][1].method,'POST');
   assert.deepEqual(JSON.parse(h.calls[3][1].body),{contents:'Привет 🎵'});
-  assert.deepEqual(JSON.parse(h.calls[4][1].body),{read:true});
+  assert.equal(h.calls[4][1].body,'read=true');
+  assert.equal(h.calls[4][1].headers['Content-Type'],'application/x-www-form-urlencoded; charset=UTF-8');
+  assert.equal(h.calls[1][1].cache,'no-store');
+  assert.equal(h.calls[2][1].cache,'no-store');
   for(const [,options] of h.calls){assert.equal(options.headers.Authorization,'OAuth secret-token');assert.equal(options.redirect,'error');}
   for(const extra of [{user_id:43},{recipient_id:42},{body:'\0'},{body:'a'.repeat(20001)},{cursor:'https://evil.test/'}])
     h.window.__pookieRequest(chat(1104,'send',{body:'message',...extra}));
@@ -636,4 +639,45 @@ test('an interrupted chat POST is not replayed after a browser check', async () 
   h.window.__pookieRequest({id:'c'.repeat(32),operation:'chat',chat:{kind:'send',user_id:42,recipient_id:90,body:'Once'}});
   await tick();
   assert.equal(posts,1);assert.equal(h.messages.at(-1).status,0);
+});
+
+test('a chat POST rejected by a device check resumes once after passing without completing the request early', async () => {
+  let h, posts=0;
+  h=harness((url)=>{
+    if(new URL(url).pathname==='/me')return response(200,{id:42});
+    if(++posts===1){h.emit('dd_blocked','device_check');return response(403);}
+    return response(200,{id:'42:90'});
+  });
+  const id='d'.repeat(32);
+  h.window.__pookieRequest({id,operation:'chat',chat:{kind:'send',user_id:42,recipient_id:90,body:'Resume'}});
+  await tick();assert.equal(posts,1);assert.ok(!h.messages.some(message=>message.request_id===id&&message.kind==='complete'));
+  h.emit('dd_response_passed','device_check');await tick();
+  assert.equal(posts,2);assert.equal(h.messages.at(-1).status,200);
+  assert.equal(h.messages.filter(message=>message.kind==='complete').length,1);
+});
+
+test('chat rejection also resumes when the check passes before its 403 reaches fetch', async () => {
+  let h, posts=0;
+  h=harness((url)=>{
+    if(new URL(url).pathname==='/me')return response(200,{id:42});
+    if(++posts===1){h.emit('dd_blocked','device_check');h.emit('dd_response_passed','device_check');return response(403);}
+    return response(200);
+  });
+  h.window.__pookieRequest({id:'e'.repeat(32),operation:'chat',chat:{kind:'send',user_id:42,recipient_id:90,body:'Resume'}});
+  await tick();assert.equal(posts,2);assert.equal(h.messages.at(-1).status,200);
+});
+
+test('an ordinary rejected chat POST is not retried and closing a check prevents its retry', async () => {
+  for(const cancel of [false,true]){
+    let h, posts=0;
+    h=harness((url)=>{
+      if(new URL(url).pathname==='/me')return response(200,{id:42});
+      posts++;if(cancel)h.emit('dd_blocked','device_check');return response(403);
+    });
+    const id='f'.repeat(32);
+    h.window.__pookieRequest({id,operation:'chat',chat:{kind:'send',user_id:42,recipient_id:90,body:'No duplicate'}});
+    await tick();
+    if(cancel){h.emit('dd_response_unload');h.emit('dd_response_passed','device_check');await tick();}
+    assert.equal(posts,1);
+  }
 });

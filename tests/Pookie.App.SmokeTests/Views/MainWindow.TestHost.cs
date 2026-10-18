@@ -5,6 +5,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private bool chatsUiSmoke;
+    private bool chatVideoLiveUi;
     private bool uiSmoke;
     private bool loginUiSmoke;
     private bool browserShutdownSmoke;
@@ -24,6 +25,7 @@ internal sealed partial class MainWindow
     internal void ConfigureVerification(string[] args)
     {
         chatsUiSmoke = args.Contains("--chats-ui-smoke-test");
+        chatVideoLiveUi = args.Contains("--chat-video-live-ui-probe");
         waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
         memoryUiSmoke = args.Contains("--memory-ui-smoke-test");
         uiSmoke = args.Contains("--ui-smoke-test");
@@ -64,6 +66,7 @@ internal sealed partial class MainWindow
             lyricsService = new(new EmptyLyricsProvider(), Path.Combine(dataPaths.Cache, "FixtureLyrics"));
         }
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
+        if (chatVideoLiveUi) Run(VerifyChatVideoLiveUiAsync);
         if (waveQueueUiSmoke) Run(VerifyWaveQueueUiAsync);
         if (memoryUiSmoke) Run(VerifyArtworkLifetimeAsync);
         if (uiSmoke) Run(VerifyUiAsync);

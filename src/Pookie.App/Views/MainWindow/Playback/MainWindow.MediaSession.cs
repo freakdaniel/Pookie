@@ -67,6 +67,7 @@ internal sealed partial class MainWindow
             case MediaAction.Play:
                 return current == null || !audioReady && !audioPreparing || paused ? ToggleAsync() : Task.CompletedTask;
             case MediaAction.Pause:
+                videoMusicGeneration = null; videoMusicPaused = false;
                 return current != null && !paused && (audioReady || audioPreparing) ? ToggleAsync() : Task.CompletedTask;
             case MediaAction.Toggle: return ToggleAsync();
             case MediaAction.Next: return playbackQueue.Snapshot.CanNext ? SkipAsync(1) : Task.CompletedTask;

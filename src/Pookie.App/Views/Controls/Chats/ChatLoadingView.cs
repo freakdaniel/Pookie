@@ -10,24 +10,26 @@ internal sealed class ChatLoadingView : IDisposable
     internal Grid Root { get; }
     internal ChatSkeleton Skeleton { get; }
     private readonly FrameworkElement content;
-    private readonly AnimationClock fade = new(TimeSpan.FromMilliseconds(230), Easing.CubicBezier(.2, 0, 0, 1));
     private bool loading;
     internal ChatLoadingView(FrameworkElement content, bool inbox)
     {
         this.content = content; Skeleton = new(inbox) { IsVisible = false };
         Root = new Grid().Columns("*").Rows("*").Children(content, Skeleton);
-        fade.TickCallback = amount => { content.Opacity = amount; Skeleton.Opacity = 1 - amount; };
-        fade.CompletedCallback = () => { Skeleton.IsVisible = false; Skeleton.SetActive(false); };
     }
     internal void SetLoading(bool value)
     {
         if (value == loading) return;
-        loading = value; fade.Stop(); content.IsHitTestVisible = !value;
+        loading = value; content.IsHitTestVisible = !value;
         if (value) { content.Opacity = 0; Skeleton.Opacity = 1; Skeleton.IsVisible = true; Skeleton.SetActive(true); }
-        else fade.Start();
+        else Reset();
+    }
+    internal void Reset()
+    {
+        loading = false; Skeleton.IsVisible = false; Skeleton.SetActive(false);
+        content.Opacity = 1; content.IsHitTestVisible = true;
     }
     internal void Pause() => Skeleton.SetActive(false);
-    public void Dispose() { fade.Stop(); Skeleton.SetActive(false); }
+    public void Dispose() => Skeleton.SetActive(false);
 }
 
 internal sealed class ChatSkeleton(bool inbox) : Control

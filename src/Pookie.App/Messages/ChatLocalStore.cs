@@ -8,7 +8,7 @@ internal sealed record ChatPending(long RecipientId, string Body, string Label, 
 {
     public override string ToString() => "Pending chat message (content redacted)";
 }
-internal sealed record ChatLocalState(Dictionary<long, string> Drafts, ChatPending[] Pending);
+internal sealed record ChatLocalState(Dictionary<long, string> Drafts, ChatPending[] Pending, Dictionary<long, ChatUnreadState>? Unread = null);
 
 // Only drafts and the small durable outbox. Received media stays in bounded memory.
 internal sealed class ChatLocalStore(AppDataPaths paths, long accountId)
@@ -24,7 +24,8 @@ internal sealed class ChatLocalStore(AppDataPaths paths, long accountId)
             if (state?.Drafts == null || state.Pending == null) return new([], []);
             return new(state.Drafts.Where(p => p.Key > 0 && p.Value is { Length: <= 20000 }).Take(50).ToDictionary(),
                 state.Pending.Where(p => p != null && p.RecipientId > 0 && p.Body is { Length: > 0 and <= 20000 } && p.Label is { Length: <= 255 } &&
-                    (p.BeforeIds == null || p.BeforeIds.Length <= 64 && p.BeforeIds.All(id => id is { Length: <= 512 }))).Take(50).ToArray());
+                    (p.BeforeIds == null || p.BeforeIds.Length <= 64 && p.BeforeIds.All(id => id is { Length: <= 512 }))).Take(50).ToArray(),
+                state.Unread?.Where(p => p.Key > 0 && p.Value is { LastId.Length: <= 512, Count: >= 0 and <= 9999 }).Take(500).ToDictionary());
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return new([], []); }
     }

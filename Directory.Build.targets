@@ -6,6 +6,7 @@
 
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
     <PookieDependencyLicense Include="$(PkgSoundFlow)/LICENSE.md;$(PkgSoundFlow)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt;$(PkgSoundFlow_Codecs_FFMpeg)/LICENSE.md;$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt" />
+    <PookieDependencyLicense Include="$(MSBuildThisFileDirectory)licenses/LGPL-2.1-or-later.txt" />
     <None Include="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt" Link="licenses/THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
@@ -28,8 +29,11 @@
     <ReadLinesFromFile File="$(PkgSoundFlow_Codecs_FFMpeg)/SOUNDFLOW-THIRD-PARTY-NOTICES.txt">
       <Output TaskParameter="Lines" ItemName="SoundFlowFfmpegNoticeLines" />
     </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(MSBuildThisFileDirectory)licenses/LGPL-2.1-or-later.txt">
+      <Output TaskParameter="Lines" ItemName="LibVlcLicenseLines" />
+    </ReadLinesFromFile>
     <WriteLinesToFile File="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt"
-                      Lines="SoundFlow LICENSE.md;@(SoundFlowLicenseLines);SoundFlow SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowNoticeLines);SoundFlow.Codecs.FFMpeg LICENSE.md;@(SoundFlowFfmpegLicenseLines);SoundFlow.Codecs.FFMpeg SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowFfmpegNoticeLines)"
+                      Lines="SoundFlow LICENSE.md;@(SoundFlowLicenseLines);SoundFlow SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowNoticeLines);SoundFlow.Codecs.FFMpeg LICENSE.md;@(SoundFlowFfmpegLicenseLines);SoundFlow.Codecs.FFMpeg SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowFfmpegNoticeLines);VideoLAN LibVLCSharp 3.10.2 and Windows LibVLC 3.0.24;Source: https://code.videolan.org/videolan/LibVLCSharp and https://code.videolan.org/videolan/vlc/-/tree/3.0.24;@(LibVlcLicenseLines)"
                       Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
   </Target>
 </Project>

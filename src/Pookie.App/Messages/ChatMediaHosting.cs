@@ -124,7 +124,7 @@ internal sealed class ChatMediaHosting : IDisposable
         return ChatMediaReference.Parse(reference.Code);
     }
 
-    internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token)
+    internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null)
     {
         if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -136,7 +136,18 @@ internal sealed class ChatMediaHosting : IDisposable
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestToken);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone
             ? "Вложение больше недоступно на хостинге." : "Не удалось загрузить вложение. Попробуй ещё раз.");
-        var bytes = await ReadBoundedAsync(response.Content, reference.Provider == 'q' ? ChatMediaArchive.MaxArchiveBytes : ChatMediaArchive.MaxEncryptedBytes, requestToken);
+        var previewDelivered = false;
+        var bytes = await ReadBoundedAsync(response.Content, reference.Provider == 'q' ? ChatMediaArchive.MaxArchiveBytes : ChatMediaArchive.MaxEncryptedBytes, requestToken, previewReady == null ? null : async prefix =>
+        {
+            if (previewDelivered) return;
+            var offset = PreviewOffset(prefix.Span, reference.Provider);
+            if (offset < 0 || prefix.Length < offset) return;
+            var preview = await Task.Run(() => ChatMediaCrypto.ReadPreview(prefix.Span[offset..], reference.Key, sender, recipient), requestToken);
+            if (preview == null) return;
+            previewDelivered = true;
+            try { await previewReady(preview); }
+            finally { foreach (var image in preview.Images) if (image != null) CryptographicOperations.ZeroMemory(image.Pixels); }
+        });
         byte[]? encrypted = null;
         try
         {
@@ -150,14 +161,30 @@ internal sealed class ChatMediaHosting : IDisposable
         finally { CryptographicOperations.ZeroMemory(bytes); if (encrypted != null && encrypted != bytes) CryptographicOperations.ZeroMemory(encrypted); }
     }
 
-    internal static async Task<byte[]> ReadBoundedAsync(HttpContent content, int limit, CancellationToken token)
+    // Stored ZIP entries start with a small local header. Read only the known
+    // payload entry; reject compressed/encrypted/descriptor layouts for previews.
+    private static int PreviewOffset(ReadOnlySpan<byte> prefix, char provider)
+    {
+        if (provider != 'q') return 0;
+        if (prefix.Length < 30) return -1;
+        if (!prefix[..4].SequenceEqual(new byte[] { 80, 75, 3, 4 }) ||
+            System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(prefix[6..]) != 0 ||
+            System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(prefix[8..]) != 0) return -1;
+        var name = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(prefix[26..]);
+        var extra = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(prefix[28..]);
+        if (name != 11 || extra > 4096 || prefix.Length < 30 + name + extra || !prefix.Slice(30, name).SequenceEqual("payload.bin"u8)) return -1;
+        return 30 + name + extra;
+    }
+
+    internal static async Task<byte[]> ReadBoundedAsync(HttpContent content, int limit, CancellationToken token, Func<ReadOnlyMemory<byte>, Task>? progress = null)
     {
         if (content.Headers.ContentLength > limit) throw new InvalidDataException("Превышен допустимый размер данных.");
         await using var stream = await content.ReadAsStreamAsync(token);
         using var output = new MemoryStream();
         var buffer = new byte[16384]; int count;
         while ((count = await stream.ReadAsync(buffer, token)) > 0)
-        { if (output.Length + count > limit) throw new InvalidDataException("Превышен допустимый размер данных."); output.Write(buffer, 0, count); }
+        { if (output.Length + count > limit) throw new InvalidDataException("Превышен допустимый размер данных."); output.Write(buffer, 0, count);
+          if (progress != null) await progress(output.GetBuffer().AsMemory(0, (int)Math.Min(output.Length, ChatMediaCrypto.MaxPreviewBytes + 8192))); }
         return output.ToArray();
     }
     public void Dispose() => http.Dispose();

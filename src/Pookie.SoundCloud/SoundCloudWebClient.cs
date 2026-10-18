@@ -298,8 +298,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<SoundCloudTrack> ResolveAsync(string url, CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
-            (uri.Host != "soundcloud.com" && uri.Host != "www.soundcloud.com")) throw new SoundCloudException("Нужна HTTPS-ссылка на трек SoundCloud.");
+        var uri = await ExpandSoundCloudUrlAsync(url, cancellationToken);
         using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), cancellationToken);
         if (!document.RootElement.TryGetProperty("kind", out var kind) || kind.GetString() != "track") throw new SoundCloudException("Открой ссылку на отдельный трек.");
         return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");

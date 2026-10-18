@@ -4,6 +4,7 @@ namespace Pookie.App;
 
 internal static class ArtworkBackdrop
 {
+    internal static readonly Color CardScrim = Color.FromArgb(145, 18, 18, 18);
     internal static ImageSource? Create(ImageSource source, double visibility = .24)
     {
         var sourceWidth = source.PixelWidth; var sourceHeight = source.PixelHeight;

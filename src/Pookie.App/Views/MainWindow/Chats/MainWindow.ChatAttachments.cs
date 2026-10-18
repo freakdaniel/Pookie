@@ -11,10 +11,12 @@ internal sealed partial class MainWindow
     private readonly ChatAttachmentStaging chatAttachmentStaging = new();
     private ChatComposerSurface chatComposerSurface = null!;
     private bool chatImporting;
+    private readonly HashSet<string> chatDocumentFiles = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private Func<CancellationToken, Task<ChatClipboardData?>> chatClipboardRead = token => ChatClipboard.ReadAsync(token);
     private bool CanAttachChat() => !disposed && !chatImporting && chatInput.IsEnabled && !chatSending && chatRecipient != null && !chatPending.ContainsKey(chatRecipient.Id);
     private void InitializeChatComposer()
     {
+        Window.Deactivated += () => CloseChatAttachMenu(true);
         chatInput.Commands.Unregister(StandardCommands.Paste);
         chatInput.Commands.Register(StandardCommands.Paste, () => Run(PasteChatAsync), CanAttachChat);
         Window.AllowDrop = true; chatComposer.AllowDrop = true;
@@ -27,14 +29,12 @@ internal sealed partial class MainWindow
         chatComposer.Drop += args =>
         {
             var files = ChatDropFiles(args.Data);
-            var accepted = CanAttachChat() && files.Length > 0;
+            var accepted = CanAttachChat() && files.Length > 0 && (args.AllowedEffects & DragDropEffects.Copy) != 0;
             args.Accepted = accepted; args.Handled = true; args.Effect = accepted ? DragDropEffects.Copy : DragDropEffects.None;
             SetChatDragging(false);
             if (accepted) Run(() => AddChatFilesAsync(files));
         };
-        chatComposer.Transitions = [Transition.Create(Control.BackgroundProperty, 170), Transition.Create(Control.BorderBrushProperty, 170)];
-        chatComposer.MouseEnter += RefreshChatComposerSurface; chatComposer.MouseLeave += RefreshChatComposerSurface;
-        chatInput.GotFocus += RefreshChatComposerSurface; chatInput.LostFocus += RefreshChatComposerSurface;
+        chatComposer.Transitions = [Transition.Create(Control.BackgroundProperty, 170)];
     }
     private static string[] ChatDropFiles(IDataObject data) => data.GetData(StandardDataFormats.StorageItems) is IEnumerable<string> paths ? paths.ToArray() :
         data.GetData("text/uri-list") is string uris ? ChatClipboard.FileUris(uris) : [];
@@ -45,14 +45,11 @@ internal sealed partial class MainWindow
         args.Accepted = accept; args.Effect = accept ? DragDropEffects.Copy : DragDropEffects.None;
         SetChatDragging(accept);
     }
-    private void SetChatDragging(bool value) { chatComposerSurface.SetDragging(value); RefreshChatComposerSurface(); }
+    private void SetChatDragging(bool value) { if (value) CloseChatAttachMenu(true); chatComposerSurface.SetDragging(value); RefreshChatComposerSurface(); }
     private void RefreshChatComposerSurface()
     {
         if (chatComposerSurface == null) return;
-        var dragging = chatComposerSurface.Dragging;
-        chatComposer.Background = TrackButtons.StateColor(Color.FromRgb(51, 51, 51), dragging ? ChatAccent : TrackButtons.OnSurface,
-            dragging ? .18 : chatInput.IsFocused ? .075 : chatComposer.IsMouseOver ? .035 : 0);
-        chatComposer.BorderBrush = dragging ? ChatAccent : chatInput.IsFocused ? Color.FromArgb(75, 170, 211, 246) : Color.Transparent;
+        chatComposer.Background = chatComposerSurface.Dragging ? Color.FromRgb(66, 66, 66) : Color.FromRgb(51, 51, 51);
     }
     private void PruneChatStaging() => chatAttachmentStaging.Keep(chatSelectedFiles.Concat(chatOutgoing.Values
         .Where(o => o.State != ChatDelivery.Sent).SelectMany(o => o.Files)));
@@ -66,27 +63,27 @@ internal sealed partial class MainWindow
         {
             var data = await chatClipboardRead(ChatReadToken());
             if (disposed || me?.Id != account || chatRecipient?.Id != recipient || revision != chatRevision || generation != chatAttachmentGeneration) return;
-            if (data == null) { chatInput.Paste(); return; }
+            if (data == null) { chatMusicEditor?.Paste(); return; }
             var files = data.Files;
             if (data.Image != null) files = [chatAttachmentStaging.AddImage(data.Image, data.Extension)];
             await AddChatFilesCoreAsync(files, revision, generation);
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         { if (!disposed && chatRecipient?.Id == recipient && revision == chatRevision) chatThreadStatus.Value = error.Message; }
         finally { chatImporting = false; PruneChatStaging(); if (!disposed) RefreshChatComposer(); }
     }
-    private async Task AddChatFilesAsync(string[] files)
+    private async Task AddChatFilesAsync(string[] files, bool asDocuments = false)
     {
         if (!CanAttachChat()) return;
         var revision = chatRevision; var generation = chatAttachmentGeneration;
         chatImporting = true; RefreshChatComposer();
-        try { await AddChatFilesCoreAsync(files, revision, generation); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+        try { await AddChatFilesCoreAsync(files, revision, generation, asDocuments); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         { if (!disposed && revision == chatRevision) chatThreadStatus.Value = error.Message; }
         finally { chatImporting = false; PruneChatStaging(); if (!disposed) RefreshChatComposer(); }
     }
-    private async Task AddChatFilesCoreAsync(string[] files, long revision, int generation)
+    private async Task AddChatFilesCoreAsync(string[] files, long revision, int generation, bool asDocuments = false)
     {
         var combined = chatSelectedFiles.Concat(files).Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal).ToArray();
         await Task.Run(() =>
@@ -103,6 +100,7 @@ internal sealed partial class MainWindow
         });
         if (disposed || revision != chatRevision || generation != chatAttachmentGeneration || chatRecipient == null || !chatInput.IsEnabled) return;
         chatSelectedFiles = combined; chatSelectedGif = null; chatThreadStatus.Value = "";
+        if (asDocuments) foreach (var file in files) chatDocumentFiles.Add(file);
         UpdateChatAttachments(); chatInput.Focus();
     }
 }

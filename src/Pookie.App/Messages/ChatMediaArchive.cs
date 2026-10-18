@@ -5,7 +5,7 @@ namespace Pookie.App.Messages;
 // qu.ax accepts ZIPs, but not opaque .bin files. The archive contains only ciphertext.
 internal static class ChatMediaArchive
 {
-    internal const int MaxEncryptedBytes = ChatMediaCrypto.MaxPayloadBytes + 32;
+    internal const int MaxEncryptedBytes = ChatMediaCrypto.MaxPayloadBytes + 32 + ChatMediaCrypto.MaxPreviewBytes + 36;
     internal const int MaxArchiveBytes = MaxEncryptedBytes + 4096;
     private const string EntryName = "payload.bin";
 

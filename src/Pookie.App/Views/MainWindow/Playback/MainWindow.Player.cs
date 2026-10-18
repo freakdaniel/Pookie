@@ -101,7 +101,7 @@ internal sealed partial class MainWindow
         hoverReveals.Add(new HoverReveal(playerTimeline, visible =>
             { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));
         volumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
-            .OnValueChanged(value => { muted.Value = value == 0; RunSync(() => player?.Volume(value)); });
+            .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
         playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
             .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(

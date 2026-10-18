@@ -97,7 +97,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
-        var stage = $"browser.request.{Interlocked.Increment(ref requestNumber)}.{command.Operation}";
+        var stage = $"browser.request.{Interlocked.Increment(ref requestNumber)}.{command.Operation}" +
+            (command.Chat is { } chat ? $".{chat.Kind}" : "");
         var ordered = command.Operation != "audio";
         if (ordered) await StartupLog.RunAsync(stage + ".queue", () => requests.WaitAsync(timeout.Token)).ConfigureAwait(false);
         try

@@ -143,7 +143,7 @@
   function wait(promise, context) { return Promise.race([promise, context.cancelled]); }
   function checkCancelled(context) { if (context.controller.signal.aborted) throw new Error('cancelled'); }
 
-  async function fetchProtected(url, method, context, body, replay = true) {
+  async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json') {
     checkCancelled(context);
     await wait(ready, context);
     if (blocked) throw new Error('site-blocked');
@@ -162,10 +162,11 @@
         // Use the live fetch intercepted by the website's DataDome tag, not .NET HTTP or a saved cookie.
         response = await wait(window.fetch(url.href, {
           method,
+          ...(method === 'GET' && context.operation === 'chat' ? { cache: 'no-store' } : {}),
           ...(url.origin === apiOrigin && url.pathname.startsWith('/me/play-history') ?
             { credentials: 'include', ...(method === 'GET' ? { cache: 'no-store' } : {}) } : {}),
           headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1',
-            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            ...(body ? { 'Content-Type': contentType } : {}),
             // REST preflights do not allow Apollo's client header. Scope it to
             // GraphQL, including fixtures where both services share an origin.
             ...(body && url.origin === graphOrigin && url.pathname === '/graphql' ? { 'apollographql-client-name': 'webi' } : {}) },
@@ -176,7 +177,7 @@
         checkCancelled(context);
         if (blocked) throw new Error('site-blocked');
         // The tag can abort Fetch while its challenge remains active.
-        if (replay && attempt === 0 && (challenge || generation !== initialGeneration)) {
+        if (replay === true && attempt === 0 && (challenge || generation !== initialGeneration)) {
           if (challenge) await wait(challenge.promise, context);
           continue;
         }
@@ -280,7 +281,8 @@
       const url = d.cursor ? new URL(new URL(d.cursor).pathname + new URL(d.cursor).search, apiOrigin) : new URL(path, apiOrigin);
       if (d.kind === 'list' || d.kind === 'thread') { url.searchParams.set('limit', '30'); url.searchParams.set('linked_partitioning', '1'); }
       const response = await fetchProtected(url, d.kind === 'send' ? 'POST' : d.kind === 'read' ? 'PUT' : 'GET', context,
-        d.kind === 'send' ? JSON.stringify({ contents: d.body }) : d.kind === 'read' ? JSON.stringify({ read: true }) : undefined, d.kind !== 'send');
+        d.kind === 'send' ? JSON.stringify({ contents: d.body }) : d.kind === 'read' ? 'read=true' : undefined, d.kind === 'send' ? 'rejected-only' : true,
+        d.kind === 'read' ? 'application/x-www-form-urlencoded; charset=UTF-8' : 'application/json');
       if (response.ok) {
         const text = d.kind === 'read' ? '{}' : (await readJson(response, context)).text;
         let index = 0;

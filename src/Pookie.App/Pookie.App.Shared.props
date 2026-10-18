@@ -5,6 +5,16 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <Import Project="Pookie.App.Platform.props" />
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <PookieVlcRuntime>$(RuntimeIdentifier)</PookieVlcRuntime>
+    <PookieVlcRuntime Condition="'$(PookieVlcRuntime)' == ''">$(NETCoreSdkRuntimeIdentifier)</PookieVlcRuntime>
+    <VlcWindowsX64Enabled>true</VlcWindowsX64Enabled>
+    <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
+    <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
+    <VlcWindowsX64Enabled Condition="'$(PookieVlcRuntime)' == 'win-x86' or '$(PookieVlcRuntime)' == 'win-arm64'">false</VlcWindowsX64Enabled>
+    <VlcWindowsX86Enabled Condition="'$(PookieVlcRuntime)' == 'win-x86'">true</VlcWindowsX86Enabled>
+    <VlcWindowsArm64Enabled Condition="'$(PookieVlcRuntime)' == 'win-arm64'">true</VlcWindowsArm64Enabled>
+  </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/login-capture.js" LogicalName="Pookie.App.Browser.Scripts.login-capture.js" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Scripts/browser-requests.js" LogicalName="Pookie.App.Browser.Scripts.browser-requests.js" />
@@ -22,6 +32,8 @@
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />
     <PackageReference Include="SoundFlow.Codecs.FFMpeg" Version="1.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="LibVLCSharp" Version="3.10.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'" />
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />

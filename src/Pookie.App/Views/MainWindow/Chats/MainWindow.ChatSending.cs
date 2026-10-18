@@ -10,47 +10,65 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? chatAccountLifetime;
     private int chatAttachmentGeneration;
     private Size? chatAttachmentImageSize;
-    private async Task PickChatFilesAsync()
+    private CancellationTokenSource? chatAttachmentPreviewLoad;
+    private async Task PickChatFilesAsync(bool documents = false, bool mediaOnly = false)
     {
-        if (chatSending || chatRecipient == null) return;
-        var recipient = chatRecipient.Id; var account = me?.Id;
-        var files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = "Прикрепить файлы", Multiselect = true }, lifetime.Token);
-        if (disposed || chatRecipient?.Id != recipient || me?.Id != account || files == null || files.Length == 0) return;
-        await AddChatFilesAsync(files);
+        if (chatSending || chatRecipient == null || chatFilePickerOpen) return;
+        var recipient = chatRecipient.Id; var account = me?.Id; var generation = chatAttachmentGeneration;
+        CloseChatAttachMenu(true); chatFilePickerOpen = true;
+        string[]? files;
+        try { files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = mediaOnly ? "Фото или видео" : "Прикрепить файлы", Multiselect = true,
+            Filters = mediaOnly ? [new FileFilter("Фото и видео", "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.mp4", "*.webm", "*.mov", "*.mkv", "*.avi")] : [] }, lifetime.Token); }
+        finally { chatFilePickerOpen = false; chatAttachHover.Stop(); }
+        if (disposed || chatRecipient?.Id != recipient || me?.Id != account || generation != chatAttachmentGeneration || files == null || files.Length == 0) return;
+        await AddChatFilesAsync(files, documents);
     }
     private void ClearChatAttachments()
     {
-        chatSelectedFiles = []; chatSelectedGif = null;
+        chatSelectedFiles = []; chatSelectedGif = null; chatDocumentFiles.Clear();
         PruneChatStaging();
         if (chatAttachmentStrip == null) return;
         UpdateChatAttachments();
     }
     private void UpdateChatAttachments()
     {
+        chatDocumentFiles.IntersectWith(chatSelectedFiles);
         PruneChatStaging();
         chatAttachmentStrip.IsVisible = chatSelectedFiles.Length > 0 || chatSelectedGif != null;
         chatAttachmentLabel.Text = chatSelectedGif != null ? "GIF" : string.Join(", ", chatSelectedFiles.Select(Path.GetFileName));
         chatAttachmentPreview.Source = null;
         chatAttachmentImageSize = null;
+        chatAttachmentPreviewLoad?.Cancel(); chatAttachmentPreviewLoad?.Dispose();
+        chatAttachmentPreviewLoad = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var token = chatAttachmentPreviewLoad.Token;
         var generation = ++chatAttachmentGeneration; var path = chatSelectedFiles.FirstOrDefault(); var gif = chatSelectedGif;
         Run(async () =>
         {
+            byte[]? bytes = null;
             try
             {
-                byte[]? bytes = null;
-                if (path != null && ChatMediaType(path).StartsWith("image/", StringComparison.Ordinal))
+                var video = path != null && ChatMediaType(path).StartsWith("video/", StringComparison.Ordinal);
+                if (path != null && (video || ChatMediaType(path).StartsWith("image/", StringComparison.Ordinal)))
                 {
                     await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, true);
                     if (stream.Length > ChatMediaCrypto.MaxFileBytes) return;
-                    bytes = new byte[(int)stream.Length]; await stream.ReadExactlyAsync(bytes, lifetime.Token);
+                    bytes = new byte[(int)stream.Length]; await stream.ReadExactlyAsync(bytes, token);
                 }
-                else if (gif != null) bytes = await klipy.DownloadAsync(gif.PreviewUrl, lifetime.Token);
+                else if (gif != null) bytes = await klipy.DownloadAsync(gif.PreviewUrl, token);
                 if (bytes == null) return;
-                var (source, size) = await Task.Run(() => (PrepareChatImage(bytes, 72, 72), ChatImagePreview.ReadSize(bytes)), lifetime.Token);
-                if (!disposed && generation == chatAttachmentGeneration)
+                ImageSource? source; Size? size;
+                if (video)
+                {
+                    ImageSource? poster = null;
+                    var info = await ChatVideoProbe.ReadAsync(bytes, token, image => poster = image);
+                    source = poster; size = info == null ? null : new Size(info.Width, info.Height);
+                }
+                else (source, size) = await Task.Run(() => (PrepareChatImage(bytes, 72, 72), ChatImagePreview.ReadSize(bytes)), token);
+                if (!disposed && !token.IsCancellationRequested && generation == chatAttachmentGeneration)
                 { chatAttachmentPreview.Source = source; chatAttachmentImageSize = size; }
             }
             catch (Exception) { }
+            finally { if (bytes != null) System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); }
         });
         RefreshChatComposer();
     }
@@ -64,10 +82,11 @@ internal sealed partial class MainWindow
         var user = me; var recipient = chatRecipient;
         var store = chatLocalStore;
         var draft = chatInput.Text; var files = chatSelectedFiles; var gif = chatSelectedGif;
+        var documents = chatDocumentFiles.ToHashSet(chatDocumentFiles.Comparer);
         var token = chatAccountLifetime?.Token ?? lifetime.Token;
         var outgoing = new ChatOutgoingItem(new("local:" + Guid.NewGuid().ToString("N"), user.Id, draft.Trim(), DateTimeOffset.UtcNow), draft, files, gif)
         {
-            Thumbnail = chatAttachmentPreview.Source, ImageSize = chatAttachmentImageSize,
+            Thumbnail = chatAttachmentPreview.Source, ImageSize = chatAttachmentImageSize, Documents = documents,
             BeforeSendIds = chatMessages.Select(m => m.Id).ToHashSet(),
             DisplayOrder = new[] { DateTimeOffset.UtcNow, chatMessages.Select(ChatOrder).DefaultIfEmpty(DateTimeOffset.MinValue).Max().AddTicks(1) }.Max()
         };
@@ -93,10 +112,13 @@ internal sealed partial class MainWindow
                         await input.ReadExactlyAsync(bytes, token);
                         if (input.ReadByte() != -1) throw new InvalidOperationException("Файл изменился во время чтения. Выбери его заново.");
                         var name = Path.GetFileName(path);
-                        attachments.Add(new(name, ChatMediaType(name), bytes));
+                        attachments.Add(new(name, ChatMediaType(name), bytes, documents.Contains(path)));
                     }
-                    var reference = await chatMedia.UploadAsync(new(user.Id, recipient.Id, draft, attachments.ToArray(), gif?.Url), token);
+                    var package = new ChatMediaPackage(user.Id, recipient.Id, draft, attachments.ToArray(), gif?.Url);
+                    await PrepareOutgoingChatMediaAsync(outgoing, package, recipient.Id, token);
+                    var reference = await chatMedia.UploadAsync(package, token);
                     body = reference.Code;
+                    if (ChatWriteCurrent(user.Id, token)) CommitOutgoingChatMedia(outgoing, package, recipient.Id, body);
                 }
                 finally { foreach (var item in attachments) System.Security.Cryptography.CryptographicOperations.ZeroMemory(item.Data); }
                 if (body.Length > 36) throw new InvalidOperationException("Код вложения превышает 36 символов.");
@@ -108,7 +130,7 @@ internal sealed partial class MainWindow
             var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray());
             chatPending[recipient.Id] = pending;
             // Commit before POST: a process crash must never cause an automatic replay.
-            try { store.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.ToArray())); }
+            try { store.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary())); }
             catch { chatPending.Remove(recipient.Id); throw; }
             await SendPendingChatAsync(pending, user.Id, recipient, token);
             if (ChatWriteCurrent(user.Id, token) && !chatPending.ContainsKey(recipient.Id))
@@ -137,6 +159,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
+            PruneChatStaging();
             if (ChatWriteCurrent(user.Id, token)) { chatSending = false; RefreshChatComposer(); RefreshChatTimeline(); }
         }
     }
@@ -206,7 +229,8 @@ internal sealed partial class MainWindow
     private static string ChatMediaType(string name) => Path.GetExtension(name).ToLowerInvariant() switch
     {
         ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".webp" => "image/webp", ".gif" => "image/gif",
-        ".mp4" => "video/mp4", ".webm" => "video/webm", ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", _ => "application/octet-stream"
+        ".mp4" => "video/mp4", ".webm" => "video/webm", ".mov" => "video/quicktime", ".mkv" => "video/x-matroska", ".avi" => "video/x-msvideo",
+        ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", _ => "application/octet-stream"
     };
     private static string ChatActionError(Exception error) => error is InvalidDataException ? "Не удалось прочитать данные вложения." :
         error is IOException ? "Не удалось прочитать или сохранить файл." : FriendlyError(error);

@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Daniel Freak
 # SPDX-FileCopyrightText: Serilog Contributors
 # SPDX-FileCopyrightText: InfiniFrame and TryPhotino contributors
-# SPDX-License-Identifier: BSD-3-Clause AND Apache-2.0
+# SPDX-FileCopyrightText: VideoLAN and VLC contributors
+# SPDX-License-Identifier: BSD-3-Clause AND Apache-2.0 AND LGPL-2.1-or-later
 version = 1
 
 [[annotations]]
@@ -57,6 +58,7 @@ chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
 Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
 clock-counter-clockwise, thumbs-down and paperclip use assets/regular/ variants;
 the filled dislike variant is assets/fill/thumbs-down-fill.svg.
+Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
 Full terms and attribution: licenses/MIT.txt.
 """
 
@@ -176,6 +178,13 @@ SPDX-FileComment = "Unmodified Tmds.DBus 0.95.1; https://github.com/tmds/Tmds.DB
 
 # SoundFlow and FFmpeg/native dependency license texts and notices are read from
 # their restored packages during build and shipped in licenses/THIRD-PARTY-NOTICES.txt.
+
+[[annotations]]
+path = ["LibVLCSharp.dll", "libvlc/**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "VideoLAN and VLC contributors"
+SPDX-License-Identifier = "LGPL-2.1-or-later"
+SPDX-FileComment = "Unmodified LibVLCSharp 3.10.2 (https://code.videolan.org/videolan/LibVLCSharp) and VideoLAN.LibVLC.Windows 3.0.24 (https://code.videolan.org/videolan/libvlc-nuget). Corresponding LibVLC source: https://code.videolan.org/videolan/vlc/-/tree/3.0.24. Native libraries remain dynamically replaceable. Full terms: licenses/LGPL-2.1-or-later.txt. Linux and macOS use the system/VLC installation."
 
 [[annotations]]
 path = "StbImageSharp.dll"

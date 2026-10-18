@@ -4,6 +4,7 @@ namespace Pookie.App;
 internal static class TrackRowLayout
 {
     internal const double Height = 172;
+    internal const double EmbeddedHeight = 160;
     internal const double Gap = 36;
     internal const double Stride = Height + Gap;
 }

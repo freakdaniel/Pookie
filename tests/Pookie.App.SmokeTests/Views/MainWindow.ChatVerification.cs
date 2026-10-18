@@ -23,6 +23,8 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => transport.ListReady != null && chatInboxLoading.Skeleton.Running && chatInboxLoading.Skeleton.ActualHeight > 100 && startupContent.Opacity > .95);
             CaptureUiPreview("chats-loading");
             transport.ListReady!.SetResult(); await opening;
+            // This scenario drives each poll explicitly; timer ticks would race hover/scroll assertions.
+            chatTimer.Stop();
             await WaitForLikedLayoutAsync(() => chatInboxBindings.Count >= 2 && chatColumns.ActualWidth > 760);
             foreach (var button in chatInboxBindings.Keys)
             {
@@ -64,6 +66,7 @@ internal sealed partial class MainWindow
             }
             await VerifyChatGifAnimationAsync();
             await VerifyChatAttachmentInputAsync();
+            await VerifyChatComposerLayoutAsync();
             chatInput.Text = "Черновик 🎵\nВторая строка";
             await SelectChatAsync(transport.Third);
             chatInput.Text = "Другой черновик";
@@ -72,12 +75,14 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             viewer.SetScrollOffsets(0, 0);
             await WaitForLoginFrameAsync();
-            transport.AddIncoming("Новое сообщение в фоне");
+            for (var unreadIndex = 0; unreadIndex < 4; unreadIndex++) transport.AddIncoming($"Новое сообщение в фоне {unreadIndex + 1}");
             await RefreshChatsAsync();
             await WaitForLoginFrameAsync();
             if (viewer.VerticalOffset > 10 || !chatNewMessages.IsVisible) throw new InvalidOperationException($"Incoming chat message interrupted reading history: offset={viewer.VerticalOffset}, maximum={SmoothScroll.Maximum(viewer)}, badge={chatNewMessages.IsVisible}, following={chatScrollBottom}");
+            if (chatUnread.Badge(90) != "4") throw new InvalidOperationException($"Unread counter did not count four arrivals: {chatUnread.Badge(90)}");
+            await Task.Delay(300); CaptureUiPreview("chats-unread-counter");
             await LoadOlderMessagesAsync();
-            if (chatMessages.Count != 36 || chatMessageCursor != null) throw new InvalidOperationException("Older history did not merge or exhausted cursor reappeared.");
+            if (chatMessages.Count != 39 || chatMessageCursor != null) throw new InvalidOperationException("Older history did not merge or exhausted cursor reappeared.");
             RequestChatBottom();
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             chatInput.Text = "Тестовое сообщение";
@@ -141,15 +146,19 @@ internal sealed partial class MainWindow
             transport.AddIncoming(code);
             await RefreshChatsAsync();
             await WaitForLikedLayoutAsync(() => mediaTransport.DownloadReady != null && ChatRows.Any(r => r.Message?.Body == code &&
-                r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Skeleton.Running: true, ActualHeight: > 0 }));
+                r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { PreviewSource: not null, Picture.Source: null, ActualHeight: > 0 }));
             var loadingRow = ChatRows.First(r => r.Message?.Body == code);
-            if (loadingRow.Open.IsVisible || loadingRow.Footer.IsVisible || loadingRow.Attachments.FindVisualChild<TextBlock>() != null)
-                throw new InvalidOperationException("Media loading should contain only a skeleton, without labels or a download button.");
+            if (loadingRow.Open.IsVisible || loadingRow.Body.Text != "Смотри, какая иллюстрация")
+                throw new InvalidOperationException("Progressive media lost its authenticated caption or exposed a download button.");
+            await WaitForLikedLayoutAsync(() => !loadingRow.Content.IsResizing);
+            var loadingSize = loadingRow.Root.Bounds.Size;
             await Task.Delay(300);
             CaptureUiPreview("chats-media-loading");
             mediaTransport.DownloadReady!.SetResult();
             await WaitForLikedLayoutAsync(() => chatMediaSummaries.Values.Any(s => s.Thumbnail != null) &&
                 ChatRows.Any(r => r.Message?.Body == code && !r.Open.IsVisible && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
+            if (loadingRow.Root.Bounds.Size != loadingSize)
+                throw new InvalidOperationException("Full photo changed the geometry reserved by its blurred thumbnail.");
             if (!chatInboxBindings.Any(b => b.Value.Recipient.Id == 90 && chatInboxVisuals.TryGetValue(b.Key, out var v) && v.ThumbnailFrame.IsVisible && v.Preview.Text == "Смотри, какая иллюстрация"))
                 throw new InvalidOperationException("Inbox did not show a decrypted media thumbnail.");
             if (ChatRows.Where(r => r.Message != null).Any(r => r.Time.Text.Length != 5 || r.Time.Text[2] != ':'))
@@ -163,12 +172,43 @@ internal sealed partial class MainWindow
                 await Task.Delay(350);
                 CaptureUiPreview("chats-attachment-preview");
                 chatInput.Text = "А вот моя картинка";
-                await SendChatAsync();
+                transport.DelaySend = true; transport.SendReady = null;
+                var mediaSending = SendChatAsync();
+                await WaitForLikedLayoutAsync(() => transport.SendReady != null && ChatRows.Any(r => r.Message?.SenderId == 42 && r.Body.Text == "А вот моя картинка" &&
+                    !r.Content.IsResizing && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
+                var sendingMediaRow = ChatRows.First(r => r.Message?.SenderId == 42 && r.Body.Text == "А вот моя картинка");
+                var sendingMediaFrame = (ChatPhotoFrame)sendingMediaRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
+                var sendingMediaSize = sendingMediaRow.Root.Bounds.Size;
+                var mediaDownloadsBeforeAck = mediaTransport.Downloads;
+                Window.PerformLayout();
+                var stableItem = chatMessageItems.Last();
+                var bottomInset = viewer.Bounds.Bottom - sendingMediaRow.Root.Bounds.Bottom;
+                var paintedInsets = new List<double>();
+                var replacedItems = 0;
+                void Changes(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs change)
+                { if (change.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace) replacedItems++; }
+                void Paint() { if (sendingMediaRow.Bound) paintedInsets.Add(viewer.Bounds.Bottom - sendingMediaRow.Root.Bounds.Bottom); }
+                chatMessageItems.CollectionChanged += Changes; chatViewport.BeforePaint += Paint;
+                try
+                {
+                    transport.SendReady!.SetResult(); await mediaSending;
+                    await WaitForLikedLayoutAsync(() => !sendingMediaRow.Content.IsResizing && !chatComposerSurface.IsResizing);
+                    await WaitForLoginFrameAsync();
+                }
+                finally { chatMessageItems.CollectionChanged -= Changes; chatViewport.BeforePaint -= Paint; }
+                if (!ReferenceEquals(stableItem, chatMessageItems.Last()) || replacedItems != 0)
+                    throw new InvalidOperationException("Delivery acknowledgement replaced the stable timeline object.");
+                if (paintedInsets.Count == 0 || paintedInsets.Any(inset => Math.Abs(inset - bottomInset) > 1))
+                    throw new InvalidOperationException($"Acknowledged media shifted within a painted viewport: expected={bottomInset}, actual={string.Join(',', paintedInsets)}");
+                if (!ReferenceEquals(sendingMediaFrame, sendingMediaRow.Attachments.FindVisualChild<ChatPhotoFrame>()) || sendingMediaRow.Root.Bounds.Size != sendingMediaSize || mediaTransport.Downloads != mediaDownloadsBeforeAck)
+                    throw new InvalidOperationException("Media acknowledgement replaced its image, changed its geometry or downloaded the sender's own upload.");
                 await WaitForLikedLayoutAsync(() => chatSelectedFiles.Length == 0 && ChatRows.Any(r =>
                     r.Message?.SenderId == 42 && r.Body.Text == "А вот моя картинка" && r.Checks.IsVisible &&
                     r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
             }
             finally { ClearChatAttachments(); File.Delete(attachmentFile); }
+
+            await VerifyChatCachingAsync(transport, mediaTransport);
 
             byte[] FixtureImage(string name)
             {
@@ -178,7 +218,7 @@ internal sealed partial class MainWindow
             var brokenCode = mediaTransport.Add(new(90, 42, "", [new("broken.png", "image/png", [0x89, 0x50, 0x4E, 0x47])]));
             transport.AddIncoming(brokenCode); await RefreshChatsAsync();
             await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == brokenCode &&
-                r.Attachments.FindVisualChild<Button>() is Button && r.Attachments.FindVisualChild<Image>() == null));
+                r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard && r.Attachments.FindVisualChild<ChatPhotoFrame>() == null));
             foreach (var (name, width, height) in new[] { ("chat-small.png", 48d, 32d), ("chat-4k.jpg", 300d, 168d) })
             {
                 var bytes = FixtureImage(name);
@@ -186,7 +226,7 @@ internal sealed partial class MainWindow
                 transport.AddIncoming(imageCode); await RefreshChatsAsync();
                 await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == imageCode && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
                 var frame = (ChatPhotoFrame)ChatRows.First(r => r.Message?.Body == imageCode).Attachments.FindVisualChild<ChatPhotoFrame>()!;
-                await WaitForLikedLayoutAsync(() => frame.Picture.ActualWidth > 0);
+                await WaitForLikedLayoutAsync(() => frame.Picture.ActualWidth > 0 && !ChatRows.First(r => r.Message?.Body == imageCode).Content.IsResizing);
                 var image = frame.Picture;
                 if (image.ActualWidth != width || image.ActualHeight != height) throw new InvalidOperationException("Media preview lost intrinsic sizing or aspect ratio.");
                 if (ChatMediaSummaryFor(ChatRows.First(r => r.Message?.Body == imageCode).Message!, 90)?.Thumbnail == null)
@@ -211,7 +251,7 @@ internal sealed partial class MainWindow
             }
             var edgeCode = mediaTransport.Add(new(42, 90, "Фото без рамки", [new("photo.jpg", "image/jpeg", FixtureImage("chat-4k.jpg"))]));
             transport.AddOwn(edgeCode); await RefreshChatsAsync();
-            await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == edgeCode && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualHeight: > 0 }));
+            await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == edgeCode && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualHeight: > 0 } && !r.Content.IsResizing));
             var edgeRow = ChatRows.First(r => r.Message?.Body == edgeCode);
             var edgeFrame = (ChatPhotoFrame)edgeRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
             if (edgeRow.Bubble.BorderThickness != 0 || edgeRow.Bubble.Background.A != 0 ||
@@ -222,7 +262,7 @@ internal sealed partial class MainWindow
             var photoOnlyCode = mediaTransport.Add(new(42, 90, "", [new("heart.png", "image/png", photo)]));
             transport.AddOwn(photoOnlyCode); await RefreshChatsAsync();
             await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == photoOnlyCode &&
-                r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualWidth: > 0 }));
+                r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualWidth: > 0 } && !r.Content.IsResizing));
             var photoOnlyRow = ChatRows.First(r => r.Message?.Body == photoOnlyCode);
             photoOnlyRow.UpdateMediaHover(false); await Task.Delay(240);
             if (!photoOnlyRow.Content.PhotoOnly || photoOnlyRow.Footer.Opacity > .05 || photoOnlyRow.Bubble.Padding != new Thickness(0))
@@ -240,7 +280,7 @@ internal sealed partial class MainWindow
                 var captionCode = mediaTransport.Add(new(42, 90, caption, [new("heart.png", "image/png", photo)]));
                 transport.AddOwn(captionCode); await RefreshChatsAsync();
                 await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == captionCode &&
-                    r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualWidth: > 0 }));
+                    r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualWidth: > 0 } && !r.Content.IsResizing));
                 var captionRow = ChatRows.First(r => r.Message?.Body == captionCode);
                 var captionFrame = (ChatPhotoFrame)captionRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
                 await WaitForLikedLayoutAsync(() => captionFrame.Backdrop.IsVisible && captionFrame.Backdrop.Source != null);
@@ -285,6 +325,8 @@ internal sealed partial class MainWindow
                 if (row.Content.InlineFooter && row.Footer.Bounds.Bottom < row.Body.Bounds.Bottom + .5)
                     throw new InvalidOperationException("Inline timestamp should sit slightly below the message text.");
             }
+            await VerifyChatTimestampAlignmentAsync(transport, mediaTransport);
+            await VerifyChatRichAttachmentsAsync(transport, mediaTransport);
             await Task.Delay(300);
             CaptureUiPreview("chats-text-layout");
             chatInput.Text = "Послушай этот трек — как тебе?";
@@ -309,6 +351,17 @@ internal sealed partial class MainWindow
                 if (Math.Abs(name.Bounds.X - chatInboxVisuals.GetValue(pair.Key, _ => throw new InvalidOperationException()).Preview.Bounds.X) > 1)
                     throw new InvalidOperationException("Plain conversation preview is indented relative to the name.");
             }
+            var unreadBeforeHidden = chatUnread.States.GetValueOrDefault(90)?.Count ?? 0;
+            transport.AddIncoming("Новое в списке чатов");
+            await RefreshChatsAsync();
+            if (chatUnread.States[90].Count != unreadBeforeHidden + 1)
+                throw new InvalidOperationException("A hidden compact thread was marked as read.");
+            page.Value = Page.Home; chatTimer.Stop();
+            transport.AddIncoming("Новое вне раздела чатов");
+            await RefreshChatsAsync();
+            if (chatUnread.States[90].Count != unreadBeforeHidden + 2)
+                throw new InvalidOperationException("Unread synchronization stopped outside Chats.");
+            page.Value = Page.Chats; chatTimer.Stop();
             chatColumns.Selected = true;
             transport.AddOwn("Повторяющийся текст"); await RefreshChatThreadAsync();
             chatInput.Text = "Повторяющийся текст"; transport.RejectBeforeSend = true;
@@ -357,9 +410,10 @@ internal sealed partial class MainWindow
         internal int Sends; internal bool DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList; internal TaskCompletionSource? SendReady, ThreadReady, ListReady;
         internal DateTimeOffset? NextSentAt;
         private static object Message(long sender, string body, DateTimeOffset date) => new { sender_urn = $"soundcloud:users:{sender}", content = body, sent_at = date.ToString("O") };
-        internal void AddIncoming(string body) => messages.Add(Message(90, body, DateTimeOffset.UtcNow));
+        private readonly HashSet<long> unreadPeers = [];
+        internal void AddIncoming(string body) { messages.Add(Message(90, body, DateTimeOffset.UtcNow)); unreadPeers.Add(90); }
         internal void AddOwn(string body) => messages.Add(Message(42, body, DateTimeOffset.UtcNow));
-        private object Conversation(SoundCloudUser other, object? last = null) => new { id = $"42:{other.Id}", users = new[] { new SoundCloudUser { Id = 42, Username = "Ты" }, other }.Select(u => new { id = u.Id, username = u.Username }).ToArray(), read = true,
+        private object Conversation(SoundCloudUser other, object? last = null) => new { id = $"42:{other.Id}", users = new[] { new SoundCloudUser { Id = 42, Username = "Ты" }, other }.Select(u => new { id = u.Id, username = u.Username }).ToArray(), read = !unreadPeers.Contains(other.Id),
             last_message = last ?? (other.Id == 90 ? messages.Last() : Message(91, "Спасибо за подборку!", DateTimeOffset.UtcNow.AddHours(-1))) };
         public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {
@@ -387,22 +441,39 @@ internal sealed partial class MainWindow
                 var last = new { id = "post-id-" + Sends, sender_urn = "soundcloud:users:42", content = request.Body!, sent_at = date.ToString("O") };
                 result = Conversation(request.RecipientId == 90 ? Other : Third, last);
             }
-            else result = new { };
+            else { if (request.Kind == "read") unreadPeers.Remove(request.RecipientId); result = new { }; }
             return JsonSerializer.SerializeToDocument(result);
         }
-        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default) => Task.FromResult(JsonDocument.Parse("{\"collection\":[]}"));
+        private static object MusicTrack() => new { kind = "track", id = 101, title = "Fixture track", artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", waveform_url = "https://wave.sndcdn.com/chat-track-fixture.json", permalink_url = "https://soundcloud.com/fixture/track", duration = 120000, user = new { id = 7, username = "Fixture artist" } };
+        private static object MusicPlaylist() => new { kind = "playlist", id = 102, title = "Fixture playlist", artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", permalink_url = "https://soundcloud.com/fixture/sets/list", track_count = 2, user = new { id = 7, username = "Fixture artist" }, tracks = new[] { MusicTrack() } };
+        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
+        {
+            object data = uri.AbsolutePath == "/tracks/101" ? MusicTrack() : uri.AbsolutePath == "/resolve" ? Uri.UnescapeDataString(uri.Query).Contains("/sets/", StringComparison.Ordinal) ? MusicPlaylist() : MusicTrack() :
+                uri.AbsolutePath.StartsWith("/search", StringComparison.Ordinal) ? new { collection = new[] { MusicTrack(), MusicPlaylist() } } : new { collection = Array.Empty<object>() };
+            return Task.FromResult(JsonSerializer.SerializeToDocument(data));
+        }
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
+    private sealed class ProgressiveFixtureStream(byte[] bytes, int boundary, Task resume) : MemoryStream(bytes, writable: false)
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default)
+        {
+            if (Position >= boundary) await resume.WaitAsync(token);
+            else buffer = buffer[..Math.Min(buffer.Length, boundary - (int)Position)];
+            return await base.ReadAsync(buffer, token);
+        }
+    }
     private sealed class ChatFixtureMediaHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, byte[]> files = [];
         internal bool DelayDownload;
+        internal int Downloads;
         internal TaskCompletionSource? DownloadReady;
-        internal string Add(ChatMediaPackage package)
+        internal string Add(ChatMediaPackage package, bool legacy = false)
         {
             var id = (files.Count + 1).ToString("D8"); var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
-            files[id] = ChatMediaCrypto.Encrypt(package, key);
+            files[id] = legacy ? ChatMediaCrypto.EncryptLegacy(package, key) : ChatMediaCrypto.Encrypt(package, key);
             return new ChatMediaReference('p', id, key).Code;
         }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -418,10 +489,12 @@ internal sealed partial class MainWindow
             var id = Path.GetFileNameWithoutExtension(request.RequestUri!.AbsolutePath);
             if (request.Method != HttpMethod.Get || request.RequestUri.Host != "pomf2.lain.la" || !files.TryGetValue(id, out var bytes))
                 throw new InvalidOperationException("Unexpected fixture media request; public hosts must never be called.");
+            Downloads++;
             if (DelayDownload)
             {
                 DelayDownload = false; DownloadReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                await DownloadReady.Task.WaitAsync(cancellationToken);
+                var boundary = bytes.AsSpan(0, 4).SequenceEqual("PKM2"u8) ? 36 + System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4)) : 0;
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StreamContent(new ProgressiveFixtureStream(bytes, boundary, DownloadReady.Task)) };
             }
             return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
         }

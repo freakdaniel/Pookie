@@ -73,7 +73,7 @@ internal static class BrowserWorkerSmokeTest
         });
         app.MapGet("/restricted", () => Results.Content("<!doctype html><title>Доступ временно ограничен</title><h1>Доступ временно ограничен</h1>", "text/html; charset=utf-8"));
         app.MapGet("/me", () => Results.Json(new { id = 42, username = "fixture", avatar_url = (string?)null }));
-        var chatSends = 0; var chatReads = 0;
+        var chatSends = 0; var chatReads = 0; var challengedChatSends = 0;
         object ChatMessageFixture(string content) => new { id = "fixture-chat-message", sender_urn = "soundcloud:users:42", content, sent_at = "2026-10-17T12:00:00Z" };
         object ChatConversationFixture(string content) => new { id = "42:90", users = new[] { new { id = 42, username = "Me" }, new { id = 90, username = "Other" } }, read = true, last_message = ChatMessageFixture(content) };
         app.MapGet("/users/42/conversations", () => Results.Json(new { collection = new[] { ChatConversationFixture("Fixture message") }, next_href = (string?)null }));
@@ -82,13 +82,17 @@ internal static class BrowserWorkerSmokeTest
         {
             using var json = await JsonDocument.ParseAsync(context.Request.Body);
             var body = json.RootElement.GetProperty("contents").GetString();
-            if (body != "Локальный тест 🎵") throw new InvalidOperationException("Chat payload was changed.");
+            if (body == "После проверки 🎵" && Interlocked.Increment(ref challengedChatSends) == 1)
+            {
+                context.Response.StatusCode = 403; context.Response.Headers["x-fixture-type"] = "device_check"; return;
+            }
+            if (body is not ("Локальный тест 🎵" or "После проверки 🎵")) throw new InvalidOperationException("Chat payload was changed.");
             Interlocked.Increment(ref chatSends); await context.Response.WriteAsJsonAsync(ChatConversationFixture(body));
         });
         app.MapPut("/users/42/conversations/90", async context =>
         {
-            using var json = await JsonDocument.ParseAsync(context.Request.Body);
-            if (!json.RootElement.GetProperty("read").GetBoolean()) throw new InvalidOperationException("Chat mark-read payload changed.");
+            if (!context.Request.HasFormContentType || (await context.Request.ReadFormAsync())["read"] != "true")
+                throw new InvalidOperationException("Chat mark-read must use the website form encoding.");
             Interlocked.Increment(ref chatReads); context.Response.StatusCode = 204;
         });
 
@@ -193,6 +197,10 @@ internal static class BrowserWorkerSmokeTest
         if (conversations.Conversations.Length != 1 || messages.Messages.Length != 1 || sent.LastMessage?.Body != "Локальный тест 🎵" || chatSends != 1 || chatReads != 1)
             throw new InvalidOperationException("Chat read/write did not cross the authenticated native bridge intact.");
         Console.WriteLine("BROWSER_CHATS_OK: authenticated list, thread, Unicode POST, mark-read; local fixture only");
+        var resumed = await api.SendMessageAsync(42, 90, "После проверки 🎵", timeout.Token);
+        if (resumed.LastMessage?.Body != "После проверки 🎵" || challengedChatSends != 2 || chatSends != 2)
+            throw new InvalidOperationException("A rejected chat send did not resume exactly once after its device check.");
+        Console.WriteLine("BROWSER_CHAT_CHECK_OK: rejected POST resumes after verification; one accepted message");
         var liked = await api.GetLikesAsync(42, timeout.Token);
         if (liked.Tracks.Length != 30 || liked.Tracks.Any(track => track.Title != largeTitle))
             throw new InvalidOperationException("Large Unicode library response lost JSON chunks");

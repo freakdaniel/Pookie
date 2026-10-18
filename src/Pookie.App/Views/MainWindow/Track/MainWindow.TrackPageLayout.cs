@@ -48,7 +48,7 @@ internal sealed partial class MainWindow
         var coverFrame = new Border().Width(320).Height(320).CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
         var heroColumns = new TrackPageColumns(
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
-            coverFrame, true, trackDetailBackdrop, new Border().Background(Color.FromArgb(145, 18, 18, 18))).Initialize();
+            coverFrame, true, trackDetailBackdrop, new Border().Background(ArtworkBackdrop.CardScrim)).Initialize();
         var hero = new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(heroColumns);
         var heroShadow = new ShadowDecorator().BlurRadius(12).OffsetY(4).ShadowColor(Color.FromArgb(60, 0, 0, 0))
             .CornerRadius(20).Margin(-12, -8, -12, -16).Child(hero);

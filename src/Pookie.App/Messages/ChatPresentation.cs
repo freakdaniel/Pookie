@@ -20,6 +20,7 @@ internal static class ChatPresentation
     {
         if (package.Attachments.Length > 1) return $"Файлы · {package.Attachments.Length}";
         if (package.GifUrl != null) return "GIF";
+        if (package.Attachments.FirstOrDefault() is { AsFile: true } document) return document.Name;
         return package.Attachments.FirstOrDefault()?.MediaType switch
         {
             "image/gif" => "GIF", var mime when mime?.StartsWith("image/", StringComparison.Ordinal) == true => "Фотография",

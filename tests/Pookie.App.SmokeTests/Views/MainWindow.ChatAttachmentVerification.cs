@@ -19,12 +19,31 @@ internal sealed partial class MainWindow
         {
             chatInput.Text = "Подпись остаётся";
             if (chatInput.Padding.Left < 10) throw new InvalidOperationException("Composer text and placeholder need an inset.");
+            Window.FocusManager.ClearFocus(); RefreshChatComposerSurface();
+            var restingSurface = chatComposer.Background;
+            chatInput.Focus(); RefreshChatComposerSurface();
+            if (chatComposer.BorderThickness != 0 || chatComposer.Background != restingSurface)
+                throw new InvalidOperationException("Focusing the composer added an outline or changed its surface.");
             await AddChatFilesAsync([path]);
             await AddChatFilesAsync([path]);
             if (chatSelectedFiles.Length != 1 || chatInput.Text != "Подпись остаётся") throw new InvalidOperationException("Attachment imports duplicate paths or overwrite text.");
             await AddChatFilesAsync([Path.GetTempPath()]);
             if (chatSelectedFiles.Length != 1) throw new InvalidOperationException("A directory replaced valid attachments.");
+            var excess = Enumerable.Range(0, 4).Select(i => path + i).ToArray();
+            try
+            {
+                foreach (var file in excess) await File.WriteAllBytesAsync(file, [1]);
+                await AddChatFilesAsync(excess);
+                if (chatSelectedFiles.Length != 1 || !chatThreadStatus.Value.Contains("четырёх"))
+                    throw new InvalidOperationException("Attachment count limit replaced the existing draft.");
+                using (var large = new FileStream(excess[0], FileMode.Open)) large.SetLength(17 * 1024 * 1024);
+                await AddChatFilesAsync([excess[0]]);
+                if (chatSelectedFiles.Length != 1 || !chatThreadStatus.Value.Contains("16 МБ"))
+                    throw new InvalidOperationException("Oversized attachment bypassed the limit.");
+            }
+            finally { foreach (var file in excess) File.Delete(file); }
             ClearChatAttachments();
+            chatThreadStatus.Value = "";
             await Task.Delay(120);
 
             var point = new Point(chatComposer.Bounds.X + chatComposer.ActualWidth / 2, chatComposer.Bounds.Y + 20);
@@ -33,7 +52,20 @@ internal sealed partial class MainWindow
             var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowDragDropRouter")!;
             router.GetMethod("OnExternalDragEnter")!.Invoke(null, [Window, args]);
             await WaitForLikedLayoutAsync(() => chatComposerSurface.Dragging);
-            await Task.Delay(220); CaptureUiPreview("chats-composer-drag");
+            await Task.Delay(220);
+            var hint = chatComposerSurface.DropHint;
+            var hintChildren = ((StackPanel)hint.Child!).Children.OfType<FrameworkElement>().ToArray();
+            if (hintChildren.Length != 2 || hintChildren[0].Bounds.Right >= hintChildren[1].Bounds.X ||
+                hintChildren.Any(child => !chatComposerSurface.Bounds.Contains(child.Bounds)) ||
+                Math.Abs(hintChildren[0].Bounds.Y + hintChildren[0].ActualHeight / 2 - hintChildren[1].Bounds.Y - hintChildren[1].ActualHeight / 2) > 1)
+                throw new InvalidOperationException("Compact drop hint clipped its icon/text instead of arranging them side by side.");
+            if (hint.Background.A != 0 || hint.BorderThickness != 0 || chatComposer.BorderThickness != 0 ||
+                chatComposer.Background.R != chatComposer.Background.G || chatComposer.Background.G != chatComposer.Background.B)
+                throw new InvalidOperationException("Drop feedback added a tinted surface or nested outline.");
+            CaptureUiPreview("chats-composer-drag");
+            router.GetMethod("OnExternalDragLeave")!.Invoke(null, [Window, new DragEventArgs(data, point, point)]);
+            if (chatComposerSurface.Dragging) throw new InvalidOperationException("Leaving the composer retained drag feedback.");
+            router.GetMethod("OnExternalDragEnter")!.Invoke(null, [Window, new DragEventArgs(data, point, point)]);
             point = new Point(chatComposer.Bounds.X + chatComposer.ActualWidth / 2, chatComposer.Bounds.Y + chatComposer.ActualHeight / 2);
             var drop = new DragEventArgs(data, point, point);
             router.GetMethod("OnExternalDrop")!.Invoke(null, [Window, drop]);
@@ -56,6 +88,14 @@ internal sealed partial class MainWindow
             var paste = PasteChatAsync(); ClearChatAttachments();
             delayed.SetResult(new([], File.ReadAllBytes(path))); await paste;
             if (chatSelectedFiles.Length != 0) throw new InvalidOperationException("Cancelled paste attached stale clipboard data.");
+            var switched = new TaskCompletionSource<ChatClipboardData?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            chatClipboardRead = _ => switched.Task;
+            paste = PasteChatAsync();
+            var currentRecipient = chatRecipient!;
+            await SelectChatAsync(new() { Id = 91, Username = "Другой чат" });
+            switched.SetResult(new([], File.ReadAllBytes(path))); await paste;
+            if (chatSelectedFiles.Length != 0) throw new InvalidOperationException("Clipboard media leaked into another conversation.");
+            await SelectChatAsync(currentRecipient);
 
             if (OperatingSystem.IsLinux())
             {

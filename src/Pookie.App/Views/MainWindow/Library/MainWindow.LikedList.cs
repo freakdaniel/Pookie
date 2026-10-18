@@ -76,6 +76,7 @@ internal sealed partial class MainWindow
     {
         if (seconds is { } value) likedPlaybackPosition = value;
         foreach (var row in likedRows.Values) RefreshLikedRow(row);
+        RefreshChatMusicRows();
         RefreshSearchPlayback();
         RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }

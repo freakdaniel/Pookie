@@ -362,7 +362,7 @@ pre-send IDs (an older identical message cannot confirm a failed send), media
 thumbnails in inbox/composer/bubbles, date-only sticky separators, time-only message
 footers, image send round trips through a fake host, and bottom anchoring after resize.
 Media regressions cover a 4K JPEG, small images without upscaling, circular avatar
-frames, one check mark for sent messages, and a file button when an image cannot
+frames, one check mark for sent messages, and a document card when an image cannot
 be decoded. Also checks media skeletons without technical labels, caption previews
 in the inbox, blurred backdrops, bounded unbroken captions and hover-only timestamps
 on image-only messages. Optional `POOKIE_CHAT_IMAGE_PROBE=/absolute/path/to/photo.jpg` checks
@@ -370,8 +370,18 @@ a local image in the bubble, inbox and composer through the fake host only.
 Stability regressions keep the same photo/source objects across sends and acknowledgements,
 exercise clock skew and coarse server timestamps, verify inline text/time bounds,
 unindented text previews and the date overlay's horizontal alignment and idle fade.
+Attachment-input checks route enter/leave/drop events through the framework drag
+router and verify preview feedback, append/deduplication, count/size limits, caption
+preservation and temporary-image cleanup. The compact drop hint must keep both icon
+and label inside the row, with a neutral surface and no nested outline; focusing the
+composer must retain its resting background. On Linux a separate process owns a private
+clipboard selection for real PNG, copied-file URI and plain-text paste tests,
+including Ctrl+V, Unicode paths and undo. The user's clipboard is never changed.
+Late clipboard results are rejected after clearing attachments or switching chats.
 The browser worker fixture also exercises chat list/thread/POST/mark-read over the
-real browser bridge, without sending messages to actual SoundCloud users.
+real browser bridge, including a device-check-rejected POST resuming exactly once,
+without sending messages to actual SoundCloud users. JavaScript fixtures distinguish
+that known rejection from an interrupted POST, ordinary failures and a dismissed check.
 Protocol, privacy boundaries, hosting limits and KLIPY setup: [MESSAGES.md](../../MESSAGES.md).
 
 `--chat-media-hosting-live-probe pomf` explicitly uploads a small encrypted test
@@ -381,3 +391,93 @@ an HTTP 503 from Pomf and exercises the real ZIP fallback and its download refer
 An optional final file path replaces the synthetic payload (up to 16 MiB).
 These live probes upload only ciphertext and do not log keys, codes or object IDs;
 they do not access SoundCloud or send messages. They are never run by unit/UI tests.
+
+Progressive-media verification pauses a synthetic HTTP stream after its encrypted
+preview prefix, checks the visible blurred thumbnail/caption, and verifies identical
+bubble geometry after the original arrives. Unread tests deliver four messages
+between explicit polls and check the numeric inbox badge while reading history.
+`ChatMediaPreviewTests` exercise the same paused download through Pomf and ZIP
+fallback, preview authentication, payload-splicing rejection and legacy decoding.
+`ChatUnreadTests` cover batching, duplicate snapshots, own messages, external reads,
+unknown historic counts and restoration of the saved watermark.
+
+Chat caching regressions cover a legacy PKM1 download held before its first byte,
+intermediate bubble widths during the skeleton-to-photo resize, original-file LRU
+eviction without tearing down visible pixels, immediate cached-thread restoration
+while the network is delayed, scroll restoration, and unchanged inbox avatar sources.
+Per-paint checks reject intermediate scroll positions when restoring a cached
+thread or acknowledging a media send, and verify stable timeline item identity
+without collection replacements. Incoming, outgoing and photo-caption timestamps
+are checked against the same lower text boundary.
+Composer checks cover the 56 px compact row, growth from automatic line wrapping,
+intermediate growth/shrink frames, bottom-pinned actions and thread anchoring during
+resize. Long drafts exercise the height cap, caret visibility, hidden/noninteractive
+scrollbars and the top mask's appearance and disappearance during caret navigation.
+Text/placeholder insets are sampled throughout resizing and after undoing a newline
+mid-animation, rejecting a final-frame switch from top alignment to centering.
+The outgoing-media scenario holds the server acknowledgement and checks that the
+same photo frame and bubble dimensions survive it without downloading the upload.
+
+Rich attachment checks cover document cards with the size/time footer on one row,
+images explicitly sent as documents, the paperclip's three choices, music-picker
+search for tracks and playlists, canonical SoundCloud link cards and all five video
+MIME mappings. The video modal must display a decoded frame and release its session
+when closed.
+Music messages must reuse the horizontal Liked track row, with artwork, contained
+playback controls and a loaded waveform in both wide and narrow conversations.
+Routed play/pause and waveform-seek clicks preserve the current queue and keep
+the chat open. Playlist rows retain their title/count while following the current
+track waveform and progress. Checks also require the artwork backdrop, glass action
+buttons and delivery time inside the actions/caption row; recycled rows release their
+playback bindings and restore the ordinary text bubble layout. SoundCloud API unit
+checks cover mobile share-link redirects, relative hops, playlists, secret tokens,
+browser transport routing and bounded/rejected redirect chains. Composer checks
+exercise a recognized inline title/circular thumbnail through native selection, whole-link Backspace,
+Undo, clicking through to its track page, navigation back and sending the original
+URL/caption. Music captions must retain the ordinary message bubble color. The embedded waveform
+is shorter, with the play/actions aligned to the artwork edges.
+Menu checks verify the composer-aligned gap, matching surface, animation completion,
+hit-testing through to the paperclip and suppression while
+a file picker is open. A portrait video checks inline geometry, silent autoplay,
+stopping after a second native window takes focus, resuming on activation and
+stopping while the viewer is open. Composer checks require a square video poster.
+Reopening the viewer three times must immediately retain a poster without loading
+text or another download. Normal idle playback keeps its control panel visible. Checks also cover document/
+music inbox glyphs, video volume/rate reaching LibVLC, the speed menu, intermediate
+geometry during enlargement, black backdrop, the compact control width, unique
+speed-preset selection and arbitrary slider speeds without dismissing the menu,
+control/arrow fade and reveal in enlarged mode,
+and retaining the picture during the closing fade. Outer icon positions must align
+with the elapsed/remaining labels. On Linux, X11 pixel checks capture the underlying
+chat before opening, then verify uniform translucent scrim compositing after each
+reopening and solid black in enlarged mode; CPU previews alone cannot detect native
+compositing regressions.
+Native frame sampling also bounds backdrop darkness throughout opening and
+reopening, rather than checking only the final frame. Replacing an enlarged video
+retains its enlargement and backdrop; reopening during the closing fade preserves
+the current reveal amount and reverses the animation.
+The scrim must also preserve an inherited partial repaint clip, leaving pixels
+outside that clip unchanged. `POOKIE_CHAT_VIDEO_FIXTURE` adds three complete
+playbacks of a local video, including hover/menu activity and a large window;
+native samples include letterboxed areas and distinguish live media loading from
+extra darkening.
+`--chat-video-live-ui-probe` runs the same playback checks over a real conversation
+using the saved account and isolated local app data. Set
+`POOKIE_CHAT_VIDEO_LIVE_PEER` to the explicitly authorized recipient and
+`POOKIE_CHAT_VIDEO_FIXTURE` to the local video path. It opens that conversation
+(so normal read receipts apply) and does not send messages or upload the video.
+Routed clicks on the picture and controls must keep the viewer open, while both
+letterboxing and the outer backdrop close it. A recording audio backend verifies
+intermediate fade volumes, pause only after fade-out, resumption after close,
+preserved selected volume, initially paused music, rapid close/reopen, replacement
+of the current video and explicit transport actions cancelling automatic resumption.
+`ChatRichAttachmentTests` cover video poster/
+dimension/duration authentication, autoplay limits, authenticated document metadata,
+music-link extraction, caption preservation and rejected non-SoundCloud URLs.
+
+`--chat-video-smoke-test` decodes synthetic MP4, WebM, MOV, MKV and AVI fixtures
+through the production LibVLC session. Each case checks a real bitmap, pause/resume,
+seeking, disposal, and decoder ownership after the caller's input buffer is cleared.
+It plays silently and sends/uploads nothing. Linux requires LibVLC 3 and codec
+plugins; Windows builds carry the native package, and macOS uses installed VLC.
+The current native playback validation was run on Linux only.

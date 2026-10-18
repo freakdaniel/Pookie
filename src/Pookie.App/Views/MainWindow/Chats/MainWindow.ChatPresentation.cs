@@ -7,6 +7,14 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private sealed class ChatMessageItem(ChatMessage message)
+    {
+        internal readonly string Key = message.Id;
+        internal ChatMessage Message = message;
+        internal string Id => Message.Id;
+        internal string Body => Message.Body;
+        internal DateTimeOffset SentAt => Message.SentAt;
+    }
     private enum ChatDelivery { Sending, Sent, Failed }
     private sealed class ChatOutgoingItem(ChatMessage message, string draft, string[] files, KlipyGif? gif)
     {
@@ -21,30 +29,39 @@ internal sealed partial class MainWindow
         internal HashSet<string> BeforeSendIds = [];
         internal DateTimeOffset DisplayOrder;
         internal bool HasMedia => Files.Length > 0 || Gif != null || ChatMediaReference.Parse(Message.Body) != null;
+        internal HashSet<string> Documents = [];
     }
     private readonly Dictionary<long, ChatOutgoingItem> chatOutgoing = [];
     private readonly HashSet<string> chatMessageEntrances = [];
     private readonly Dictionary<string, DateTimeOffset> chatMessageOrder = [];
     private DateTimeOffset ChatOrder(ChatMessage message) => chatMessageOrder.GetValueOrDefault(message.Id, message.SentAt);
-    private sealed record ChatInboxVisual(TextBlock Time, TextBlock Checks, Image Thumbnail, Border ThumbnailFrame, TextBlock Preview);
+    private sealed record ChatInboxVisual(TextBlock Time, TextBlock Checks, Image Thumbnail, Border ThumbnailFrame, Image PreviewIcon, TextBlock Preview, Border Unread, TextBlock UnreadText)
+    { internal long AvatarPeer; internal string? AvatarUrl, PreviewGlyph; }
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Button, ChatInboxVisual> chatInboxVisuals = new();
     private ChatOutgoingItem? ChatOutgoing(ChatMessage? message) => message == null ? null : chatOutgoing.Values.FirstOrDefault(x => x.Message.Id == message.Id);
     private bool ChatStartsDay(ChatMessage message)
     {
-        var index = chatMessageItems.IndexOf(message);
+        var index = chatMessageItems.ToList().FindIndex(item => item.Id == message.Id);
         return index <= 0 || chatMessageItems[index - 1].SentAt.ToLocalTime().Date != message.SentAt.ToLocalTime().Date;
     }
     private void RefreshChatTimeline()
     {
         var rows = chatMessages.OrderBy(ChatOrder).ToList();
         if (chatRecipient != null && chatOutgoing.TryGetValue(chatRecipient.Id, out var outgoing)) rows.Add(outgoing.Message);
-        PatchChatItems(chatMessageItems, rows, x => x.Id);
+        var current = chatMessageItems.ToDictionary(item => item.Id);
+        var desired = rows.Select(message =>
+        {
+            if (!current.TryGetValue(message.Id, out var item)) return new ChatMessageItem(message);
+            item.Message = message; return item;
+        }).ToArray();
+        PatchChatItems(chatMessageItems, desired, item => item.Key);
         foreach (var row in ChatRows)
         {
-            row.RefreshDelivery(); row.RefreshDate();
-            if (row.Message is { } message && chatRecipient != null && ChatOutgoing(message) == null && ChatMediaReference.Parse(message.Body) != null && CachedChatMedia(message) == null &&
+            if (row.Bound && row.Message != null && desired.FirstOrDefault(item => item.Key == row.ItemKey) is { } item) { row.Bind(item.Message); row.ItemKey = item.Key; }
+            else { row.RefreshDelivery(); row.RefreshDate(); }
+            if (row.Bound && row.Message is { } message && chatRecipient != null && ChatOutgoing(message) == null && ChatMediaReference.Parse(message.Body) != null && CachedChatMedia(message) == null &&
                 !chatMediaAutoRequested.Contains(ChatMediaCacheId(message, chatRecipient.Id)))
-            { StopChatAnimations(row.Attachments); row.Attachments.Clear(); BindChatMediaPreview(row); }
+                QueueChatMediaPreview(message, chatRecipient.Id);
         }
         foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
         RefreshChatLoading();
@@ -59,6 +76,8 @@ internal sealed partial class MainWindow
     private void RefreshChatInboxPreview(Button button, ChatConversation conversation)
     {
         if (!chatInboxVisuals.TryGetValue(button, out var view)) return;
+        view.UnreadText.Text = chatUnread.Badge(conversation.Recipient.Id);
+        view.Unread.IsVisible = view.UnreadText.Text.Length > 0;
         var local = chatOutgoing.GetValueOrDefault(conversation.Recipient.Id);
         var last = local?.Message ?? conversation.LastMessage;
         view.Time.Text = last == null ? "" : ChatPresentation.InboxTime(last.SentAt, DateTimeOffset.Now);
@@ -66,6 +85,7 @@ internal sealed partial class MainWindow
         view.Checks.Text = local?.State switch { ChatDelivery.Sending => "◷", ChatDelivery.Failed => "!", _ => "✓" };
         view.Checks.Foreground = local?.State == ChatDelivery.Failed ? Color.FromRgb(255, 132, 132) : ChatAccent;
         view.Thumbnail.Source = null; view.ThumbnailFrame.IsVisible = false;
+        view.PreviewIcon.IsVisible = false; view.PreviewIcon.Source = null; view.PreviewGlyph = null;
         view.Preview.Foreground = Muted;
         if (last == null) { view.Preview.Text = "Начать переписку"; return; }
         if (ChatMediaReference.Parse(last.Body) != null || local?.HasMedia == true)
@@ -76,15 +96,35 @@ internal sealed partial class MainWindow
             view.Preview.Text = caption.Length > 0 ? caption : summary?.Label ?? (local?.Gif != null ? "GIF" : local?.Files.FirstOrDefault() is { } path && ChatMediaType(path).StartsWith("image/", StringComparison.Ordinal) ? "Фотография" : "Вложение");
             view.Preview.Foreground = caption.Length > 0 ? Muted : ChatAccent;
             view.Thumbnail.Source = summary?.Thumbnail ?? local?.Thumbnail;
+            var files = summary?.Files ?? local?.Files.Select(path => new MediaFile(Path.GetFileName(path), ChatMediaType(path), 0, local.Documents.Contains(path))).ToArray();
+            var document = files?.Any(f => f.AsFile || !f.Type.StartsWith("image/", StringComparison.Ordinal) && !f.Type.StartsWith("video/", StringComparison.Ordinal)) == true;
+            if (document)
+            {
+                var music = files!.All(f => !f.AsFile && f.Type.StartsWith("audio/", StringComparison.Ordinal));
+                SetChatInboxGlyph(view, music ? "music-notes" : "file"); view.Thumbnail.Source = null;
+            }
             view.ThumbnailFrame.IsVisible = view.Thumbnail.Source != null;
             if (summary == null && local == null) QueueChatMediaPreview(last, conversation.Recipient.Id);
         }
+        else if (ChatMusicLink.Find(last.Body) is { Length: > 0 } links)
+        {
+            var caption = ChatPresentation.Preview(ChatMusicLink.Caption(last.Body, links));
+            view.Preview.Text = caption.Length > 0 ? caption : chatMusicCache.GetValueOrDefault(links[0])?.Title ?? "Трек или плейлист";
+            if (caption.Length == 0) view.Preview.Foreground = ChatAccent;
+            SetChatInboxGlyph(view, "music-notes");
+            QueueChatMusicSummary(links[0]);
+        }
         else view.Preview.Text = ChatPreview(last.Body);
+    }
+    private static void SetChatInboxGlyph(ChatInboxVisual view, string glyph)
+    {
+        view.PreviewGlyph = glyph; view.PreviewIcon.Source = Icons.Source(glyph, view.Preview.Foreground);
+        view.PreviewIcon.IsVisible = true;
     }
     private void RefreshChatLoading()
     {
-        chatInboxLoading.SetLoading(chatsBusy && chatConversations.Count == 0 && !chatSearchMode);
-        chatThreadLoading.SetLoading(chatThreadBusy && chatMessages.Count == 0 && chatOutgoing.GetValueOrDefault(chatRecipient?.Id ?? 0) == null);
+        chatInboxLoading.SetLoading(chatsBusy && !chatListLoaded && chatConversations.Count == 0 && !chatSearchMode);
+        chatThreadLoading.SetLoading(chatThreadBusy && !chatThreadLoaded && chatMessages.Count == 0 && chatOutgoing.GetValueOrDefault(chatRecipient?.Id ?? 0) == null);
     }
     private void RefreshChatDateOverlay()
     {
