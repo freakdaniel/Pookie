@@ -8,8 +8,7 @@ internal sealed class ChatVideoFrame : Panel
 {
     // Limit both network-independent decode work and retained native surfaces.
     private static readonly SemaphoreSlim slots = new(2, 2);
-    internal const int AutoPlayBytes = 8 * 1024 * 1024;
-    internal const long AutoPlayDuration = 30000;
+    internal const int AutoPlayBytes = 15 * 1024 * 1024;
     internal readonly Image Picture = new Image().StretchMode(Stretch.Uniform);
     private readonly Border badge, play;
     private readonly Image backdrop = new Image { StretchMode = Stretch.UniformToFill, Opacity = .6 };
@@ -25,12 +24,12 @@ internal sealed class ChatVideoFrame : Panel
     private bool disposed, starting, failed;
     internal bool PlayPromptVisible => play.IsVisible;
     internal bool Playing => session?.Snapshot().Playing == true;
-    internal static bool CanAutoPlay(int bytes, long duration) => bytes is > 0 and <= AutoPlayBytes && duration is > 0 and <= AutoPlayDuration;
+    internal static bool CanAutoPlay(int bytes) => bytes is > 0 and <= AutoPlayBytes;
     internal ChatVideoFrame(ChatVideoInfo? info, int bytes, Func<bool> visible, Func<byte[]?> data, Action activate)
     {
         this.visible = visible; this.data = data;
         intrinsic = info is { Valid: true } ? new(info.Width, info.Height) : new(240, 180);
-        eligible = info != null && CanAutoPlay(bytes, info.DurationMs);
+        eligible = CanAutoPlay(bytes);
         ClipToBounds = true; Cursor = CursorType.Hand;
         if (info is { Valid: true }) Picture.Source = ImageSource.FromBgraPixels(info.ThumbWidth, info.ThumbHeight, info.Pixels);
         duration = new TextBlock().Text(info?.DurationMs > 0 ? VideoTime(info.DurationMs) : "Видео").FontSize(11).Foreground(Color.White);

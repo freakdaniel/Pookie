@@ -4,11 +4,9 @@ using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
-// Virtualized heights and scroll metrics must converge before painting, rather
-// than correcting an already visible frame in Window.FrameRendered.
+// Synchronize scroll offsets at the paint boundary without re-entering measurement.
 internal sealed class ChatViewport(FrameworkElement content) : Panel
 {
-    internal Func<bool>? SynchronizeScroll;
     internal Action? BeforePaint;
     internal ChatViewport Initialize() { Add(content); return this; }
     protected override Size MeasureContent(Size availableSize)
@@ -16,14 +14,10 @@ internal sealed class ChatViewport(FrameworkElement content) : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         var bounds = new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height);
-        for (var pass = 0; pass < 20; pass++)
-        {
-            content.Measure(finalSize); content.Arrange(bounds);
-            if (SynchronizeScroll?.Invoke() != true) break;
-            // Realized rows may have replaced estimated heights during arrange.
-            // Refresh the viewer's extent before accepting a clamped offset.
-            content.InvalidateMeasure();
-        }
+        // The measure constraint and final pixel-rounded bounds can differ at
+        // fractional DPI. Remeasuring here makes the virtualized viewport
+        // oscillate between them and continuously invalidate the window layout.
+        content.Arrange(bounds);
         return finalSize;
     }
     protected override void RenderSubtree(IGraphicsContext context)

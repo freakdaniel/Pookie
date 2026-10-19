@@ -37,13 +37,14 @@ public sealed class ChatRichAttachmentTests
         ChatMediaCrypto.Encrypt(package, key); Assert.Equal(17, info.Pixels[0]);
     }
     [Theory]
-    [InlineData(8388608, 30000, true)]
-    [InlineData(8388609, 10000, false)]
-    [InlineData(1024, 30001, false)]
-    [InlineData(1024, 0, false)]
-    [InlineData(0, 10000, false)]
-    public void AutoplayHasExplicitSizeAndDurationBounds(int bytes, long duration, bool expected) =>
-        Assert.Equal(expected, ChatVideoFrame.CanAutoPlay(bytes, duration));
+    [InlineData(15 * 1024 * 1024, true)]
+    [InlineData(15 * 1024 * 1024 + 1, false)]
+    [InlineData(8 * 1024 * 1024 + 1, true)]
+    [InlineData(1024, true)]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    public void AutoplayUsesOnlyFileSizeWithAnInclusive15MiBLimit(int bytes, bool expected) =>
+        Assert.Equal(expected, ChatVideoFrame.CanAutoPlay(bytes));
     [Fact]
     public void MalformedVideoMetadataCannotBeUploaded()
     {

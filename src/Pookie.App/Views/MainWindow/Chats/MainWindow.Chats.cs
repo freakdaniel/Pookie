@@ -76,7 +76,10 @@ internal sealed partial class MainWindow
         chatFloatingDate.VerticalAlignment = VerticalAlignment.Top; chatFloatingDate.IsHitTestVisible = false;
         chatDateLayer = new(chatFloatingDate);
         chatViewport = new ChatViewport(chatMessagesView).Initialize();
-        chatViewport.SynchronizeScroll = SynchronizeChatScroll;
+        chatViewport.BeforePaint = () =>
+        {
+            if (SynchronizeChatScroll()) chatViewport.InvalidateArrange();
+        };
         chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer), inbox: false);
         chatInput = new MultiLineTextBox().Placeholder("Сообщение").Wrap(true).MaxLength(ChatRequest.MaxBodyLength).Background(Color.Transparent).BorderThickness(0).Padding(10, 4, 8, 4).FontSize(14);
         chatInput.OnTextChanged(text =>

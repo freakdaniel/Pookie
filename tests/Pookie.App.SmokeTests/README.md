@@ -352,6 +352,13 @@ compiler removes unimplemented hooks from the production assembly
 The production app keeps its standalone `--demo` preview mode. It contains no
 verification methods, test fixture servers, or diagnostic scenario runner
 
+`--chat-navigation-ui-smoke-test --no-audio` checks opening and reopening Chats,
+resizing between desktop and compact widths, opening a conversation, restoring a
+history anchor and following the latest message while the composer grows. It waits
+for rendered frames and uses isolated fixture data. Run it at fractional Windows
+display scaling to catch measure/arrange constraint oscillation; the regression was
+reproduced at 110 DPI before removing the remeasure from `ChatViewport.ArrangeOverride`.
+
 `--chats-ui-smoke-test --no-audio` verifies the Chats navigation immediately after
 Library, virtualized inbox/thread, responsive two-pane/single-pane layout, stable
 polling while reading history, older-message pagination, per-conversation drafts,
@@ -472,7 +479,8 @@ intermediate fade volumes, pause only after fade-out, resumption after close,
 preserved selected volume, initially paused music, rapid close/reopen, replacement
 of the current video and explicit transport actions cancelling automatic resumption.
 `ChatRichAttachmentTests` cover video poster/
-dimension/duration authentication, autoplay limits, authenticated document metadata,
+dimension/duration authentication, the inclusive 15 MiB autoplay file-size limit
+(independent of duration), authenticated document metadata,
 music-link extraction, caption preservation and rejected non-SoundCloud URLs.
 
 `--chat-video-smoke-test` decodes synthetic MP4, WebM, MOV, MKV and AVI fixtures
