@@ -5,6 +5,10 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private bool chatsUiSmoke;
+    private bool chatMusicUiSmoke;
+    private bool chatMediaUiSmoke;
+    private bool menusUiSmoke;
+    private bool queueContinuationUiSmoke;
     private bool chatNavigationUiSmoke;
     private bool chatVideoLiveUi;
     private bool uiSmoke;
@@ -25,7 +29,11 @@ internal sealed partial class MainWindow
 
     internal void ConfigureVerification(string[] args)
     {
-        chatsUiSmoke = args.Contains("--chats-ui-smoke-test");
+        chatMusicUiSmoke = args.Contains("--chat-music-ui-smoke-test");
+        chatMediaUiSmoke = args.Contains("--chat-media-ui-smoke-test");
+        menusUiSmoke = args.Contains("--menus-ui-smoke-test");
+        queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
+        chatsUiSmoke = chatMusicUiSmoke || chatMediaUiSmoke || args.Contains("--chats-ui-smoke-test");
         chatNavigationUiSmoke = args.Contains("--chat-navigation-ui-smoke-test");
         chatVideoLiveUi = args.Contains("--chat-video-live-ui-probe");
         waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
@@ -68,6 +76,8 @@ internal sealed partial class MainWindow
             lyricsService = new(new EmptyLyricsProvider(), Path.Combine(dataPaths.Cache, "FixtureLyrics"));
         }
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
+        if (menusUiSmoke) Run(VerifyFloatingMenusAsync);
+        if (queueContinuationUiSmoke) Run(VerifyQueueContinuationAsync);
         if (chatNavigationUiSmoke) Run(VerifyChatNavigationUiAsync);
         if (chatVideoLiveUi) Run(VerifyChatVideoLiveUiAsync);
         if (waveQueueUiSmoke) Run(VerifyWaveQueueUiAsync);

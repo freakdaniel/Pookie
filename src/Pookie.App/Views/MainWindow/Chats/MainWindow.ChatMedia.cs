@@ -474,8 +474,11 @@ internal sealed partial class MainWindow
         {
             if (child is ChatPhotoFrame frame) frame.Stop();
             if (child is ChatVideoFrame video) video.Stop();
+            if (child is ChatMusicLoading loading) loading.Stop();
             if (child is Grid grid && chatMusicViews.TryGetValue(grid, out var music))
             { music.Row.Reset(); music.Item = null; chatMusicViews.Remove(grid); }
+            if (child is Grid compactGrid && chatCompactMusicViews.TryGetValue(compactGrid, out var compact))
+            { BindCompactTrackRow(compact.Row, null); compactTrackRows.Remove(compact.Row); chatCompactMusicViews.Remove(compactGrid); }
             if (child is Image image)
             { StopCardArtwork(image); if (chatAnimations.Remove(image, out var animation)) animation.Dispose(); image.Source = null; }
         });

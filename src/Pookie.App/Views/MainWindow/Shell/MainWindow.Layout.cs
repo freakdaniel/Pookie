@@ -77,6 +77,7 @@ internal sealed partial class MainWindow
         playerVisible.Changed += () =>
         {
             if (playerVisible.Value) return;
+            queueOpen.Value = false;
             playerBackdrop.Height = 0;
             contentSurface.CornerRadius(new CornerRadius(30, 30, 0, 0));
             contentSurface.Margin = new Thickness(0, 8, 0, 0);
@@ -86,7 +87,7 @@ internal sealed partial class MainWindow
             startupHeader.Row(0),
             contentSurface.Row(1),
             playerBar.Row(2),
-            QueuePanel().Row(1),
+            QueuePanel().Row(0).RowSpan(3),
             ProfilePanel().Row(0).RowSpan(3),
             SettingsPanel().Row(0).RowSpan(3));
         workspace.IsVisible = false;
@@ -140,7 +141,7 @@ internal sealed partial class MainWindow
         topSearchBar.IsHitTestVisible = false;
         topSearchBar.Opacity = 0;
 
-        var profileButton = new Button().StyleName("flat-button").Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
+        profileButton = new Button().StyleName("flat-button").Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
                 new Border().Background(Color.FromRgb(65, 65, 65)).CornerRadius(15).ClipToBounds().BindIsVisible(signedIn)
                     .Child(new Grid().Columns("*").Rows("*").Children(
                         new TextBlock().BindText(profileInitial).FontSize(12).Bold().CenterHorizontal().CenterVertical().BindIsVisible(hasAvatar, value => !value),
@@ -151,7 +152,7 @@ internal sealed partial class MainWindow
         var settingsGlyph = Icons.View("gear", 24, Muted);
         settingsGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
         settingsGlyph.Opacity = 0.84;
-        var settingsButton = new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Content(new Grid().Columns("*").Rows("*").Children(
+        settingsButton = new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Content(new Grid().Columns("*").Rows("*").Children(
                 settingsGlyph.CenterHorizontal().CenterVertical()))
             .Padding(2).Width(34).Height(34).CornerRadius(17)
             .OnMouseEnter(() => settingsGlyph.Opacity = 1)
@@ -340,34 +341,28 @@ internal sealed partial class MainWindow
         Run(() => PlayAsync(track));
     }
 
-    private FrameworkElement ProfilePanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
-        .CornerRadius(18).Width(300).Padding(20).Top().Right().Margin(0, 64, 28, 0).BindIsVisible(profileOpen)
-        .Child(new StackPanel().Vertical().Spacing(14).Children(
-            new Grid().Columns("*,Auto").Rows("Auto").Children(
-                new TextBlock().Text("Твой профиль").Bold().FontSize(16).CenterVertical().Column(0),
-                IconButton("x", () => profileOpen.Value = false).Column(1)),
-            new TextBlock().BindText(profile).TextWrapping(TextWrapping.Wrap).FontSize(14),
-            new TextBlock().BindText(signedIn, value => value ? "SoundCloud подключён" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
-                .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap),
-            new Button().Content("Войти в SoundCloud").BindIsVisible(signedIn, value => !value).Padding(14, 12)
-                .OnClick(() => Run(LoginAsync)),
-            new Button().Content(new StackPanel().Horizontal().Spacing(10).Children(Icons.View("sign-out", 20),
-                new TextBlock().Text("Выйти из SoundCloud").CenterVertical())).BindIsVisible(signedIn).Padding(14, 12)
-                .OnClick(() => Run(LogoutAsync))));
+    private FrameworkElement ProfilePanel() => ShellMenu(profileButton,
+        FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Spacing(6).Children(
+            new StackPanel().Vertical().Spacing(8).Margin(12, 8, 12, 8).Children(
+                new TextBlock().Text("Твой профиль").Bold().FontSize(14),
+                new TextBlock().BindText(profile).TextWrapping(TextWrapping.Wrap).FontSize(14),
+                new TextBlock().BindText(signedIn, value => value ? "SoundCloud подключён" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
+                    .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap)),
+            MenuChoice("user-circle", "Войти в SoundCloud", () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
+            MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
+        profileOpen, FloatingMenuPlacement.BelowRight);
 
-    private FrameworkElement SettingsPanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
-        .CornerRadius(18).Width(300).Padding(20).Top().Right().Margin(0, 64, 28, 0).BindIsVisible(settingsOpen)
-        .Child(new StackPanel().Vertical().Spacing(14).Children(
-            new Grid().Columns("*,Auto").Rows("Auto").Children(
-                new TextBlock().Text("Настройки").Bold().FontSize(16).CenterVertical().Column(0),
-                IconButton("x", () => settingsOpen.Value = false).Column(1)),
+    private FrameworkElement SettingsPanel() => ShellMenu(settingsButton,
+        FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Spacing(14).Children(
+            new TextBlock().Text("Настройки").Bold().FontSize(14),
             new TextBlock().BindText(audioStatus).Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap),
             new CheckBox().Content("Показывать музыку в Discord").BindIsChecked(discordEnabled).FontSize(12)
                 .OnCheckedChanged(value => { if (presence != null) presence.Enabled = value; }),
             new StackPanel().Vertical().Spacing(4).Children(
                 new TextBlock().Text("О приложении").FontSize(12).Foreground(Muted),
                 TrackButtons.Action(new TextBlock().Text("Иллюстрации: Icons8").FontSize(12), OpenIllustrationCredits,
-                    TrackButtons.Text, 28).Padding(0).Left())));
+                    TrackButtons.Text, 28).Padding(0).Left())), 300, 18),
+        settingsOpen, FloatingMenuPlacement.BelowRight);
 
     private void OpenIllustrationCredits()
     {
@@ -376,15 +371,12 @@ internal sealed partial class MainWindow
         { status.Value = "Не удалось открыть сайт Icons8."; }
     }
 
-    private FrameworkElement QueuePanel() => new Border().Background(Raised).BorderBrush(Edge).BorderThickness(1)
-        .CornerRadius(22).Padding(18).Width(380).Height(336).Bottom().Right().Margin(0, 0, 36, 16).BindIsVisible(queueOpen)
-        .Child(new DockPanel().LastChildFill().Spacing(12).Children(
-            new Grid().Columns("*,Auto").Rows("Auto").DockTop().Children(
-                new StackPanel().Vertical().Spacing(4).Column(0).Children(
-                    new TextBlock().Text("Очередь воспроизведения").FontSize(17).Bold(),
-                    new TextBlock().BindText(queueStatus).Foreground(Muted).FontSize(11)),
-                IconButton("x", () => queueOpen.Value = false).Column(1)),
-            queueList));
+    private FrameworkElement QueuePanel() => ShellMenu(queueButton,
+        FloatingMenuLayer.CreateCard(new DockPanel().LastChildFill().Spacing(6).Children(
+            new StackPanel().Vertical().Spacing(4).Margin(12, 8, 12, 8).DockTop().Children(
+                new TextBlock().Text("Очередь воспроизведения").FontSize(14).Bold(),
+                new TextBlock().BindText(queueStatus).Foreground(Muted).FontSize(11)),
+            queueList), 380).Height(336), queueOpen, FloatingMenuPlacement.AboveRight);
 
     private static Button IconButton(string name, Action action) => new Button().StyleName("flat-button")
         .Content(Icons.View(name, 20)).Width(34).Height(34).CornerRadius(12).OnClick(action);

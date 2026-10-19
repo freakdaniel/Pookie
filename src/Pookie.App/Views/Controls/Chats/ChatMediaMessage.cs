@@ -81,6 +81,8 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
             foreach (var child in music.Children.OfType<IChatMusicFooter>())
                 child.ReserveFooter(musicOnly && ReferenceEquals(child, music.Children.LastOrDefault()) ? footer.DesiredSize.Width + 10 : 0);
         attachments.Measure(new Size(width, double.PositiveInfinity));
+        if (musicMode)
+            width = Math.Min(width, Math.Max(attachments.DesiredSize.Width, caption.IsVisible ? Math.Min(width, captionWidth + footer.DesiredSize.Width + 10) : 0));
         caption.Measure(new Size(Math.Max(1, width - (PhotoMode ? 24 : 0)), double.PositiveInfinity));
         open.Measure(new Size(width, double.PositiveInfinity));
         footer.Measure(new Size(Math.Max(1, width - (PhotoMode ? 16 : 0)), double.PositiveInfinity));

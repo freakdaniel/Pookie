@@ -427,7 +427,7 @@ internal sealed partial class MainWindow
     {
         SaveChatDraft(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
         chatMusicRecognizeTimer.Dispose(); chatMusicEditor?.Dispose();
-        chatAttachHover.Dispose(); chatAttachLeave.Dispose(); chatMusicSearchTimer.Dispose(); chatVideoTimer.Dispose(); chatVideoExpansionClock.Stop(); chatVideoSpeedClock.Stop();
+        chatAttachInteraction.Dispose(); chatMusicSearchTimer.Dispose(); chatVideoTimer.Dispose(); chatVideoExpansionClock.Stop(); chatVideoSpeedClock.Stop();
         Window.FrameRendered -= ArrangeChatScroll; CloseChatGifs();
         if (chatDateViewer != null) chatDateViewer.ScrollChanged -= OnChatDateScroll;
         chatDateLayer.Dispose();

@@ -5,6 +5,51 @@ namespace Pookie.App;
 internal static class ArtworkBackdrop
 {
     internal static readonly Color CardScrim = Color.FromArgb(145, 18, 18, 18);
+    internal static ImageSource? CreateMixed(IReadOnlyList<ImageSource> sources, double visibility = .24)
+    {
+        // Blur each cover before mixing so neither a seam nor a sharp collage is visible.
+        var cache = new Dictionary<ImageSource, ImageSource?>();
+        var layers = new List<(int Width, int Height, byte[] Pixels)>();
+        foreach (var source in sources)
+        {
+            if (!cache.TryGetValue(source, out var blurred)) cache[source] = blurred = Create(source, visibility: 1);
+            if (blurred == null) continue;
+            var pixels = new byte[blurred.PixelWidth * blurred.PixelHeight * 4];
+            blurred.CopyPixels(pixels, blurred.PixelWidth * 4);
+            layers.Add((blurred.PixelWidth, blurred.PixelHeight, pixels));
+        }
+        if (layers.Count == 0) return null;
+        const int size = 96;
+        var result = new byte[size * size * 4];
+        var weights = new double[layers.Count];
+        for (var y = 0; y < size; y++)
+        {
+            var total = 0d;
+            for (var i = 0; i < layers.Count; i++)
+            {
+                var distance = y / (size - 1d) - (i + .5) / layers.Count;
+                total += weights[i] = Math.Exp(-distance * distance / .22);
+            }
+            for (var x = 0; x < size; x++)
+            {
+                var output = (y * size + x) * 4;
+                for (var channel = 0; channel < 3; channel++)
+                {
+                    var mixed = 0d;
+                    for (var i = 0; i < layers.Count; i++)
+                    {
+                        var layer = layers[i];
+                        var input = (y * layer.Height / size * layer.Width + x * layer.Width / size) * 4;
+                        mixed += layer.Pixels[input + channel] * weights[i] / total;
+                    }
+                    result[output + channel] = (byte)Math.Round(mixed * visibility + 29 * (1 - visibility));
+                }
+                result[output + 3] = 255;
+            }
+        }
+        return ImageSource.FromBgraPixels(size, size, result, hasAlpha: false);
+    }
+
     internal static ImageSource? Create(ImageSource source, double visibility = .24)
     {
         var sourceWidth = source.PixelWidth; var sourceHeight = source.PixelHeight;

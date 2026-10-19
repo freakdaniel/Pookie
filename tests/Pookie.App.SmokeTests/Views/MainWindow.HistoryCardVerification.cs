@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => next.Playback.Opacity > .999);
             if (!hoverFrames.Any(opacity => opacity is > .01 and < .99))
                 throw new InvalidOperationException("History hover skipped its fade-in animation");
-            var circle = (Border)next.Playback.Content!;
+            var circle = next.Playback.PlaybackButton ?? throw new InvalidOperationException("History playback action is missing.");
             if (Math.Abs(circle.Bounds.X + circle.Bounds.Width / 2 - point.X) > 1 ||
                 Math.Abs(circle.Bounds.Y + circle.Bounds.Height / 2 - point.Y) > 1)
                 throw new InvalidOperationException("History playback button is not centered on the cover");
@@ -49,8 +49,9 @@ internal sealed partial class MainWindow
         await ToggleAsync();
         await ShowLibrarySectionAsync(Page.LibraryPlaylists);
         await WaitForLikedLayoutAsync(() => collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Any(card => card.Item.Playlist != null && card.Frame.ActualWidth > 100));
-        if (collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Where(card => card.Item.Track == null).Any(card => card.Playback.IsVisible))
-            throw new InvalidOperationException("Recycled history controls leaked playback buttons into playlist or artist cards");
+        if (collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Any(card =>
+            card.Item.User != null && card.Playback.IsVisible || card.Item.Playlist != null && (!card.Playback.IsVisible || card.Playback.ShowsPause)))
+            throw new InvalidOperationException("Recycled history controls leaked state into artist cards or playable playlist cards");
         await ShowLibrarySectionAsync(Page.LibraryHistory);
         await WaitForLikedLayoutAsync(() => collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Any(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100));
         var restored = collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).First(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100);

@@ -133,8 +133,10 @@ public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 [JsonSerializable(typeof(BrowserRequestEvent))]
 public partial class SoundCloudJson : JsonSerializerContext;
 
-public sealed class SoundCloudException(string message, int statusCode = 0, bool requiresBrowserVerification = false) : Exception(message)
+public sealed class SoundCloudException(string message, int statusCode = 0, bool requiresBrowserVerification = false, bool trackUnavailable = false) : Exception(message)
 {
     public int StatusCode { get; } = statusCode;
     public bool RequiresBrowserVerification { get; } = requiresBrowserVerification;
+    // Only fresh track metadata can establish this; a missing/expired CDN URL cannot.
+    public bool TrackUnavailable { get; } = trackUnavailable;
 }

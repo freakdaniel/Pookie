@@ -84,11 +84,11 @@ internal sealed partial class MainWindow
         {
             current = track; isPlaying.Value = true; likedIds.Add(track.Id); RefreshSearchPlayback();
             if (!ReferenceEquals(hero.Play.Source, Icons.Source("pause-solid", Surface)) ||
-                !ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("pause-solid")))
+                !ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("pause-solid", TrackButtons.OnPrimary)))
                 throw new InvalidOperationException("Search playback icons did not react immediately");
             await WaitForLikedLayoutAsync(() => ReferenceEquals(hero.Tracks[0].Heart.Source, Icons.Source("heart-filled", LikedHeart)));
             isPlaying.Value = false; RefreshSearchPlayback();
-            if (!ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("play-solid")))
+            if (!ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("play-solid", TrackButtons.OnPrimary)))
                 throw new InvalidOperationException("Search pause did not restore its play icon");
         }
         finally { current = savedTrack; isPlaying.Value = savedPlaying; likedIds.Remove(track.Id); RefreshSearchPlayback(); timer.Start(); }

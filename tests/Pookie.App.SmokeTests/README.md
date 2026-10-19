@@ -22,6 +22,20 @@ native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entr
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
+`--queue-continuation-ui-smoke-test --no-audio` verifies default automatic
+continuation after a track/playlist: prefetch, manual/source/recommendation priority,
+missing recommendation skip, retained original context and history identity,
+separate "Похожие дальше" sections in both queues, and repeat taking precedence.
+It uses isolated account data and fixture metadata/streams with a fake audio player.
+Queue unit tests also cover stale/cancelled results, single-flight prefetch,
+source pagination, deduplication, explicit recommendation selection, transient
+retry, empty results, related-page traversal and Wave mode isolation.
+
+`--chat-media-ui-smoke-test --no-audio` runs the full rich-attachment checks
+independently of composer layout: file/image/video fixtures, draft previews,
+viewer playback and controls, and music fading/restoration. It uses isolated
+account data and fixture transports; no real messages or uploads are sent.
+
 `--home-ui-smoke-test` checks personal shortcut cards, the inline settings drawer
 across repeated width/height changes, its independent scroll and close behavior,
 continuous/interrupted palette transitions while playing and paused, the animated wave hero and native settings clicks,
@@ -46,6 +60,9 @@ Journal/storage regression checks run in `tests/Pookie.Playback.Tests` without a
 `--wave-journal-ui-smoke-test` runs the journal integration independently of Home
 layout: native dislike, like/unlike, reset blocks, counted listening and account
 switch. It uses isolated data, no real audio or SoundCloud requests.
+Deleted-track fixtures verify automatic Wave advancement, persistent availability
+exclusions without taste penalties, rejection of stale imports, unchanged handling
+of rate limits, stale playback responses, and bounded failure chains.
 It also checks captured PCM reaching the MusiCNN vector index and the learned
 account checkpoint through the production journal pipeline, the actual player
 dislike icon, cancellation outside Wave, mutual exclusion with Like, and restoring
@@ -352,12 +369,26 @@ compiler removes unimplemented hooks from the production assembly
 The production app keeps its standalone `--demo` preview mode. It contains no
 verification methods, test fixture servers, or diagnostic scenario runner
 
+`--menus-ui-smoke-test --no-audio` checks the shared queue/profile/settings popovers:
+attachment-menu surface and shadow, animated opening/closing and reversal, real
+trigger clicks and hover, crossing the pointer gap, Escape, exclusive open state,
+transparent hit testing and anchoring during window resize. It uses demo queue data.
+
 `--chat-navigation-ui-smoke-test --no-audio` checks opening and reopening Chats,
 resizing between desktop and compact widths, opening a conversation, restoring a
 history anchor and following the latest message while the composer grows. It waits
 for rendered frames and uses isolated fixture data. Run it at fractional Windows
 display scaling to catch measure/arrange constraint oscillation; the regression was
 reproduced at 110 DPI before removing the remeasure from `ChatViewport.ArrangeOverride`.
+
+`--chat-music-ui-smoke-test --no-audio` runs the music attachment scenarios independently:
+shared full/compact track rows, inline clickable artwork/title mentions with wrapping,
+composer recognition and atomic editing, copy/paste/undo, and a message-scoped queue
+with attachment ordering, Next/Previous, skipped-track selection and recycled bindings.
+Delayed metadata/waveform fixtures check animated skeleton-to-content reveals and
+intermediate bubble sizes; short lists use a minimum width while full cards retain
+their artwork size and shorten the waveform.
+It uses local fixture messages and sends no requests to real SoundCloud accounts.
 
 `--chats-ui-smoke-test --no-audio` verifies the Chats navigation immediately after
 Library, virtualized inbox/thread, responsive two-pane/single-pane layout, stable

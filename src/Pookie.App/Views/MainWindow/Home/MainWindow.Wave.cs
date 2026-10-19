@@ -191,7 +191,7 @@ internal sealed partial class MainWindow
     }
     private void AddWaveCandidates(IEnumerable<SoundCloudTrack> tracks)
     {
-        foreach (var track in tracks.Where(HomeRecommendations.Playable)) waveCandidates[track.Id] = track;
+        foreach (var track in tracks.Where(HomeRecommendations.Playable).Where(track => !waveTaste.IsUnavailable(track))) waveCandidates[track.Id] = track;
         if (waveCandidates.Count > 800)
             foreach (var id in waveCandidates.Keys.Take(waveCandidates.Count - 800).ToArray()) waveCandidates.Remove(id);
     }
@@ -329,8 +329,10 @@ internal sealed partial class MainWindow
         if (current?.Id == track.Id) FinishWaveListening(reason: ListeningEndReason.Rejected);
         waveTaste.Block(track);
         RecordWavePreference(WaveEventKind.Block, track); ScheduleWaveSave(); RerankWaveQueue(rebuild: true);
+        playbackQueue.PruneRecommendations(candidate => !waveTaste.IsBlocked(candidate) && !waveTaste.IsUnavailable(candidate));
+        RefreshQueue();
         UpdateLikeState();
-        if (current?.Id == track.Id && playbackQueue.Context?.Key == WaveQueueKey) await SkipAsync(1);
+        if (current?.Id == track.Id && (playbackQueue.Context?.Key == WaveQueueKey || playbackQueue.Current?.Origin == PlaybackEntryOrigin.Recommendation)) await SkipAsync(1);
     }
     private void UnblockWaveTrack(SoundCloudTrack track)
     {

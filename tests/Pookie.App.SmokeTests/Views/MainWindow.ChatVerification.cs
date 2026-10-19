@@ -50,6 +50,13 @@ internal sealed partial class MainWindow
             var reference = bound;
             await RefreshChatsAsync();
             if (!ChatRows.Contains(reference) || ChatRows.All(r => r.Message == null)) throw new InvalidOperationException("Polling discarded visible chat rows.");
+            if (chatMusicUiSmoke || chatMediaUiSmoke)
+            {
+                await VerifyChatRichAttachmentsAsync(transport, mediaTransport, musicOnly: !chatMediaUiSmoke);
+                Console.WriteLine(chatMediaUiSmoke ? "UI_CHAT_MEDIA_OK: documents, images, music attachments, inline video, focus-aware autoplay, viewer reopen, controls and music suspension" :
+                    "UI_CHAT_MUSIC_OK: inline artwork/title mentions, compact search attachments, ordered message queue, Next/Previous, skipped track selection, navigation, clipboard, undo and recycled bindings");
+                return;
+            }
             if (OperatingSystem.IsLinux())
             {
                 var display = XOpenDisplay(0);
@@ -444,13 +451,17 @@ internal sealed partial class MainWindow
             else { if (request.Kind == "read") unreadPeers.Remove(request.RecipientId); result = new { }; }
             return JsonSerializer.SerializeToDocument(result);
         }
-        private static object MusicTrack() => new { kind = "track", id = 101, title = "Fixture track", artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", waveform_url = "https://wave.sndcdn.com/chat-track-fixture.json", permalink_url = "https://soundcloud.com/fixture/track", duration = 120000, user = new { id = 7, username = "Fixture artist" } };
+        internal TaskCompletionSource? MusicReady;
+        private static object MusicTrack(string title = "Fixture track") => new { kind = "track", id = 101, title, artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", waveform_url = "https://wave.sndcdn.com/chat-track-fixture.json", permalink_url = "https://soundcloud.com/fixture/track", duration = 120000, user = new { id = 7, username = "Fixture artist" } };
         private static object MusicPlaylist() => new { kind = "playlist", id = 102, title = "Fixture playlist", artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", permalink_url = "https://soundcloud.com/fixture/sets/list", track_count = 2, user = new { id = 7, username = "Fixture artist" }, tracks = new[] { MusicTrack() } };
-        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
+        public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
         {
+            var animated = uri.AbsolutePath == "/resolve" && uri.Query.Contains("animated", StringComparison.Ordinal);
+            if (animated && MusicReady != null) await MusicReady.Task.WaitAsync(cancellationToken);
             object data = uri.AbsolutePath == "/tracks/101" ? MusicTrack() : uri.AbsolutePath == "/resolve" ? Uri.UnescapeDataString(uri.Query).Contains("/sets/", StringComparison.Ordinal) ? MusicPlaylist() : MusicTrack() :
                 uri.AbsolutePath.StartsWith("/search", StringComparison.Ordinal) ? new { collection = new[] { MusicTrack(), MusicPlaylist() } } : new { collection = Array.Empty<object>() };
-            return Task.FromResult(JsonSerializer.SerializeToDocument(data));
+            if (animated) data = MusicTrack("Длинное название загружаемого трека для проверки ширины");
+            return JsonSerializer.SerializeToDocument(data);
         }
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

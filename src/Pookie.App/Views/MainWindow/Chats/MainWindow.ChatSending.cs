@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
         string[]? files;
         try { files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = mediaOnly ? "Фото или видео" : "Прикрепить файлы", Multiselect = true,
             Filters = mediaOnly ? [new FileFilter("Фото и видео", "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.mp4", "*.webm", "*.mov", "*.mkv", "*.avi")] : [] }, lifetime.Token); }
-        finally { chatFilePickerOpen = false; chatAttachHover.Stop(); }
+        finally { chatFilePickerOpen = false; chatAttachInteraction.Stop(); }
         if (disposed || chatRecipient?.Id != recipient || me?.Id != account || generation != chatAttachmentGeneration || files == null || files.Length == 0) return;
         await AddChatFilesAsync(files, documents);
     }

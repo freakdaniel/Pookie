@@ -14,6 +14,9 @@ internal sealed partial class MainWindow
         var playlist = (ChatMusicView)playlistBubble.Attachments.Children[0];
         await WaitForLikedLayoutAsync(() => track.Row.Waveform.HasSamples && playlist.Row.Waveform.HasSamples && track.ActualWidth > 400);
         await WaitForLikedLayoutAsync(() => trackBubble.MusicBackdrop.Source != null && playlistBubble.MusicBackdrop.Source != null);
+        await WaitForLikedLayoutAsync(() => track.Loading.Reveal > .999 && playlist.Loading.Reveal > .999 && trackBubble.MusicBackdrop.Opacity > .999);
+        if (trackBubble.Bubble.ActualWidth > 585 || track.Row.Cover.ActualWidth != 160 || track.Row.Waveform.ActualWidth > 381)
+            throw new InvalidOperationException("A chat track did not shorten its waveform while retaining the full cover.");
         foreach (var bubble in new[] { trackBubble, playlistBubble })
         {
             var cover = ((ChatMusicView)bubble.Attachments.Children[0]).Row.Cover.Bounds;

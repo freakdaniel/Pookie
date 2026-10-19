@@ -6,7 +6,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private async Task VerifyChatRichAttachmentsAsync(ChatFixtureTransport transport, ChatFixtureMediaHandler media)
+    private async Task VerifyChatRichAttachmentsAsync(ChatFixtureTransport transport, ChatFixtureMediaHandler media, bool musicOnly = false)
     {
         var document = media.Add(new(42, 90, "", [new("ghosty-config.txt", "text/plain", new byte[87], true)]));
         transport.AddOwn(document); await RefreshChatsAsync();
@@ -58,6 +58,9 @@ internal sealed partial class MainWindow
         await Task.Delay(250); CaptureUiPreview("chats-music-cards");
         await VerifyChatMusicCardsAsync();
         await VerifyChatMusicComposerAsync();
+        await VerifyChatMusicAttachmentsAsync(transport);
+        await VerifyChatMusicLoadingAsync(transport);
+        if (musicOnly) return;
         foreach (var extension in new[] { "mp4", "webm", "mov", "mkv", "avi" })
             if (!ChatMediaType("clip." + extension).StartsWith("video/", StringComparison.Ordinal)) throw new InvalidOperationException("Missing video MIME: " + extension);
         var videoPath = Path.Combine(Path.GetTempPath(), "pookie-video-preview-" + Guid.NewGuid().ToString("N") + ".mp4");

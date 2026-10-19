@@ -21,7 +21,7 @@ internal sealed partial class MainWindow
         public MenuItem? RepostMenu { get; set; }
         public Button PlaybackButton { get; set; } = null!;
     }
-    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false)
+    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false, Action? open = null)
     {
         var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
         var play = Icons.View("play-solid", 18, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
@@ -58,10 +58,16 @@ internal sealed partial class MainWindow
             row.More.Click += () => root.ContextMenu!.Show(row.More);
             root.Children(row.More);
         }
-        AttachTrackTitle(title, () => row.Track);
+        if (open == null) AttachTrackTitle(title, () => row.Track);
+        else
+        {
+            title.Cursor = CursorType.Hand;
+            title.MouseDown += args => { if (args.Button == MouseButton.Left) { args.Handled = true; open(); } };
+        }
         action.Click += () =>
         {
             if (row.Track is not { } item) return;
+            if (open != null) { open(); return; }
             if (queueRow) (select ?? SelectLibraryTrack)(item);
             else Run(() => OpenTrackPageAsync(item));
         };
@@ -71,14 +77,14 @@ internal sealed partial class MainWindow
         return row;
     }
 
-    private void BindCompactTrackRow(CompactTrackRow row, SoundCloudTrack? track)
+    private void BindCompactTrackRow(CompactTrackRow row, SoundCloudTrack? track, bool loadArtwork = true)
     {
         if (track != null && Equals(row.Track, track)) { RefreshCompactTrackRow(row); return; }
         row.Track = track;
         if (track == null) { row.EntryId = null; row.Hovered = false; row.Overlay.Opacity = row.HoverFill.Opacity = 0; StopCardArtwork(row.Cover); return; }
         row.Title.Text = track.Title; row.Author.Text = track.Author; row.Duration.Text = FormatTime(track.DurationSeconds);
         SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
-        Run(async () =>
+        if (loadArtwork) Run(async () =>
         {
             var source = await GetLibraryArtworkAsync(track);
             if (!disposed && row.Track?.Id == track.Id)

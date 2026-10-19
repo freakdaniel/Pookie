@@ -70,10 +70,24 @@ internal sealed partial class MainWindow
                     var mid = button.Background; Set(false);
                     if (button.Background != mid) throw new InvalidOperationException("Retargeting restarted from a preset colour.");
                     await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);
+                    MoveActionPointer(new Point(button.Bounds.X + button.ActualWidth / 2, button.Bounds.Y + button.ActualHeight / 2));
+                    var glassHot = TrackButtons.HoverColor(TrackButtons.GlassSurface, TrackButtons.OnSurface);
+                    var selectedHot = TrackButtons.HoverColor(active, foreground);
+                    await WaitForLikedLayoutAsync(() => button.IsMouseOver && button.Background == glassHot);
+                    colors.Clear(); TrackButtons.SetAvailability(button, false, true); Set(true);
+                    await Task.Delay(80, lifetime.Token);
+                    TrackButtons.SetAvailability(button, true, false);
+                    await WaitForLikedLayoutAsync(() => button.Background == selectedHot);
+                    Validate(colors, glassHot, selectedHot);
+                    colors.Clear(); Set(false);
+                    await WaitForLikedLayoutAsync(() => button.Background == glassHot);
+                    Validate(colors, selectedHot, glassHot);
+                    MoveActionPointer(new Point(1, 1));
+                    await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);
                 }
                 finally { Window.FrameRendered -= Sample; }
             }
-            Console.WriteLine("ACTION_COLORS_OK: direct forward/reverse colour frames, icon/count tint, continuous interruption and no disabled pending flash");
+            Console.WriteLine("ACTION_COLORS_OK: direct composited colour frames over dark/coloured/light artwork, hover, reverse, icon/count tint, continuous interruption and no disabled pending flash");
         }
         finally
         {
@@ -87,10 +101,28 @@ internal sealed partial class MainWindow
             if (frames.Distinct().Count(color => color != from && color != to) < 3)
                 throw new InvalidOperationException("Too few intermediate colour frames.");
             foreach (var color in frames)
+            {
                 if (!Between(color.A, from.A, to.A) || !Between(color.R, from.R, to.R) ||
                     !Between(color.G, from.G, to.G) || !Between(color.B, from.B, to.B))
                     throw new InvalidOperationException("Colour passed through an unrelated intermediate state.");
-            static bool Between(byte value, byte a, byte b) => value >= Math.Min(a, b) && value <= Math.Max(a, b);
+                // Straight RGBA can stay between its channel endpoints while
+                // producing a bright flash when composited over the artwork.
+                foreach (var backdrop in new[] { Color.FromRgb(24, 24, 24), Color.FromRgb(110, 80, 140), Color.FromRgb(180, 180, 180) })
+                {
+                    var start = Composite(from, backdrop); var end = Composite(to, backdrop);
+                    var visible = Composite(color, backdrop);
+                    if (!Between(visible.R, start.R, end.R) || !Between(visible.G, start.G, end.G) || !Between(visible.B, start.B, end.B))
+                        throw new InvalidOperationException("Translucent action flashed brighter than its visible colour endpoints.");
+                }
+            }
+            static bool Between(byte value, byte a, byte b) => value >= Math.Min(a, b) - 1 && value <= Math.Max(a, b) + 1;
+            static Color Composite(Color color, Color backdrop)
+            {
+                var alpha = color.A / 255d;
+                return Color.FromRgb((byte)Math.Round(color.R * alpha + backdrop.R * (1 - alpha)),
+                    (byte)Math.Round(color.G * alpha + backdrop.G * (1 - alpha)),
+                    (byte)Math.Round(color.B * alpha + backdrop.B * (1 - alpha)));
+            }
         }
     }
 }

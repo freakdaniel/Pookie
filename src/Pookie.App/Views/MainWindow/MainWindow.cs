@@ -141,6 +141,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && shellMenus.Any(menu => menu.Layer.IsOpen)) { e.Handled = true; CloseShellMenus(); return; }
             if (e.Key == Key.Escape && chatAttachMenu.IsOpen) { e.Handled = true; CloseChatAttachMenu(); return; }
             if (e.Key == Key.Escape && chatVideoOpen.Value) { e.Handled = true; if (chatVideoExpanded.Value) SetChatVideoExpanded(false); else CloseChatVideo(); return; }
             if (chatVideoOpen.Value && e.Key is Key.Left or Key.Right) { e.Handled = true; Run(() => NavigateChatVideoAsync(e.Key == Key.Left ? -1 : 1)); return; }
@@ -154,6 +155,7 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
+        Window.Deactivated += () => CloseShellMenus(true);
         chatTimer.Start();
         Window.Activated += () => { chatNextPoll = default; if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync); };
     }
@@ -337,7 +339,7 @@ internal sealed partial class MainWindow : IDisposable
         RefreshLikedViews();
     }
 
-    private async Task PlayAsync(SoundCloudTrack track, bool queueAdvance = false)
+    private async Task PlayAsync(SoundCloudTrack track, bool queueAdvance = false, int unavailableSkips = 0)
     {
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
@@ -416,6 +418,7 @@ internal sealed partial class MainWindow : IDisposable
             var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
             EnsureWaveTaste();
+            waveTaste.RestoreAvailability(track); ScheduleWaveSave();
             waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context,
                 waveTime.Elapsed, WaveListeningSource(queueEntry), waveTaste.Mode,
                 selection: queueAdvance ? Pookie.Recommendations.PlaybackSelection.QueueAdvance : Pookie.Recommendations.PlaybackSelection.TrackSelection,
@@ -441,12 +444,17 @@ internal sealed partial class MainWindow : IDisposable
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: обновление готового интерфейса {DurationMs:F1} мс",
                 track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(readyStarted).TotalMilliseconds);
         }
-        catch
+        catch (Exception error)
         {
             // A superseded request must not reset the newly selected track or report its error.
             if (generation != playGeneration || disposed) return;
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Failed);
             audioReady = false; isPlaying.Value = false; RefreshLikedPlayback();
+            if (RememberUnavailableWaveTrack(track, error) && (playbackQueue.Context?.Kind == PlaybackContextKind.Wave || queueEntry.Origin == PlaybackEntryOrigin.Recommendation))
+            {
+                await ContinueAfterUnavailableWaveTrackAsync(generation, unavailableSkips);
+                return;
+            }
             throw;
         }
         finally
@@ -711,6 +719,7 @@ internal sealed partial class MainWindow : IDisposable
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
         foreach (var hover in hoverReveals) hover.Dispose();
+        foreach (var menu in shellMenus) menu.Hover.Dispose();
         foreach (var view in libraryLoadingViews) view.Dispose();
         searchInput?.Dispose(); windowClipboard?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();

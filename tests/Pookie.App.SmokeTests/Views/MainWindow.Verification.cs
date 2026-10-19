@@ -110,6 +110,7 @@ internal sealed partial class MainWindow
         catch (OperationCanceledException) { }
         catch (Exception error)
         {
+            VerificationFailure = error;
             Environment.ExitCode = 1;
             Console.Error.WriteLine($"UI_SMOKE_FAILED: {error}");
         }

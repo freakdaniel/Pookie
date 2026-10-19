@@ -73,6 +73,7 @@ internal sealed partial class MainWindow
             case MediaAction.Next: return playbackQueue.Snapshot.CanNext ? SkipAsync(1) : Task.CompletedTask;
             case MediaAction.Previous: return playbackQueue.Snapshot.CanPrevious ? SkipAsync(-1) : Task.CompletedTask;
             case MediaAction.Stop:
+                FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Stopped);
                 if (playbackQueue.Current is { } entry) playbackQueue.SetPreparation(entry.EntryId, PlaybackPreparation.Stopped);
                 bufferedTrack.Reset();
                 expandedBuffer.Reset();

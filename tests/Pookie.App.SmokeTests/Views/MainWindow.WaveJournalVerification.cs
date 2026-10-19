@@ -88,6 +88,7 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("PCM analysis did not reach the neural vector index and learned account profile.");
         VerifyLearnedWaveQueue();
         await VerifyWaveCandidateAnalysisAsync();
+        await VerifyWaveAvailabilityAsync();
         Console.WriteLine("WAVE_JOURNAL_OK: native actions, listening, account switch, committed writes, neural audio vector, learned profile");
     }
 

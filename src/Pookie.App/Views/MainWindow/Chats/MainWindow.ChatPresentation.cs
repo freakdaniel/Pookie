@@ -109,6 +109,8 @@ internal sealed partial class MainWindow
         else if (ChatMusicLink.Find(last.Body) is { Length: > 0 } links)
         {
             var caption = ChatPresentation.Preview(ChatMusicLink.Caption(last.Body, links));
+            foreach (var (start, link) in ChatMusicLink.Occurrences(caption, links).Reverse())
+                if (chatMusicCache.TryGetValue(link, out var item)) caption = caption.Remove(start, link.Length).Insert(start, item.Title);
             view.Preview.Text = caption.Length > 0 ? caption : chatMusicCache.GetValueOrDefault(links[0])?.Title ?? "Трек или плейлист";
             if (caption.Length == 0) view.Preview.Foreground = ChatAccent;
             SetChatInboxGlyph(view, "music-notes");

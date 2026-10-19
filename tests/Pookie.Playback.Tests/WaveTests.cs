@@ -11,6 +11,39 @@ public sealed class WaveTests
     private static SoundCloudTrack Track(long id, string artist = "Artist", string? title = null) => new() {
         Id = id, Title = title ?? "Track " + id, Duration = 180000, Genre = "Rock", User = new() { Id = id, Username = artist } };
     [Fact]
+    public void UnavailableTracksSurviveReloadAndFreshImportsWithoutBecomingDislikes()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "pookie-wave-unavailable-" + Guid.NewGuid());
+        try
+        {
+            var store = new WaveProfileStore(path); var taste = new WaveTaste();
+            var missing = Track(1); var available = Track(2);
+            taste.Import(missing, true, true); taste.MarkUnavailable(missing, DateTimeOffset.UtcNow.AddDays(30));
+            store.Save(42, taste); taste = store.Load(42);
+            taste.Import(missing with { Title = "Stale recommendation returned" }, true, true);
+            taste.ResetBlocks();
+            Assert.True(taste.IsUnavailable(missing)); Assert.False(taste.IsBlocked(missing));
+            Assert.True(taste.Snapshot().Tracks.Single(item => item.Track.Id == 1).Liked);
+            Assert.DoesNotContain(taste.Seeds([missing, available]), track => track.Id == 1);
+            Assert.DoesNotContain(taste.Rank([missing, available], [], 10, DateTimeOffset.UtcNow), track => track.Id == 1);
+            Assert.All(taste.Snapshot().Tracks, item => { Assert.Equal(0, item.EarlySkips); Assert.Equal(0, item.GoodPlays); });
+            taste.RestoreAvailability(missing);
+            Assert.False(taste.IsUnavailable(missing));
+            Assert.Contains(taste.Rank([missing, available], [], 10, DateTimeOffset.UtcNow), track => track.Id == 1);
+        }
+        finally { if (Directory.Exists(path)) Directory.Delete(path, true); }
+    }
+
+    [Fact]
+    public void AvailabilityCooldownExpiresAndDoesNotBlockOtherUploadsOfTheSameWork()
+    {
+        var taste = new WaveTaste(); var now = DateTimeOffset.UtcNow;
+        var missing = Track(1, title: "Song"); var replacement = Track(2, title: "Song");
+        taste.MarkUnavailable(missing, now.AddHours(1));
+        Assert.Equal(2, Assert.Single(taste.Rank([missing, replacement], [], 10, now)).Id);
+        Assert.Equal(1, Assert.Single(taste.Rank([missing], [], 10, now.AddHours(2))).Id);
+    }
+    [Fact]
     public void ModesRespectFavoriteAndUnknownBoundaries()
     {
         var taste = new WaveTaste();

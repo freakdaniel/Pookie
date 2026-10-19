@@ -36,6 +36,9 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
     internal IEnumerable<SoundCloudTrack> KnownTracks => taste.KnownTracks.Select(WaveTrack.ToTrack);
     internal Core.WaveProfile Snapshot() => taste.Snapshot();
     internal void Saved() => taste.Saved();
+    internal bool IsUnavailable(SoundCloudTrack track) => taste.IsUnavailable(WaveTrack.From(track), DateTimeOffset.UtcNow);
+    internal void MarkUnavailable(SoundCloudTrack track, DateTimeOffset retryAfter) => taste.MarkUnavailable(WaveTrack.From(track), retryAfter);
+    internal void RestoreAvailability(SoundCloudTrack track) => taste.RestoreAvailability(WaveTrack.From(track));
     internal void SyncLikes(IReadOnlySet<long> liked) => taste.SyncLikes(liked);
     internal void SetMode(WaveMode mode) => taste.SetMode((Core.WaveMode)mode);
     internal void Relate(SoundCloudTrack seed, IEnumerable<SoundCloudTrack> candidates) => taste.Relate(WaveTrack.From(seed), candidates.Select(WaveTrack.From));
@@ -57,6 +60,14 @@ internal sealed class WaveTaste(Core.WaveProfile? profile = null)
         var originals = candidates.Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).ToDictionary(track => track.Id);
         return taste.Rank(originals.Values.Select(WaveTrack.From), recent.Select(WaveTrack.From), count, now,
             random, reserved?.Select(WaveTrack.From), LearnedScorer(), startIndex: startIndex).Select(track => originals[track.Id]).ToArray();
+    }
+    internal SoundCloudTrack[] RankContinuation(IEnumerable<SoundCloudTrack> candidates, IEnumerable<SoundCloudTrack> recent,
+        IEnumerable<SoundCloudTrack> reserved, int count, DateTimeOffset now)
+    {
+        // A playlist's continuation has its own context; Wave's Favorites/Discoveries
+        // mode must not constrain it. Account preferences and learned vectors do.
+        var continuation = new WaveTaste(taste.Snapshot() with { Mode = Core.WaveMode.Balance }) { Learning = Learning, SessionId = SessionId };
+        return continuation.Rank(candidates, recent, count, now, reserved: reserved);
     }
     internal static string ArtistKey(SoundCloudTrack track) => Core.WaveTaste.ArtistKey(WaveTrack.From(track));
     internal static string WorkKey(SoundCloudTrack track) => Core.WaveTaste.WorkKey(WaveTrack.From(track));

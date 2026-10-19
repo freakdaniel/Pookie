@@ -6,6 +6,29 @@ namespace Pookie.SoundCloud.Tests;
 
 public sealed class StreamResolverTests
 {
+    [Theory]
+    [InlineData(404, false, true)]
+    [InlineData(410, false, true)]
+    [InlineData(403, true, false)]
+    [InlineData(401, false, false)]
+    [InlineData(429, false, false)]
+    [InlineData(503, false, false)]
+    public async Task OnlyMissingTrackMetadataEstablishesUnavailableStatus(int status, bool challenge, bool unavailable)
+    {
+        var source = new Source(Track("auth")) { MetadataFailure = new("Fixture", status, challenge) };
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(source).ResolveAsync(42));
+        Assert.Equal(unavailable, error.TrackUnavailable);
+        Assert.Equal(challenge, error.RequiresBrowserVerification);
+        Assert.Equal(status, error.StatusCode);
+    }
+
+    [Fact]
+    public async Task MissingTranscodingDoesNotMarkTrackAsDeleted()
+    {
+        var source = new Source(Track("auth")) { Failure = new("Expired stream", 404) };
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(source).ResolveAsync(42));
+        Assert.False(error.TrackUnavailable);
+    }
     [Fact]
     public async Task FreshMetadataOverridesBlockedSearchResultAndStaleAuthorization()
     {
@@ -110,7 +133,9 @@ public sealed class StreamResolverTests
         public int StreamCalls;
         public string? ReceivedAuthorization;
         public SoundCloudException? Failure;
-        public Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default) => Task.FromResult(track);
+        public SoundCloudException? MetadataFailure;
+        public Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default) =>
+            MetadataFailure != null ? Task.FromException<SoundCloudTrack>(MetadataFailure) : Task.FromResult(track);
         public Task<SoundCloudStream?> ResolveTranscodingAsync(SoundCloudTrack value, Transcoding transcoding, CancellationToken cancellationToken = default)
         {
             StreamCalls++; ReceivedAuthorization = value.TrackAuthorization;

@@ -119,8 +119,8 @@ internal sealed partial class MainWindow
                     PlayerButton(Icons.View("skip-forward-solid", 18), () => Run(() => SkipAsync(1))).CenterVertical()),
                 playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(
-                PlayerButton(Icons.View("queue", 19), () =>
-                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
+                queueButton = PlayerButton(Icons.View("queue", 19), () =>
+                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = settingsOpen.Value = false; }, queueOpen),
                 PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value, shuffle),
                 PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(

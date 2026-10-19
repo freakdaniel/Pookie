@@ -1,6 +1,6 @@
 namespace Pookie.Recommendations;
 
-public enum ListeningSource { Wave, Manual, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Track }
+public enum ListeningSource { Wave, Manual, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Track, Autoplay }
 public enum ListeningEndReason { TrackChanged, NaturalEnd, Skip, Previous, Rejected, Stopped, Shutdown, AccountChanged, PlaybackError }
 public enum PlaybackSelection { Unknown, TrackSelection, QueueAdvance }
 public enum WaveEventKind { Listening, Like, Unlike, Block, ResetBlocks, Unblock }
@@ -12,7 +12,7 @@ public sealed record ListeningObservation(Guid PlaybackId, Guid SessionId, WaveT
     bool? FamiliarAtSelection = null)
 {
     public double ListenedFraction => Track.DurationSeconds > 0 ? Math.Clamp(ListenedSeconds / Track.DurationSeconds, 0, 1) : 0;
-    public bool EarlySkip => Source == ListeningSource.Wave && EndReason == ListeningEndReason.Skip &&
+    public bool EarlySkip => Source is ListeningSource.Wave or ListeningSource.Autoplay && EndReason == ListeningEndReason.Skip &&
         ListenedSeconds < Math.Min(20, Track.DurationSeconds * .25);
 }
 

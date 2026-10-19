@@ -12,14 +12,16 @@ internal sealed partial class MainWindow
 
     private void InitializeChatMusicEditor()
     {
-        chatMusicEditor = new(chatInput, url => Run(async () =>
-        {
-            var account = chatAccountId;
-            var item = await ResolveChatMusicAsync(url);
-            if (disposed || account != chatAccountId) return;
-            if (item.Track is { } track) await OpenTrackPageAsync(track); else await OpenLibraryItemAsync(item);
-        }));
+        chatMusicEditor = new(chatInput, url => Run(() => OpenChatMusicUrlAsync(url)));
         chatMusicRecognizeTimer.Tick += () => { chatMusicRecognizeTimer.Stop(); Run(RecognizeChatMusicAsync); };
+    }
+
+    private async Task OpenChatMusicUrlAsync(string url)
+    {
+        var account = chatAccountId;
+        var item = await ResolveChatMusicAsync(url);
+        if (disposed || account != chatAccountId) return;
+        if (item.Track is { } track) await OpenTrackPageAsync(track); else await OpenLibraryItemAsync(item);
     }
 
     private void RefreshChatMusicComposer()

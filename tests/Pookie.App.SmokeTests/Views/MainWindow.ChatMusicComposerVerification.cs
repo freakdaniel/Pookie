@@ -62,6 +62,13 @@ internal sealed partial class MainWindow
         if (chatInput.Text != url + " 日本語\nОгненный ваще" || recognizer.Count != 1)
             throw new InvalidOperationException("IME composition changed a recognized URL.");
         chatInput.SelectAll(); chatInput.ReplaceSelection(text);
+        var remixUrl = url + "-remix";
+        CacheChatMusic(remixUrl, chatMusicCache[url] with { Title = "Fixture remix" });
+        var similar = url + "\n" + remixUrl;
+        chatInput.SelectAll(); chatInput.ReplaceSelection(similar);
+        await WaitForLikedLayoutAsync(() => recognizer.Count == 2 && recognizer.ChipBounds.All(bounds => bounds.Width > 30));
+        if (chatInput.Text != similar) throw new InvalidOperationException("Similar music URLs overlapped in the composer.");
+        chatInput.SelectAll(); chatInput.ReplaceSelection(text);
         chatInput.Select(0, url.Length);
         if (chatInput.SelectedText != url) throw new InvalidOperationException("The music chip changed the editor's source/clipboard selection.");
         chatInput.CaretPosition = url.Length;

@@ -12,6 +12,8 @@ internal sealed class MaterialTrackButton : Button
     private Color? target;
     private (Color Surface, Color Foreground)? palette;
     private bool pending, pendingHot, snapNext;
+    private Color surfaceFrom;
+    private readonly AnimationClock surfaceClock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
     private bool connected, groupStart;
     private double innerCorner = 8, shapeFrom, shapeTarget = 8;
     private readonly AnimationClock shapeClock = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
@@ -19,8 +21,27 @@ internal sealed class MaterialTrackButton : Button
     internal CornerRadius ConnectedCorners => groupStart
         ? new(CornerRadius, innerCorner, innerCorner, CornerRadius)
         : new(innerCorner, CornerRadius, CornerRadius, innerCorner);
-    private static readonly Transition[] colorTransitions =
-        [Transition.Create(Control.BackgroundProperty, 240, Easing.CubicBezier(.2, 0, 0, 1))];
+
+    internal MaterialTrackButton()
+    {
+        // Own the colour animation: straight RGBA transitions briefly make the
+        // translucent white glass opaque before it has acquired its selected tint.
+        Transitions = [];
+        surfaceClock.TickCallback = amount => Background = BlendSurface(surfaceFrom, target!.Value, amount);
+    }
+
+    private static Color BlendSurface(Color from, Color to, double amount)
+    {
+        if (amount <= 0) return from;
+        if (amount >= 1) return to;
+        var alpha = from.A + (to.A - from.A) * amount;
+        if (alpha <= 0) return Color.Transparent;
+        // Interpolate premultiplied channels so the visible colour follows a
+        // direct path over any artwork, including during interrupted transitions.
+        byte Channel(byte start, byte end) => (byte)Math.Clamp(Math.Round(
+            (start * from.A * (1 - amount) + end * to.A * amount) / alpha), 0, 255);
+        return Color.FromArgb((byte)Math.Round(alpha), Channel(from.R, to.R), Channel(from.G, to.G), Channel(from.B, to.B));
+    }
 
     internal void Variant(string variant)
     {
@@ -83,10 +104,11 @@ internal sealed class MaterialTrackButton : Button
             hot ? TrackButtons.HoverColor(surface, foreground) : surface;
         if (target == next && !snap) return;
         var first = target == null;
+        surfaceClock.Stop();
+        surfaceFrom = Background;
         target = next;
-        Transitions = first || snap ? [] : colorTransitions;
-        Background = next;
-        Transitions = colorTransitions;
+        if (first || snap || FindVisualRoot() is not Window) Background = next;
+        else surfaceClock.Start();
     }
 
     protected override void OnMewPropertyChanged(MewProperty property)
@@ -102,5 +124,11 @@ internal sealed class MaterialTrackButton : Button
         if (connected)
             DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
         else base.OnRender(context);
+    }
+
+    protected override void OnDispose()
+    {
+        surfaceClock.Stop(); shapeClock.Stop();
+        base.OnDispose();
     }
 }

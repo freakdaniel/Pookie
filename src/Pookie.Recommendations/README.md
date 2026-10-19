@@ -10,8 +10,9 @@ into fabricated listening events.
 
 `ListeningObservation` records one playback identity, application-session identity,
 start/end times, actual listened seconds, source, wave mode, end reason and algorithm
-version. Only an explicit early skip of a wave recommendation counts as an implicit
-negative signal. Explicit selection of a track is distinguished from advancing the
+version. Intentional early skips of Wave and automatic continuation recommendations
+teach a weak negative. Continuation has its own `Autoplay` listening source;
+manual entries, errors and Stop never teach an implicit negative. Explicit selection of a track is distinguished from advancing the
 queue or starting a wave/collection; source and selection are independent fields.
 Natural end, stop, shutdown, account change and playback errors
 are separate reasons. Like, unlike, block and reset-blocks are separate events.
@@ -181,3 +182,10 @@ v1 migration, model checkpoints, real neural inference, vector search, failure p
 profiles. The application `--home-ui-smoke-test` additionally verifies native
 preference actions and observations reaching SQLite across an account switch.
 `--wave-journal-ui-smoke-test` runs that integration independently of Home layout.
+
+Availability is separate from taste: fresh metadata confirming a missing track
+excludes its ID for 30 days, access restrictions for one hour. These deadlines are
+persisted with the account profile and survive stale recommendation imports and
+resetting dislikes. Neither status creates a skip/dislike observation. Expired
+CDN URLs, verification challenges, rate limits and network errors do not establish
+that a track is missing. Successful explicit playback clears an exclusion.

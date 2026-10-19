@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
         internal string? ItemKey;
         internal readonly ChatBubbleContent Content;
         internal readonly Border Footer;
-        internal readonly TextBlock Body = new TextBlock().FontSize(14).FontWeight(FontWeight.Normal).TextWrapping(TextWrapping.Wrap);
+        internal readonly ChatMessageText Body = new() { FontSize = 14, FontWeight = FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
         internal readonly TextBlock Time = new TextBlock().Bottom().FontSize(10).Foreground(Color.FromRgb(171, 189, 204));
         internal readonly TextBlock Checks = new TextBlock().Text("✓").FontSize(11).Foreground(ChatAccent);
         internal readonly ProgressRing Spinner = new ProgressRing().Width(12).Height(12).IsActive(false);
@@ -41,6 +41,7 @@ internal sealed partial class MainWindow
         internal ChatBubbleRow(MainWindow owner)
         {
             this.owner = owner;
+            Body.OpenMusic = url => owner.Run(() => owner.OpenChatMusicUrlAsync(url));
             Error = TrackButtons.Action(new TextBlock().Text("!").FontSize(12).Bold().Foreground(Color.FromRgb(255, 132, 132)),
                 () => owner.Run(owner.RetryChatOutgoingAsync), TrackButtons.Text, 20).Padding(4, 0).IsVisible(false);
             Open = TrackButtons.Action(new TextBlock().Text("↓").FontSize(20), () => owner.Run(() => owner.OpenChatMediaAsync(this)), TrackButtons.Tonal, 34).CenterHorizontal();
@@ -134,18 +135,26 @@ internal sealed partial class MainWindow
             Time.Foreground = Content.PhotoOnly ? Color.FromArgb(235, 255, 255, 255) : Message?.SenderId == owner.me?.Id ? Color.FromRgb(174, 199, 219) : Muted;
             UpdateMediaHover(Bubble.IsMouseOver);
         }
-        internal void SetMusicLayout()
+        internal void SetMusicLayout(bool compact = false)
         {
             Bubble.Child = null;
-            MusicBackdrop = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
+            MusicBackdrop = new Image().StretchMode(compact ? Stretch.Fill : Stretch.UniformToFill).IsHitTestVisible(false);
+            MusicBackdrop.Opacity = 0;
+            MusicBackdrop.Transitions = [Transition.Create(UIElement.OpacityProperty, 260)];
             var hasCaption = Body.IsVisible;
             musicContent = new Border().Padding(12).Child(Content);
             Bubble.Child = new ChatMusicSurface(musicContent, MusicBackdrop, Content).Initialize();
-            Bubble.Background = Raised; Bubble.Padding = new Thickness(0); Bubble.ClipToBounds = true; Bubble.MaxWidth = 704;
+            Bubble.Background = Raised; Bubble.Padding = new Thickness(0); Bubble.ClipToBounds = true; Bubble.MaxWidth = compact ? 484 : 584;
             Time.Foreground = hasCaption && Message?.SenderId == owner.me?.Id ? Color.FromRgb(174, 199, 219) : Muted;
             Content.CaptionBackground = hasCaption ? Message?.SenderId == owner.me?.Id ? ChatOutgoingColor : ChatIncomingColor : Color.Transparent;
             Content.SetMusic();
         }
+        internal void SetCompactMusicLayout()
+        {
+            SetMusicLayout(compact: true);
+        }
+        internal void ShowMusicBackdrop(ImageSource? source)
+        { if (source == null) return; MusicBackdrop.Source = source; MusicBackdrop.Opacity = 1; }
         internal void UpdateMediaHover(bool hovered)
         {
             Footer.IsVisible = !MediaLoading || Spinner.IsVisible || Error.IsVisible;

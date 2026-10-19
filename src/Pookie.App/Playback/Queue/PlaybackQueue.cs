@@ -4,16 +4,19 @@ namespace Pookie.App.Playback;
 
 internal enum RepeatMode { Off, Context, Track }
 internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Wave }
-internal enum PlaybackEntryOrigin { Context, Manual }
+internal enum PlaybackEntryOrigin { Context, Manual, Recommendation }
 internal enum PlaybackPreparation { Preparing, Ready, Failed, Stopped }
 internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null);
 internal sealed record PlaybackEntry(long EntryId, SoundCloudTrack Track, PlaybackEntryOrigin Origin, int SourceIndex = -1);
 internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext? Context, PlaybackEntry? Current,
     IReadOnlyList<PlaybackEntry> Source, IReadOnlyList<PlaybackEntry> ManualUpcoming,
     IReadOnlyList<PlaybackEntry> ContextUpcoming, IReadOnlyList<PlaybackEntry> History,
-    IReadOnlyList<PlaybackEntry> Forward, RepeatMode Repeat, bool Shuffle, PlaybackPreparation Preparation)
+    IReadOnlyList<PlaybackEntry> Forward, RepeatMode Repeat, bool Shuffle, PlaybackPreparation Preparation,
+    IReadOnlyList<PlaybackEntry> Recommendations, bool RecommendationsExhausted)
 {
-    internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming);
+    internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming).Concat(Recommendations);
+    internal bool CanLoadRecommendations => Context is { Kind: not PlaybackContextKind.Wave, NextHref: null } &&
+        Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.WaveUpcomingLimit;
     internal bool CanNext => Upcoming.Any() || Context?.NextHref != null || Repeat == RepeatMode.Context && Source.Count > 0;
     internal bool CanPrevious => Current != null;
 }
@@ -24,7 +27,8 @@ internal sealed class PlaybackQueue
 {
     internal const int WaveUpcomingLimit = 3;
     private readonly Random random;
-    private readonly List<PlaybackEntry> source = [], upcoming = [], manual = [], history = [], forward = [];
+    private readonly List<PlaybackEntry> source = [], upcoming = [], manual = [], history = [], forward = [], recommendations = [];
+    private bool recommendationsExhausted;
     private long entrySequence;
     private long waveRevision;
     private PlaybackQueueSnapshot? snapshot;
@@ -37,7 +41,8 @@ internal sealed class PlaybackQueue
 
     internal PlaybackQueue(Random? random = null) => this.random = random ?? Random.Shared;
     internal PlaybackQueueSnapshot Snapshot => snapshot ??= new(SourceVersion, Context, Current,
-        Copy(source), Copy(manual), Copy(upcoming), Copy(history), Copy(forward), Repeat, Shuffle, Preparation);
+        Copy(source), Copy(manual), Copy(upcoming), Copy(history), Copy(forward), Repeat, Shuffle, Preparation,
+        Copy(recommendations), recommendationsExhausted);
 
     internal PlaybackEntry StartContext(PlaybackContext context, IEnumerable<SoundCloudTrack> tracks, int selectedIndex)
     {
@@ -61,7 +66,7 @@ internal sealed class PlaybackQueue
     internal void Clear()
     {
         ++SourceVersion; Context = null; Current = null;
-        source.Clear(); upcoming.Clear(); manual.Clear(); history.Clear(); forward.Clear();
+        source.Clear(); upcoming.Clear(); manual.Clear(); history.Clear(); forward.Clear(); recommendations.Clear(); recommendationsExhausted = false;
         Preparation = PlaybackPreparation.Stopped; Changed();
     }
 
@@ -76,10 +81,12 @@ internal sealed class PlaybackQueue
     internal void SetRepeat(RepeatMode mode)
     {
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
-        Repeat = mode; Changed();
+        if (Repeat == mode) return;
+        Repeat = mode; recommendations.Clear(); recommendationsExhausted = false; Changed();
     }
     internal PlaybackEntry Enqueue(SoundCloudTrack track, bool next = false)
     {
+        recommendations.RemoveAll(entry => entry.Track.Id == track.Id);
         var entry = NewEntry(track, PlaybackEntryOrigin.Manual);
         if (next) manual.Insert(0, entry); else manual.Add(entry);
         Changed(); return entry;
@@ -97,6 +104,20 @@ internal sealed class PlaybackQueue
         Changed(); return true;
     }
     internal void ClearManual() { manual.Clear(); Changed(); }
+    internal void PruneRecommendations(Func<SoundCloudTrack, bool> keep)
+    {
+        if (recommendations.RemoveAll(entry => !keep(entry.Track)) > 0) Changed();
+    }
+    internal void RemoveUnavailableRecommendation(long trackId)
+    {
+        var removed = recommendations.RemoveAll(entry => entry.Track.Id == trackId) > 0;
+        if (Context?.Kind != PlaybackContextKind.Wave) { if (removed) Changed(); return; }
+        removed |= upcoming.RemoveAll(entry => entry.Track.Id == trackId) > 0;
+        // Current is retained independently. Remove it from the repeat source as
+        // well, otherwise Repeat Context would resurrect a failed recommendation.
+        removed |= source.RemoveAll(entry => entry.Track.Id == trackId) > 0;
+        if (removed) Changed();
+    }
 
     internal PlaybackEntry? Next(bool naturalEnd = false)
     {
@@ -111,15 +132,16 @@ internal sealed class PlaybackQueue
             if (Shuffle) Mix(cycle);
             upcoming.AddRange(cycle); next = TakeFirst(upcoming);
         }
+        if (next == null && Context?.NextHref == null && Repeat == RepeatMode.Off) next = TakeFirst(recommendations);
         if (next == null) { Preparation = PlaybackPreparation.Stopped; Changed(); return null; }
-        if (Current != null) history.Add(Current);
-        Current = next; Preparation = PlaybackPreparation.Preparing; Changed(); return next;
+        if (Current != null && Preparation != PlaybackPreparation.Failed) history.Add(Current);
+        Current = next; recommendationsExhausted = false; Preparation = PlaybackPreparation.Preparing; Changed(); return next;
     }
 
     internal PlaybackEntry? Previous()
     {
         if (history.Count == 0) return Current;
-        if (Current != null) forward.Insert(0, Current);
+        if (Current != null && Preparation != PlaybackPreparation.Failed) forward.Insert(0, Current);
         Current = history[^1]; history.RemoveAt(history.Count - 1);
         Preparation = PlaybackPreparation.Preparing; Changed(); return Current;
     }
@@ -136,7 +158,7 @@ internal sealed class PlaybackQueue
         var ahead = forward.FindIndex(entry => entry.EntryId == entryId);
         if (ahead >= 0)
         {
-            if (Current != null) history.Add(Current);
+            if (Current != null && Preparation != PlaybackPreparation.Failed) history.Add(Current);
             history.AddRange(forward.Take(ahead));
             Current = forward[ahead]; forward.RemoveRange(0, ahead + 1);
             Preparation = PlaybackPreparation.Preparing; Changed(); return Current;
@@ -147,12 +169,36 @@ internal sealed class PlaybackQueue
         else
         {
             index = upcoming.FindIndex(entry => entry.EntryId == entryId);
-            if (index < 0) return null;
-            selected = upcoming[index];
-            if (Shuffle) upcoming.RemoveAt(index); else upcoming.RemoveRange(0, index + 1);
+            if (index >= 0)
+            {
+                selected = upcoming[index];
+                if (Shuffle) upcoming.RemoveAt(index); else upcoming.RemoveRange(0, index + 1);
+            }
+            else
+            {
+                index = recommendations.FindIndex(entry => entry.EntryId == entryId);
+                if (index < 0) return null;
+                selected = recommendations[index]; recommendations.RemoveRange(0, index + 1); upcoming.Clear();
+            }
         }
-        if (Current != null) history.Add(Current);
-        Current = selected; forward.Clear(); Preparation = PlaybackPreparation.Preparing; Changed(); return selected;
+        if (Current != null && Preparation != PlaybackPreparation.Failed) history.Add(Current);
+        Current = selected; forward.Clear(); recommendationsExhausted = false; Preparation = PlaybackPreparation.Preparing; Changed(); return selected;
+    }
+
+    internal bool AppendRecommendations(long version, IEnumerable<SoundCloudTrack> tracks)
+    {
+        if (version != SourceVersion || Context is not { Kind: not PlaybackContextKind.Wave, NextHref: null } || Repeat != RepeatMode.Off) return false;
+        var data = tracks.ToArray();
+        var reserved = source.Concat(manual).Concat(history).Concat(forward).Concat(recommendations)
+            .Select(entry => entry.Track.Id).ToHashSet();
+        if (Current != null) reserved.Add(Current.Track.Id);
+        foreach (var track in data)
+        {
+            if (recommendations.Count >= WaveUpcomingLimit) break;
+            if (track.Id > 0 && reserved.Add(track.Id)) recommendations.Add(NewEntry(track, PlaybackEntryOrigin.Recommendation));
+        }
+        recommendationsExhausted = data.Length == 0;
+        Changed(); return true;
     }
 
     internal bool Append(long version, string cursor, TrackPage page)

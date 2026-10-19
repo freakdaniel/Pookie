@@ -167,19 +167,26 @@ internal sealed partial class MainWindow
         static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
         var next = state.History.Select(TrackBlock).ToList();
         var manualCurrent = state.Current?.Origin == PlaybackEntryOrigin.Manual;
+        var recommendedCurrent = state.Current?.Origin == PlaybackEntryOrigin.Recommendation;
         var wave = state.Context?.Kind == PlaybackContextKind.Wave;
         next.Add(new("source", QueueBlockKind.Source,
             Title: manualCurrent ? "Сейчас играет" : state.Context?.Title ?? queueOriginTitle,
-            Subtitle: manualCurrent ? "" : state.Context?.Subtitle ?? queueOriginKind));
+            Subtitle: manualCurrent ? "" : recommendedCurrent ? "Сейчас играют похожие треки" : state.Context?.Subtitle ?? queueOriginKind));
         if (state.Current is { } playing) next.Add(TrackBlock(playing));
-        next.Add(new("upcoming", QueueBlockKind.Upcoming,
-            Title: state.ManualUpcoming.Count > 0 ? "Добавлено тобой" : wave ? "Далее на твоей волне" :
-                expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
+        if (state.Recommendations.Count == 0 || state.ManualUpcoming.Count + state.Forward.Count + state.ContextUpcoming.Count > 0)
+            next.Add(new("upcoming", QueueBlockKind.Upcoming,
+                Title: state.ManualUpcoming.Count > 0 ? "Добавлено тобой" : wave ? "Далее на твоей волне" :
+                    expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
         next.AddRange(state.ManualUpcoming.Select(TrackBlock));
         if (state.ManualUpcoming.Count > 0 && state.ContextUpcoming.Count + state.Forward.Count > 0)
             next.Add(new("context", QueueBlockKind.Context, Title: wave ? "Далее на твоей волне" : "Очередь воспроизведения"));
         next.AddRange(state.Forward.Select(TrackBlock));
         next.AddRange(state.ContextUpcoming.Select(TrackBlock));
+        if (state.Recommendations.Count > 0)
+        {
+            next.Add(new("recommendations", QueueBlockKind.Context, Title: "Похожие дальше"));
+            next.AddRange(state.Recommendations.Select(TrackBlock));
+        }
         var data = next.ToArray();
         if (expandedQueueData.SequenceEqual(data)) return;
         // Resolving audio can replace track metadata without changing queue order.

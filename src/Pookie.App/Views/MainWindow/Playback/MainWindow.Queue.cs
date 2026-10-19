@@ -8,6 +8,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly PlaybackQueue playbackQueue = new();
+    private readonly QueueContinuation queueContinuation = new();
     private PlaybackQueueLoader queueLoader = null!;
     private readonly PaginationItems popupQueueSource = new(LoadingRowStyle.Compact, item => ((QueueBlock)item).Key);
     private readonly Dictionary<QueueRowMotion, QueueBlock?> popupQueueBlocks = [];
@@ -30,7 +31,7 @@ internal sealed partial class MainWindow
                 return new(page.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray(), page.NextHref);
             }
             return await api.GetNextPageAsync(cursor, token);
-        }, () => RefreshQueue(), lifetime.Token);
+        }, () => RefreshQueue(), lifetime.Token, GetQueueContinuationAsync);
         shuffle.Changed += () => { playbackQueue.SetShuffle(shuffle.Value); RefreshQueue(); UpdateSystemMedia(); };
         RefreshRepeatState();
     }
@@ -39,7 +40,7 @@ internal sealed partial class MainWindow
     {
         CaptureQueueOrigin();
         var route = navigationHistory[navigationIndex].Route;
-        var data = page.Value == Page.Track ? new[] { first }.Concat(trackDetailState?.Related.Tracks.Where(track => track.Id != first.Id) ?? []).ToArray() : page.Value == Page.Search ? [first] :
+        var data = page.Value is Page.Track or Page.Search ? [first] :
             page.Value == Page.LibraryCollection ? activeCollection?.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray() ?? [first] :
             page.Value is Page.Library or Page.LibraryTracks ? libraryLikes?.Tracks ?? tracks.ToArray() : tracks.ToArray();
         var cursor = page.Value is Page.Search or Page.Track ? null : page.Value == Page.LibraryCollection ? activeCollection?.NextHref :
@@ -103,6 +104,11 @@ internal sealed partial class MainWindow
         data.AddRange(state.ManualUpcoming.Select(TrackBlock));
         if (wave) data.Add(new("wave", QueueBlockKind.Context, Title: "Далее на твоей волне"));
         data.AddRange(state.Forward.Concat(state.ContextUpcoming).Select(TrackBlock));
+        if (state.Recommendations.Count > 0)
+        {
+            data.Add(new("recommendations", QueueBlockKind.Context, Title: "Похожие дальше"));
+            data.AddRange(state.Recommendations.Select(TrackBlock));
+        }
         RefreshPopupQueue(data.ToArray(), wave, dissolveWave);
         queueStatus.Value = state.Context?.Title ?? "Очередь воспроизведения";
         RefreshExpandedQueue(dissolveWave); UpdateSystemMedia();
@@ -162,6 +168,11 @@ internal sealed partial class MainWindow
             await queueLoader.EnsureAheadAsync(force: true);
             if (disposed || sourceVersion != playbackQueue.SourceVersion || selectionGeneration != playGeneration) return;
         }
+        if (!playbackQueue.Snapshot.Upcoming.Any() && !(naturalEnd && playbackQueue.Repeat == RepeatMode.Track))
+        {
+            await queueLoader.EnsureAheadAsync(force: true);
+            if (disposed || sourceVersion != playbackQueue.SourceVersion || selectionGeneration != playGeneration) return;
+        }
         var next = playbackQueue.Next(naturalEnd);
         if (next != null) await PlayAsync(next.Track, queueAdvance: true);
         else EndPlayback();
@@ -180,6 +191,7 @@ internal sealed partial class MainWindow
     {
         playbackQueue.SetRepeat((RepeatMode)(((int)playbackQueue.Repeat + 1) % 3));
         RefreshRepeatState(); RefreshQueue(); configurationTimer.Stop(); configurationTimer.Start();
+        Run(() => queueLoader.EnsureAheadAsync());
     }
     private void RefreshRepeatState()
     {
@@ -193,6 +205,7 @@ internal sealed partial class MainWindow
     private void EnqueueTrack(SoundCloudTrack track, bool next)
     {
         playbackQueue.Enqueue(track, next); RefreshQueue();
+        Run(() => queueLoader.EnsureAheadAsync());
     }
     private void ChangeManualQueue(Action change) { change(); RefreshQueue(); }
 

@@ -6,6 +6,31 @@ namespace Pookie.Playback.Tests;
 
 public sealed class WaveQueueTests
 {
+    [Fact]
+    public void MissingRecommendationIsRemovedWithoutReorderingRetainedOccurrencesOrManualEntries()
+    {
+        var queue = new PlaybackQueue();
+        var tracks = Enumerable.Range(1, 4).Select(id => new SoundCloudTrack { Id = id, Title = "Track " + id }).ToArray();
+        queue.StartContext(new("wave", "Wave", "", Kind: PlaybackContextKind.Wave), tracks, 0);
+        var committed = queue.Snapshot.ContextUpcoming.ToArray(); var manual = queue.Enqueue(tracks[1]);
+        queue.RemoveUnavailableRecommendation(2);
+        Assert.Equal(committed.Skip(1), queue.Snapshot.ContextUpcoming);
+        Assert.Equal(manual, Assert.Single(queue.Snapshot.ManualUpcoming));
+        Assert.DoesNotContain(queue.Snapshot.Source, entry => entry.Track.Id == 2);
+        Assert.Equal(1, queue.Current!.Track.Id);
+    }
+    [Fact]
+    public void FailedCurrentRecommendationCannotReturnThroughContextRepeat()
+    {
+        var queue = new PlaybackQueue();
+        queue.StartContext(new("wave", "Wave", "", Kind: PlaybackContextKind.Wave), new[] { Track(1), Track(2) }, 0);
+        queue.SetRepeat(RepeatMode.Context);
+        queue.RemoveUnavailableRecommendation(1);
+        Assert.Equal(1, queue.Current!.Track.Id);
+        Assert.Equal(2, queue.Next()!.Track.Id);
+        Assert.Equal(2, queue.Next()!.Track.Id);
+        Assert.DoesNotContain(queue.Snapshot.Source, entry => entry.Track.Id == 1);
+    }
     private static SoundCloudTrack Track(long id) => new() { Id = id, Title = "Track " + id };
     private static PlaybackQueue Wave(params long[] ids)
     {

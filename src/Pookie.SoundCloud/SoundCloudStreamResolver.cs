@@ -24,11 +24,14 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
         foreach (var source in new[] { primary }.Concat(regionalSources))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var track = await source.GetTrackAsync(trackId, cancellationToken);
+            SoundCloudTrack track;
+            try { track = await source.GetTrackAsync(trackId, cancellationToken); }
+            catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 404 or 410)
+            { throw new SoundCloudException(error.Message, error.StatusCode, trackUnavailable: true); }
             if (track.Id != trackId) throw new SoundCloudException("Резольвер вернул другой трек.");
             if (track.Access == "blocked" || track.Policy == "BLOCK") { blocked = true; continue; }
             if (track.Access == "preview" || track.Policy == "SNIP")
-                throw new SoundCloudException("SoundCloud предоставил только отрывок. Полное воспроизведение требует доступа к треку.");
+                throw new SoundCloudException("SoundCloud предоставил только отрывок. Полное воспроизведение требует доступа к треку.", trackUnavailable: true);
             var full = (track.Media?.Transcodings ?? []).Where(t => !t.Snipped &&
                 !string.IsNullOrEmpty(t.Url) && !t.Url.Contains("/preview", StringComparison.OrdinalIgnoreCase) &&
                 t.Format?.Protocol is "progressive" or "hls" or "ctr-encrypted-hls" or "cbc-encrypted-hls").ToArray();
@@ -51,6 +54,6 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
         }
         throw new SoundCloudException(blocked ? "SoundCloud ограничил доступ к треку для подключения резольвера." : protectedAvailable
             ? "Для трека доступен только DRM-поток. Поддержка CDM ещё не подключена к аудиоплееру."
-            : "SoundCloud не предоставил доступный полный аудиопоток.");
+            : "SoundCloud не предоставил доступный полный аудиопоток.", trackUnavailable: blocked);
     }
 }

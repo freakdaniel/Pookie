@@ -123,19 +123,22 @@ internal sealed partial class MainWindow
     private sealed class ChatMusicView(LikedTrackRow row) : Panel, IChatMusicFooter
     {
         internal readonly LikedTrackRow Row = row;
+        internal readonly ChatMusicLoading Loading = new(row.Root, compact: false);
+        internal Task WaveformLoad = Task.CompletedTask;
         internal LibraryItem? Item;
         internal SoundCloudTrack? PreviewTrack;
+        internal ChatMusicGroup Group = null!;
         internal Func<bool> IsCurrent = () => false;
         public void ReserveFooter(double width) => Row.ReserveFooter(width);
-        internal ChatMusicView Initialize() { Add(Row.Root); return this; }
+        internal ChatMusicView Initialize() { Add(Loading); return this; }
         protected override Size MeasureContent(Size availableSize)
         {
-            var width = double.IsFinite(availableSize.Width) ? Math.Min(680, availableSize.Width) : 680;
-            Row.FitEmbedded(width); Row.Root.Measure(new Size(width, TrackRowLayout.EmbeddedHeight));
+            var width = double.IsFinite(availableSize.Width) ? Math.Min(560, availableSize.Width) : 560;
+            Row.FitEmbedded(width); Loading.Measure(new Size(width, TrackRowLayout.EmbeddedHeight));
             return new(width, TrackRowLayout.EmbeddedHeight);
         }
         protected override Size ArrangeOverride(Size finalSize)
-        { Row.Root.Arrange(new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height)); return finalSize; }
+        { Loading.Arrange(new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height)); return finalSize; }
     }
 
     // A backdrop fills the card but never participates in its desired size.
@@ -164,22 +167,24 @@ internal sealed partial class MainWindow
     {
         var message = bubble.Message!; var urls = ChatMusicLink.Find(message.Body); if (urls.Length == 0) return false;
         bubble.Attachments.IsVisible = true; bubble.Body.Text = ChatMusicLink.Caption(message.Body, urls); bubble.Body.IsVisible = bubble.Body.Text.Length > 0;
+        var group = new ChatMusicGroup(urls, $"chat:{chatAccountId}:{chatRecipient?.Id}:message:{message.Id}", chatRecipient?.Username);
+        UpdateChatMusicMentions(bubble, urls);
+        if (urls.Length > 1) { BindChatCompactMusic(bubble, group); return true; }
         bubble.SetMusicLayout();
-        var revision = chatRevision; var sourcePeer = chatRecipient?.Id; var sourceName = chatRecipient?.Username;
+        var revision = chatRevision;
         foreach (var url in urls)
         {
             ChatMusicView view = null!;
-            var row = new LikedTrackRow(_ => Run(() => PlayChatMusicAsync(view, sourcePeer, sourceName)),
+            var row = new LikedTrackRow(_ => Run(() => PlayChatMusicAsync(view)),
                 _ => Run(() => OpenChatMusicAsync(view)), track => Run(() => ToggleTrackLikeAsync(track)),
                 CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)),
-                (_, fraction) => Run(() => SeekChatMusicAsync(view, sourcePeer, sourceName, fraction)), ArtworkLayer, glass: true);
-            view = new ChatMusicView(row).Initialize();
+                (_, fraction) => Run(() => SeekChatMusicAsync(view, fraction)), ArtworkLayer, glass: true);
+            view = new ChatMusicView(row) { Group = group }.Initialize();
             if (bubble.Body.IsVisible && url == urls[^1]) view.Margin = new Thickness(0, 0, 0, 12);
             view.IsCurrent = () => !disposed && revision == chatRevision && bubble.Attachments.IsAncestorOf(view) && chatMusicViews.TryGetValue(row.Root, out _);
             chatMusicViews.Add(row.Root, view); bubble.Attachments.Add(view);
             row.Title.Cursor = CursorType.Hand;
             row.Title.MouseDown += args => { if (args.Button == MouseButton.Left) { args.Handled = true; Run(() => OpenChatMusicAsync(view)); } };
-            row.Bind(new SoundCloudTrack { Title = "Трек или плейлист", User = new() { Username = "SoundCloud" } });
             if (chatMusicCache.TryGetValue(url, out var cached)) ApplyChatMusic(view, cached);
             Run(async () =>
             {
@@ -187,7 +192,8 @@ internal sealed partial class MainWindow
                 {
                     var item = view.Item ?? await ResolveChatMusicAsync(url);
                     if (!view.IsCurrent()) return;
-                    if (view.Item == null) ApplyChatMusic(view, item);
+                    if (view.Item == null) { BeginChatMusicChange(bubble); ApplyChatMusic(view, item); }
+                    UpdateChatMusicMentions(bubble, urls);
                     var artwork = GetCollectionArtworkAsync(item);
                     var track = view.PreviewTrack;
                     if (item.Playlist is { TrackCount: > 0 } && track == null)
@@ -198,11 +204,12 @@ internal sealed partial class MainWindow
                         view.PreviewTrack = detail.Tracks.Tracks.FirstOrDefault(); RefreshChatMusic(view);
                     }
                     var image = await artwork;
-                    if (view.IsCurrent()) SetCollectionArtwork(row.Cover, item, image, finished: true);
+                    await view.WaveformLoad;
+                    if (view.IsCurrent()) { SetCollectionArtwork(row.Cover, item, image, finished: true); UpdateChatMusicMentions(bubble, urls); view.Loading.Show(); }
                     if (image != null && url == urls[0])
                     {
                         var backdrop = await Task.Run(() => ArtworkBackdrop.Create(image), lifetime.Token);
-                        if (view.IsCurrent()) bubble.MusicBackdrop.Source = backdrop;
+                        if (view.IsCurrent()) bubble.ShowMusicBackdrop(backdrop);
                     }
                 }
                 catch (OperationCanceledException) { }
@@ -210,8 +217,9 @@ internal sealed partial class MainWindow
                 {
                     if (!view.IsCurrent()) return;
                     if (view.Item != null) SetCollectionArtwork(row.Cover, view.Item, finished: true);
-                    else { row.Author.Text = "Не удалось загрузить предпросмотр"; SetCardArtwork(row.Cover, null, null, finished: true); }
+                    else { row.Title.Text = "Трек или плейлист"; row.Author.Text = "Не удалось загрузить предпросмотр"; SetCardArtwork(row.Cover, null, null, finished: true); }
                 }
+                finally { if (view.IsCurrent()) view.Loading.Show(); }
             });
         }
         return true;
@@ -237,7 +245,8 @@ internal sealed partial class MainWindow
         if (track != null && !ReferenceEquals(row.Track, track))
         {
             row.Bind(track); SetCollectionArtwork(row.Cover, item);
-            Run(() => LoadLikedWaveformAsync(row, track));
+            var loading = view.WaveformLoad = LoadLikedWaveformAsync(row, track);
+            Run(() => loading);
         }
         row.Title.Text = item.Title;
         if (item.Playlist is { } playlist)
@@ -255,21 +264,21 @@ internal sealed partial class MainWindow
         if (item.Track is { } track) await OpenTrackPageAsync(track); else await OpenLibraryItemAsync(item);
     }
 
-    private async Task PlayChatMusicAsync(ChatMusicView view, long? peer, string? name)
+    private async Task PlayChatMusicAsync(ChatMusicView view)
     {
         if (!view.IsCurrent() || view.Item is not { } item) return;
         if (item.Playlist != null) { await PlayLibraryCollectionAsync(item); return; }
         if (item.Track is not { } track) return;
         if (current?.Id == track.Id) { await ToggleAsync(); return; }
-        StartQueueContext(new("chat:" + peer, "Чат с " + name, "Сейчас играет из чата"), [track], track, 0);
+        StartQueueContext(new(view.Group.Key, "Чат с " + view.Group.Name, "Сейчас играет из чата"), [track], track, 0);
         await PlayAsync(track);
     }
 
-    private async Task SeekChatMusicAsync(ChatMusicView view, long? peer, string? name, double fraction)
+    private async Task SeekChatMusicAsync(ChatMusicView view, double fraction)
     {
         if (!view.IsCurrent() || view.Item == null) return;
         if (view.Item.Playlist != null ? playbackQueue.Context?.Key != view.Item.Key || current == null : current?.Id != view.Item.Track?.Id)
-            await PlayChatMusicAsync(view, peer, name);
+            await PlayChatMusicAsync(view);
         if (!view.IsCurrent() || current?.Id != view.Row.Track?.Id || !audioReady) return;
         progress.Value = Math.Clamp(fraction, 0, 1) * progress.Maximum; FlushSeek();
     }

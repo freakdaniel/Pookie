@@ -108,7 +108,7 @@ internal sealed partial class MainWindow
             Root.Spacing = width < 540 ? 12 : 20;
             metadata.IsVisible = false;
             playsStat.IsVisible = commentsStat.IsVisible = false;
-            var compact = width - footerReserve < 520;
+            var compact = width - footerReserve < 480;
             likeCount.IsVisible = !compact;
             likeButton.Width = compact ? 40 : double.NaN;
             likeButton.Padding = new Thickness(compact ? 0 : 16, 0);

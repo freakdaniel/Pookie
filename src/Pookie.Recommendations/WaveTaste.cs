@@ -13,7 +13,8 @@ public sealed record WaveTrack(long Id, string Title, string Artist, long Upload
     [JsonIgnore] public double DurationSeconds => Duration / 1000;
 }
 public sealed record WaveTrackTaste(WaveTrack Track, bool Familiar = false, bool Liked = false, bool Blocked = false,
-    int GoodPlays = 0, int EarlySkips = 0, double ListenedSeconds = 0, DateTimeOffset? LastPlayed = null, int Plays = 0);
+    int GoodPlays = 0, int EarlySkips = 0, double ListenedSeconds = 0, DateTimeOffset? LastPlayed = null, int Plays = 0,
+    DateTimeOffset? UnavailableUntil = null);
 public sealed record WaveProfile(WaveMode Mode, WaveTrackTaste[] Tracks);
 
 public sealed class WaveTaste
@@ -36,11 +37,22 @@ public sealed class WaveTaste
     }
     public WaveProfile Snapshot()
     {
-        var explicitPreferences = tracks.Values.Where(item => item.Blocked || item.Liked).ToArray();
-        return new(Mode, explicitPreferences.Concat(tracks.Values.Where(item => !item.Blocked && !item.Liked)
+        var explicitPreferences = tracks.Values.Where(item => item.Blocked || item.Liked || item.UnavailableUntil != null).ToArray();
+        return new(Mode, explicitPreferences.Concat(tracks.Values.Where(item => !item.Blocked && !item.Liked && item.UnavailableUntil == null)
             .OrderByDescending(item => item.LastPlayed).Take(Math.Max(0, 1500 - explicitPreferences.Length))).ToArray());
     }
     public void Saved() => Dirty = false;
+    public bool IsUnavailable(WaveTrack track, DateTimeOffset now) => tracks.GetValueOrDefault(track.Id)?.UnavailableUntil > now;
+    public void MarkUnavailable(WaveTrack track, DateTimeOffset retryAfter)
+    {
+        Import(track, false);
+        if (tracks.TryGetValue(track.Id, out var item)) { tracks[track.Id] = item with { UnavailableUntil = retryAfter }; Dirty = true; }
+    }
+    public void RestoreAvailability(WaveTrack track)
+    {
+        if (tracks.TryGetValue(track.Id, out var item) && item.UnavailableUntil != null)
+        { tracks[track.Id] = item with { UnavailableUntil = null }; Dirty = true; }
+    }
     public void SyncLikes(IReadOnlySet<long> liked)
     {
         foreach (var (id, item) in tracks.ToArray())
@@ -68,7 +80,7 @@ public sealed class WaveTaste
             Liked = liked ?? previous.Liked };
         if (!tracks.ContainsKey(track.Id) || next != previous) { tracks[track.Id] = next; Dirty = true; }
         if (tracks.Count > 2000)
-            foreach (var id in tracks.Values.Where(item => !item.Liked && !item.Blocked).OrderBy(item => item.LastPlayed)
+            foreach (var id in tracks.Values.Where(item => !item.Liked && !item.Blocked && item.UnavailableUntil == null).OrderBy(item => item.LastPlayed)
                 .Take(tracks.Count - 1800).Select(item => item.Track.Id).ToArray()) tracks.Remove(id);
     }
     public void Block(WaveTrack track)
@@ -108,11 +120,11 @@ public sealed class WaveTaste
     public bool IsFamiliar(WaveTrack track) => tracks.Values.Any(item =>
         (item.Familiar || item.Liked || item.GoodPlays > 0) && WorkKey(item.Track) == WorkKey(track));
     public WaveTrack[] Seeds(IEnumerable<WaveTrack> candidates, int count = 3, Func<WaveTrack, double>? learnedScore = null,
-        Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4)
+        Func<WaveTrack, double?>? moodMatch = null, double minimumMoodMatch = .4, DateTimeOffset? now = null)
     {
         var score = learnedScore ?? Scorer();
         var blocked = tracks.Values.Where(item => item.Blocked).Select(item => WorkKey(item.Track)).ToHashSet();
-        return candidates.Where(IsPlayable).Where(track => tracks.GetValueOrDefault(track.Id)?.Blocked != true)
+        return candidates.Where(IsPlayable).Where(track => !IsUnavailable(track, now ?? DateTimeOffset.UtcNow)).Where(track => tracks.GetValueOrDefault(track.Id)?.Blocked != true)
             .Where(track => !blocked.Contains(WorkKey(track))).Where(track => moodMatch?.Invoke(track) is not { } match || match >= minimumMoodMatch)
             .OrderByDescending(track => moodMatch?.Invoke(track) is >= .6).ThenByDescending(score).DistinctBy(ArtistKey).Take(count).ToArray();
     }
@@ -130,6 +142,7 @@ public sealed class WaveTaste
         var familiarWorks = tracks.Values.Where(item => item.Familiar || item.Liked || item.GoodPlays > 0)
             .Select(item => WorkKey(item.Track)).ToHashSet();
         var eligible = candidates.Where(IsPlayable).DistinctBy(track => track.Id)
+            .Where(track => !IsUnavailable(track, now))
             .Where(track => tracks.GetValueOrDefault(track.Id)?.Blocked != true)
             .Where(track => !blockedWorks.Contains(WorkKey(track)))
             .Where(track => !reservedWorks.Contains(WorkKey(track)))

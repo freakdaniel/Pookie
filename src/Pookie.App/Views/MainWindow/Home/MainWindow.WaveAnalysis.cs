@@ -78,7 +78,10 @@ internal sealed partial class MainWindow
                 catch (OperationCanceledException) when (perTrack.IsCancellationRequested) { }
                 catch (Exception error) when (error is SoundCloudException or HttpRequestException or IOException or InvalidOperationException or
                     System.Text.Json.JsonException or NotSupportedException)
-                { Pookie.Logging.AppLog.For("Pookie.Wave").Debug("Фоновый анализ кандидата {TrackId} пропущен: {ErrorType}", track.Id, error.GetType().Name); }
+                {
+                    if (Current()) RememberUnavailableWaveTrack(track, error);
+                    Pookie.Logging.AppLog.For("Pookie.Wave").Debug("Фоновый анализ кандидата {TrackId} пропущен: {ErrorType}", track.Id, error.GetType().Name);
+                }
             }
         }
         finally

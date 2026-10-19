@@ -61,6 +61,31 @@ public sealed class ChatRichAttachmentTests
         var links = ChatMusicLink.Find("Послушай\n" + url + "\n" + url);
         Assert.Equal([url], links); Assert.Equal("Послушай", ChatMusicLink.Caption("Послушай\n" + url, links));
     }
+    [Fact]
+    public void MusicMentionsKeepTheirPositionInTheSentence()
+    {
+        const string url = "https://soundcloud.com/artist/song";
+        var body = "Привет, смотри какой трек — " + url + ", классный!\n" + url + "\nЕщё раз: " + url;
+        Assert.Equal("Привет, смотри какой трек — " + url + ", классный!\nЕщё раз: " + url, ChatMusicLink.Caption(body, [url]));
+        Assert.Equal("Подпись", ChatMusicLink.Caption("Подпись\r\n  " + url + "  ", [url]));
+    }
+    [Fact]
+    public void MultipleMusicAttachmentsAreNotLimitedByTheFileAttachmentCount()
+    {
+        var urls = Enumerable.Range(1, 6).Select(index => "https://soundcloud.com/artist/song-" + index).ToArray();
+        var body = string.Join(' ', urls);
+        Assert.Equal(urls, ChatMusicLink.Find(body));
+        Assert.Equal("", ChatMusicLink.Caption(body, urls));
+    }
+    [Fact]
+    public void SimilarTrackUrlsDoNotProduceOverlappingMentions()
+    {
+        const string first = "https://soundcloud.com/artist/song";
+        const string second = first + "-remix";
+        var body = first + " " + second + ", ещё " + first;
+        Assert.Equal(new[] { (0, first), (first.Length + 1, second), (first.Length + second.Length + 7, first) }, ChatMusicLink.Occurrences(body, [first, second]));
+        Assert.Equal("", ChatMusicLink.Caption(second + "\n" + first, [first, second]));
+    }
     [Theory]
     [InlineData("https://soundcloud.com.evil.test/a/song")]
     [InlineData("https://soundcloud.com@evil.test/a/song")]
