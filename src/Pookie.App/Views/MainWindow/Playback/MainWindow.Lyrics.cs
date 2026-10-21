@@ -124,7 +124,7 @@ internal sealed partial class MainWindow
     {
         CancelLyricsRequest(); lyricsGeneration++;
         lyricsIdentity = IdentifyLyrics(track); lyricsResolvedFingerprint = null;
-        lyricsResult = new(LyricsStatus.Loading); lyricsPosition = 0; lyricsActiveLine = -1; lyricsPlaying = false;
+        lyricsResult = new(preferences.LyricsEnabled ? LyricsStatus.Loading : LyricsStatus.NotFound); lyricsPosition = 0; lyricsActiveLine = -1; lyricsPlaying = false;
         ResumeLyricsFollowing(); RenderLyrics();
         if (expandedOpen && expandedPanelMode == PlayerPanel.Lyrics) StartLyricsLoad();
     }
@@ -145,7 +145,7 @@ internal sealed partial class MainWindow
 
     private void StartLyricsLoad()
     {
-        if (lyricsIdentity == null || !expandedOpen || expandedPanelMode != PlayerPanel.Lyrics) return;
+        if (!preferences.LyricsEnabled || lyricsIdentity == null || !expandedOpen || expandedPanelMode != PlayerPanel.Lyrics) return;
         CancelLyricsRequest();
         var request = lyricsRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var identity = lyricsIdentity; var generation = lyricsGeneration;
@@ -155,8 +155,9 @@ internal sealed partial class MainWindow
             try
             {
                 await Task.Delay(450, request.Token);
+                if (!preferences.LyricsEnabled) return;
                 var result = await lyricsService.ResolveAsync(identity, request.Token);
-                if (disposed || request.IsCancellationRequested || lyricsRequest != request || lyricsGeneration != generation) return;
+                if (disposed || !preferences.LyricsEnabled || request.IsCancellationRequested || lyricsRequest != request || lyricsGeneration != generation) return;
                 lyricsResolvedFingerprint = result.Status == LyricsStatus.Unavailable ? null : identity.Fingerprint;
                 ApplyLyrics(result);
             }
@@ -175,6 +176,7 @@ internal sealed partial class MainWindow
     {
         if (lyricsList == null) return;
         var document = lyricsResult.Document;
+        lyricsMessage.Text = preferences.LyricsEnabled ? "Для текущего трека\nотсутствует текст" : "Тексты песен отключены\nв настройках";
         var hasText = lyricsResult.Status is LyricsStatus.Synced or LyricsStatus.Plain;
         var loading = lyricsResult.Status == LyricsStatus.Loading;
         lyricsList.IsVisible = lyricsFade.IsVisible = hasText;
@@ -230,7 +232,7 @@ internal sealed partial class MainWindow
             foreach (var view in lyricsRows.Values) if (view.Row?.Index != -3) { view.Text.FontSize = font; view.Text.InvalidateMeasure(); }
             lyricsList.InvalidateMeasure(); return;
         }
-        if (!lyricsFollow || lyricsResult.Status != LyricsStatus.Synced) return;
+        if (!preferences.LyricsAutoScroll || !lyricsFollow || lyricsResult.Status != LyricsStatus.Synced) return;
         var index = Math.Max(0, lyricsActiveLine);
         var selected = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
         if (selected == null) { lyricsList.ScrollIntoView(index + 1); return; }
@@ -240,13 +242,13 @@ internal sealed partial class MainWindow
 
     private void PauseLyricsFollowing()
     {
-        if (lyricsResult.Status != LyricsStatus.Synced) return;
+        if (!preferences.LyricsAutoScroll || lyricsResult.Status != LyricsStatus.Synced) return;
         lyricsFollow = false;
         lyricsFollowTimer.Stop(); lyricsFollowTimer.Start();
     }
     private void ResumeLyricsFollowing()
     {
-        lyricsFollowTimer.Stop(); lyricsFollow = true;
+        lyricsFollowTimer.Stop(); lyricsFollow = preferences.LyricsEnabled && preferences.LyricsAutoScroll;
         // Paused playback can leave the render loop idle when the timer expires.
         // Request the frame that starts centering, even with no moving controls.
         if (expandedOpen && expandedPanelMode == PlayerPanel.Lyrics) Window.InvalidateVisual();

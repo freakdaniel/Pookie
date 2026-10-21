@@ -22,6 +22,7 @@ internal sealed partial class MainWindow
     private void InitializePlaybackQueue()
     {
         playbackQueue.SetShuffle(shuffle.Value);
+        playbackQueue.SetAutoContinue(preferences.AutoContinue);
         queueLoader = new(playbackQueue, async (context, cursor, token) =>
         {
             if (context.Kind == PlaybackContextKind.Wave) return await GetWavePageAsync(token);

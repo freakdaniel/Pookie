@@ -16,7 +16,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => Window.IsActive && workspace.IsVisible && startupHeader.Opacity > .999 &&
                 queueButton.ActualWidth > 0 && playerChrome.ActualHeight >= PlayerBarHeight - 1);
             foreach (var (button, state, name) in new[] {
-                (profileButton, profileOpen, "profile"), (settingsButton, settingsOpen, "settings"), (queueButton, queueOpen, "queue") })
+                (profileButton, profileOpen, "profile"), (queueButton, queueOpen, "queue") })
             {
                 CloseShellMenus(true); MoveActionPointer(new Point(2, 2));
                 var layer = shellMenus.Single(menu => ReferenceEquals(menu.State, state)).Layer;
@@ -82,11 +82,11 @@ internal sealed partial class MainWindow
             MoveActionPointer(new Point(2, 2));
             profileOpen.Value = true;
             await WaitForLikedLayoutAsync(() => shellMenus.Single(menu => ReferenceEquals(menu.State, profileOpen)).Layer.Reveal > .999);
-            settingsOpen.Value = true;
-            if (profileOpen.Value || queueOpen.Value) throw new InvalidOperationException("Opening a shell menu left another menu open.");
+            queueOpen.Value = true;
+            if (profileOpen.Value || !queueOpen.Value) throw new InvalidOperationException("Opening a shell menu left another menu open.");
             CloseShellMenus(true);
             if (shellMenus.Any(menu => menu.Layer.IsVisible || menu.Layer.IsOpen)) throw new InvalidOperationException("Immediate dismissal left an interactive menu behind.");
-            Console.WriteLine("UI_FLOATING_MENUS_OK: queue/profile/settings share the attachment surface, shadow, animated reveal/dismissal, continuous interruption, trigger alignment, hover gap, keyboard Escape, exclusive state and resize anchoring");
+            Console.WriteLine("UI_FLOATING_MENUS_OK: queue/profile share the attachment surface, animated reveal/dismissal, trigger alignment, keyboard Escape, exclusive state and resize anchoring");
         }
         catch (Exception error)
         {

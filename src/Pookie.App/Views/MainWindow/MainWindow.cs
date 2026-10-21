@@ -247,7 +247,7 @@ internal sealed partial class MainWindow : IDisposable
         catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
         if (me != null)
         {
-            Run(() => StartupLog.RunAsync("startup.home", () => NavigateAsync(Page.Home)));
+            Run(() => StartupLog.RunAsync("startup.page", () => NavigateAsync(preferences.StartupPage == "library" ? Page.Library : Page.Home)));
         }
     }
 
@@ -265,7 +265,7 @@ internal sealed partial class MainWindow : IDisposable
         return loading.Token;
     }
 
-    private Task SearchAsync() => SearchAsync(SearchSection.All);
+    private Task SearchAsync() => SearchAsync(preferences.RememberSearchSection ? (SearchSection)preferences.LastSearchSection : SearchSection.All);
 
     private Task SearchAsync(SearchSection section)
     {
@@ -273,6 +273,8 @@ internal sealed partial class MainWindow : IDisposable
         var search = query.Value.Trim();
         if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку на трек."; return Task.CompletedTask; }
         if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return Task.CompletedTask; }
+        if (preferences.LastSearchSection != (int)section)
+        { preferences = preferences with { LastSearchSection = (int)section }; configurationTimer.Stop(); configurationTimer.Start(); }
         return NavigateRouteAsync(new(Page.Search, Search: search, Section: section), async generation =>
         {
             var token = BeginLoad();
@@ -397,7 +399,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 var resolver = new WaveformGainResolver(http, dataPaths);
                 var waveformUrl = track.WaveformUrl;
-                var gainTask = resolver.ResolveAsync(waveformUrl, token);
+                var gainTask = preferences.NormalizeVolume ? resolver.ResolveAsync(waveformUrl, token) : Task.FromResult(0d);
                 var streamTask = new SoundCloudStreamResolver(api).ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
                 await Task.WhenAll(gainTask, streamTask);
                 var resolved = await streamTask;
@@ -405,11 +407,11 @@ internal sealed partial class MainWindow : IDisposable
                 var stream = resolved.Stream;
                 source = new(stream.Uri.AbsoluteUri, stream.Protected ? AudioTransport.WidevineHls : stream.Protocol == "hls" ? AudioTransport.Hls : AudioTransport.Progressive, stream.Duration)
                     { LicenseAuthToken = stream.LicenseAuthToken,
-                      NormalizationGainDb = track.WaveformUrl == waveformUrl ? await gainTask : await resolver.ResolveAsync(track.WaveformUrl, token) };
+                      NormalizationGainDb = !preferences.NormalizeVolume ? 0 : track.WaveformUrl == waveformUrl ? await gainTask : await resolver.ResolveAsync(track.WaveformUrl, token) };
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
-            source = source with { CaptureAnalysis = !demo && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Model != Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, BrowserPage = track.PermalinkUrl };
+            source = source with { CaptureAnalysis = !demo && preferences.WaveLearningEnabled && preferences.WaveAnalysisEnabled && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Model != Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -545,7 +547,7 @@ internal sealed partial class MainWindow : IDisposable
             finally { sessionWrites.Release(); }
         }
         token.ThrowIfCancellationRequested();
-        await LikesAsync();
+        await NavigateAsync(preferences.StartupPage == "library" ? Page.Library : Page.Home);
         token.ThrowIfCancellationRequested();
         status.Value = saved ? "Сессия подключена и сохранена в хранилище паролей." : "Сессия подключена. Хранилище паролей недоступно: вход сохранён только до выхода.";
     }
@@ -555,7 +557,7 @@ internal sealed partial class MainWindow : IDisposable
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
         loginBusy.Value = true;
-        ClosePlaylistPicker(); profileOpen.Value = settingsOpen.Value = queueOpen.Value = false;
+        ClosePlaylistPicker(); profileOpen.Value = queueOpen.Value = false;
         CloseTopSearch(clear: true);
         try
         {
@@ -687,7 +689,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 status.Value = FriendlyError(error);
                 if (page.Value == Page.LibraryTracks) likedActionError.Value = status.Value;
-                else if (page.Value > Page.LibraryTracks) librarySectionStatus.Value = status.Value;
+                else if (IsCollectionPage(page.Value)) librarySectionStatus.Value = status.Value;
             }
         }
     }

@@ -85,12 +85,14 @@ internal sealed partial class MainWindow
         chatInput.OnTextChanged(text =>
         {
             if (chatRenderingDraft) return;
-            if (chatRecipient != null) chatDrafts[chatRecipient.Id] = text.Length <= ChatRequest.MaxBodyLength ? text : text[..ChatRequest.MaxBodyLength];
-            chatDraftTimer.Stop(); chatDraftTimer.Start(); RefreshChatComposer();
+            if (preferences.ChatSaveDrafts && chatRecipient != null) chatDrafts[chatRecipient.Id] = text.Length <= ChatRequest.MaxBodyLength ? text : text[..ChatRequest.MaxBodyLength];
+            chatDraftTimer.Stop(); if (preferences.ChatSaveDrafts) chatDraftTimer.Start(); RefreshChatComposer();
         });
         chatInput.OnKeyDown(e =>
         {
-            if (e.Key == Key.Enter && e.Modifiers.HasFlag(ModifierKeys.Control)) { e.Handled = true; Run(SendChatAsync); }
+            if (e.Key == Key.Enter && !e.Modifiers.HasFlag(ModifierKeys.Shift) &&
+                (preferences.ChatSendOnEnter || e.Modifiers.HasFlag(ModifierKeys.Control)))
+            { e.Handled = true; Run(SendChatAsync); }
             if (e.Key == Key.Escape) { e.Handled = true; Window.FocusManager.ClearFocus(); }
         });
         InitializeChatMusicEditor();
@@ -120,7 +122,8 @@ internal sealed partial class MainWindow
         chatTimer = new DispatcherTimer(TimeSpan.FromSeconds(1));
         chatTimer.Tick += () =>
         {
-            if (disposed || demo || me == null || api.Session == null || DateTimeOffset.UtcNow < chatNextPoll) return;
+            if (disposed || demo || me == null || api.Session == null ||
+                !preferences.ChatBackgroundRefresh && (page.Value != Page.Chats || !Window.IsActive) || DateTimeOffset.UtcNow < chatNextPoll) return;
             chatNextPoll = DateTimeOffset.UtcNow.AddSeconds(page.Value == Page.Chats && Window.IsActive ? 2 : 15);
             Run(RefreshChatsAsync);
         };
@@ -131,6 +134,7 @@ internal sealed partial class MainWindow
             if (page.Value == Page.Chats) { chatNextPoll = default; chatTimer.Start(); }
             else
             {
+                if (!preferences.ChatBackgroundRefresh) CancelChatPolling();
                 chatSearchTimer.Stop(); chatInboxLoading.Pause(); chatThreadLoading.Pause(); CloseChatGifs(); CancelChatReads(); SaveChatDraft();
                 SetChatDragging(false);
                 foreach (var row in ChatRows) row.Spinner.IsActive = false;

@@ -114,7 +114,7 @@ internal sealed partial class MainWindow
     {
         foreach (var marker in trackCommentMarkers) trackDetailWaveformLayer.Remove(marker.Button);
         trackCommentMarkers.Clear();
-        if (trackDetailState is not { } state) return;
+        if (!preferences.ShowCommentMarkers || trackDetailState is not { } state) return;
         foreach (var comment in state.Comments.Comments.Where(c => ValidCommentTime(c, state.Track) != null).Take(50))
         {
             var fraction = comment.Timestamp!.Value / state.Track.Duration;

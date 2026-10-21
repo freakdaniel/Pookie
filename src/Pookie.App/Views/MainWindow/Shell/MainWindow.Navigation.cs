@@ -7,11 +7,10 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection }
+    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings }
     private readonly ObservableValue<Page> page = new(Page.Home);
     private readonly ObservableValue<string> eyebrow = new("ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ");
     private readonly ObservableValue<bool> profileOpen = new(false);
-    private readonly ObservableValue<bool> settingsOpen = new(false);
     private readonly ObservableValue<bool> searching = new(false);
     private readonly ObservableValue<bool> hasLibraryTracks = new(false);
     private readonly ObservableValue<bool> queueOpen = new(false);
@@ -43,9 +42,10 @@ internal sealed partial class MainWindow
         if (!CanUseWorkspace) return Task.CompletedTask;
         if (target == Page.Home) return NavigateHomeAsync();
         if (target == Page.Chats) return OpenChatsAsync();
+        if (target == Page.Settings) return ShowSettingsAsync(settingsSection.Value);
         if (target == Page.Library) return LikesAsync();
         if (target == Page.LibraryTracks) { ShowLibraryTracks(); return Task.CompletedTask; }
-        if (target > Page.LibraryTracks) return ShowLibrarySectionAsync(target);
+        if (IsCollectionPage(target)) return ShowLibrarySectionAsync(target);
         return NavigateRouteAsync(new(target), async _ =>
         {
             eyebrow.Value = "ЛЕНТА / ТВОИ ПОДПИСКИ";
@@ -77,6 +77,8 @@ internal sealed partial class MainWindow
         isLiked.Value = current != null && !isDisliked.Value && likedIds.Contains(current.Id);
         likeAvailable.Value = current != null && CanLikeTrack(current);
         RefreshLikedRows();
+        if (page.Value == Page.Settings && settingsSection.Value == SettingsSection.Wave)
+        { RefreshSettingsData(); RefreshSettingsControls(); }
     }
 
     private Task LoadLikedIdsAsync()

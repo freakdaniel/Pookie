@@ -29,8 +29,9 @@ internal sealed class ChatLocalStore(AppDataPaths paths, long accountId)
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return new([], []); }
     }
-    internal void Save(ChatLocalState state)
+    internal void Save(ChatLocalState state, bool saveDrafts = true)
     {
+        if (!saveDrafts) state = state with { Drafts = [] };
         AppDataPaths.CreatePrivateDirectory(Path.GetDirectoryName(directory)!);
         AppDataPaths.CreatePrivateDirectory(directory);
         var temporary = Path.Combine(directory, "drafts.tmp");

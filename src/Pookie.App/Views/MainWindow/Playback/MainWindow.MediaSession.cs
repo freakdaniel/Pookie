@@ -11,15 +11,28 @@ internal sealed partial class MainWindow
 {
     private readonly bool enableSystemMedia;
     private IMediaSession? systemMedia;
+    private Task? systemMediaInitialization;
+    private long systemMediaGeneration;
 
     private async Task InitializeSystemMediaAsync()
+    {
+        while (systemMediaInitialization is { IsCompleted: false } pending) await pending;
+        if (disposed || !enableSystemMedia || !preferences.SystemMediaEnabled || player == null || systemMedia != null) return;
+        var task = CreateSystemMediaAsync(++systemMediaGeneration);
+        systemMediaInitialization = task;
+        try { await task; }
+        finally { if (systemMediaInitialization == task) systemMediaInitialization = null; }
+    }
+
+    private async Task CreateSystemMediaAsync(long generation)
     {
         var dispatcher = Aprillz.MewUI.Application.Current.Dispatcher;
         try
         {
             var session = await MediaSession.CreateAsync(action =>
                 { if (!disposed) dispatcher?.BeginInvoke(() => { if (!disposed) action(); }); });
-            if (disposed) { session.Dispose(); return; }
+            if (disposed || generation != systemMediaGeneration || !enableSystemMedia || !preferences.SystemMediaEnabled)
+            { session.Dispose(); return; }
             systemMedia = session;
             session.Command += command =>
             {
@@ -36,7 +49,7 @@ internal sealed partial class MainWindow
 
     private void UpdateSystemMedia(AudioState? audio = null)
     {
-        if (systemMedia == null || disposed) return;
+        if (systemMedia == null || disposed || !preferences.SystemMediaEnabled) return;
         try
         {
             if (current == null) { systemMedia.Clear(); return; }
@@ -59,7 +72,7 @@ internal sealed partial class MainWindow
 
     private Task HandleMediaCommandAsync(MediaCommand command)
     {
-        if (disposed) return Task.CompletedTask;
+        if (disposed || !preferences.SystemMediaEnabled) return Task.CompletedTask;
         if (command.Action == MediaAction.Raise) { Window.Activate(); return Task.CompletedTask; }
         if (!CanUseWorkspace) return Task.CompletedTask;
         switch (command.Action)
@@ -100,6 +113,7 @@ internal sealed partial class MainWindow
 
     private void DisposeSystemMedia()
     {
+        ++systemMediaGeneration;
         var session = systemMedia;
         systemMedia = null;
         try { session?.Dispose(); }

@@ -41,9 +41,9 @@ internal sealed class ChatComposerLayout : Panel
         attachments.Measure(new Size(width, 44));
         attachmentHeight = attachments.IsVisible ? attachments.DesiredSize.Height + 8 : 0;
         foreach (var button in new[] { attach, gif, send }) button.Measure(new Size(40, 40));
-        editor.Measure(new Size(Math.Max(40, width - 132), Math.Max(28, HeightLimit - attachmentHeight - 2 * TextInset)));
+        editor.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), Math.Max(28, HeightLimit - attachmentHeight - 2 * TextInset)));
         editorHeight = Math.Max(28, editor.DesiredSize.Height);
-        fade.Measure(new Size(Math.Max(40, width - 132), 18));
+        fade.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), 18));
         return new(width, attachmentHeight + Math.Max(40, editorHeight + 2 * TextInset));
     }
 
@@ -56,14 +56,14 @@ internal sealed class ChatComposerLayout : Panel
         var rowHeight = Math.Max(40, finalSize.Height - attachmentHeight);
         var textHeight = Math.Max(28, rowHeight - 2 * TextInset);
         var textY = bottom - rowHeight + TextInset;
-        editor.Arrange(new Rect(x + 44, textY, Math.Max(40, finalSize.Width - 132), textHeight));
+        editor.Arrange(new Rect(x + 44, textY, Math.Max(40, finalSize.Width - (gif.IsVisible ? 132 : 88)), textHeight));
         // MultiLineTextBox hit-tests its overlay bars directly. Empty their
         // geometry as well, so the hidden strip cannot intercept editor clicks.
         foreach (var bar in scrollbars) bar.Arrange(Rect.Empty);
         var viewport = editor.TextViewportBounds;
         fade.Arrange(new Rect(viewport.X, viewport.Y, viewport.Width, Math.Min(18, viewport.Height)));
         attach.Arrange(new Rect(x, bottom - 40, 40, 40));
-        gif.Arrange(new Rect(Bounds.Right - 84, bottom - 40, 40, 40));
+        gif.Arrange(gif.IsVisible ? new Rect(Bounds.Right - 84, bottom - 40, 40, 40) : Rect.Empty);
         send.Arrange(new Rect(Bounds.Right - 40, bottom - 40, 40, 40));
         UpdateFade();
         return finalSize;

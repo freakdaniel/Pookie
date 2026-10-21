@@ -18,6 +18,9 @@ internal sealed class PlaybackQueueLoader(PlaybackQueue queue,
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
         version = queue.SourceVersion; pending = null;
     }
+    // A settings change invalidates in-flight recommendation requests without
+    // changing the source, manual queue or current occurrence.
+    internal void PolicyChanged() => ContextChanged();
     internal Task EnsureAheadAsync(bool force = false)
     {
         if (version != queue.SourceVersion) ContextChanged();

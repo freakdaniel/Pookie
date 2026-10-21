@@ -11,6 +11,7 @@ internal sealed class ImageDiskCache(AppDataPaths paths)
 
     public async Task<byte[]?> ReadAsync(string url, CancellationToken token)
     {
+        using var lease = await CacheDirectoryGate.EnterAsync(paths.Images, token).ConfigureAwait(false);
         try
         {
             var file = new FileInfo(FileFor(url));
@@ -23,19 +24,26 @@ internal sealed class ImageDiskCache(AppDataPaths paths)
     public async Task WriteAsync(string url, byte[] bytes, CancellationToken token)
     {
         if (bytes.Length is <= 0 or > MaxImageSize) return;
+        using var lease = await CacheDirectoryGate.EnterAsync(paths.Images, token).ConfigureAwait(false);
         var file = FileFor(url);
         var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             await File.WriteAllBytesAsync(temporary, bytes, token);
             File.Move(temporary, file, overwrite: true);
-            Prune();
+            PruneCore();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         finally { try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
 
     public void Prune()
+    {
+        using var lease = CacheDirectoryGate.Enter(paths.Images);
+        PruneCore();
+    }
+
+    private void PruneCore()
     {
         try
         {

@@ -119,6 +119,23 @@ test('the analysis graph transmits bounded little-endian PCM and rejects stale o
   assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,2);
 });
 
+test('turning off analysis stops sample delivery without pausing protected audio',async()=>{
+  const f=normalizationFixture(-12);await f.start(false,true);
+  const samples=new Float32Array(1024).fill(.25);
+  f.node.port.onmessage({data:{offset:0,samples}});
+  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
+  const playing=f.messages.findLast(m=>m.kind==='audio-state').audio;
+  await f.command('analysis',{capture_analysis:false});
+  assert.equal(f.messages.at(-1).status,200);
+  f.node.port.onmessage({data:{offset:1024,samples}});
+  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
+  assert.equal(f.audios[0].paused,false);
+  const state=f.messages.findLast(m=>m.kind==='audio-state').audio;
+  assert.equal(state.normalization_gain_db,playing.normalization_gain_db);
+  assert.equal(state.playing,true);
+  await f.command('stop');
+});
+
 test('missing or disabled Widevine is reported as unsupported at EME instead of a decoding failure',async()=>{
   for(const error of ['NotSupportedError','NotAllowedError','SecurityError']){
     const f=normalizationFixture(0,false,error);await f.start();

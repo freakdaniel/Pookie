@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
+using Pookie.App.Storage;
 
 namespace Pookie.Lyrics;
 
@@ -163,6 +164,7 @@ public sealed class LyricsService : IDisposable
 
     private static async Task<T?> ReadAsync<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type, CancellationToken token)
     {
+        using var lease = await CacheDirectoryGate.EnterAsync(Path.GetDirectoryName(path)!, token).ConfigureAwait(false);
         try
         {
             if (!File.Exists(path) || new FileInfo(path).Length > LrclibClient.MaxResponseBytes * 2) return default;
@@ -173,6 +175,7 @@ public sealed class LyricsService : IDisposable
     }
     private static async Task WriteAsync<T>(string path, T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type, CancellationToken token)
     {
+        using var lease = await CacheDirectoryGate.EnterAsync(Path.GetDirectoryName(path)!, token).ConfigureAwait(false);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -186,6 +189,7 @@ public sealed class LyricsService : IDisposable
 
     private void Prune()
     {
+        using var lease = CacheDirectoryGate.Enter(cache);
         try
         {
             var files = new DirectoryInfo(cache).GetFiles("*.json").OrderBy(file => file.LastWriteTimeUtc).ToArray();

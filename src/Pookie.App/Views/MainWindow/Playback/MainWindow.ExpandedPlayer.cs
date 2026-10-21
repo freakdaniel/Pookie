@@ -226,7 +226,7 @@ internal sealed partial class MainWindow
             }
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = true;
             workspace.IsHitTestVisible = false;
-            queueOpen.Value = profileOpen.Value = settingsOpen.Value = false;
+            queueOpen.Value = profileOpen.Value = false;
             Window.WindowState = WindowState.FullScreen;
             playerArtworkOverlay.Opacity = 0;
             SyncExpandedTimeline(); RefreshExpandedQueue();

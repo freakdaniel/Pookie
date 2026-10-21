@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
 
     private void BeginPlaybackHistory(PlaybackEntry entry)
     {
-        playbackHistorySubmitted = demo;
+        playbackHistorySubmitted = demo || !preferences.SendPlaybackHistory;
         playbackHistorySession = api.Session;
         playbackHistoryContext = entry.Origin == PlaybackEntryOrigin.Context ? playbackQueue.Context?.ResourceUrn : null;
     }
@@ -28,7 +28,7 @@ internal sealed partial class MainWindow
     {
         // Match the website's minimum play time using actual listened seconds.
         // WaveListening already excludes pause, buffering and seek position jumps.
-        if (playbackHistorySubmitted || waveListening.Seconds < 1 || waveListening.Track is not { } track ||
+        if (!preferences.SendPlaybackHistory || playbackHistorySubmitted || waveListening.Seconds < 1 || waveListening.Track is not { } track ||
             api.Session is not { } session || session != playbackHistorySession) return;
         playbackHistorySubmitted = true;
         var context = playbackHistoryContext;
@@ -39,6 +39,7 @@ internal sealed partial class MainWindow
     {
         try
         {
+            if (!preferences.SendPlaybackHistory || disposed || api.Session != session) return;
             await api.RecordPlaybackAsync(track.Id, context, lifetime.Token);
             if (disposed || api.Session != session) return;
             libraryLoadedAt.Remove("recent"); libraryLoadedAt.Remove("history");

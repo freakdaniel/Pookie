@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
     }
     private Task OpenChatGifsAsync()
     {
-        if (chatRecipient == null || chatSending) return Task.CompletedTask;
+        if (!preferences.KlipyEnabled || chatRecipient == null || chatSending) return Task.CompletedTask;
         chatGifsOpen.Value = true;
         chatGifStatus.Text = klipy.Available ? "" : "Поиск GIF сейчас недоступен. Свой GIF можно прикрепить кнопкой +.";
         return klipy.Available ? SearchChatGifsAsync() : Task.CompletedTask;
@@ -45,7 +45,7 @@ internal sealed partial class MainWindow
     }
     private async Task SearchChatGifsAsync()
     {
-        if (!chatGifsOpen.Value || !klipy.Available || chatRecipient == null) return;
+        if (!preferences.KlipyEnabled || !chatGifsOpen.Value || !klipy.Available || chatRecipient == null) return;
         chatGifLoading?.Cancel(); chatGifLoading?.Dispose();
         chatGifLoading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = chatGifLoading.Token; var generation = ++chatGifGeneration; var recipient = chatRecipient.Id; var account = me?.Id;
@@ -53,14 +53,14 @@ internal sealed partial class MainWindow
         try
         {
             var gifs = await klipy.SearchAsync(chatGifSearch.Text, token);
-            if (disposed || generation != chatGifGeneration || chatRecipient?.Id != recipient || me?.Id != account) return;
+            if (!preferences.KlipyEnabled || disposed || generation != chatGifGeneration || chatRecipient?.Id != recipient || me?.Id != account) return;
             chatGifStatus.Text = gifs.Length == 0 ? "Ничего не найдено" : "";
             foreach (var gif in gifs)
             {
                 var image = new Image().Width(140).Height(100).StretchMode(Stretch.Uniform);
                 var button = new Button().StyleName("flat-button").Padding(0).BorderThickness(0).Background(Color.Transparent).CornerRadius(12)
                     .Content(new Border().CornerRadius(12).ClipToBounds().Child(image)).OnClick(() =>
-                    { if (chatRecipient?.Id != recipient || me?.Id != account) return; chatSelectedGif = gif; chatSelectedFiles = []; UpdateChatAttachments(); CloseChatGifs(); });
+                    { if (!preferences.KlipyEnabled || chatRecipient?.Id != recipient || me?.Id != account) return; chatSelectedGif = gif; chatSelectedFiles = []; UpdateChatAttachments(); CloseChatGifs(); });
                 chatGifResults.Add(button);
                 _ = LoadChatGifPreviewAsync(image, gif.PreviewUrl, generation, token);
             }
@@ -76,7 +76,7 @@ internal sealed partial class MainWindow
             ImageSource? source; byte[] bytes;
             try { bytes = await klipy.DownloadAsync(url, token); source = await Task.Run(() => PrepareChatImage(bytes), token); }
             finally { chatMediaGate.Release(); }
-            if (!disposed && !token.IsCancellationRequested && generation == chatGifGeneration) { image.Source = source; StartChatAnimation(image, bytes); }
+            if (preferences.KlipyEnabled && !disposed && !token.IsCancellationRequested && generation == chatGifGeneration) { image.Source = source; StartChatAnimation(image, bytes); }
         }
         catch (Exception) { }
     }

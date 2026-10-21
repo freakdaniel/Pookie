@@ -27,7 +27,7 @@
       (c.normalization_gain_db == null || Number.isFinite(c.normalization_gain_db) && c.normalization_gain_db >= -24 && c.normalization_gain_db <= 6) && (c.action === 'start'
       ? typeof c.source === 'string' && c.source.length <= 8192 && typeof c.authorization === 'string' &&
         c.authorization.length > 0 && c.authorization.length <= 16384 && !/[\x00-\x1f\x7f]/.test(c.authorization)
-      : ['stop','pause','volume','seek'].includes(c.action) && c.source == null && c.authorization == null);
+      : ['stop','pause','volume','seek','analysis'].includes(c.action) && c.source == null && c.authorization == null);
   }
   function state(st) {
     let bufferedStart = 0, bufferedEnd = 0;
@@ -359,6 +359,14 @@
         st = current;
         if (!st || st.id !== c.playback_id) { send({kind:'complete', request_id:request.id, status:200}); return; }
         if (c.action === 'stop') stop(st);
+        else if (c.action === 'analysis') {
+          // An existing tap can be shut down without touching EME or playback.
+          // Enabling is deferred until the next track so samples stay contiguous.
+          if (!c.capture_analysis) {
+            st.captureAnalysis = false;
+            st.normalization?.node.port.postMessage({captureAnalysis:false});
+          }
+        }
         else if (c.action === 'volume') {
           st.volume = c.volume;
           if (st.normalization) {

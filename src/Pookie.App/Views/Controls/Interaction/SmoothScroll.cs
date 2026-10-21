@@ -12,6 +12,12 @@ internal sealed class SmoothScroll : IDisposable
     private double target, last, velocity;
     private long timestamp;
     private bool running, applying;
+    private bool enabled = true;
+    internal bool Enabled
+    {
+        get => enabled;
+        set { if (enabled == value) return; enabled = value; if (!value) Stop(); }
+    }
 
     public SmoothScroll(ScrollViewer viewer)
     {
@@ -49,6 +55,7 @@ internal sealed class SmoothScroll : IDisposable
     {
         var next = Math.Clamp(position, 0, Maximum(viewer));
         if (Math.Abs(next - viewer.VerticalOffset) < .5) { Stop(); return false; }
+        if (!Enabled) { Stop(); viewer.SetScrollOffsets(viewer.HorizontalOffset, next); return true; }
         target = next;
         if (!running)
         {

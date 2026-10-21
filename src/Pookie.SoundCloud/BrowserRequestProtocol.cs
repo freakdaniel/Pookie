@@ -62,7 +62,7 @@ public sealed record BrowserAudioCommand(string Action, string PlaybackId, strin
         ? Source is { Length: > 0 and <= 8192 } && Uri.TryCreate(Source, UriKind.Absolute, out var uri) &&
           SoundCloudWebClient.IsMediaUri(uri) && uri.Fragment == "" && Authorization is { Length: > 0 and <= 16384 } &&
           !Authorization.Any(c => c < 32 || c == 127)
-        : Source == null && Authorization == null && Action is "stop" or "pause" or "volume" or "seek");
+        : Source == null && Authorization == null && Action is "stop" or "pause" or "volume" or "seek" or "analysis");
     public override string ToString() => $"Browser audio ({Action}; source and authorization redacted)";
 }
 

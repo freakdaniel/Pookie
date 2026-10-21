@@ -19,6 +19,7 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
     private readonly List<Task> controls = [];
     private Pookie.Recommendations.Audio.MonoAudioSampler? analysis;
     private int analysisOffset;
+    private bool analysisCaptureEnabled = true;
 
     public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default)
     {
@@ -39,13 +40,13 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
             preparing = timeout;
             browser = connected; playbackId = id; error = null; endedReported = false;
             state = new(0, source.Duration, false, true, false);
-            analysis = source.CaptureAnalysis ? new(16000, 1) : null; analysisOffset = 0;
+            analysis = source.CaptureAnalysis && analysisCaptureEnabled ? new(16000, 1) : null; analysisOffset = 0;
             connected.Changed += Received;
         }
         try
         {
             await connected.SendAudioAsync(new("start", id, source.Location, source.LicenseAuthToken, Volume: volume,
-                NormalizationGainDb: source.NormalizationGainDb, CaptureAnalysis: source.CaptureAnalysis, PageUrl: source.BrowserPage), timeout.Token);
+                NormalizationGainDb: source.NormalizationGainDb, CaptureAnalysis: source.CaptureAnalysis && analysisCaptureEnabled, PageUrl: source.BrowserPage), timeout.Token);
             timeout.Token.ThrowIfCancellationRequested();
             lock (sync) if (playbackId != id) throw new OperationCanceledException();
         }
@@ -152,6 +153,19 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
     public Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample()
     {
         lock (sync) return playbackId == null ? native.TakeAnalysisSample() : analysis?.Take();
+    }
+
+    public void SetAnalysisCaptureEnabled(bool enabled)
+    {
+        lock (sync)
+        {
+            analysisCaptureEnabled = enabled;
+            native.SetAnalysisCaptureEnabled(enabled);
+            if (enabled) return;
+            analysis = null; analysisOffset = 0;
+            if (playbackId is { } id && browser is { } connected)
+                Queue(connected, new("analysis", id, CaptureAnalysis: false));
+        }
     }
 
     public Task StopAsync()

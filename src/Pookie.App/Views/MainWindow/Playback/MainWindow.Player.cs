@@ -120,7 +120,7 @@ internal sealed partial class MainWindow
                 playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(
                 queueButton = PlayerButton(Icons.View("queue", 19), () =>
-                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = settingsOpen.Value = false; }, queueOpen),
+                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
                 PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value, shuffle),
                 PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(

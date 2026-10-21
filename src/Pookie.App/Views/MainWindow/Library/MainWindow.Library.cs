@@ -8,7 +8,9 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private static bool IsLibrary(Page value) => value >= Page.Library;
+    private static bool IsLibrary(Page value) => value is Page.Library or Page.LibraryTracks || IsCollectionPage(value);
+    private static bool IsCollectionPage(Page value) => value is Page.LibraryPlaylists or Page.LibraryAlbums or
+        Page.LibraryStations or Page.LibraryFollowing or Page.LibraryHistory or Page.LibraryCollection;
     private readonly Dictionary<string, LibraryPage> libraryPages = [];
     private readonly Dictionary<string, Task<LibraryPage>> libraryLoads = [];
     private readonly Dictionary<string, DateTimeOffset> libraryLoadedAt = [];

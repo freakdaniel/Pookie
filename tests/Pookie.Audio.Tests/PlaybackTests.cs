@@ -17,6 +17,24 @@ namespace Pookie.Audio.Tests;
 public sealed class PlaybackTests
 {
     [Fact]
+    public async Task DisablingAnalysisDuringDecodeDropsPcmCaptureAndKeepsAudioFlowing()
+    {
+        await using var server = await MediaServer.StartAsync(2, 48000);
+        using var http = new HttpClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var provider = new StreamingProvider(http, new(server.Url + "/track.wav", AudioTransport.Progressive)
+            { CaptureAnalysis = true }, 0, uri => uri.IsLoopback, timeout.Token);
+        await provider.Ready.WaitAsync(timeout.Token);
+        provider.DisableAnalysisCapture();
+        var buffer = new float[8192];
+        var audible = false;
+        while (await provider.WaitForDataAsync(timeout.Token))
+        { provider.ReadBytes(buffer); audible |= buffer.Any(value => Math.Abs(value) > .001); }
+        Assert.True(audible); Assert.Null(provider.TakeAnalysisSample()); Assert.Null(provider.Error);
+        provider.Dispose(); await provider.Completion;
+    }
+
+    [Fact]
     public async Task DecodedPlaybackCanProvideABoundedMonoAnalysisSampleWithoutExtraDownloads()
     {
         await using var server = await MediaServer.StartAsync(2, 48000);

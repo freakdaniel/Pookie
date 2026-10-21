@@ -12,7 +12,10 @@ class PookieGainProcessor extends AudioWorkletProcessor {
     this.capture=options.processorOptions?.captureAnalysis === true;
     this.active=false; this.count=0; this.chunk=new Float32Array(1024); this.used=0;
     this.ratio=sampleRate/16000; this.remaining=this.ratio; this.sum=0;
-    this.port.onmessage=event=>{this.active=event.data?.active === true;};
+    this.port.onmessage=event=>{
+      if (typeof event.data?.active === 'boolean') this.active=event.data.active;
+      if (event.data?.captureAnalysis === false) { this.capture=false; this.chunk=new Float32Array(0); this.used=0; }
+    };
   }
   analyze(input) {
     if (!this.capture || !this.active || this.count>=144000) return;

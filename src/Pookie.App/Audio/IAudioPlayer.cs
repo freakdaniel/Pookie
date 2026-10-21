@@ -30,4 +30,5 @@ public interface IAudioPlayer : IDisposable, IAsyncDisposable
     void Volume(double percent);
     AudioState Poll();
     Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample() => null;
+    void SetAnalysisCaptureEnabled(bool enabled) { }
 }

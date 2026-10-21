@@ -12,10 +12,10 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
     IReadOnlyList<PlaybackEntry> Source, IReadOnlyList<PlaybackEntry> ManualUpcoming,
     IReadOnlyList<PlaybackEntry> ContextUpcoming, IReadOnlyList<PlaybackEntry> History,
     IReadOnlyList<PlaybackEntry> Forward, RepeatMode Repeat, bool Shuffle, PlaybackPreparation Preparation,
-    IReadOnlyList<PlaybackEntry> Recommendations, bool RecommendationsExhausted)
+    IReadOnlyList<PlaybackEntry> Recommendations, bool RecommendationsExhausted, bool AutoContinue = true)
 {
     internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming).Concat(Recommendations);
-    internal bool CanLoadRecommendations => Context is { Kind: not PlaybackContextKind.Wave, NextHref: null } &&
+    internal bool CanLoadRecommendations => AutoContinue && Context is { Kind: not PlaybackContextKind.Wave, NextHref: null } &&
         Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.WaveUpcomingLimit;
     internal bool CanNext => Upcoming.Any() || Context?.NextHref != null || Repeat == RepeatMode.Context && Source.Count > 0;
     internal bool CanPrevious => Current != null;
@@ -37,12 +37,13 @@ internal sealed class PlaybackQueue
     internal PlaybackEntry? Current { get; private set; }
     internal RepeatMode Repeat { get; private set; }
     internal bool Shuffle { get; private set; }
+    internal bool AutoContinue { get; private set; } = true;
     internal PlaybackPreparation Preparation { get; private set; } = PlaybackPreparation.Stopped;
 
     internal PlaybackQueue(Random? random = null) => this.random = random ?? Random.Shared;
     internal PlaybackQueueSnapshot Snapshot => snapshot ??= new(SourceVersion, Context, Current,
         Copy(source), Copy(manual), Copy(upcoming), Copy(history), Copy(forward), Repeat, Shuffle, Preparation,
-        Copy(recommendations), recommendationsExhausted);
+        Copy(recommendations), recommendationsExhausted, AutoContinue);
 
     internal PlaybackEntry StartContext(PlaybackContext context, IEnumerable<SoundCloudTrack> tracks, int selectedIndex)
     {
@@ -104,6 +105,12 @@ internal sealed class PlaybackQueue
         Changed(); return true;
     }
     internal void ClearManual() { manual.Clear(); Changed(); }
+    internal void SetAutoContinue(bool enabled)
+    {
+        if (AutoContinue == enabled) return;
+        AutoContinue = enabled;
+        recommendations.Clear(); recommendationsExhausted = false; Changed();
+    }
     internal void PruneRecommendations(Func<SoundCloudTrack, bool> keep)
     {
         if (recommendations.RemoveAll(entry => !keep(entry.Track)) > 0) Changed();
@@ -132,7 +139,7 @@ internal sealed class PlaybackQueue
             if (Shuffle) Mix(cycle);
             upcoming.AddRange(cycle); next = TakeFirst(upcoming);
         }
-        if (next == null && Context?.NextHref == null && Repeat == RepeatMode.Off) next = TakeFirst(recommendations);
+        if (next == null && AutoContinue && Context?.NextHref == null && Repeat == RepeatMode.Off) next = TakeFirst(recommendations);
         if (next == null) { Preparation = PlaybackPreparation.Stopped; Changed(); return null; }
         if (Current != null && Preparation != PlaybackPreparation.Failed) history.Add(Current);
         Current = next; recommendationsExhausted = false; Preparation = PlaybackPreparation.Preparing; Changed(); return next;
@@ -187,7 +194,7 @@ internal sealed class PlaybackQueue
 
     internal bool AppendRecommendations(long version, IEnumerable<SoundCloudTrack> tracks)
     {
-        if (version != SourceVersion || Context is not { Kind: not PlaybackContextKind.Wave, NextHref: null } || Repeat != RepeatMode.Off) return false;
+        if (!AutoContinue || version != SourceVersion || Context is not { Kind: not PlaybackContextKind.Wave, NextHref: null } || Repeat != RepeatMode.Off) return false;
         var data = tracks.ToArray();
         var reserved = source.Concat(manual).Concat(history).Concat(forward).Concat(recommendations)
             .Select(entry => entry.Track.Id).ToHashSet();

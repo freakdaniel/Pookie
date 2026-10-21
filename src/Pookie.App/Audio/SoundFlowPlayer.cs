@@ -17,6 +17,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private AudioPlaybackDevice? device;
     private SoundPlayer? player;
     private StreamingProvider? provider;
+    private StreamingProvider? preparingProvider;
     private EncodedTrackCache? cache;
     private CancellationTokenSource? pending;
     private AudioSource? source;
@@ -24,6 +25,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private float volume = .7f;
     private bool paused;
     private bool endedReported;
+    private bool analysisCaptureEnabled = true;
     private bool disposed;
     private Task? release;
 
@@ -75,7 +77,12 @@ public sealed class SoundFlowPlayer : IAudioPlayer
                     operationToken = pending.Token;
                 }
             }
-            next = new StreamingProvider(http, target, position, allowed, operationToken, cache);
+            lock (stateSync)
+            {
+                target = target with { CaptureAnalysis = target.CaptureAnalysis && analysisCaptureEnabled };
+                next = new StreamingProvider(http, target, position, allowed, operationToken, cache);
+                preparingProvider = next;
+            }
             decoding.RemoveAll(task => task.IsCompleted);
             decoding.Add(next.Completion);
             var format = await next.Ready.WaitAsync(operationToken).ConfigureAwait(false);
@@ -84,6 +91,8 @@ public sealed class SoundFlowPlayer : IAudioPlayer
             {
                 if (request != generation || disposed) throw new OperationCanceledException();
                 provider = next;
+                preparingProvider = null;
+                if (!analysisCaptureEnabled) provider.DisableAnalysisCapture();
                 source = target;
                 endedReported = false;
                 device = engine.InitializePlaybackDevice(null, format);
@@ -147,6 +156,17 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     {
         lock (stateSync) return provider?.TakeAnalysisSample();
     }
+    public void SetAnalysisCaptureEnabled(bool enabled)
+    {
+        lock (stateSync)
+        {
+            analysisCaptureEnabled = enabled;
+            if (enabled) return;
+            provider?.DisableAnalysisCapture();
+            preparingProvider?.DisableAnalysisCapture();
+            if (source != null) source = source with { CaptureAnalysis = false };
+        }
+    }
     private void CancelPreparation()
     {
         Interlocked.Increment(ref generation);
@@ -174,7 +194,8 @@ public sealed class SoundFlowPlayer : IAudioPlayer
             device?.Stop();
             player?.Pause();
             if (player != null) device?.MasterMixer.RemoveComponent(player);
-            player?.Dispose(); provider?.Dispose(); device?.Dispose();
+            player?.Dispose(); provider?.Dispose(); preparingProvider?.Dispose(); device?.Dispose();
+            preparingProvider = null;
             player = null; provider = null; device = null; source = null;
             lock (preparationSync) { pending?.Cancel(); pending?.Dispose(); pending = null; }
             if (!keepCache && cache != null)

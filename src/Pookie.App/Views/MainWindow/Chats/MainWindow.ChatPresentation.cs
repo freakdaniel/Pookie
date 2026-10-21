@@ -153,7 +153,7 @@ internal sealed partial class MainWindow
         if (chatSending || chatThreadBusy || chatRecipient == null || !chatOutgoing.TryGetValue(chatRecipient.Id, out var outgoing)) return;
         if (chatPending.ContainsKey(chatRecipient.Id)) { await CheckPendingChatAsync(); return; }
         chatRenderingDraft = true; chatInput.Text = outgoing.Draft; chatRenderingDraft = false;
-        chatDrafts[chatRecipient.Id] = outgoing.Draft;
+        if (preferences.ChatSaveDrafts) chatDrafts[chatRecipient.Id] = outgoing.Draft;
         chatSelectedFiles = outgoing.Files; chatSelectedGif = outgoing.Gif; UpdateChatAttachments();
         RefreshChatComposer(); await SendChatAsync();
     }

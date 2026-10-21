@@ -10,17 +10,15 @@ public sealed record StoredWaveEvent(long Sequence, WaveEvent Event);
 public sealed partial class ListeningEventStore : IDisposable
 {
     private readonly SqliteConnection connection;
-    private readonly int retainedListeningEvents;
     private readonly HashSet<long> maintenanceAccounts = [];
     private int pendingMaintenance;
     private bool disposed;
-    private readonly JournalPolicy policy;
+    private JournalPolicy policy;
 
     public ListeningEventStore(string path, int retainedListeningEvents = 50000, JournalPolicy? policy = null)
     {
         if (retainedListeningEvents < 1) throw new ArgumentOutOfRangeException(nameof(retainedListeningEvents));
         this.policy = policy ?? new(RetainedListeningEvents: retainedListeningEvents);
-        this.retainedListeningEvents = this.policy.RetainedListeningEvents;
         connection = new(new SqliteConnectionStringBuilder { DataSource = Path.GetFullPath(path), Pooling = false, DefaultTimeout = 2 }.ToString());
         try
         {
@@ -117,7 +115,7 @@ public sealed partial class ListeningEventStore : IDisposable
             """;
         command.Parameters.AddWithValue("$account", accountId);
         command.Parameters.AddWithValue("$kind", (int)WaveEventKind.Listening);
-        command.Parameters.AddWithValue("$offset", retainedListeningEvents - 1);
+        command.Parameters.AddWithValue("$offset", policy.RetainedListeningEvents - 1);
         command.ExecuteNonQuery();
     }
 

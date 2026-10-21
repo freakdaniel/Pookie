@@ -16,6 +16,14 @@ internal sealed partial class MainWindow
     private readonly Dictionary<long, DateTimeOffset> chatReadRetryAfter = [];
     private DateTimeOffset chatNextPoll;
     private bool chatListLoaded;
+    private CancellationTokenSource? chatPollingCancellation;
+    private bool AllowChatRefresh => preferences.ChatBackgroundRefresh || page.Value == Page.Chats && Window.IsActive;
+    private CancellationToken ChatPollingToken() => (chatPollingCancellation ??=
+        CancellationTokenSource.CreateLinkedTokenSource(chatAccountLifetime?.Token ?? lifetime.Token)).Token;
+    private void CancelChatPolling()
+    {
+        chatPollingCancellation?.Cancel(); chatPollingCancellation?.Dispose(); chatPollingCancellation = null;
+    }
     private bool chatThreadRefreshRequested;
     private double chatLastBottomExtent = -1;
     private double chatViewportWidth, chatViewportHeight;
@@ -44,15 +52,17 @@ internal sealed partial class MainWindow
         chatLocalStore = new(dataPaths, userId);
         var saved = chatLocalStore.Load();
         if (saved.Unread != null) foreach (var pair in saved.Unread) chatUnread.States[pair.Key] = pair.Value;
-        foreach (var pair in saved.Drafts) chatDrafts[pair.Key] = pair.Value;
+        if (preferences.ChatSaveDrafts) foreach (var pair in saved.Drafts) chatDrafts[pair.Key] = pair.Value;
         // A crash may have happened after the server accepted the POST.
         foreach (var pending in saved.Pending) chatPending[pending.RecipientId] = pending with { Uncertain = true };
         RestoreChatOutbox();
+        if (!preferences.ChatSaveDrafts) SaveChatState();
     }
 
     private void ResetChats()
     {
         SaveChatDraft(); CancelChatReads(); CloseChatGifs();
+        CancelChatPolling();
         chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose(); chatAccountLifetime = null; chatSending = false;
         ++chatRevision; ++chatSearchRevision;
         chatAccountId = 0; chatLocalStore = null; chatRecipient = null;
@@ -82,6 +92,7 @@ internal sealed partial class MainWindow
     private void CancelChatReads()
     {
         CloseChatAttachMenu(); CloseChatMusicPicker(); CloseChatVideo(true);
+        CancelChatAutomaticMedia(); CancelKlipyReads();
         chatReadCancellation?.Cancel(); chatReadCancellation?.Dispose(); chatReadCancellation = null;
         if (chatComposerSurface != null) SetChatDragging(false);
         chatDateLayer?.ResetOverlay();
@@ -91,24 +102,25 @@ internal sealed partial class MainWindow
 
     private async Task RefreshChatsAsync()
     {
-        if (disposed || chatsBusy) return;
+        if (disposed || chatsBusy || !AllowChatRefresh) return;
         EnsureChatAccount();
         if (demo || me == null || api.Session == null)
         { chatsStatus.Value = "Войди в SoundCloud, чтобы открыть переписку."; RefreshChatComposer(); return; }
         chatsBusy = true; RefreshChatLoading();
-        var user = me; var session = api.Session; var revision = chatRevision;
+        var user = me; var session = api.Session; var revision = chatRevision; var token = ChatPollingToken();
         chatsStatus.Value = "";
         try
         {
-            var result = await api.GetConversationsAsync(user.Id, token: chatAccountLifetime!.Token);
-            if (!ChatCurrent(session, user.Id, revision)) return;
+            var result = await api.GetConversationsAsync(user.Id, token: token);
+            if (!ChatCurrent(session, user.Id, revision) || token.IsCancellationRequested || !AllowChatRefresh) return;
             var unreadChanged = false;
             foreach (var conversation in result.Conversations)
             {
+                if (token.IsCancellationRequested || !AllowChatRefresh) return;
                 ChatMessage[]? recent = null;
                 if (chatUnread.NeedsMessages(conversation) && chatUnread.States.ContainsKey(conversation.Recipient.Id))
                 {
-                    try { recent = (await api.GetMessagesAsync(user.Id, conversation.Recipient.Id, token: chatAccountLifetime.Token)).Messages; }
+                    try { recent = (await api.GetMessagesAsync(user.Id, conversation.Recipient.Id, token: token)).Messages; }
                     catch (SoundCloudException) { continue; }
                 }
                 if (!ChatCurrent(session, user.Id, revision)) return;
@@ -129,7 +141,7 @@ internal sealed partial class MainWindow
             if (error is SoundCloudException { StatusCode: 401 } && api.Session == session) throw;
         }
         finally { if (chatRevision == revision) { chatsBusy = false; RefreshChatLoading(); } }
-        if (ChatCurrent(session, user.Id, revision) && page.Value == Page.Chats && chatRecipient != null) await RefreshChatThreadAsync();
+        if (!token.IsCancellationRequested && AllowChatRefresh && ChatCurrent(session, user.Id, revision) && page.Value == Page.Chats && chatRecipient != null) await RefreshChatThreadAsync();
     }
 
     private void RenderChatInbox()
@@ -231,17 +243,18 @@ internal sealed partial class MainWindow
     private Task LoadOlderMessagesAsync() => RefreshChatThreadAsync(older: true);
     private async Task RefreshChatThreadAsync(bool initial = false, bool older = false)
     {
-        if (chatThreadBusy || chatRecipient == null || me == null || api.Session == null || older && chatMessageCursor == null) return;
+        if (chatThreadBusy || !AllowChatRefresh || chatRecipient == null || me == null || api.Session == null || older && chatMessageCursor == null) return;
         var recipient = chatRecipient; var user = me; var session = api.Session; var revision = chatRevision;
         var cursor = older ? chatMessageCursor : null;
         chatThreadBusy = true; chatThreadRefreshRequested = false; chatOlder.IsEnabled = false; RefreshChatLoading(); RefreshChatComposer();
         var viewer = chatMessagesView.FindVisualChild<ScrollViewer>() as ScrollViewer;
         var nearBottom = chatRestoreOffset == null && (chatScrollBottom || viewer == null || SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 90);
         var before = viewer == null ? ((double, double)?)null : (SmoothScroll.Maximum(viewer), viewer.VerticalOffset);
+        using var read = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken(), ChatPollingToken());
         try
         {
-            var result = await api.GetMessagesAsync(user.Id, recipient.Id, cursor, ChatReadToken());
-            if (!ChatCurrent(session, user.Id, revision) || page.Value != Page.Chats) return;
+            var result = await api.GetMessagesAsync(user.Id, recipient.Id, cursor, read.Token);
+            if (!ChatCurrent(session, user.Id, revision) || page.Value != Page.Chats || read.IsCancellationRequested || !AllowChatRefresh) return;
             chatThreadLoaded = true;
             if (!older) chatLatestCursor = result.NextHref;
             var oldIds = chatMessages.Select(m => m.Id).ToHashSet();
@@ -291,7 +304,7 @@ internal sealed partial class MainWindow
         }
         finally { if (chatRevision == revision) { chatThreadBusy = false; chatOlder.IsEnabled = true; RefreshChatLoading(); RefreshChatComposer(); } }
         // A send completed while this read was in flight; its snapshot may predate the send.
-        if (chatThreadRefreshRequested && ChatCurrent(session, user.Id, revision) && page.Value == Page.Chats)
+        if (chatThreadRefreshRequested && !read.IsCancellationRequested && AllowChatRefresh && ChatCurrent(session, user.Id, revision) && page.Value == Page.Chats)
             await RefreshChatThreadAsync();
     }
 
@@ -401,12 +414,12 @@ internal sealed partial class MainWindow
     private void SaveChatDraft()
     {
         if (chatLocalStore == null || chatAccountId <= 0) return;
-        if (chatRecipient != null && !chatRenderingDraft) chatDrafts[chatRecipient.Id] = chatInput.Text.Length <= 20000 ? chatInput.Text : chatInput.Text[..20000];
+        if (preferences.ChatSaveDrafts && chatRecipient != null && !chatRenderingDraft) chatDrafts[chatRecipient.Id] = chatInput.Text.Length <= 20000 ? chatInput.Text : chatInput.Text[..20000];
         SaveChatState();
     }
     private void SaveChatState()
     {
-        try { chatLocalStore?.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.Take(50).ToArray(), chatUnread.States.TakeLast(500).ToDictionary())); }
+        try { chatLocalStore?.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.Take(50).ToArray(), chatUnread.States.TakeLast(500).ToDictionary()), preferences.ChatSaveDrafts); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { chatThreadStatus.Value = "Не удалось сохранить черновик или исходящее сообщение."; }
     }
@@ -417,6 +430,10 @@ internal sealed partial class MainWindow
         chatComposer.IsVisible = chatRecipient != null;
         chatInput.IsEnabled = available && !pending;
         chatAttach.IsEnabled = chatGif.IsEnabled = available && !pending && !chatImporting;
+        if (chatGif.IsVisible != preferences.KlipyEnabled)
+        { chatGif.IsVisible = preferences.KlipyEnabled; chatComposerLayout.InvalidateMeasure(); }
+        chatGif.ToolTip = new TextBlock().Text("Поиск GIF в KLIPY");
+        chatSend.ToolTip = new TextBlock().Text(preferences.ChatSendOnEnter ? "Отправить · Enter (Shift+Enter — новая строка)" : "Отправить · Ctrl+Enter");
         chatSend.IsEnabled = available && !pending && !chatImporting && !(chatThreadBusy && chatMessages.Count == 0) &&
             (chatInput.Text.Trim().Length > 0 || chatSelectedFiles.Length > 0 || chatSelectedGif != null) && chatInput.Text.Length <= 20000;
         RefreshChatComposerSurface();
@@ -434,6 +451,7 @@ internal sealed partial class MainWindow
         chatAttachmentPreviewLoad?.Cancel(); chatAttachmentPreviewLoad?.Dispose();
         chatAttachmentStaging.Dispose();
         foreach (var row in ChatRows) row.Clear();
+        CancelChatPolling();
         chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose();
         chatInboxLoading.Dispose(); chatThreadLoading.Dispose(); ClearChatMediaCache(clearSummaries: true); ClearChatVisualCache(); chatMedia.Dispose(); klipy.Dispose();
     }

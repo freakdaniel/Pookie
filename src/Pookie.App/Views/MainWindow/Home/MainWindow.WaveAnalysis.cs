@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
 
     private void ScheduleWaveCandidateAnalysis()
     {
-        if (demo || disposed || waveAccount <= 0 || playbackQueue.Context?.Key != WaveQueueKey ||
+        if (!CanAnalyzeWave || demo || disposed || waveAccount <= 0 || playbackQueue.Context?.Key != WaveQueueKey ||
             waveTaste.Mode == WaveMode.Favorites || !isPlaying.Value || playbackLoading.Value)
         { wavePreviewCancellation?.Cancel(); return; }
         if (wavePreviewSession != waveListening.SessionId)
@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
         Func<SoundCloudTrack, HttpClient, CancellationToken, Task<AudioSample?>> capture)
     {
         await Task.Yield(); // Publish batch ownership before even an instant fixture can complete.
-        bool Current() => !disposed && account == waveAccount && generation == waveGeneration &&
+        bool Current() => CanAnalyzeWave && !disposed && account == waveAccount && generation == waveGeneration &&
             session == waveListening.SessionId && playbackQueue.Context?.Key == WaveQueueKey &&
             waveTaste.Mode != WaveMode.Favorites && isPlaying.Value && !cancellation.IsCancellationRequested;
         try

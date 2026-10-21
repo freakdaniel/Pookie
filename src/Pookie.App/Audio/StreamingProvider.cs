@@ -31,8 +31,12 @@ internal sealed class StreamingProvider : ISoundDataProvider
     private readonly double gainDb;
     private FixedTrackGain? trackGain;
     private Pookie.Recommendations.Audio.MonoAudioSampler? sampler;
-    private readonly bool captureAnalysis;
-    internal Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample() => sampler?.Take();
+    private bool captureAnalysis;
+    private readonly object analysisSync = new();
+    internal Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample()
+    { lock (analysisSync) return sampler?.Take(); }
+    internal void DisableAnalysisCapture()
+    { lock (analysisSync) { captureAnalysis = false; sampler = null; } }
     public double NormalizationGainDb => gainDb;
     public AudioFormat Format { get; private set; }
     public Task<AudioFormat> Ready => ready.Task;
@@ -221,7 +225,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
         if (Format.SampleRate == 0)
         {
             Format = format;
-            if (captureAnalysis && format.SampleRate >= 16000) sampler = new(format.SampleRate, format.Channels);
+            lock (analysisSync)
+                if (captureAnalysis && format.SampleRate >= 16000) sampler = new(format.SampleRate, format.Channels);
             startingSample = (long)(offset * format.SampleRate) * format.Channels;
             if (Duration <= 0 && decoder.Length > 0) Duration = decoder.Length / (double)(format.SampleRate * format.Channels);
             if (stream is HttpRangeStream progressive) progressive.SetDuration(Duration);
@@ -258,7 +263,7 @@ internal sealed class StreamingProvider : ISoundDataProvider
             if (discard < count)
             {
                 var pcm = buffer[discard..count];
-                sampler?.Append(pcm);
+                lock (analysisSync) sampler?.Append(pcm);
                 trackGain?.Apply(pcm);
                 await chunks.Writer.WriteAsync(pcm, token);
             }

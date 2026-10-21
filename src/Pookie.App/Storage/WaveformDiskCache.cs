@@ -9,6 +9,7 @@ internal sealed class WaveformDiskCache(AppDataPaths paths)
     private string FileFor(string url) => Path.Combine(paths.Waveforms, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(url))) + ".json");
     public async Task<byte[]?> ReadAsync(string url, CancellationToken token)
     {
+        using var lease = await CacheDirectoryGate.EnterAsync(paths.Waveforms, token).ConfigureAwait(false);
         try
         {
             var file = new FileInfo(FileFor(url));
@@ -20,6 +21,7 @@ internal sealed class WaveformDiskCache(AppDataPaths paths)
     public async Task WriteAsync(string url, byte[] bytes, CancellationToken token)
     {
         if (bytes.Length is <= 0 or > MaxEntrySize) return;
+        using var lease = await CacheDirectoryGate.EnterAsync(paths.Waveforms, token).ConfigureAwait(false);
         var file = FileFor(url);
         var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

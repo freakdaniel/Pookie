@@ -16,7 +16,11 @@ internal sealed partial class MainWindow
     private bool CanAttachChat() => !disposed && !chatImporting && chatInput.IsEnabled && !chatSending && chatRecipient != null && !chatPending.ContainsKey(chatRecipient.Id);
     private void InitializeChatComposer()
     {
-        Window.Deactivated += () => CloseChatAttachMenu(true);
+        Window.Deactivated += () =>
+        {
+            CloseChatAttachMenu(true);
+            if (!preferences.ChatBackgroundRefresh) CancelChatPolling();
+        };
         chatInput.Commands.Unregister(StandardCommands.Paste);
         chatInput.Commands.Register(StandardCommands.Paste, () => Run(PasteChatAsync), CanAttachChat);
         Window.AllowDrop = true; chatComposer.AllowDrop = true;

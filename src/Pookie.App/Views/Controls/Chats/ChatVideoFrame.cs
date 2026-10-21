@@ -15,7 +15,7 @@ internal sealed class ChatVideoFrame : Panel
     private readonly TextBlock duration;
     private readonly Size intrinsic;
     private readonly DispatcherTimer timer = new(TimeSpan.FromMilliseconds(66));
-    private readonly Func<bool> visible;
+    private readonly Func<bool> visible, autoPlay;
     private readonly Func<byte[]?> data;
     private readonly bool eligible;
     private ChatVideoSession? session;
@@ -25,9 +25,9 @@ internal sealed class ChatVideoFrame : Panel
     internal bool PlayPromptVisible => play.IsVisible;
     internal bool Playing => session?.Snapshot().Playing == true;
     internal static bool CanAutoPlay(int bytes) => bytes is > 0 and <= AutoPlayBytes;
-    internal ChatVideoFrame(ChatVideoInfo? info, int bytes, Func<bool> visible, Func<byte[]?> data, Action activate)
+    internal ChatVideoFrame(ChatVideoInfo? info, int bytes, Func<bool> visible, Func<byte[]?> data, Action activate, Func<bool>? autoPlay = null)
     {
-        this.visible = visible; this.data = data;
+        this.visible = visible; this.data = data; this.autoPlay = autoPlay ?? (() => true);
         intrinsic = info is { Valid: true } ? new(info.Width, info.Height) : new(240, 180);
         eligible = CanAutoPlay(bytes);
         ClipToBounds = true; Cursor = CursorType.Hand;
@@ -37,7 +37,7 @@ internal sealed class ChatVideoFrame : Panel
             .Child(new StackPanel().Horizontal().Spacing(4).Children(duration, Icons.View("speaker-slash", 12, Color.White).CenterVertical()));
         play = new Border().Background(Color.FromArgb(130, 0, 0, 0)).CornerRadius(22).BorderThickness(0).Width(44).Height(44).IsHitTestVisible(false)
             .Child(Icons.View("play-solid", 22, Color.White).Center());
-        play.IsVisible = !eligible;
+        play.IsVisible = !eligible || !this.autoPlay();
         Add(backdrop); Add(Picture); Add(badge); Add(play);
         MouseDown += e => { if (e.Button == MouseButton.Left) { e.Handled = true; activate(); } };
         timer.Tick += Tick; timer.Start();
@@ -56,7 +56,7 @@ internal sealed class ChatVideoFrame : Panel
     private async void Tick()
     {
         if (disposed || starting) return;
-        if (!eligible || failed || !visible()) { StopPlayback(); play.IsVisible = !eligible || failed; return; }
+        if (!eligible || failed || !autoPlay() || !visible()) { StopPlayback(); play.IsVisible = !eligible || failed || !autoPlay(); return; }
         if (session == null)
         {
             if (!slots.Wait(0)) return;
@@ -66,7 +66,7 @@ internal sealed class ChatVideoFrame : Panel
             try
             {
                 var started = await ChatVideoSession.StartAsync(bytes, silent: true, preview: true);
-                if (disposed || !visible()) { await started.DisposeAsync(); slots.Release(); return; }
+                if (disposed || !autoPlay() || !visible()) { await started.DisposeAsync(); slots.Release(); return; }
                 session = started;
             }
             catch { failed = true; play.IsVisible = true; slots.Release(); }
@@ -84,6 +84,10 @@ internal sealed class ChatVideoFrame : Panel
         var old = session; session = null;
         if (old != null) _ = ReleaseAsync(old);
         static async Task ReleaseAsync(ChatVideoSession old) { try { await old.DisposeAsync(); } finally { slots.Release(); } }
+    }
+    internal void RefreshAutoPlay()
+    {
+        if (!autoPlay()) { StopPlayback(); play.IsVisible = true; }
     }
     internal void Stop()
     {

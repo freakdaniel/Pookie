@@ -88,8 +88,7 @@ internal sealed partial class MainWindow
             contentSurface.Row(1),
             playerBar.Row(2),
             QueuePanel().Row(0).RowSpan(3),
-            ProfilePanel().Row(0).RowSpan(3),
-            SettingsPanel().Row(0).RowSpan(3));
+            ProfilePanel().Row(0).RowSpan(3));
         workspace.IsVisible = false;
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
@@ -148,7 +147,7 @@ internal sealed partial class MainWindow
                         profileAvatar.BindIsVisible(hasAvatar))),
                 Icons.View("user-circle", 24).CenterHorizontal().CenterVertical().BindIsVisible(signedIn, value => !value)))
             .Padding(2).Width(34).Height(34).CornerRadius(17)
-            .OnClick(() => { profileOpen.Value = !profileOpen.Value; settingsOpen.Value = false; queueOpen.Value = false; }).CenterVertical();
+            .OnClick(() => { profileOpen.Value = !profileOpen.Value; queueOpen.Value = false; }).CenterVertical();
         var settingsGlyph = Icons.View("gear", 24, Muted);
         settingsGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
         settingsGlyph.Opacity = 0.84;
@@ -157,7 +156,9 @@ internal sealed partial class MainWindow
             .Padding(2).Width(34).Height(34).CornerRadius(17)
             .OnMouseEnter(() => settingsGlyph.Opacity = 1)
             .OnMouseLeave(() => settingsGlyph.Opacity = 0.84)
-            .OnClick(() => { settingsOpen.Value = !settingsOpen.Value; profileOpen.Value = false; queueOpen.Value = false; }).CenterVertical();
+            .ToolTip("Настройки")
+            .OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value))).CenterVertical();
+        page.Changed += () => settingsGlyph.Opacity = page.Value == Page.Settings ? 1 : 0.84;
 
         return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 0).Children(
             new StackPanel().Horizontal().Spacing(16).CenterVertical().Column(0).Children(
@@ -273,10 +274,11 @@ internal sealed partial class MainWindow
             TrackDetailPageView().BindIsVisible(page, value => value == Page.Track),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
-            CollectionPage().BindIsVisible(page, value => value > Page.LibraryTracks));
+            CollectionPage().BindIsVisible(page, IsCollectionPage),
+            SettingsPageView().BindIsVisible(page, value => value == Page.Settings));
         return new DockPanel().LastChildFill().Spacing(18).Children(
             new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading)
-                .BindIsVisible(page, value => value is not (Page.Home or Page.Search or Page.Track or Page.Chats)),
+                .BindIsVisible(page, value => value == Page.Feed || IsLibrary(value)),
             listBody);
     }
 
@@ -351,18 +353,6 @@ internal sealed partial class MainWindow
             MenuChoice("user-circle", "Войти в SoundCloud", () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
             MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
         profileOpen, FloatingMenuPlacement.BelowRight);
-
-    private FrameworkElement SettingsPanel() => ShellMenu(settingsButton,
-        FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Spacing(14).Children(
-            new TextBlock().Text("Настройки").Bold().FontSize(14),
-            new TextBlock().BindText(audioStatus).Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap),
-            new CheckBox().Content("Показывать музыку в Discord").BindIsChecked(discordEnabled).FontSize(12)
-                .OnCheckedChanged(value => { if (presence != null) presence.Enabled = value; }),
-            new StackPanel().Vertical().Spacing(4).Children(
-                new TextBlock().Text("О приложении").FontSize(12).Foreground(Muted),
-                TrackButtons.Action(new TextBlock().Text("Иллюстрации: Icons8").FontSize(12), OpenIllustrationCredits,
-                    TrackButtons.Text, 28).Padding(0).Left())), 300, 18),
-        settingsOpen, FloatingMenuPlacement.BelowRight);
 
     private void OpenIllustrationCredits()
     {

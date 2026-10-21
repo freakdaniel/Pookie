@@ -130,7 +130,7 @@ internal sealed partial class MainWindow
             var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray());
             chatPending[recipient.Id] = pending;
             // Commit before POST: a process crash must never cause an automatic replay.
-            try { store.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary())); }
+            try { store.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary()), preferences.ChatSaveDrafts); }
             catch { chatPending.Remove(recipient.Id); throw; }
             await SendPendingChatAsync(pending, user.Id, recipient, token);
             if (ChatWriteCurrent(user.Id, token) && !chatPending.ContainsKey(recipient.Id))
@@ -142,7 +142,11 @@ internal sealed partial class MainWindow
                     ClearChatAttachments();
                 }
                 SaveChatState();
-                if (gif != null) { try { await klipy.SharedAsync(gif.Slug, token); } catch (HttpRequestException) { } }
+                if (preferences.KlipyEnabled && gif != null)
+                {
+                    using var share = CancellationTokenSource.CreateLinkedTokenSource(token, KlipyReadToken());
+                    try { await klipy.SharedAsync(gif.Slug, share.Token); } catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
+                }
             }
         }
         catch (OperationCanceledException) when (!ChatWriteCurrent(user.Id, token)) { }

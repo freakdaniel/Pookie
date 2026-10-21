@@ -40,7 +40,7 @@ internal sealed partial class MainWindow
     {
         var token = loading!.Token;
         trackDetailSection.Value = section; failedTrackSectionCursor = null;
-        trackDetailState = new(track, new([], null), new([], null));
+        trackDetailState = new(track, new([], null), new([], null)) { CommentSort = preferences.CommentSort };
         RenderTrackDetail();
         if (demo && api.Session == null)
         {

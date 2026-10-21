@@ -482,7 +482,7 @@ internal sealed partial class MainWindow
     }
 
     // Optional rendering of the app's own visual tree into a CPU surface for visual QA.
-    private void CaptureUiPreview(string name)
+    private void CaptureUiPreview(string name, UIElement? popup = null)
     {
         if (Environment.GetEnvironmentVariable("POOKIE_UI_PREVIEW") is not { Length: > 0 } directory) return;
         Directory.CreateDirectory(directory);
@@ -495,6 +495,7 @@ internal sealed partial class MainWindow
         context.BeginFrame(surface);
         context.FillRectangle(new Rect(0, 0, Window.ClientSize.Width, Window.ClientSize.Height), HeaderSurface);
         Window.Content?.Render(context);
+        popup?.Render(context);
         context.EndFrame();
         if (surface is not Aprillz.MewUI.Rendering.ICpuPixelSurface cpu) throw new InvalidOperationException("Preview surface is not readable");
         var pixels = cpu.GetReadOnlyPixelSpan();

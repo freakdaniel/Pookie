@@ -22,6 +22,18 @@ native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entr
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
+`--settings-ui-smoke-test --no-audio` checks the settings gear through native
+clicks, all seven library-style tabs at 1000×680, back/forward section and scroll
+restoration, the persistent likes view, real playback/lyrics/history/Wave policy
+switches, preserved current/manual queue entries, and configuration round trips.
+It also verifies native Material switch geometry, animated travel and pressed size,
+cancelled/disabled input, dropdown mouse/keyboard interaction, and the cache chart's
+real file-size proportions, hover details and empty state after clearing.
+It uses an isolated fixture account, metadata transport and fake audio player;
+no real account writes, messages or audio requests are made. Set
+`POOKIE_UI_PREVIEW=/absolute/output/path` to capture each tab and long-section
+scroll states for visual QA. The excluded reduced-animation preference must stay absent.
+
 `--queue-continuation-ui-smoke-test --no-audio` verifies default automatic
 continuation after a track/playlist: prefetch, manual/source/recommendation priority,
 missing recommendation skip, retained original context and history identity,

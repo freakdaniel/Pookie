@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
     private readonly Dictionary<Image, ChatGifAnimation> chatAnimations = [];
     private readonly Dictionary<string, ChatMediaPackage> chatMediaCache = [];
     private readonly LinkedList<string> chatMediaOrder = [];
-    private long chatMediaBytes;
+    private long chatMediaBytes, chatMediaCacheGeneration;
 
     private sealed record ChatMediaPhoto(Size Size, ImageSource Source, ImageSource Blurred);
     private sealed record ChatMediaSummary(string Label, IImageSource? Thumbnail, Size? ImageSize, string Caption, ChatMediaPhoto?[]? Photos = null, MediaFile[]? Files = null);
@@ -19,6 +19,23 @@ internal sealed partial class MainWindow
     private readonly HashSet<string> chatMediaAutoRequested = [];
     private readonly Queue<string> chatMediaAutoOrder = [];
     private readonly Dictionary<string, Task<bool>> chatMediaLoads = [];
+    private readonly HashSet<string> chatManualMediaRequests = [];
+    private readonly Queue<string> chatManualMediaOrder = [];
+    private CancellationTokenSource? chatAutomaticMediaCancellation, chatKlipyCancellation;
+    private bool AllowAutomaticChatMedia(Pookie.SoundCloud.ChatMessage message) => preferences.ChatAutoLoad || message.SenderId == me?.Id;
+    private CancellationToken ChatAutomaticMediaToken() => (chatAutomaticMediaCancellation ??=
+        CancellationTokenSource.CreateLinkedTokenSource(chatAccountLifetime?.Token ?? lifetime.Token)).Token;
+    private CancellationToken KlipyReadToken() => (chatKlipyCancellation ??=
+        CancellationTokenSource.CreateLinkedTokenSource(chatAccountLifetime?.Token ?? lifetime.Token)).Token;
+    private void CancelChatAutomaticMedia()
+    {
+        chatAutomaticMediaCancellation?.Cancel(); chatAutomaticMediaCancellation?.Dispose(); chatAutomaticMediaCancellation = null;
+        chatMediaAutoRequested.Clear(); chatMediaAutoOrder.Clear();
+    }
+    private void CancelKlipyReads()
+    {
+        chatKlipyCancellation?.Cancel(); chatKlipyCancellation?.Dispose(); chatKlipyCancellation = null;
+    }
     private static string ChatMediaCacheId(Pookie.SoundCloud.ChatMessage message, long peer) => message.Id.StartsWith("local:", StringComparison.Ordinal) && ChatMediaReference.Parse(message.Body) == null
         ? $"{message.SenderId}:{peer}:{message.Id}" : $"{message.SenderId}:{peer}:{message.Body}";
     private ChatMediaPackage? CachedChatMedia(Pookie.SoundCloud.ChatMessage message, long? peer = null)
@@ -32,27 +49,39 @@ internal sealed partial class MainWindow
 
     private void QueueChatMediaPreview(Pookie.SoundCloud.ChatMessage message, long peer)
     {
-        if (page.Value != Page.Chats || HasDecodedChatMedia(message, peer) || ChatMediaReference.Parse(message.Body) == null || me == null ||
+        if (!AllowAutomaticChatMedia(message) || page.Value != Page.Chats || HasDecodedChatMedia(message, peer) || ChatMediaReference.Parse(message.Body) == null || me == null ||
             !chatMediaAutoRequested.Add(ChatMediaCacheId(message, peer))) return;
         chatMediaAutoOrder.Enqueue(ChatMediaCacheId(message, peer));
         while (chatMediaAutoOrder.Count > 256) chatMediaAutoRequested.Remove(chatMediaAutoOrder.Dequeue());
-        Run(async () => { if (await EnsureChatMediaAsync(message, peer)) chatMediaAutoRequested.Remove(ChatMediaCacheId(message, peer)); });
+        Run(async () => { if (await EnsureChatMediaAsync(message, peer, automatic: true)) chatMediaAutoRequested.Remove(ChatMediaCacheId(message, peer)); });
     }
-    private async Task<bool> EnsureChatMediaAsync(Pookie.SoundCloud.ChatMessage message, long peer)
+    private async Task<bool> EnsureChatMediaAsync(Pookie.SoundCloud.ChatMessage message, long peer, bool automatic = false)
     {
-        if (CachedChatMedia(message, peer) != null) return true;
         var key = ChatMediaCacheId(message, peer);
-        if (chatMediaLoads.TryGetValue(key, out var running)) return await running;
-        var task = FetchChatMediaAsync(message, peer);
+        if (automatic && !AllowAutomaticChatMedia(message)) return false;
+        if (!automatic && chatManualMediaRequests.Add(key))
+        {
+            chatManualMediaOrder.Enqueue(key);
+            while (chatManualMediaOrder.Count > 256) chatManualMediaRequests.Remove(chatManualMediaOrder.Dequeue());
+        }
+        if (CachedChatMedia(message, peer) != null) return true;
+        if (chatMediaLoads.TryGetValue(key, out var running))
+        {
+            var completed = await running;
+            if (completed || automatic) return completed;
+            if (chatMediaLoads.GetValueOrDefault(key) == running) chatMediaLoads.Remove(key);
+        }
+        var task = FetchChatMediaAsync(message, peer, automatic);
         chatMediaLoads[key] = task;
         try { return await task; }
         finally { if (chatMediaLoads.GetValueOrDefault(key) == task) chatMediaLoads.Remove(key); }
     }
-    private async Task<bool> FetchChatMediaAsync(Pookie.SoundCloud.ChatMessage message, long peer)
+    private async Task<bool> FetchChatMediaAsync(Pookie.SoundCloud.ChatMessage message, long peer, bool automatic)
     {
         if (me == null || ChatMediaReference.Parse(message.Body) is not { } reference) return false;
-        var account = me.Id; var token = chatAccountLifetime?.Token ?? lifetime.Token;
-        var cacheId = ChatMediaCacheId(message, peer);
+        var account = me.Id;
+        var token = automatic && message.SenderId != account ? ChatAutomaticMediaToken() : chatAccountLifetime?.Token ?? lifetime.Token;
+        var cacheId = ChatMediaCacheId(message, peer); var cacheGeneration = chatMediaCacheGeneration;
         ChatMediaPackage? downloaded = null; var cached = false; var entered = false;
         try
         {
@@ -68,7 +97,7 @@ internal sealed partial class MainWindow
                     var source = ImageSource.FromBgraPixels(image.ThumbWidth, image.ThumbHeight, image.Pixels.AsSpan());
                     return new ChatMediaPhoto(new(image.Width, image.Height), source, ArtworkBackdrop.Create(source, 1) ?? source);
                 }).ToArray(), token);
-                if (disposed || token.IsCancellationRequested || me?.Id != account) return;
+                if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) return;
                 var first = photos.FirstOrDefault(p => p != null);
                 var description = new ChatMediaPackage(early.SenderId, early.RecipientId, early.Caption,
                     early.Files.Select(f => new ChatAttachment(f.Name, f.Type, [], f.AsFile, f.Video)).ToArray(), early.GifUrl);
@@ -78,20 +107,21 @@ internal sealed partial class MainWindow
                 foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
             });
             downloaded = package;
-            if (disposed || token.IsCancellationRequested || me?.Id != account) { ClearMediaPackage(package); return false; }
+            if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) { ClearMediaPackage(package); return false; }
             var summary = await PrepareChatMediaSummaryAsync(package, token);
-            if (package.Attachments.Length == 0 && package.GifUrl is { } gif)
+            if (preferences.KlipyEnabled && package.Attachments.Length == 0 && package.GifUrl is { } gif)
             {
                 try
                 {
-                    var bytes = await klipy.DownloadAsync(gif, token);
+                    using var gifRead = CancellationTokenSource.CreateLinkedTokenSource(token, KlipyReadToken());
+                    var bytes = await klipy.DownloadAsync(gif, gifRead.Token);
                     var decoded = await Task.Run(() => ((IImageSource?)PrepareChatImage(bytes, 72, 72), ChatImagePreview.ReadSize(bytes)), token);
                     summary = summary with { Thumbnail = decoded.Item1, ImageSize = decoded.Item2 };
                 }
                 catch (OperationCanceledException) { throw; }
                 catch { }
             }
-            if (disposed || token.IsCancellationRequested || me?.Id != account) return false;
+            if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) return false;
             var key = ChatMediaCacheId(message, peer);
             AddChatMediaSummary(key, summary);
             AddChatMediaCache(key, package);
@@ -100,9 +130,10 @@ internal sealed partial class MainWindow
             foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
             return true;
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { return false; }
+        catch (OperationCanceledException) { return false; }
         catch
         {
+            if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) return false;
             foreach (var row in ChatRows.Where(r => r.Bound && r.Message != null && ChatMediaCacheId(r.Message, chatRecipient?.Id ?? 0) == ChatMediaCacheId(message, peer)))
             {
                 RenderChatMediaRetry(row);
@@ -186,11 +217,28 @@ internal sealed partial class MainWindow
                 () => { if (row.Message?.Id == message.Id) Run(() => OpenChatMediaAsync(row)); }));
         row.Root.InvalidateMeasure(); chatMessagesView.InvalidateMeasure();
     }
+    private void RenderChatMediaAction(ChatBubbleRow row, string prompt)
+    {
+        if (row.Message is not { } message) return;
+        StopChatAnimations(row.Attachments); row.Attachments.Clear(); row.Attachments.IsVisible = true;
+        row.ResetMediaLayout(); row.MediaKey = ChatMediaCacheId(message, chatRecipient?.Id ?? 0);
+        row.MediaResolved = false; row.MediaLoading = false; row.Open.IsVisible = false;
+        row.Body.Text = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0)?.Caption ?? "";
+        row.Body.IsVisible = row.Body.Text.Length > 0;
+        row.Attachments.Add(new ChatFileCard("Вложение", prompt, message.SenderId == me?.Id, false,
+            () => { if (row.Message?.Id == message.Id) Run(() => OpenChatMediaAsync(row)); }));
+        row.RefreshDelivery(); row.Root.InvalidateMeasure();
+    }
     private void BindChatMediaPreview(ChatBubbleRow row)
     {
         if (row.Message is not { } message) return;
         if (CachedChatMedia(message) is { } package) { RenderChatMedia(row, package); return; }
         var local = ChatOutgoing(message);
+        if (local == null && !AllowAutomaticChatMedia(message) && !chatManualMediaRequests.Contains(ChatMediaCacheId(message, chatRecipient?.Id ?? 0)))
+        {
+            RenderChatMediaAction(row, "Автозагрузка отключена · загрузить");
+            return;
+        }
         var summary = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0);
         row.MediaKey = ChatMediaCacheId(message, chatRecipient?.Id ?? 0); row.MediaResolved = false;
         row.Attachments.IsVisible = true;
@@ -256,7 +304,8 @@ internal sealed partial class MainWindow
                 chatRecipient?.Id == peer && ((FrameworkElement)chatColumns.Children[1]).IsVisible &&
                 row.Bubble.Bounds.Bottom > chatViewport.Bounds.Y && row.Bubble.Bounds.Y < chatViewport.Bounds.Bottom,
             () => row.Message is { } current ? CachedChatMedia(current)?.Attachments.ElementAtOrDefault(index)?.Data : null,
-            () => { if (row.Message is { } current) Run(() => ActivateChatAttachmentAsync(current.Id, index)); });
+            () => { if (row.Message is { } current) Run(() => ActivateChatAttachmentAsync(current.Id, index)); },
+            () => preferences.ChatAutoPlayVideo);
         if (ChatMediaSummaryFor(message, peer ?? 0)?.Photos?.ElementAtOrDefault(index) is { } photo)
             frame.ShowPoster(photo.Source, photo.Blurred);
         return frame;
@@ -268,6 +317,9 @@ internal sealed partial class MainWindow
     {
         var mediaKey = ChatMediaCacheId(row.Message!, chatRecipient?.Id ?? 0);
         if (row.MediaKey == mediaKey && row.MediaResolved) { row.RefreshDelivery(); return; }
+        if (preferences.KlipyEnabled && package.Attachments.Length == 0 && package.GifUrl != null &&
+            !AllowAutomaticChatMedia(row.Message!) && !chatManualMediaRequests.Contains(mediaKey) && ChatDecoded(mediaKey, 0) == null)
+        { RenderChatMediaAction(row, "Автозагрузка отключена · загрузить"); return; }
         var follow = ChatIsAtBottom();
         row.FollowMediaResize = follow; if (row.MediaKey != null) row.Content.AnimateMediaChange();
         row.MediaKey = mediaKey; row.MediaResolved = true; ++row.MediaGeneration;
@@ -316,8 +368,14 @@ internal sealed partial class MainWindow
             var summary = ChatMediaSummaryFor(row.Message!, chatRecipient?.Id ?? 0);
             var frame = CreateChatPhoto(summary?.ImageSize ?? new(260, 190));
             if (summary?.Thumbnail is ImageSource thumbnail) frame.ShowPreview(ArtworkBackdrop.Create(thumbnail, 1) ?? thumbnail, ArtworkBackdrop.Create(thumbnail, .6));
-            row.Attachments.Add(frame);
-            LoadKlipyImage(row, frame, gif);
+            if (!preferences.KlipyEnabled)
+                row.Attachments.Add(new ChatFileCard("GIF · KLIPY", "KLIPY отключён в настройках", row.Message!.SenderId == me?.Id, false,
+                    () => chatThreadStatus.Value = "Включи KLIPY в настройках чатов, чтобы загрузить этот GIF."));
+            else
+            {
+                row.Attachments.Add(frame);
+                LoadKlipyImage(row, frame, gif);
+            }
         }
         row.Root.InvalidateMeasure(); chatMessagesView.InvalidateMeasure();
         if (follow) RequestChatBottom();
@@ -375,9 +433,11 @@ internal sealed partial class MainWindow
     }
     private async void LoadKlipyImage(ChatBubbleRow row, ChatPhotoFrame frame, string url)
     {
+        if (!preferences.KlipyEnabled || row.Message == null) return;
         var message = row.Message; var revision = chatRevision; var generation = row.MediaGeneration;
         row.Load ??= CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
-        var token = row.Load.Token;
+        using var gifRead = CancellationTokenSource.CreateLinkedTokenSource(row.Load.Token, KlipyReadToken());
+        var token = gifRead.Token;
         var mediaKey = row.MediaKey ?? ChatMediaCacheId(message!, chatRecipient?.Id ?? 0);
         if (ChatDecoded(mediaKey, 0) is { } cached)
         {
@@ -446,9 +506,10 @@ internal sealed partial class MainWindow
     }
     private void ClearChatMediaCache(bool clearSummaries = false)
     {
+        ++chatMediaCacheGeneration;
         foreach (var row in ChatRows) row.Clear();
         foreach (var package in chatMediaCache.Values) ClearMediaPackage(package);
-        chatMediaCache.Clear(); chatMediaOrder.Clear(); chatMediaBytes = 0; chatMediaLoads.Clear(); chatMediaAutoRequested.Clear(); chatMediaAutoOrder.Clear();
+        chatMediaCache.Clear(); chatMediaOrder.Clear(); chatMediaBytes = 0; chatMediaLoads.Clear(); chatMediaAutoRequested.Clear(); chatMediaAutoOrder.Clear(); chatManualMediaRequests.Clear(); chatManualMediaOrder.Clear();
         if (clearSummaries) { chatMediaSummaries.Clear(); chatMediaSummaryOrder.Clear(); }
     }
     private static void ClearMediaPackage(ChatMediaPackage package)
@@ -456,12 +517,12 @@ internal sealed partial class MainWindow
     private static string FormatChatFileSize(long size) => size >= 1024 * 1024 ? $"{size / (1024d * 1024):0.#} МБ" : size >= 1024 ? $"{size / 1024d:0.#} КБ" : $"{size} Б";
     private void StartChatAnimation(Image image, byte[] bytes)
     {
-        if (!ChatGifAnimation.CanAnimate(bytes)) return;
+        if (!preferences.ChatAnimateGifs || !ChatGifAnimation.CanAnimate(bytes)) return;
         if (chatAnimations.Remove(image, out var old)) old.Dispose();
         while (chatAnimations.Count >= 6) { var first = chatAnimations.First(); first.Value.Dispose(); chatAnimations.Remove(first.Key); }
         chatAnimations[image] = new(image, bytes, () =>
         {
-            if (disposed || !Window.IsActive || page.Value != Page.Chats || !image.IsVisible || image.ActualHeight <= 0) return false;
+            if (!preferences.ChatAnimateGifs || disposed || !Window.IsActive || page.Value != Page.Chats || !image.IsVisible || image.ActualHeight <= 0) return false;
             var picker = chatGifsOpen.Value && chatGifResults.IsAncestorOf(image);
             if (!picker && !((FrameworkElement)chatColumns.Children[1]).IsVisible) return false;
             var viewport = picker ? chatGifScroll : chatMessagesView.FindVisualChild<ScrollViewer>() as ScrollViewer;

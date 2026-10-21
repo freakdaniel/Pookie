@@ -8,6 +8,7 @@ internal sealed partial class MainWindow
     private bool chatMusicUiSmoke;
     private bool chatMediaUiSmoke;
     private bool menusUiSmoke;
+    private bool settingsUiSmoke;
     private bool queueContinuationUiSmoke;
     private bool chatNavigationUiSmoke;
     private bool chatVideoLiveUi;
@@ -32,6 +33,7 @@ internal sealed partial class MainWindow
         chatMusicUiSmoke = args.Contains("--chat-music-ui-smoke-test");
         chatMediaUiSmoke = args.Contains("--chat-media-ui-smoke-test");
         menusUiSmoke = args.Contains("--menus-ui-smoke-test");
+        settingsUiSmoke = args.Contains("--settings-ui-smoke-test");
         queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
         chatsUiSmoke = chatMusicUiSmoke || chatMediaUiSmoke || args.Contains("--chats-ui-smoke-test");
         chatNavigationUiSmoke = args.Contains("--chat-navigation-ui-smoke-test");
@@ -77,6 +79,7 @@ internal sealed partial class MainWindow
         }
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
         if (menusUiSmoke) Run(VerifyFloatingMenusAsync);
+        if (settingsUiSmoke) Run(VerifySettingsUiAsync);
         if (queueContinuationUiSmoke) Run(VerifyQueueContinuationAsync);
         if (chatNavigationUiSmoke) Run(VerifyChatNavigationUiAsync);
         if (chatVideoLiveUi) Run(VerifyChatVideoLiveUiAsync);

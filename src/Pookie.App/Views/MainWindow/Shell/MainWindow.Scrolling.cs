@@ -67,7 +67,7 @@ internal sealed partial class MainWindow
         {
             Page.Search => searchList,
             Page.LibraryTracks => likesAsList.Value ? likedList : likedGrid,
-            > Page.LibraryTracks => playlistCollectionVisible.Value ? collectionTrackList : collectionGrid,
+            var collection when IsCollectionPage(collection) => playlistCollectionVisible.Value ? collectionTrackList : collectionGrid,
             _ => (ScrollableItemsBase)list
         };
         if (pageItems.TryGetValue(control, out var source))
@@ -112,6 +112,7 @@ internal sealed partial class MainWindow
                 viewer.ScrollChanged += CheckPageEnd;
                 viewer.MouseWheel += OnPageWheel;
             }
+        foreach (var motion in smoothScrolls.Values) motion.Enabled = preferences.SmoothScrolling;
         // Positions belong to this edit's first layout, never to rows realized
         // later by scrolling or pagination.
         likedEditPositions.Clear();
@@ -129,13 +130,14 @@ internal sealed partial class MainWindow
         Page.Library => null,
         Page.Track => null,
         Page.Chats => null,
+        Page.Settings => null,
         Page.Search => searchResults?.NextHref,
-        > Page.LibraryTracks => activeCollection?.NextHref,
+        var collection when IsCollectionPage(collection) => activeCollection?.NextHref,
         _ => nextHref
     };
 
     private int PageItemCount() => page.Value == Page.Search ? searchResults?.Items.Length ?? 0 :
-        page.Value > Page.LibraryTracks ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? collectionTrackList : collectionGrid)?.DataCount ?? 0 :
+        IsCollectionPage(page.Value) ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? collectionTrackList : collectionGrid)?.DataCount ?? 0 :
         page.Value == Page.LibraryTracks ? pageItems.GetValueOrDefault(likesAsList.Value ? likedList : likedGrid)?.DataCount ?? 0 : tracks.Count;
 
     private void OnPageWheel(MouseWheelEventArgs args)
@@ -175,7 +177,7 @@ internal sealed partial class MainWindow
         try
         {
             if (page.Value == Page.Search) await LoadMoreSearchAsync();
-            else if (page.Value > Page.LibraryTracks) await LoadMoreLibraryAsync();
+            else if (IsCollectionPage(page.Value)) await LoadMoreLibraryAsync();
             else await MoreAsync();
             if (disposed || generation != navigationGeneration) return;
             loadedPageCursors.Add(cursor);
