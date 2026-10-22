@@ -12,11 +12,31 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? avatarLoading;
     private long avatarGeneration;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, Task<PlayerPalette>> playerPalettes = new();
+    private CoverGlassBackdrop? trackDetailGlass, collectionGlass;
+    private Storage.FaviconLoader? descriptionFavicons;
+
+    private static CoverGlassBackdrop AttachCardGlass(TrackPageColumns card)
+    {
+        var backdrop = new CoverGlassBackdrop(card.BackgroundArtwork, card);
+        VisualTree.Visit(card, element =>
+        {
+            if (element is MaterialTrackButton button) button.AttachGlassBackdrop(backdrop);
+            if (element is ExpandedGlassSurface surface) surface.SetBackdrop(backdrop);
+        });
+        return backdrop;
+    }
+
+    private void RefreshCardGlass()
+    {
+        if (page.Value == Page.Track) trackDetailGlass?.RefreshArtwork();
+        if (page.Value == Page.LibraryCollection) collectionGlass?.RefreshArtwork();
+    }
 
     private void SetPlayerArtwork(ImageSource? source, long generation, bool pending = false)
     {
         artwork.Source = source != null ? source : Icons.Source("music-notes");
         expandedArtwork.Source = artwork.Source;
+        expandedGlassBackdrop?.RefreshArtwork();
         if (source == null)
         {
             // Keep the previous hue until the new cover is available. Fading to

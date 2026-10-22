@@ -97,7 +97,7 @@ internal sealed partial class MainWindow
         var tools = new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
             new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(), viewSwitch);
         var filterField = MaterialSearchField.Create(likedFilter);
-        return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14).Children(
+        return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
                 tools.Column(1), filterField.Column(2)),
@@ -134,8 +134,8 @@ internal sealed partial class MainWindow
     private void UpdateLikedGridSize(double width)
     {
         if (likedGrid == null || width <= 0) return;
-        // Reserve the scrollbar gutter before it appears so additional rows cannot change column count.
-        var available = Math.Max(200, width - 18);
+        // Native scrollbars overlay the viewport and do not reduce its layout width.
+        var available = Math.Max(200, width);
         var columns = Math.Clamp((int)Math.Floor((available + 24) / (170 + 24)), 1, 6);
         if (libraryColumns != columns) searchLayoutPending = true;
         libraryColumns = columns;

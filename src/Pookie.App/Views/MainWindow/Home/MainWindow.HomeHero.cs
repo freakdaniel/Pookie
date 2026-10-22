@@ -26,7 +26,7 @@ internal sealed partial class MainWindow
         waveSettingsButton = TrackButtons.Icon(Icons.View("gear", 24),
             () => { EnsureWaveTaste(); RefreshWaveSettings(); waveSettingsOpen.Value = !waveSettingsOpen.Value; }, TrackButtons.Glass, 56)
             .ToolTip("Настроить волну");
-        homeHero = new Border().Height(320).CornerRadius(28).ClipToBounds().Margin(0, 0, 18, 0).Child(
+        homeHero = new Border().Height(320).CornerRadius(28).ClipToBounds().Child(
             new Grid().Columns("*").Rows("*").Children(waveBackdrop,
                 new StackPanel().Vertical().Spacing(14).Center().Children(
                     new TextBlock().Text("Твоя волна").FontSize(38).Bold().CenterHorizontal(),

@@ -13,8 +13,18 @@ internal sealed class MaterialTrackButton : Button
     private (Color Surface, Color Foreground)? palette;
     private bool pending, pendingHot, snapNext;
     private Color surfaceFrom;
+    private Color glassTint, glassTintFrom, glassTintTarget;
     private readonly AnimationClock surfaceClock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
     private bool connected, groupStart;
+    private bool glassFinish;
+    private CoverGlassBackdrop? glassBackdrop;
+    internal void UseGlassFinish() => glassFinish = true;
+    internal void AttachGlassBackdrop(CoverGlassBackdrop backdrop)
+    {
+        if (!glassFinish) return;
+        if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
+        glassBackdrop = backdrop; backdrop.Changed += InvalidateVisual; InvalidateVisual();
+    }
     private double innerCorner = 8, shapeFrom, shapeTarget = 8;
     private readonly AnimationClock shapeClock = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     internal bool IsConnected => connected;
@@ -27,7 +37,11 @@ internal sealed class MaterialTrackButton : Button
         // Own the colour animation: straight RGBA transitions briefly make the
         // translucent white glass opaque before it has acquired its selected tint.
         Transitions = [];
-        surfaceClock.TickCallback = amount => Background = BlendSurface(surfaceFrom, target!.Value, amount);
+        surfaceClock.TickCallback = amount =>
+        {
+            glassTint = BlendSurface(glassTintFrom, glassTintTarget, amount);
+            Background = BlendSurface(surfaceFrom, target!.Value, amount);
+        };
     }
 
     private static Color BlendSurface(Color from, Color to, double amount)
@@ -106,8 +120,10 @@ internal sealed class MaterialTrackButton : Button
         var first = target == null;
         surfaceClock.Stop();
         surfaceFrom = Background;
+        glassTintFrom = glassTint;
+        glassTintTarget = variant == TrackButtons.Glass ? GlassSheen.LightControlTint(next) : Color.FromArgb(160, next.R, next.G, next.B);
         target = next;
-        if (first || snap || FindVisualRoot() is not Window) Background = next;
+        if (first || snap || FindVisualRoot() is not Window) { glassTint = glassTintTarget; Background = next; }
         else surfaceClock.Start();
     }
 
@@ -121,14 +137,24 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnRender(IGraphicsContext context)
     {
         RefreshSurface();
-        if (connected)
+        if (glassBackdrop != null)
+        {
+            var bounds = GetSnappedBorderBounds(Bounds);
+            var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
+            glassBackdrop.Draw(context, bounds, corners);
+            context.FillPath(GlassSheen.Shape(bounds, corners), glassTint);
+        }
+        else if (connected)
             DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
         else base.OnRender(context);
+        if (glassFinish) GlassSheen.Draw(context, GetSnappedBorderBounds(Bounds),
+            connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35);
     }
 
     protected override void OnDispose()
     {
         surfaceClock.Stop(); shapeClock.Stop();
+        if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
         base.OnDispose();
     }
 }

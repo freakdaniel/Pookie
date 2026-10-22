@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
     {
         var result = new ItemsControl().Items(Array.Empty<SoundCloudTrack>(), track => track.Title)
             .ItemHeight(TrackRowLayout.Stride).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .ItemPadding(new Thickness(0, 0, 18, TrackRowLayout.Gap));
+            .ItemPadding(new Thickness(0, 0, 0, TrackRowLayout.Gap));
         result.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
             var row = CreateLibraryTrackRow();

@@ -23,6 +23,7 @@ internal sealed partial class MainWindow
         if (OperatingSystem.IsWindows() && !GetLikedActionCursor(out originalCursor)) throw new InvalidOperationException("Could not save cursor position.");
         CaptureUiPreview("list-before-actions");
         Window.Activate();
+        await WaitForLikedLayoutAsync(() => Window.IsActive);
         timer.Stop();
         Button? active = null;
         try

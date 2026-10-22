@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -140,9 +139,7 @@ internal sealed partial class MainWindow
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.Host is not ("soundcloud.com" or "www.soundcloud.com") || uri.UserInfo != "") return;
-        try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        { status.Value = "Не удалось открыть SoundCloud."; }
+        OpenExternalUrl(uri.AbsoluteUri, () => status.Value = "Не удалось открыть SoundCloud");
     }
 
     private static string DetailAge(string? value)

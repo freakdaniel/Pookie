@@ -58,7 +58,8 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Recycled artist captions leaked into album cards");
 
         ShowLibraryTracks(); likedFilter.Text = ""; likesAsList.Value = true;
-        await WaitForLikedLayoutAsync(() => likedRows.Values.Count(row => row.Track != null && row.Root.ActualWidth > 100) > 2);
+        await WaitForLikedLayoutAsync(() => NavigationScroll() != null &&
+            likedRows.Values.Count(row => row.Track != null && row.Root.ActualWidth > 100) > 2);
         var likesScroll = NavigationScroll()!;
         likesScroll.SetScrollOffsets(0, 320);
         await Task.Delay(80, lifetime.Token);

@@ -58,10 +58,12 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
                 trackDetailCommentsTitle.ActualHeight > 0);
             await VerifyLongTrackHeroResizeAsync();
+            VerifyCardGlassSource(trackDetailGlass!, trackDetailCover, trackDetailBackdrop, trackDetailPlay);
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
             if (trackDetailTitle.Bounds.Y >= trackDetailAuthor.Bounds.Y || trackDetailPlay.Bounds.X >= trackDetailTitle.Bounds.X ||
                 trackDetailLike.Bounds.Bottom > trackDetailCover.Bounds.Bottom + 1 || trackDetailLike.Bounds.Y <= trackDetailWaveform.Bounds.Y)
                 throw new InvalidOperationException("Hero title, author, playback, waveform and actions do not follow the reference layout.");
+            await VerifyTrackDescriptionAsync();
             await MoreTrackRepliesAsync(fixtures[0], trackDetailState.Comments.Comments[0]);
             if (trackDetailState.Comments.Comments[0].Replies.Length != 2 || trackDetailState.Comments.Comments[0].RepliesCursor != null)
                 throw new InvalidOperationException("Replies did not append or deduplicate correctly.");
@@ -157,6 +159,9 @@ internal sealed partial class MainWindow
                     Window.Content is Aprillz.MewUI.Controls.FrameworkElement root && Math.Abs(root.ActualWidth - width) < 1 &&
                     !trackDetailScroll.IsMeasureDirty && !trackDetailScroll.IsArrangeDirty);
                 await WaitForLoginFrameAsync();
+                if (Math.Abs(trackDetailBackdrop.Bounds.X - contentFrame.Bounds.X - contentFrame.Padding.Left) > 1 ||
+                    Math.Abs(trackDetailBackdrop.Bounds.Right - (contentFrame.Bounds.Right - contentFrame.Padding.Right)) > 1)
+                    throw new InvalidOperationException($"The track page retained a scrollbar gutter at width {width}: card={trackDetailBackdrop.Bounds}, frame={contentFrame.Bounds}.");
                 var titleY = trackDetailTitle.Bounds.Y; var authorY = trackDetailAuthor.Bounds.Y;
                 var waveY = trackDetailWaveform.Bounds.Y; var waveHeight = trackDetailWaveform.ActualHeight;
                 var actionsY = trackCommentActions.Bounds.Y;

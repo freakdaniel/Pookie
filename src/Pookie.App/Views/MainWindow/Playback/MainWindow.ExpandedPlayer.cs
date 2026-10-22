@@ -19,9 +19,10 @@ internal sealed partial class MainWindow
     private ExpandedPlayerLayout expandedLayout = null!;
     private Border expandedCover = null!;
     private Image expandedArtwork = null!;
+    private CoverGlassBackdrop expandedGlassBackdrop = null!;
     private Slider expandedProgress = null!;
     private TextBlock expandedPositionLabel = null!, expandedDurationLabel = null!;
-    private Border expandedVolume = null!;
+    private ExpandedGlassSurface expandedVolume = null!;
     private Slider expandedVolumeSlider = null!;
     private ItemsControl expandedQueue = null!;
     private readonly Dictionary<Grid, CompactTrackRow> expandedQueueRows = [];
@@ -37,6 +38,7 @@ internal sealed partial class MainWindow
     private FrameworkElement ExpandedPlayer()
     {
         expandedArtwork = new Image().Source(artwork.Source).StretchMode(Stretch.UniformToFill);
+        expandedGlassBackdrop = new CoverGlassBackdrop(expandedArtwork);
         var transport = new Grid().Columns("*").Rows("*");
         transport.Opacity = 0;
         transport.IsHitTestVisible = false;
@@ -48,6 +50,16 @@ internal sealed partial class MainWindow
                     Icons.View("pause-solid", 28, Color.White).Center().BindIsVisible(isPlaying)),
                 () => Run(ToggleAsync), 60),
             ExpandedIconButton("skip-forward-solid", () => Run(() => SkipAsync(1)), 42));
+        var like = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
+                Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
+                Icons.View("heart-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isLiked)),
+            () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).ToolTip("Нравится");
+        var dislike = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
+                Icons.View("thumbs-down", 24, Color.White).Center().BindIsVisible(isDisliked, value => !value),
+                Icons.View("thumbs-down-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isDisliked)),
+            () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable)
+            .ToolTip("Не нравится — исключить из волны · Нажми ещё раз, чтобы отменить");
+        ((ExpandedGlassButton)like).Connect(true); ((ExpandedGlassButton)dislike).Connect(false);
         transport.Children(
             new Border().Background(Color.FromArgb(100, 0, 0, 0)).IsHitTestVisible(false),
             coverControls,
@@ -58,16 +70,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle).Left().Column(0),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
-                new StackPanel().Horizontal().Spacing(4).Right().Column(2).Children(
-                ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
-                        Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
-                        Icons.View("heart-filled", 24, LikedHeart).Center().BindIsVisible(isLiked)),
-                    () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).ToolTip("Нравится"),
-                ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
-                        Icons.View("thumbs-down", 24, Color.White).Center().BindIsVisible(isDisliked, value => !value),
-                        Icons.View("thumbs-down-filled", 24, LikedHeart).Center().BindIsVisible(isDisliked)),
-                    () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable)
-                    .ToolTip("Не нравится — исключить из волны. Нажми ещё раз, чтобы отменить."))));
+                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, dislike)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>
@@ -118,7 +121,7 @@ internal sealed partial class MainWindow
             expandedBackdrop.Row(0).RowSpan(2),
             new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
                 Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
-                ExpandedIconButton("x", () => SetExpandedPlayer(false), 44).Right().Column(1)),
+                ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false).Right().Column(1)),
             expandedLayout.Row(1).Margin(24, 0, 24, 32));
         expandedHost.Opacity = 0;
         expandedHost.IsVisible = false;
@@ -168,18 +171,18 @@ internal sealed partial class MainWindow
         return expandedHost;
     }
 
-    private Border ExpandedVolumeControl()
+    private ExpandedGlassSurface ExpandedVolumeControl()
     {
         expandedVolumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(100).CenterVertical();
         expandedVolumeSlider.Opacity = 0;
         expandedVolumeSlider.IsEnabled = false;
         expandedVolumeSlider.Transitions = [.. expandedVolumeSlider.Transitions ?? [],
             Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(.2, 0, 0, 1))];
-        expandedVolume = new Border().Background(Color.FromArgb(150, 0, 0, 0)).CornerRadius(19)
-            .Width(38).Height(38).ClipToBounds().Child(new Grid().Columns("38,*").Rows("*").Children(
+        expandedVolume = new ExpandedGlassSurface(expandedGlassBackdrop).Background(Color.Transparent).BorderThickness(0).CornerRadius(19)
+            .Width(38).Height(38).Content(new Grid().Columns("38,*").Rows("*").Children(
                 ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                     Icons.View("speaker-high", 20, Color.White).Center().BindIsVisible(muted, value => !value),
-                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, 38).Column(0),
+                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, 38, paintSurface: false).Column(0),
                 expandedVolumeSlider.Margin(8, 0, 14, 0).Column(1)));
         expandedVolume.Transitions = [Transition.Create(FrameworkElement.WidthProperty, 250, Easing.CubicBezier(.2, 0, 0, 1))];
         hoverReveals.Add(new HoverReveal(expandedVolume, SetExpandedVolumeOpen, () => expandedVolumeSlider.IsMouseCaptured));
@@ -193,19 +196,18 @@ internal sealed partial class MainWindow
         expandedVolumeSlider.IsEnabled = open;
     }
 
-    private static Button ExpandedIconButton(string icon, Action action, double size, ObservableValue<bool>? active = null)
+    private Button ExpandedIconButton(string icon, Action action, double size, ObservableValue<bool>? active = null)
         => ExpandedActionButton(Icons.View(icon, size > 30 ? 24 : 18, Color.White), action, size, active);
 
-    private static Button ExpandedActionButton(FrameworkElement glyph, Action action, double size, ObservableValue<bool>? active = null)
+    private Button ExpandedActionButton(FrameworkElement glyph, Action action, double size, ObservableValue<bool>? active = null,
+        bool paintSurface = true, bool coverGlass = true)
     {
-        var button = PlayerButton(glyph, action, active).Width(size).Height(size).CornerRadius(size / 2);
-        button.Transitions = [Transition.Create(Control.BackgroundProperty, 180, Easing.CubicBezier(.2, 0, 0, 1))];
-        bool hovered = false;
-        void Refresh() => button.Background = Color.FromArgb((byte)(active?.Value == true ? 210 : hovered ? 185 : 150), 0, 0, 0);
+        var button = new ExpandedGlassButton(coverGlass ? expandedGlassBackdrop : null, paintSurface).Initialize(glyph)
+            .Width(size).Height(size).CornerRadius(size / 2).CenterVertical().OnClick(action);
+        void Refresh() => button.SetActive(active?.Value == true);
         if (active != null) active.Changed += Refresh;
         Refresh();
-        return button.OnMouseEnter(() => { hovered = true; Refresh(); })
-            .OnMouseLeave(() => { hovered = false; Refresh(); });
+        return button;
     }
 
     private void SetExpandedPlayer(bool open)
@@ -309,6 +311,7 @@ internal sealed partial class MainWindow
         expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
         if (!disposed && overviewRefreshPending) RefreshOverviewSections();
         expandedLoading.SetLoading(false); expandedBuffer.Reset(); expandedBackdrop.Reset();
+        expandedGlassBackdrop?.Reset();
         workspace.IsHitTestVisible = workspace.IsEnabled;
     }
 }

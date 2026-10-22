@@ -36,7 +36,7 @@ internal sealed partial class MainWindow
         var enabled = trackDetailLike.IsEnabled; var style = trackDetailLike.StyleName;
         trackDetailLike.IsEnabled = true; trackDetailLike.StyleName = TrackButtons.Glass;
         MoveActionPointer(new Point(trackDetailLike.Bounds.X + 10, trackDetailLike.Bounds.Y + 10));
-        await WaitForLikedLayoutAsync(() => trackDetailLike.IsMouseOver && trackDetailLike.Background == Color.FromArgb(56, 255, 255, 255));
+        await WaitForLikedLayoutAsync(() => trackDetailLike.IsMouseOver && trackDetailLike.Background == TrackButtons.HoverColor(TrackButtons.GlassSurface, TrackButtons.OnSurface));
         MoveActionPointer(new Point(1, 1)); trackDetailLike.Focus();
         await WaitForLikedLayoutAsync(() => trackDetailLike.IsFocused && trackDetailLike.Background == TrackButtons.GlassSurface);
         TrackButtons.SetLiked(trackDetailLike, true, TrackButtons.Glass);

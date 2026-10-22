@@ -78,6 +78,9 @@ internal sealed partial class MainWindow
     private void ObservePageScrolling()
     {
         if (disposed) return;
+        shellPageScroll.Refresh();
+        headerGlass.Update(page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset);
+        contentBottomFade.IsVisible = page.Value != Page.Chats;
         var frameWidth = Math.Min(1440, Window.ClientSize.Width);
         if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
         {
@@ -121,7 +124,9 @@ internal sealed partial class MainWindow
 
     private static void DisablePreviewGridScrolling(ItemsControl grid)
     {
-        if (grid.FindVisualChild<ScrollViewer>() is ScrollViewer viewer) viewer.VerticalScroll = ScrollMode.Disabled;
+        grid.CornerRadius = 0;
+        if (grid.FindVisualChild<ScrollViewer>() is ScrollViewer viewer)
+        { viewer.CornerRadius = 0; viewer.VerticalScroll = ScrollMode.Disabled; }
     }
 
     private string? PageCursor() => page.Value switch
@@ -199,6 +204,9 @@ internal sealed partial class MainWindow
 
     private void ResetPageScrolling()
     {
+        shellScroll.SetScrollOffsets(0, 0);
+        headerGlass.Update(0);
+        headerGlass.RefreshBackdrop();
         trackDetailSectionSkeleton?.SetActive(false);
         likedEditPositions.Clear();
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();

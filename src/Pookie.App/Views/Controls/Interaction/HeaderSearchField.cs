@@ -1,0 +1,71 @@
+using Aprillz.MewUI;
+using Aprillz.MewUI.Animation;
+using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Rendering;
+
+namespace Pookie.App;
+
+// The native TextBox keeps selection, IME and clipboard support. The translucent
+// surface sits over the shell's live blurred backdrop without a second capture.
+internal sealed class HeaderSearchField : ContentControl
+{
+    private readonly GlassSurface surface;
+    private readonly TextBox input;
+    private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
+    private double emphasis, from, target;
+
+    internal HeaderSearchField(TextBox input)
+    {
+        this.input = input;
+        Height = 48; Padding = new Thickness(6, 4); BorderThickness = 0; Background = Color.Transparent;
+        input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(14).Foreground(TrackButtons.OnSurface);
+        surface = new GlassSurface().Height(40).CornerRadius(20).Padding(16, 0)
+            .Content(new Grid().Columns("24,*").Rows("*").Spacing(12).Children(
+                Icons.View("magnifying-glass", 22, TrackButtons.OnSurface).Center().Column(0), input.CenterVertical().Column(1)));
+        Content = surface;
+        motion.TickCallback = value =>
+        {
+            emphasis = from + (target - from) * value; surface.Emphasis = emphasis;
+            surface.InvalidateVisual(); InvalidateVisual();
+        };
+        MouseEnter += Refresh; MouseLeave += Refresh;
+        MouseDown += args => { if (args.Button == MouseButton.Left) input.Focus(); };
+        input.GotFocus += Refresh; input.LostFocus += Refresh;
+    }
+
+    private void Refresh()
+    {
+        var next = input.IsFocused ? 1 : IsMouseOver ? .45 : 0;
+        if (target == next) return;
+        motion.Stop(); from = emphasis; target = next;
+        if (FindVisualRoot() is Window) motion.Start();
+        else { emphasis = next; surface.Emphasis = next; surface.InvalidateVisual(); }
+    }
+
+    protected override void OnRender(IGraphicsContext context)
+    {
+        if (surface.Bounds.Width <= 0) return;
+        context.DrawBoxShadow(surface.Bounds, 20, 6, Color.FromArgb((byte)(65 + emphasis * 25), 0, 0, 0), offsetY: 2);
+    }
+
+    protected override void OnDispose() { motion.Stop(); base.OnDispose(); }
+
+    private sealed class GlassSurface : ContentControl
+    {
+        internal double Emphasis { get; set; }
+
+        protected override void RenderSubtree(IGraphicsContext context)
+        {
+            context.Save();
+            try { context.SetClipRoundedRect(Bounds, 20, 20); base.RenderSubtree(context); }
+            finally { context.Restore(); }
+        }
+
+        protected override void OnRender(IGraphicsContext context)
+        {
+            if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
+            context.FillRoundedRectangle(Bounds, 20, 20, Color.FromArgb((byte)(218 + Emphasis * 18), 49, 49, 55));
+            GlassSheen.Draw(context, Bounds, new CornerRadius(20), Emphasis);
+        }
+    }
+}

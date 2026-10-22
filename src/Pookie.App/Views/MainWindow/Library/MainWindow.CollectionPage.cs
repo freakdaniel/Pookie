@@ -34,9 +34,9 @@ internal sealed partial class MainWindow
         collectionAuthor = new TextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         collectionMeta = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         collectionDescription = new TextBlock().FontSize(14).FontWeight(FontWeight.Normal).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(48).TextTrimming(TextTrimming.CharacterEllipsis);
-        collectionPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnPrimary).Center();
+        collectionPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnSurface).Center();
         collectionPlay = TrackButtons.Icon(collectionPlayIcon,
-            () => Run(PlayDisplayedCollectionAsync), TrackButtons.Filled, 64);
+            () => Run(PlayDisplayedCollectionAsync), TrackButtons.Glass, 64);
         var author = TrackButtons.Action(collectionAuthor, () =>
         {
             if (CollectionAuthor is { } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, "Исполнитель", user.AvatarUrl, User: user)));
@@ -69,8 +69,9 @@ internal sealed partial class MainWindow
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),
                 new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Row(2).Children(TrackButtons.Connected(collectionLike, collectionRepost), collectionCopy,
                     ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44), more)),
-            coverFrame, true, collectionBackdrop, new Border().Background(Color.FromArgb(145, 18, 18, 18)))
+            coverFrame, true, collectionBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen())
             { HeroArtworkMinWidth = 176, HeroArtworkMaxWidth = 208 }.Initialize();
+        collectionGlass = AttachCardGlass(hero);
         var header = new ShadowDecorator().BlurRadius(12).OffsetY(4).ShadowColor(Color.FromArgb(60, 0, 0, 0)).CornerRadius(20)
             .Margin(-12, -8, -12, -16)
             .Child(new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(hero));
@@ -79,10 +80,10 @@ internal sealed partial class MainWindow
             collectionFilterText = value; RefreshCollectionTracks();
             CollectionScroll?.SetScrollOffsets(0, 0);
         });
-        collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 18, 0).Top().IsVisible(false);
+        collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
         var tools = new Grid().Columns("*,320").Rows("Auto").Spacing(16).Children(
             new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
-            MaterialSearchField.Create(collectionFilter).Margin(0, 0, 18, 0).Column(1));
+            MaterialSearchField.Create(collectionFilter).Column(1));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
             .Children(collectionDescriptionScroll,
@@ -95,7 +96,7 @@ internal sealed partial class MainWindow
     {
         var result = new ItemsControl().Items(Array.Empty<CollectionTrackEntry>(), entry => entry.Track.Title)
             .ItemHeight(64).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .ItemPadding(new Thickness(0, 0, 18, 0));
+            .ItemPadding(new Thickness(0));
         result.ItemTemplate = new DelegateTemplate<CollectionTrackEntry>(context =>
         {
             CompactTrackRow row = null!;
@@ -164,6 +165,7 @@ internal sealed partial class MainWindow
         if (displayedCollection?.Key != item?.Key)
         {
             collectionBackdrop.Source = null; collectionBackdrop.Opacity = 0;
+            collectionGlass?.RefreshArtwork();
             collectionFilter.Text = ""; collectionFilterText = "";
             collectionDescriptionExpanded = false;
             collectionActionStatusKey = null;
@@ -199,6 +201,7 @@ internal sealed partial class MainWindow
             }, lifetime.Token));
             if (disposed || generation != navigationGeneration || !ReferenceEquals(displayedCollection, item)) return;
             collectionBackdrop.Source = background; collectionBackdrop.Opacity = background == null ? 0 : 1;
+            collectionGlass?.RefreshArtwork();
         });
         RefreshCollectionPlayback(); RefreshFollowingButtons(); RefreshCollectionActions();
         Run(LoadCollectionActionsAsync);
@@ -208,7 +211,7 @@ internal sealed partial class MainWindow
     {
         if (collectionPlay == null || !playlistCollectionVisible.Value) return;
         var playing = playbackQueue.Context?.Key == displayedCollection?.Key && isPlaying.Value;
-        collectionPlayIcon.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
+        collectionPlayIcon.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         collectionPlay.IsEnabled = activeCollection?.Items.Any(item => item.Track != null) == true;
     }
 

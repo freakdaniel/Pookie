@@ -97,7 +97,7 @@ internal sealed partial class MainWindow
                     var height = index == 8 ? tallHeight : index % 2 == 0 ? 680 : tallHeight;
                     Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
                     await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(Window.ClientSize.Height - height) < 1 &&
-                        Math.Abs(homeWaveLayout.ActualHeight - waveSettingsPanel.ActualHeight - HomeWaveLayout.DrawerInset * 2) < 1);
+                        Math.Abs(homeWaveLayout.ActualHeight - waveSettingsPanel.ActualHeight - HomeWaveLayout.HeaderInset - HomeWaveLayout.DrawerInset * 2) < 1);
                     VerifyWaveDrawerBounds();
                     if (index == 8)
                     {
@@ -240,7 +240,7 @@ internal sealed partial class MainWindow
     {
         var viewport = homeWaveLayout.Bounds; var panel = waveSettingsPanel.Bounds;
         if (!contentSurface.IsAncestorOf(homeWaveLayout) || viewport != contentSurface.Bounds ||
-            Math.Abs(panel.Y - contentSurface.Bounds.Y - HomeWaveLayout.DrawerInset) > 1 ||
+            Math.Abs(panel.Y - contentSurface.Bounds.Y - HomeWaveLayout.HeaderInset - HomeWaveLayout.DrawerInset) > 1 ||
             Math.Abs(contentSurface.Bounds.Right - panel.Right - HomeWaveLayout.DrawerInset) > 1 ||
             !homeWaveLayout.IsAncestorOf(waveSettingsPanel) || panel.X < viewport.X || panel.Y < viewport.Y ||
             panel.Right > viewport.Right || panel.Bottom > viewport.Bottom || Math.Abs(panel.Width - 360) > 1 ||

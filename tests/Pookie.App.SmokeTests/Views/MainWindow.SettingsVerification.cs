@@ -56,11 +56,11 @@ internal sealed partial class MainWindow
                 if (settingsTabs[section].IsEnabled || settingsTabs[section].StyleName != "section-button")
                     throw new InvalidOperationException("The selected settings tab lost the library section style or active state.");
                 CaptureUiPreview("settings-" + section.ToString().ToLowerInvariant() + "-1000x680");
-                var maximum = SmoothScroll.Maximum(settingsScroll);
+                var maximum = SmoothScroll.Maximum(shellScroll);
                 if (maximum > 50)
                 {
-                    settingsScroll.SetScrollOffsets(0, maximum);
-                    await WaitForSettingsLayoutAsync(() => Math.Abs(settingsScroll.VerticalOffset - maximum) < 1);
+                    shellScroll.SetScrollOffsets(0, maximum);
+                    await WaitForSettingsLayoutAsync(() => Math.Abs(shellScroll.VerticalOffset - maximum) < 1);
                     await SettleSettingsPresentationAsync();
                     CaptureUiPreview("settings-" + section.ToString().ToLowerInvariant() + "-bottom-1000x680");
                 }
@@ -71,16 +71,16 @@ internal sealed partial class MainWindow
             await VerifySettingsCacheChartAsync();
 
             await SelectSettingsTabAsync(SettingsSection.Chats);
-            await WaitForSettingsLayoutAsync(() => SmoothScroll.Maximum(settingsScroll) > 100);
-            var savedScroll = Math.Min(180, SmoothScroll.Maximum(settingsScroll));
-            settingsScroll.SetScrollOffsets(0, savedScroll);
-            await WaitForSettingsLayoutAsync(() => Math.Abs(settingsScroll.VerticalOffset - savedScroll) < 1);
+            await WaitForSettingsLayoutAsync(() => SmoothScroll.Maximum(shellScroll) > 100);
+            var savedScroll = Math.Min(180, SmoothScroll.Maximum(shellScroll));
+            shellScroll.SetScrollOffsets(0, savedScroll);
+            await WaitForSettingsLayoutAsync(() => Math.Abs(shellScroll.VerticalOffset - savedScroll) < 1);
             await SelectSettingsTabAsync(SettingsSection.About);
             RouteWaveformClick(SettingsCenter(backButton));
             await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.Chats &&
-                pendingNavigationScroll == null && Math.Abs(settingsScroll.VerticalOffset - savedScroll) < 1);
+                pendingNavigationScroll == null && Math.Abs(shellScroll.VerticalOffset - savedScroll) < 1);
             RouteWaveformClick(SettingsCenter(forwardButton));
-            await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.About && settingsScroll.VerticalOffset < 1);
+            await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.About && shellScroll.VerticalOffset < 1);
 
             await SelectSettingsTabAsync(SettingsSection.Interface);
             await SetSettingsChoiceAsync("likes", 1);
@@ -272,7 +272,11 @@ internal sealed partial class MainWindow
     private async Task SelectSettingsTabAsync(SettingsSection section)
     {
         if (settingsSection.Value != section || page.Value != Page.Settings)
-            RouteWaveformClick(SettingsCenter(settingsTabs[section]));
+        {
+            if (settingsTabs[section].Bounds.Y >= 64) RouteWaveformClick(SettingsCenter(settingsTabs[section]));
+            else await ShowSettingsAsync(section);
+        }
+        else shellScroll.SetScrollOffsets(0, 0);
         await WaitForSettingsLayoutAsync(() => page.Value == Page.Settings && settingsSection.Value == section &&
             !navigationHistory[navigationIndex].Pending && settingsScroll.ActualHeight > 50);
         await SettleSettingsPresentationAsync();
@@ -336,7 +340,7 @@ internal sealed partial class MainWindow
         CaptureUiPreview("settings-select-after-pointer-selection");
         RouteWaveformClick(SettingsCenter(select));
         await WaitForSettingsLayoutAsync(() => select.IsDropDownOpen && select.MenuReveal == 1);
-        RouteWaveformClick(SettingsCenter(settingsTabs[SettingsSection.Interface]));
+        RouteWaveformClick(new Point(10, 80));
         await WaitForSettingsLayoutAsync(() => !select.IsDropDownOpen);
         RouteWaveformPointer(new Point(10, 10));
         await WaitForSettingsLayoutAsync(() => select.Background == TrackButtons.TonalSurface);
@@ -537,9 +541,9 @@ internal sealed partial class MainWindow
     private async Task RevealSettingsControlAsync(FrameworkElement control)
     {
         await WaitForSettingsLayoutAsync(() => control.ActualHeight > 0);
-        var offset = Math.Clamp(settingsScroll.VerticalOffset + control.Bounds.Y - settingsScroll.Bounds.Y - 24, 0, SmoothScroll.Maximum(settingsScroll));
-        settingsScroll.SetScrollOffsets(0, offset);
-        await WaitForSettingsLayoutAsync(() => control.Bounds.Y >= settingsScroll.Bounds.Y - 1 &&
+        var offset = Math.Clamp(shellScroll.VerticalOffset + control.Bounds.Y - 88, 0, SmoothScroll.Maximum(shellScroll));
+        shellScroll.SetScrollOffsets(0, offset);
+        await WaitForSettingsLayoutAsync(() => control.Bounds.Y >= 64 - 1 &&
             control.Bounds.Bottom <= settingsScroll.Bounds.Bottom + 1);
     }
 
@@ -591,7 +595,7 @@ internal sealed partial class MainWindow
             { await WaitForLoginFrameAsync(); return; }
             await Task.Delay(50, lifetime.Token);
         }
-        throw new InvalidOperationException($"Settings layout did not settle: page={page.Value}, section={settingsSection.Value}, scroll={settingsScroll.VerticalOffset}, viewport={settingsScroll.Bounds}, window={Window.ClientSize}.");
+        throw new InvalidOperationException($"Settings layout did not settle: page={page.Value}, section={settingsSection.Value}, scroll={shellScroll.VerticalOffset}, viewport={settingsScroll.Bounds}, window={Window.ClientSize}, active={Window.IsActive}.");
     }
 
     private static Point SettingsCenter(FrameworkElement element) => new(element.Bounds.X + element.ActualWidth / 2, element.Bounds.Y + element.ActualHeight / 2);

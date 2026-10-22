@@ -11,16 +11,16 @@ internal sealed partial class MainWindow
     private async Task VerifySearchScrollingAsync()
     {
         await NavigateAsync(Page.Library);
-        await WaitForLikedLayoutAsync(() => overviewScroll.ActualHeight > 100 && SmoothScroll.Maximum(overviewScroll) > 400 && smoothScrolls.ContainsKey(overviewScroll));
-        overviewScroll.SetScrollOffsets(0, 0);
+        await WaitForLikedLayoutAsync(() => overviewScroll.ActualHeight > 100 && SmoothScroll.Maximum(shellScroll) > 400 && smoothScrolls.ContainsKey(shellScroll));
+        shellScroll.SetScrollOffsets(0, 0);
         var preview = overviewSections["recent"].Grid;
         await WaitForLikedLayoutAsync(() => preview.ActualWidth > 100);
         var point = new Point(preview.Bounds.X + 30, preview.Bounds.Y + 30);
         RouteSearchTestWheel(point);
-        await WaitForLikedLayoutAsync(() => overviewScroll.VerticalOffset > 20);
-        var wheelOffset = overviewScroll.VerticalOffset;
-        RouteSearchTestWheel(new Point(preview.Bounds.X + 30, overviewScroll.Bounds.Y + 40));
-        await WaitForLikedLayoutAsync(() => overviewScroll.VerticalOffset > wheelOffset + 20);
+        await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset > 20);
+        var wheelOffset = shellScroll.VerticalOffset;
+        RouteSearchTestWheel(new Point(preview.Bounds.X + 30, Math.Max(80, preview.Bounds.Y + 40)));
+        await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset > wheelOffset + 20);
         if (preview.FindVisualChild<ScrollViewer>() is not ScrollViewer { VerticalOffset: 0 })
             throw new InvalidOperationException("Overview wheel scrolled a nested card grid instead of the page");
         var artGate = new TaskCompletionSource<ImageSource?>();

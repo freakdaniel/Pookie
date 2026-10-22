@@ -12,7 +12,7 @@ internal sealed partial class MainWindow
     private Button trackCommentSend = null!;
     private TextBlock trackCommentSortLabel = null!;
     private TextBlock trackCommentDraftTime = null!;
-    private Border trackCommentComposer = null!;
+    private ExpandedGlassSurface trackCommentComposer = null!;
     private TrackCommentActionRow trackCommentActions = null!;
     private long trackCommentComposerTrackId;
     private long trackCommentsRevision, trackCommentCountRevision, trackCommentAvatarUser;
@@ -37,8 +37,8 @@ internal sealed partial class MainWindow
         trackCommentSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 20).Center(),
             () => Run(PostTrackCommentAsync), TrackButtons.Text, 32).CenterVertical();
         trackCommentDraftTime = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical().IsVisible(false);
-        trackCommentComposer = new Border().CornerRadius(22).Height(44).Padding(8, 4).Background(TrackButtons.GlassSurface)
-            .Child(new Grid().Columns("28,*,Auto,32").Rows("*").Spacing(8).Children(
+        trackCommentComposer = new ExpandedGlassSurface().CornerRadius(22).Height(44).Padding(8, 4).Background(TrackButtons.GlassSurface)
+            .Content(new Grid().Columns("28,*,Auto,32").Rows("*").Spacing(8).Children(
                 new Border().CornerRadius(14).ClipToBounds().Child(trackCommentOwnAvatar).CenterVertical().Column(0),
                 trackCommentInput.Column(1), trackCommentDraftTime.Column(2), trackCommentSend.Column(3)));
         trackCommentComposer.Transitions = [Transition.Create(Control.BackgroundProperty, 150)];

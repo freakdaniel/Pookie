@@ -126,7 +126,7 @@ internal sealed partial class MainWindow : IDisposable
         timer.Tick += Poll;
 
         Window = new Window().Title("Pookie").Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
-            .Padding(0).Background(Color.FromRgb(34, 34, 34))
+            .Padding(0).Background(Surface)
             .Content(Layout())
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
@@ -135,6 +135,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
         Window.FrameRendered += DismissUnfocusedShellMenus;
+        Window.FrameRendered += RefreshCardGlass;
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
@@ -708,12 +709,16 @@ internal sealed partial class MainWindow : IDisposable
         FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Shutdown); SaveWaveProfile(); waveSaveTimer.Dispose();
         disposed = true;
         ResetExpandedPlayer();
+        trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
+        trackDescriptionLinks.Dispose();
+        descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
         ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;
+        Window.FrameRendered -= RefreshCardGlass;
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
         expandedQueueAnimation.Dispose();

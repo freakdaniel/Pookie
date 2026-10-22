@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
         ShowLibraryTracks(); likedFilter.Text = ""; likesAsList.Value = true;
         ReplaceTracks(new(Enumerable.Range(90000, 30).Select(id => new SoundCloudTrack { Id = id, Title = "Трек " + id }).ToArray(), null));
         await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 300);
-        NavigationScroll()!.SetScrollOffsets(0, 200);
+        NavigationScroll()!.SetScrollOffsets(0, 20);
         await Task.Delay(100, lifetime.Token);
         await StableActive(Tab("Лайки"), "scrolled likes tab");
         var library = Tab("Библиотека");
@@ -60,7 +60,7 @@ internal sealed partial class MainWindow
             return Task.CompletedTask;
         });
         await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 300);
-        NavigationScroll()!.SetScrollOffsets(0, 200);
+        NavigationScroll()!.SetScrollOffsets(0, 20);
         await Task.Delay(100, lifetime.Token);
         await StableActive(Tab("Треки"), "scrolled search tracks tab");
         CaptureUiPreview("active-search-tab");

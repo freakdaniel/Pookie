@@ -35,8 +35,9 @@ internal sealed class HomeWaveLayout : Panel
         drawer.IsEnabled = Open;
     }
     internal const double DrawerInset = 12;
+    internal const double HeaderInset = ShellChromeGlass.HeaderHeight;
     private static Size DrawerSize(Size viewport) => new(Math.Max(0, Math.Min(360, viewport.Width - DrawerInset * 2)),
-        Math.Max(0, viewport.Height - DrawerInset * 2));
+        Math.Max(0, viewport.Height - HeaderInset - DrawerInset * 2));
     protected override Size MeasureContent(Size availableSize)
     {
         var viewport = new Size(double.IsFinite(availableSize.Width) ? availableSize.Width : 1200,
@@ -52,7 +53,7 @@ internal sealed class HomeWaveLayout : Panel
         {
             var size = DrawerSize(finalSize);
             drawer.Arrange(new Rect(Bounds.Right - DrawerInset - size.Width + (1 - amount) * 28,
-                Bounds.Y + DrawerInset, size.Width, size.Height));
+                Bounds.Y + HeaderInset + DrawerInset, size.Width, size.Height));
         }
         return finalSize;
     }

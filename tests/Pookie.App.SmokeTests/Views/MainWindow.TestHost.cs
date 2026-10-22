@@ -8,6 +8,7 @@ internal sealed partial class MainWindow
     private bool chatMusicUiSmoke;
     private bool chatMediaUiSmoke;
     private bool menusUiSmoke;
+    private bool chromeUiSmoke;
     private bool settingsUiSmoke;
     private bool queueContinuationUiSmoke;
     private bool chatNavigationUiSmoke;
@@ -17,7 +18,7 @@ internal sealed partial class MainWindow
     private bool browserShutdownSmoke;
     private bool mediaUiSmoke;
     private bool bufferUiSmoke;
-    private bool expandedUiSmoke;
+    private bool expandedUiSmoke, expandedGlassUiSmoke;
     private bool lyricsUiSmoke;
     private bool artworkUiSmoke;
     private bool scrollingUiSmoke;
@@ -33,6 +34,7 @@ internal sealed partial class MainWindow
         chatMusicUiSmoke = args.Contains("--chat-music-ui-smoke-test");
         chatMediaUiSmoke = args.Contains("--chat-media-ui-smoke-test");
         menusUiSmoke = args.Contains("--menus-ui-smoke-test");
+        chromeUiSmoke = args.Contains("--chrome-ui-smoke-test");
         settingsUiSmoke = args.Contains("--settings-ui-smoke-test");
         queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
         chatsUiSmoke = chatMusicUiSmoke || chatMediaUiSmoke || args.Contains("--chats-ui-smoke-test");
@@ -45,7 +47,8 @@ internal sealed partial class MainWindow
         browserShutdownSmoke = args.Contains("--browser-shutdown-smoke-test");
         mediaUiSmoke = args.Contains("--media-ui-smoke-test");
         bufferUiSmoke = args.Contains("--buffer-ui-smoke-test");
-        expandedUiSmoke = args.Contains("--expanded-ui-smoke-test");
+        expandedGlassUiSmoke = args.Contains("--expanded-glass-ui-smoke-test");
+        expandedUiSmoke = expandedGlassUiSmoke || args.Contains("--expanded-ui-smoke-test");
         lyricsUiSmoke = args.Contains("--lyrics-ui-smoke-test");
         artworkUiSmoke = args.Contains("--artwork-ui-smoke-test");
         scrollingUiSmoke = args.Contains("--scrolling-ui-smoke-test");
@@ -79,6 +82,7 @@ internal sealed partial class MainWindow
         }
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
         if (menusUiSmoke) Run(VerifyFloatingMenusAsync);
+        if (chromeUiSmoke) Run(VerifyShellChromeAsync);
         if (settingsUiSmoke) Run(VerifySettingsUiAsync);
         if (queueContinuationUiSmoke) Run(VerifyQueueContinuationAsync);
         if (chatNavigationUiSmoke) Run(VerifyChatNavigationUiAsync);

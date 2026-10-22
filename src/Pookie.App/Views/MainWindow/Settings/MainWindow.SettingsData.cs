@@ -107,12 +107,8 @@ internal sealed partial class MainWindow
         { settingsMessage.Value = "Не удалось открыть папку"; }
     }
 
-    private void OpenSettingsUrl(string url)
-    {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        { settingsMessage.Value = "Не удалось открыть сайт"; }
-    }
+    private void OpenSettingsUrl(string url) =>
+        OpenExternalUrl(url, () => settingsMessage.Value = "Не удалось открыть сайт");
 
     private void CopySettingsDiagnostics()
     {

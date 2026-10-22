@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
             body.Add(content().BindIsVisible(settingsSection, value => value == section));
         }
         settingsScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .Content(body.Padding(0, 0, 16, 24));
+            .Content(body.Padding(0, 0, 0, 24));
         return new DockPanel().LastChildFill().Spacing(24).Children(
             new StackPanel().Vertical().Spacing(22).DockTop().Children(
                 new TextBlock().Text("Настройки").FontSize(30).Bold(), tabs,

@@ -159,14 +159,25 @@ internal sealed partial class MainWindow
             return ((Aprillz.MewUI.Rendering.ICpuPixelSurface)surface).CopyPixels();
         }
         var masked = Pixels(trackCommentActions);
+        var paintedEdges = 0;
         foreach (var index in new[] { 0, 2 })
         {
             var unmasked = Pixels((FrameworkElement)trackCommentActions.Children[index]);
             var x = index == 0 ? 0 : width - 1;
             var pixel = ((int)(22 * scale) * width + x) * 4 + 3;
-            if (unmasked[pixel] < 8 || masked[pixel] > unmasked[pixel] / 4)
-                throw new InvalidOperationException("Moving comment actions retain a hard edge instead of dissolving.");
+            // The edge can cross a transparent gap between moving buttons.
+            // Empty pixels must stay empty; compare attenuation where there is ink.
+            if (unmasked[pixel] < 8)
+            {
+                if (masked[pixel] > unmasked[pixel] + 1)
+                    throw new InvalidOperationException("The action fade painted over a transparent button gap.");
+                continue;
+            }
+            paintedEdges++;
+            if (masked[pixel] > unmasked[pixel] / 4)
+                throw new InvalidOperationException($"Moving comment actions retain a hard edge instead of dissolving: group={index}, raw={unmasked[pixel]}, masked={masked[pixel]}, expansion={trackCommentActions.Expansion:F4}, bounds={trackCommentActions.Bounds}.");
         }
+        if (paintedEdges == 0) throw new InvalidOperationException("The fade fixture sampled only empty button gaps.");
         var editor = Pixels(trackCommentComposer);
         var middle = (int)((trackCommentComposer.Bounds.X + trackCommentComposer.ActualWidth / 2 - trackCommentActions.Bounds.X) * scale);
         var editorPixel = ((int)(22 * scale) * width + middle) * 4;

@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
@@ -10,6 +11,15 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
     private double sideWidth, height;
     internal double HeroArtworkMinWidth { get; init; } = 280;
     internal double HeroArtworkMaxWidth { get; init; } = 400;
+    internal Image BackgroundArtwork => background.OfType<Image>().First();
+
+    // Only the layers physically behind the controls, never the cover column,
+    // waveform, text or the controls themselves (which would recurse).
+    internal void RenderGlassBackground(IGraphicsContext context)
+    {
+        context.FillRectangle(Bounds, Color.FromRgb(43, 43, 43));
+        foreach (var layer in background) layer.Render(context);
+    }
 
     internal TrackPageColumns Initialize()
     {

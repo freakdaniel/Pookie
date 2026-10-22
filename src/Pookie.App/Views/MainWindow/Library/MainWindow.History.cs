@@ -1,5 +1,4 @@
 using Aprillz.MewUI;
-using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
@@ -31,9 +30,11 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
-        likedFilterText, NavigationScroll()?.VerticalOffset ?? 0, searchResults, trackDetailState, collectionFilterText);
+        likedFilterText, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilterText);
 
-    private ScrollViewer? NavigationScroll() => page.Value switch
+    private ScrollViewer? NavigationScroll() => page.Value == Page.Chats || !shellPageScroll.IsReady ? null : shellScroll;
+
+    private ScrollViewer? PageContentScroll() => page.Value switch
     {
         Page.Home => homeScroll,
         Page.Library => overviewScroll,
@@ -151,6 +152,7 @@ internal sealed partial class MainWindow
     private void RestoreNavigationScroll()
     {
         if (pendingNavigationScroll is not { } pending) return;
+        if (pending.Generation == navigationGeneration && !disposed && !shellPageScroll.IsReady) return;
         pendingNavigationScroll = null;
         if (pending.Generation == navigationGeneration && !disposed)
             NavigationScroll()?.SetScrollOffsets(0, pending.Offset);
@@ -175,22 +177,16 @@ internal sealed partial class MainWindow
         canGoForward.Value = navigationIndex < navigationHistory.Count - 1;
     }
 
-    private Border NavigationPill()
+    private FrameworkElement NavigationPill()
     {
         Button Arrow(string icon, ObservableValue<bool> enabled, int offset)
         {
-            var hover = new ObservableValue<bool>(false);
-            var normal = Icons.View(icon, 17, Muted).Bind(UIElement.OpacityProperty, enabled, value => value ? 1d : .3d);
-            var bright = Icons.View(icon, 17, Color.White).Bind(UIElement.OpacityProperty, hover, value => value && enabled.Value ? 1d : 0d);
-            bright.Transitions = [Transition.Create(UIElement.OpacityProperty, 180)];
-            return new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Width(29).Height(29)
-                .BindIsEnabled(enabled).Content(new Grid().Columns("*").Rows("*").Children(
-                    normal.CenterHorizontal().CenterVertical(), bright.CenterHorizontal().CenterVertical()))
-                .OnMouseEnter(() => hover.Value = true).OnMouseLeave(() => hover.Value = false)
+            return new HeaderIconButton(icon, offset < 0).BindIsEnabled(enabled)
                 .OnClick(() => Run(() => MoveNavigationAsync(offset)));
         }
         backButton = Arrow("arrow-left", canGoBack, -1); forwardButton = Arrow("arrow-right", canGoForward, 1);
-        return new Border().Background(Raised).CornerRadius(17).Padding(3, 1).CenterVertical()
-            .Child(new StackPanel().Horizontal().Spacing(1).Children(backButton, forwardButton));
+        return new ShadowDecorator().BlurRadius(6).OffsetY(2).ShadowColor(Color.FromArgb(65, 0, 0, 0)).CornerRadius(18)
+            .Margin(-6, -4, -6, -8).CenterVertical()
+            .Child(new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton));
     }
 }

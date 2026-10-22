@@ -68,7 +68,7 @@ internal sealed partial class MainWindow
     private FrameworkElement CollectionPage()
     {
         collectionGrid = CreateCollectionGrid(false);
-        var ordinary = new DockPanel().LastChildFill().Spacing(22).Padding(0, 14).Children(
+        var ordinary = new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new TextBlock().BindText(librarySectionTitle).FontSize(22).Bold().DockTop(), collectionGrid)
             .BindIsVisible(playlistCollectionVisible, value => !value);
         var playlist = PlaylistCollectionPage().BindIsVisible(playlistCollectionVisible);

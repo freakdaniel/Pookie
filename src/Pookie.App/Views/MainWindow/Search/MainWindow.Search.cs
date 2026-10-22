@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
     {
         searchList = new ItemsControl().Items(Array.Empty<SearchBlock>(), block => block.Title)
             .ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .ItemPadding(new Thickness(SearchShadowGutter, 0, 18, 0));
+            .ItemPadding(new Thickness(SearchShadowGutter, 0, 0, 0));
         searchList.ItemTemplate = SearchResultTemplate();
         searchList.SizeChanged += e =>
         {
@@ -138,7 +138,7 @@ internal sealed partial class MainWindow
 
     private void CaptureSearchAnchor()
     {
-        if (searchScrollAnchor != null || page.Value != Page.Search || NavigationScroll() is not { } viewer) return;
+        if (searchScrollAnchor != null || page.Value != Page.Search || PageContentScroll() is not { } viewer) return;
         var view = searchViews.Values.Where(view => view.Block != null && view.Root.IsVisible &&
             view.Root.Bounds.Bottom > viewer.Bounds.Y && view.Root.Bounds.Y < viewer.Bounds.Bottom)
             .OrderBy(view => Math.Abs(view.Root.Bounds.Y - viewer.Bounds.Y)).FirstOrDefault();
@@ -149,7 +149,7 @@ internal sealed partial class MainWindow
     private bool RestoreSearchAnchor()
     {
         if (searchScrollAnchor is not { } anchor) return false;
-        if (page.Value != Page.Search || anchor.Generation != navigationGeneration || NavigationScroll() is not { } viewer)
+        if (page.Value != Page.Search || anchor.Generation != navigationGeneration || PageContentScroll() is not { } viewer)
         { searchScrollAnchor = null; return false; }
         var view = searchViews.Values.FirstOrDefault(view => view.Block != null && Equals(PageItemKey(view.Block), anchor.Key));
         if (view == null)
@@ -162,8 +162,9 @@ internal sealed partial class MainWindow
         var delta = view.Root.Bounds.Y - viewer.Bounds.Y - anchor.Y;
         if (Math.Abs(delta) < .5) { searchScrollAnchor = null; return false; }
         var before = viewer.VerticalOffset;
-        if (smoothScrolls.TryGetValue(viewer, out var motion)) motion.CorrectLayoutOffset(delta);
-        else viewer.SetScrollOffsets(0, before + delta);
+        if (smoothScrolls.TryGetValue(shellScroll, out var motion)) motion.CorrectLayoutOffset(delta);
+        else shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + delta);
+        viewer.SetScrollOffsets(0, before + delta);
         if (Math.Abs(viewer.VerticalOffset - before) < .5) { searchScrollAnchor = null; return false; }
         return true;
     }

@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
             () => Run(() => LikesAsync(showAll: true)), out homeLikesSubtitle);
         homeHistoryCard = Card("История", "pixel-clock", history: true,
             () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory)), out homeHistorySubtitle);
-        return new Grid().Columns("*,*").Rows("Auto").Spacing(16).Margin(0, 0, 18, 0)
+        return new Grid().Columns("*,*").Rows("Auto").Spacing(16)
             .Children(homeLikesCard.Column(0), homeHistoryCard.Column(1));
     }
     private void RefreshHomeShortcuts()

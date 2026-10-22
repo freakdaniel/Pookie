@@ -21,7 +21,7 @@ internal static class TrackButtons
     internal static readonly Color OnPrimary = Color.FromRgb(32, 32, 35);
     internal static readonly Color TonalSurface = Color.FromRgb(49, 49, 53);
     internal static readonly Color SelectedSurface = Color.FromRgb(78, 40, 51);
-    internal static readonly Color GlassSurface = Color.FromArgb(31, 255, 255, 255);
+    internal static readonly Color GlassSurface = GlassSheen.ControlTint();
     internal static readonly Color OnSelected = Color.FromRgb(255, 177, 193);
     internal static readonly Color RepostedSurface = Color.FromRgb(67, 49, 92);
     internal static readonly Color OnReposted = Color.FromRgb(211, 185, 255);
@@ -38,6 +38,7 @@ internal static class TrackButtons
     private static Button Create(string variant)
     {
         var button = new MaterialTrackButton().StyleSheet(styles);
+        if (variant == Glass) button.UseGlassFinish();
         button.Variant(variant);
         return button;
     }
@@ -138,9 +139,9 @@ internal static class TrackButtons
     }
 
     internal static Color HoverColor(Color surface, Color foreground) => surface == GlassSurface
-        ? Color.FromArgb(56, 255, 255, 255) : surface == CommentTimeSurface ? Color.FromArgb(46, 110, 166, 255) : StateColor(surface, foreground, .08);
+        ? Color.FromArgb(152, 42, 42, 49) : surface == CommentTimeSurface ? Color.FromArgb(46, 110, 166, 255) : StateColor(surface, foreground, .08);
     internal static Color PressedColor(Color surface, Color foreground) => surface == GlassSurface
-        ? Color.FromArgb(56, 255, 255, 255) : surface == CommentTimeSurface ? Color.FromArgb(60, 110, 166, 255) : StateColor(surface, foreground, .12);
+        ? Color.FromArgb(164, 48, 48, 55) : surface == CommentTimeSurface ? Color.FromArgb(60, 110, 166, 255) : StateColor(surface, foreground, .12);
 
     private static StyleSheet CreateStyles()
     {

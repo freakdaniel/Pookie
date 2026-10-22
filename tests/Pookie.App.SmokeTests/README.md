@@ -17,10 +17,43 @@ Cookie values, account tokens and arbitrary challenge URLs/text are not logged.
 This executable contains native UI checks, local browser fixtures, and storage/audio
 integration scenarios. It is separate from the production `Pookie` executable
 
+Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated test
+directory when the production app is open: MewUI's extracted font files otherwise
+share the same cache and another process can remove them when it exits.
+
+`--external-browser-smoke-test` checks Linux external URL launching with a private
+`xdg-open` fixture: exact argument passing, stdout/stderr isolation including
+browser descendants, independent browser lifetime and nonzero opener exit codes.
+It does not launch a real browser or change desktop associations.
+
+`--chrome-ui-smoke-test --no-audio` verifies the shared page/top-bar surface,
+the real blurred scroll-under header, square scroll viewports, the player-edge fade,
+one-to-one page scrolling with virtualized lists, the final item, responsive bounds,
+and back navigation with scroll restoration. The native scrollbar's track and hit
+area start below the glass header; native thumb dragging covers both ends of the range.
+It also runs the search/overview wheel,
+grouped-pagination anchor and continuous-scroll checks. Set `POOKIE_UI_PREVIEW` to
+capture the resting and scrolled chrome at desktop sizes.
+The same check opens the header's glass search at 1000 and 1600 DIP widths,
+checks native input alignment/binding and outside-click dismissal, and activates
+the compact connected history button near its inner edge without a stuck focus cue.
+Fade checks compare rendered pixels with/without the compact mask on Home and a
+virtualized cover grid. They verify soft gradient endpoints, visible content at the
+player boundary, persistent fading without the player, animated opacity changes,
+and a fully readable final item at the end of scrolling.
+
 Pure queue model checks live in `tests/Pookie.Playback.Tests` and run without a
 native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entry
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
+
+`--expanded-glass-ui-smoke-test` checks fullscreen glass controls with a synthetic
+cover: actual pixel softening, fresh samples after artwork replacement, connected
+like/dislike selection shapes, a native shuffle click and pointer-focus feedback.
+It also verifies fullscreen opening/closing, cover hover and repeated paused reentry.
+Transport controls must share a vertical center, and rendered glass buttons keep
+at least 4.5:1 foreground contrast on both white and nearly black artwork fixtures.
+Use `POOKIE_UI_PREVIEW` for the cover controls and selected feedback screenshots.
 
 `--settings-ui-smoke-test --no-audio` checks the settings gear through native
 clicks, all seven library-style tabs at 1000×680, back/forward section and scroll
@@ -112,7 +145,14 @@ waveform rows in related tracks, compact preview alignment and duration spacing,
 continuous resize in both directions, nonpersistent action focus, track subsections
 (reposts/albums/playlists/related), infinite loading and deduplicated pagination,
 back/forward restoration, cancellation and stale replies, and the shared player's
-queue and seek. On Linux it clicks the hero and list copy buttons, resolves a missing
+queue and seek. Description checks cover wrapped links, hover and click, drag
+selection without navigation, Unicode copying and read-only editing, smooth link
+colour transitions, circular favicon/fallback rendering, PNG/ICO decoding and favicon
+memory/disk caching. Telegram shorthand checks cover TG/TGK/ТГ/ТГК labels,
+click/hover, source-text copying and exclusion of nested or invalid matches. Description
+replacement during hover checks Unicode boundaries with emoji, combining marks,
+CRLF and empty text. On Linux it
+clicks the hero and list copy buttons, resolves a missing
 permalink and reads the new URL from a separate process using a private X selection;
 the user's clipboard is untouched. The writer and search inputs also work with
 `GDK_BACKEND=wayland` and no GTK clipboard service. The hero checks rendered

@@ -18,8 +18,12 @@ internal sealed partial class MainWindow
     private Border contentFrame = null!;
     private FrameworkElement startupHeader = null!;
     private FrameworkElement startupContent = null!;
+    private ScrollViewer shellScroll = null!;
+    private ShellPageScroll shellPageScroll = null!;
+    private ShellChromeGlass headerGlass = null!;
+    private ContentBottomFade contentBottomFade = null!;
     private StackPanel topNavigation = null!;
-    private Border topSearchBar = null!;
+    private HeaderSearchField topSearchBar = null!;
     private TextBox topSearchInput = null!;
     private Grid startupSplash = null!;
     private Border startupCurtain = null!;
@@ -34,15 +38,14 @@ internal sealed partial class MainWindow
 
     private static readonly Color Muted = Color.FromRgb(151, 151, 151);
     private static readonly Color Surface = Color.FromRgb(24, 24, 24);
-    private static readonly Color HeaderSurface = Color.FromRgb(34, 34, 34);
+    private static readonly Color HeaderSurface = Surface;
     private static readonly Color Raised = Color.FromRgb(43, 43, 43);
     private static readonly Color Edge = Color.FromRgb(61, 61, 61);
     private static readonly Color NavHover = Color.FromRgb(192, 192, 192);
 
     private FrameworkElement Layout()
     {
-        // This strip sits behind the top bar and rounded content corners only.
-        // It fades into the normal chrome color while the splash curtain moves.
+        // Background for the startup reveal and navigation chrome.
         startupBackdrop = new Border().Background(Surface).Height(96).Top();
 
         startupHeader = Header();
@@ -50,15 +53,32 @@ internal sealed partial class MainWindow
         startupHeader.IsHitTestVisible = false;
 
         startupContent = Library();
+        VisualTree.Visit(startupContent, element =>
+        {
+            if (element is ScrollViewer viewer) viewer.CornerRadius = 0;
+            if (element is ScrollableItemsBase items) items.CornerRadius = 0;
+        });
         startupContent.Opacity = 0;
         startupContent.IsHitTestVisible = false;
         contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
-            .Padding(36, 30).Child(startupContent);
-        homeWaveLayout = new HomeWaveLayout(contentFrame, WaveSettingsView());
+            .Padding(36, ShellChromeGlass.HeaderHeight + 30, 36, 0).Child(startupContent);
+        shellScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0);
+        shellPageScroll = new ShellPageScroll(contentFrame, shellScroll, PageContentScroll, delta =>
+        {
+            if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.Scroll(delta);
+            var before = shellScroll.VerticalOffset;
+            shellScroll.SetScrollOffsets(0, before + delta);
+            return Math.Abs(shellScroll.VerticalOffset - before) > .01;
+        }, () => page.Value != Page.Chats ? ContentBottomFade.FadeHeight : 0);
+        shellScroll.Content = shellPageScroll;
+        homeWaveLayout = new HomeWaveLayout(shellScroll, WaveSettingsView());
         waveSettingsOpen.Changed += () => homeWaveLayout.SetOpen(waveSettingsOpen.Value);
         page.Changed += () => { if (page.Value != Page.Home) waveSettingsOpen.Value = false; };
-        contentSurface = new Border().Background(Surface).CornerRadius(new CornerRadius(30, 30, 0, 0))
-            .Margin(0, 8, 0, 0).Child(homeWaveLayout);
+        contentSurface = new Border().Background(Surface).Child(homeWaveLayout);
+        headerGlass = new ShellChromeGlass(contentFrame, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
+        contentBottomFade = new ContentBottomFade(Surface).Height(ContentBottomFade.FadeHeight).Bottom().IsHitTestVisible(false);
+        contentBottomFade.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
+        contentBottomFade.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? ContentBottomFade.PlayerOpacity : 1d);
         // Use the arranged viewport as well as native resize notifications. Some platforms
         // apply programmatic window sizes without delivering ClientSizeChanged first.
         contentSurface.SizeChanged += e =>
@@ -68,12 +88,7 @@ internal sealed partial class MainWindow
         };
 
         var playerBar = PlayerBar();
-        playerChrome.SizeChanged += e =>
-        {
-            var reveal = Math.Clamp(e.NewSize.Height / PlayerBarHeight, 0, 1);
-            contentSurface.CornerRadius(new CornerRadius(30, 30, 30 * reveal, 30 * reveal));
-            playerBackdrop.Height = e.NewSize.Height + 30 * reveal;
-        };
+        playerChrome.SizeChanged += e => playerBackdrop.Height = e.NewSize.Height;
         playerVisible.Changed += () =>
         {
             if (playerVisible.Value) return;
@@ -81,13 +96,13 @@ internal sealed partial class MainWindow
             foreach (var menu in shellMenus)
                 if (ReferenceEquals(menu.State, queueOpen)) menu.Layer.Close(true);
             playerBackdrop.Height = 0;
-            contentSurface.CornerRadius(new CornerRadius(30, 30, 0, 0));
-            contentSurface.Margin = new Thickness(0, 8, 0, 0);
         };
-        workspace = new Grid().Columns("*").Rows("56,*,Auto").Children(
+        workspace = new Grid().Columns("*").Rows("64,*,Auto").Children(
             playerBackdrop.Row(1).RowSpan(2),
+            contentSurface.Row(0).RowSpan(2),
+            contentBottomFade.Row(0).RowSpan(2),
+            headerGlass.Row(0).RowSpan(2),
             startupHeader.Row(0),
-            contentSurface.Row(1),
             playerBar.Row(2),
             QueuePanel().Row(0).RowSpan(3),
             ProfilePanel().Row(0).RowSpan(3));
@@ -111,7 +126,7 @@ internal sealed partial class MainWindow
             new Border().Width(138).Height(130).CenterHorizontal().CenterVertical()
                 .Child(startupLogo.CenterHorizontal().CenterVertical()),
             startupSpinner);
-        startupCurtain = new Border().Background(Surface).CornerRadius(new CornerRadius(30, 30, 0, 0)).ClipToBounds();
+        startupCurtain = new Border().Background(Surface).ClipToBounds();
         // Loader content belongs to the viewport, never to the moving curtain.
         startupBrandLayer = new Grid().Columns("*").Rows("*").Children(startupBrand);
         startupSplash = new Grid().Columns("*").Rows("*").Children(startupCurtain, startupBrandLayer);
@@ -131,14 +146,13 @@ internal sealed partial class MainWindow
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
-        topSearchBar = MaterialSearchField.Create(topSearchInput).Width(0);
+        topSearchBar = new HeaderSearchField(topSearchInput).Width(0);
         topNavigation.Transitions = [
             Transition.Create(FrameworkElement.WidthProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1)),
             Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
         topSearchBar.Transitions = [
             Transition.Create(FrameworkElement.WidthProperty, 220, Easing.CubicBezier(0.2, 0, 0, 1)),
-            Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(0.2, 0, 0, 1)),
-            Transition.Create(Control.BackgroundProperty, 150)];
+            Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(0.2, 0, 0, 1))];
         topSearchBar.IsHitTestVisible = false;
         topSearchBar.Opacity = 0;
 
@@ -161,7 +175,7 @@ internal sealed partial class MainWindow
             .OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value))).CenterVertical();
         page.Changed += () => settingsGlyph.Opacity = page.Value == Page.Settings ? 1 : 0.84;
 
-        return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 0).Children(
+        return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 8).Children(
             new StackPanel().Horizontal().Spacing(16).CenterVertical().Column(0).Children(
                 Icons.LogoView(26, 25).CenterVertical(),
                 NavigationPill()),
@@ -355,12 +369,8 @@ internal sealed partial class MainWindow
             MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
         profileOpen, FloatingMenuPlacement.BelowRight);
 
-    private void OpenIllustrationCredits()
-    {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://icons8.com") { UseShellExecute = true }); }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        { status.Value = "Не удалось открыть сайт Icons8."; }
-    }
+    private void OpenIllustrationCredits() =>
+        OpenExternalUrl("https://icons8.com", () => status.Value = "Не удалось открыть сайт Icons8");
 
     private FrameworkElement QueuePanel()
     {

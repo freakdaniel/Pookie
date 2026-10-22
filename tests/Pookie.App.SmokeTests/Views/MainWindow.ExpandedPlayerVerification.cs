@@ -92,6 +92,15 @@ internal sealed partial class MainWindow
             if (centerError > 1) throw new InvalidOperationException($"Cover is not centered: {centerError}");
             CaptureUiPreview("expanded-centered");
             await VerifyExpandedCoverHoverAsync();
+            await VerifyExpandedGlassAsync();
+            if (expandedGlassUiSmoke)
+            {
+                await VerifyPausedExpandedReentryAsync();
+                SetExpandedPlayer(false);
+                await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible && Window.WindowState == previous);
+                Console.WriteLine("EXPANDED_GLASS_UI_OK: native fullscreen, blurred artwork pixels, connected feedback shapes, live shuffle click, pointer focus, artwork replacement, hover reveal and repeated paused reentry");
+                return;
+            }
             await VerifyPausedExpandedReentryAsync();
             frames.Clear();
             ToggleExpandedPanel(PlayerPanel.Queue);
@@ -221,11 +230,13 @@ internal sealed partial class MainWindow
 
     private async Task VerifyExpandedCoverHoverAsync()
     {
+        Window.Activate();
+        await WaitForLikedLayoutAsync(() => Window.IsActive);
         var transport = (UIElement)((Grid)expandedCover.Child!).Children[1];
         for (var cycle = 0; cycle < 3; cycle++)
         {
             RouteExpandedPointer(new Point(1, 1));
-            await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
+            await WaitForLikedLayoutAsync(() => transport.Opacity < .001 && !transport.IsHitTestVisible);
             if (transport.IsHitTestVisible)
                 throw new InvalidOperationException("Hidden cover controls still accept clicks.");
             var point = new Point(expandedCover.Bounds.X + expandedCover.ActualWidth * .5,

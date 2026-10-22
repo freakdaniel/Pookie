@@ -100,7 +100,7 @@ internal sealed partial class MainWindow
                     else if (hero.Item is { } item) Run(() => OpenLibraryItemAsync(item));
                 }, TrackButtons.Filled, 44).Right().Bottom().Column(1));
         var card = new Border().Background(Color.FromRgb(29, 29, 29)).CornerRadius(12).Height(256).Padding(0).ClipToBounds()
-            .Child(new Grid().Columns("*").Rows("*").Children(backdrop, hover, content));
+            .Child(new Grid().Columns("*").Rows("*").Children(backdrop, hover, new ArtworkGlassSheen(12), content));
         var button = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(card);
         // Compensate the shadow's reserved space so the card keeps its existing alignment and size.
         var shadow = new ShadowDecorator().BlurRadius(14).OffsetY(5).ShadowColor(Color.FromArgb(72, 0, 0, 0))

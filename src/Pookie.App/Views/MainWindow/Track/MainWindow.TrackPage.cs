@@ -23,7 +23,9 @@ internal sealed partial class MainWindow
     private TrackDetailState? trackDetailState;
     private ScrollViewer trackDetailScroll = null!;
     private Image trackDetailCover = null!, trackDetailBackdrop = null!, trackDetailAvatar = null!, trackDetailPlayIcon = null!, trackDetailHeart = null!;
-    private TextBlock trackDetailTitle = null!, trackDetailAuthor = null!, trackDetailMeta = null!, trackDetailStats = null!, trackDetailDescription = null!;
+    private TextBlock trackDetailTitle = null!, trackDetailAuthor = null!, trackDetailMeta = null!, trackDetailStats = null!;
+    private MultiLineTextBox trackDetailDescription = null!;
+    private DescriptionLinks trackDescriptionLinks = null!;
     private TextBlock trackDetailAuthorName = null!, trackDetailAuthorStats = null!, trackDetailCommentsTitle = null!, trackDetailCommentsStatus = null!, trackDetailRelatedStatus = null!;
     private TextBlock trackDetailLikeCount = null!, trackDetailPosition = null!, trackDetailDuration = null!, trackDetailError = null!, trackDetailLicense = null!;
     private TrackWaveform trackDetailWaveform = null!;
@@ -140,6 +142,7 @@ internal sealed partial class MainWindow
         var backdrop = source == null ? null : await Task.Run(() => ArtworkBackdrop.Create(source), lifetime.Token);
         if (!IsTrackDetailCurrent(track.Id, generation)) return;
         trackDetailBackdrop.Source = backdrop;
+        trackDetailGlass?.RefreshArtwork();
         var samples = await samplesTask;
         if (!IsTrackDetailCurrent(track.Id, generation)) return;
         if (samples != null && !ReferenceEquals(renderedTrackDetailSamples, samples))
@@ -152,6 +155,7 @@ internal sealed partial class MainWindow
     {
         if (trackDetailState == null) return;
         renderedTrackDetailSamples = null; trackDetailWaveform.SetSamples([]); trackDetailBackdrop.Source = null;
+        trackDetailGlass?.RefreshArtwork();
         var track = trackDetailState.Track;
         SetCardArtwork(trackDetailCover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
         trackDetailAvatar.Source = Icons.Source("user");
@@ -187,7 +191,7 @@ internal sealed partial class MainWindow
     {
         if (page.Value != Page.Track || trackDetailState is not { } state) return;
         var track = state.Track; var selected = track.Id == current?.Id;
-        trackDetailPlayIcon.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
+        trackDetailPlayIcon.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         trackDetailPlay.ToolTip(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
         trackDetailWaveform.IsPlaying = selected && isPlaying.Value;
         trackDetailWaveform.Progress = selected && track.DurationSeconds > 0 ? likedPlaybackPosition / track.DurationSeconds : 0;
@@ -252,7 +256,7 @@ internal sealed partial class MainWindow
 
     private static string TrackLicense(string? license) => license switch
     {
-        "all-rights-reserved" => "Все права защищены",
+        "all-rights-reserved" => "",
         "cc-by" => "Creative Commons · Attribution",
         "cc-by-sa" => "Creative Commons · Attribution — ShareAlike",
         "cc-by-nd" => "Creative Commons · Attribution — NoDerivatives",

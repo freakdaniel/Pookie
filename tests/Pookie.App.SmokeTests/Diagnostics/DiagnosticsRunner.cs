@@ -13,6 +13,9 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Contains("--external-browser-smoke-test")) { await ExternalBrowserSmokeTest.RunAsync(); return true; }
+        if (args.Length == 2 && args[0] == "--external-browser-child")
+        { await Pookie.App.Platform.ExternalBrowser.OpenAsync(args[1], CancellationToken.None); return true; }
         if (args.Length is 2 or 3 && args[0] == "--chat-media-hosting-live-probe")
         { await ChatMediaHostingLiveProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length is 1 or 2 && args[0] == "--wave-quality-report")
