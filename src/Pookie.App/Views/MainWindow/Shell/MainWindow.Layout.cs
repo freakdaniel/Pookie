@@ -78,6 +78,8 @@ internal sealed partial class MainWindow
         {
             if (playerVisible.Value) return;
             queueOpen.Value = false;
+            foreach (var menu in shellMenus)
+                if (ReferenceEquals(menu.State, queueOpen)) menu.Layer.Close(true);
             playerBackdrop.Height = 0;
             contentSurface.CornerRadius(new CornerRadius(30, 30, 0, 0));
             contentSurface.Margin = new Thickness(0, 8, 0, 0);
@@ -156,7 +158,6 @@ internal sealed partial class MainWindow
             .Padding(2).Width(34).Height(34).CornerRadius(17)
             .OnMouseEnter(() => settingsGlyph.Opacity = 1)
             .OnMouseLeave(() => settingsGlyph.Opacity = 0.84)
-            .ToolTip("Настройки")
             .OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value))).CenterVertical();
         page.Changed += () => settingsGlyph.Opacity = page.Value == Page.Settings ? 1 : 0.84;
 
@@ -361,12 +362,20 @@ internal sealed partial class MainWindow
         { status.Value = "Не удалось открыть сайт Icons8."; }
     }
 
-    private FrameworkElement QueuePanel() => ShellMenu(queueButton,
-        FloatingMenuLayer.CreateCard(new DockPanel().LastChildFill().Spacing(6).Children(
-            new StackPanel().Vertical().Spacing(4).Margin(12, 8, 12, 8).DockTop().Children(
-                new TextBlock().Text("Очередь воспроизведения").FontSize(14).Bold(),
-                new TextBlock().BindText(queueStatus).Foreground(Muted).FontSize(11)),
-            queueList), 380).Height(336), queueOpen, FloatingMenuPlacement.AboveRight);
+    private FrameworkElement QueuePanel()
+    {
+        var close = TrackButtons.Icon(Icons.View("caret-down", 20, PlayerSecondaryText), () => queueOpen.Value = false, TrackButtons.Text, 32);
+        var heading = new Grid().Columns("*,32").Rows("*").Spacing(12).Margin(8, 4, 4, 8).DockTop().Children(
+            new StackPanel().Vertical().Spacing(5).CenterVertical().Column(0).Children(
+                new TextBlock().Text("Очередь").FontSize(20).SemiBold(),
+                new TextBlock().BindText(queueStatus).Foreground(PlayerSecondaryText).FontSize(12)
+                    .TextTrimming(TextTrimming.CharacterEllipsis)), close.CenterVertical().Column(1));
+        var card = new Border().Background(Color.Transparent).BorderThickness(0).Padding(16, 16, 16, 12)
+            .Child(new DockPanel().LastChildFill().Spacing(4).Children(heading, queueList));
+        var drawer = new PlayerQueueDrawer(queueButton, playerChrome, playerContentFrame, playerBackdrop, card);
+        RegisterShellMenu(queueButton, drawer, queueOpen);
+        return drawer;
+    }
 
     private static Button IconButton(string name, Action action) => new Button().StyleName("flat-button")
         .Content(Icons.View(name, 20)).Width(34).Height(34).CornerRadius(12).OnClick(action);

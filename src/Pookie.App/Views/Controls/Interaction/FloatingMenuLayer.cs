@@ -6,9 +6,18 @@ namespace Pookie.App;
 
 internal enum FloatingMenuPlacement { AboveLeft, AboveRight, BelowRight }
 
+internal abstract class MenuLayer : Panel
+{
+    internal abstract bool IsOpen { get; }
+    internal abstract double Reveal { get; }
+    internal abstract Border Card { get; }
+    internal abstract void Show();
+    internal abstract void Close(bool immediate = false);
+}
+
 // A non-modal layer shared by composer, top-bar and player menus.
 // Only the card receives input; the shadow and empty space remain transparent.
-internal sealed class FloatingMenuLayer : Panel
+internal sealed class FloatingMenuLayer : MenuLayer
 {
     internal static readonly Color Surface = Color.FromRgb(51, 51, 51);
     private readonly FrameworkElement anchor;
@@ -18,9 +27,9 @@ internal sealed class FloatingMenuLayer : Panel
     private readonly AnimationClock fade = new(TimeSpan.FromMilliseconds(160), Easing.CubicBezier(.2, 0, 0, 1));
     private bool target;
     private double from, amount;
-    internal bool IsOpen => target;
-    internal double Reveal => amount;
-    internal Border Card { get; }
+    internal override bool IsOpen => target;
+    internal override double Reveal => amount;
+    internal override Border Card { get; }
     internal static Border CreateCard(FrameworkElement content, double width, double padding = 6) =>
         new Border().Background(Surface).BorderThickness(0).CornerRadius(14).Padding(padding).Width(width).Child(content);
 
@@ -32,8 +41,8 @@ internal sealed class FloatingMenuLayer : Panel
             .CornerRadius(14).Child(card);
     }
     internal FloatingMenuLayer Initialize() { Add(menu); menu.Opacity = 0; IsVisible = false; return this; }
-    internal void Show() => SetOpen(true);
-    internal void Close(bool immediate = false)
+    internal override void Show() => SetOpen(true);
+    internal override void Close(bool immediate = false)
     {
         if (immediate) { target = false; fade.Stop(); amount = menu.Opacity = 0; menu.IsHitTestVisible = false; IsVisible = false; return; }
         SetOpen(false);

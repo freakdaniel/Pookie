@@ -134,6 +134,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered += ArrangeChatScroll;
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
+        Window.FrameRendered += DismissUnfocusedShellMenus;
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
@@ -712,6 +713,7 @@ internal sealed partial class MainWindow : IDisposable
         ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
+        Window.FrameRendered -= DismissUnfocusedShellMenus;
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
         expandedQueueAnimation.Dispose();
@@ -721,7 +723,6 @@ internal sealed partial class MainWindow : IDisposable
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
         foreach (var hover in hoverReveals) hover.Dispose();
-        foreach (var menu in shellMenus) menu.Hover.Dispose();
         foreach (var view in libraryLoadingViews) view.Dispose();
         searchInput?.Dispose(); windowClipboard?.Dispose(); clipboardTimer?.Dispose();
         SaveConfiguration(); configurationTimer.Dispose();

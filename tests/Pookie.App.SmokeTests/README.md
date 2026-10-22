@@ -381,10 +381,15 @@ compiler removes unimplemented hooks from the production assembly
 The production app keeps its standalone `--demo` preview mode. It contains no
 verification methods, test fixture servers, or diagnostic scenario runner
 
-`--menus-ui-smoke-test --no-audio` checks the shared queue/profile/settings popovers:
-attachment-menu surface and shadow, animated opening/closing and reversal, real
-trigger clicks and hover, crossing the pointer gap, Escape, exclusive open state,
-transparent hit testing and anchoring during window resize. It uses demo queue data.
+`--menus-ui-smoke-test --no-audio` checks the profile popup and the queue drawer
+joined to the player: the profile's attachment-menu surface/shadow, the queue's
+expanding surface and shared player gradient, animated opening/closing and reversal, real
+trigger clicks without hover activation, repeat-click dismissal, staying open after
+pointer departure, outside clicks and focus transfer, internal focus, Escape and
+focus restoration, window deactivation, exclusive open state, transparent hit testing
+and anchoring at 1000×680, 1280×840 and 1600×900. Queue checks include current/manual/next
+groups, actual playback order, scrolling, collapse action and hiding with the player.
+It uses demo queue data.
 
 `--chat-navigation-ui-smoke-test --no-audio` checks opening and reopening Chats,
 resizing between desktop and compact widths, opening a conversation, restoring a

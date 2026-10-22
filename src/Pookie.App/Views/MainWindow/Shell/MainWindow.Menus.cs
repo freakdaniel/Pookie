@@ -6,36 +6,52 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private Button profileButton = null!, settingsButton = null!, queueButton = null!;
-    private readonly List<(ObservableValue<bool> State, FloatingMenuLayer Layer, FloatingMenuHover Hover)> shellMenus = [];
+    private readonly List<(ObservableValue<bool> State, MenuLayer Layer, Button Anchor)> shellMenus = [];
 
     private FloatingMenuLayer ShellMenu(Button anchor, Border card, ObservableValue<bool> state, FloatingMenuPlacement placement)
     {
         var layer = new FloatingMenuLayer(anchor, card, placement).Initialize();
-        var hover = new FloatingMenuHover(anchor, card,
-            () => { if (Window.IsActive && anchor.IsEffectivelyEnabled) state.Value = true; }, () => state.Value = false);
-        shellMenus.Add((state, layer, hover));
+        RegisterShellMenu(anchor, layer, state);
+        return layer;
+    }
+
+    private void RegisterShellMenu(Button anchor, MenuLayer layer, ObservableValue<bool> state)
+    {
+        // Give empty card areas a focus target, so interacting inside does not dismiss the menu.
+        layer.Card.Focusable = true;
+        shellMenus.Add((state, layer, anchor));
         state.Changed += () =>
         {
-            hover.Stop();
             if (state.Value)
             {
                 foreach (var other in shellMenus) if (!ReferenceEquals(other.State, state)) other.State.Value = false;
-                CloseChatAttachMenu(); layer.Show();
+                CloseChatAttachMenu(); layer.Show(); anchor.Focus();
             }
-            else layer.Close();
+            else
+            {
+                if (layer.IsFocusWithin) anchor.Focus();
+                layer.Close();
+            }
         };
         anchor.OnKeyDown(e =>
         {
             if (e.Key is Key.Up or Key.Down) { e.Handled = true; state.Value = true; }
         });
-        return layer;
+    }
+
+    private void DismissUnfocusedShellMenus()
+    {
+        // Check after focus routing has completed, including moves between items in the card.
+        foreach (var menu in shellMenus)
+            if (menu.State.Value && !menu.Anchor.IsFocusWithin && !menu.Layer.IsFocusWithin)
+                menu.State.Value = false;
     }
 
     private void CloseShellMenus(bool immediate = false)
     {
         foreach (var menu in shellMenus)
         {
-            menu.Hover.Stop(); menu.State.Value = false;
+            menu.State.Value = false;
             if (immediate) menu.Layer.Close(true);
         }
     }

@@ -99,11 +99,16 @@ internal sealed partial class MainWindow
         var state = playbackQueue.Snapshot;
         static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
         var data = new List<QueueBlock>();
-        if (state.Current is { } selected) data.Add(TrackBlock(selected));
+        if (state.Current is { } selected)
+        {
+            data.Add(new("now", QueueBlockKind.Upcoming, Title: "Сейчас играет"));
+            data.Add(TrackBlock(selected));
+        }
         var wave = state.Context?.Kind == PlaybackContextKind.Wave;
-        if (wave && state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: "Добавлено тобой"));
+        if (state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: "Добавлено тобой"));
         data.AddRange(state.ManualUpcoming.Select(TrackBlock));
-        if (wave) data.Add(new("wave", QueueBlockKind.Context, Title: "Далее на твоей волне"));
+        if (wave || state.Forward.Count + state.ContextUpcoming.Count > 0)
+            data.Add(new(wave ? "wave" : "next", QueueBlockKind.Context, Title: wave ? "Далее на твоей волне" : "Далее"));
         data.AddRange(state.Forward.Concat(state.ContextUpcoming).Select(TrackBlock));
         if (state.Recommendations.Count > 0)
         {
@@ -248,7 +253,7 @@ internal sealed partial class MainWindow
         result.ItemTemplate = new DelegateTemplate<QueueBlock>(context =>
         {
             CompactTrackRow row = null!;
-            row = CreateCompactTrackRow(_ => { if (row.EntryId is { } id) Run(() => PlayQueueEntryAsync(id)); }, queueRow: true);
+            row = CreateCompactTrackRow(_ => { if (row.EntryId is { } id) Run(() => PlayQueueEntryAsync(id)); }, PlayerSecondaryText, queueRow: true);
             AttachTrackQueueMenu(row.Root, () => row.Track, () => row.EntryId);
             var heading = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).Margin(8, 16, 8, 8);
             var motion = new QueueRowMotion(popupQueueAnimation).Content(new Grid().Columns("*").Rows("Auto").Children(row.Root, heading));

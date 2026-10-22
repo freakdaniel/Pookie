@@ -55,7 +55,10 @@ internal sealed class PlayerBackdrop : Control
         PaletteChanged?.Invoke();
     }
 
-    protected override void OnRender(IGraphicsContext context)
+    protected override void OnRender(IGraphicsContext context) => RenderRegion(context, Bounds);
+
+    // Reuse the exact player brush and coordinates for surfaces joined to the bar.
+    internal void RenderRegion(IGraphicsContext context, Rect region)
     {
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
         var width = Math.Clamp((int)Math.Ceiling(Bounds.Width * context.DpiScale), 1, MaximumRasterWidth);
@@ -81,7 +84,7 @@ internal sealed class PlayerBackdrop : Control
             FillRaster(CurrentGradient, width, write.PixelsBgra32, grain);
             rasterPalette = CurrentGradient;
         }
-        context.FillRectangle(Bounds, new ImageBrush(rasterImage!, new Rect(0, 0, width, RasterRows),
+        context.FillRectangle(region, new ImageBrush(rasterImage!, new Rect(0, 0, width, RasterRows),
             new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / context.DpiScale), TileMode.TileY));
     }
 

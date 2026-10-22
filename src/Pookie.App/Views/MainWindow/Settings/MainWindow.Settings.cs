@@ -86,7 +86,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement SettingsToggle(string key, string title, string description, Func<bool> read, Action<bool> write)
     {
-        var control = MaterialSwitch.Create(read(), value => { if (!refreshingSettings) write(value); }).ToolTip(title);
+        var control = MaterialSwitch.Create(read(), value => { if (!refreshingSettings) write(value); });
         settingsToggles[key] = control;
         settingsRefreshers.Add(() => control.IsChecked = read());
         return SettingsRow(title, description, control);
@@ -95,7 +95,7 @@ internal sealed partial class MainWindow
     private FrameworkElement SettingsChoice<T>(string key, string title, string description, Func<T> read, Action<T> write,
         params (string Title, T Value)[] options)
     {
-        var control = new MaterialSelect(options.Select(option => option.Title).ToArray()).Width(220).ToolTip(title);
+        var control = new MaterialSelect(options.Select(option => option.Title).ToArray()).Width(220);
         void Refresh() => control.SelectedIndex = Array.FindIndex(options, option => EqualityComparer<T>.Default.Equals(option.Value, read()));
         Refresh();
         control.SelectionChanged += _ =>

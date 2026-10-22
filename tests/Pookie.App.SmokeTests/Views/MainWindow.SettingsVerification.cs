@@ -26,6 +26,9 @@ internal sealed partial class MainWindow
             profile.Value = me.Username; signedIn.Value = true; likedIdsReady = true;
             EnsureWaveTaste(); await ShowWorkspaceAsync();
             VerifySettingsDraftCleanupBeforeOpeningChats();
+            if (settingsButton.ToolTip != null || settingsToggles.Values.Any(control => control.ToolTip != null) ||
+                settingsChoices.Values.Any(control => control.ToolTip != null))
+                throw new InvalidOperationException("Settings gear, switches or selects retained tooltips.");
             Window.Activate();
             Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
             await WaitForSettingsLayoutAsync(() => Window.IsActive && Math.Abs(Window.ClientSize.Width - 1000) < 1 &&
