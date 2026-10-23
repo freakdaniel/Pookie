@@ -21,6 +21,45 @@ Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated 
 directory when the production app is open: MewUI's extracted font files otherwise
 share the same cache and another process can remove them when it exits.
 
+On Windows, `POOKIE_RENDER_PROBE=1` with `--expanded-glass-ui-smoke-test --no-audio`
+runs an isolated rendering diagnostic. It records player opening time, lyric frame
+times with the underlying page visible/hidden, and scrolling frame times. For the
+hover check it briefly brings the fixture window above other windows, waits for
+stable DWM presentation, and checks three native background pixels while hovering
+both feedback buttons. Run this diagnostic with the desktop unlocked and no other
+UI checks running. Clear the environment variable afterwards.
+
+`POOKIE_SCROLL_PROBE=1` with `--track-page-ui-smoke-test --no-audio` measures
+the detail pages with 500 long/threaded comments, appending 50 comments without
+moving the viewport, returning from the bottom to the hero, and a 1000-track
+playlist. Each page gets 540 continuous 12-DIP scroll steps across the hero,
+middle and bottom, plus large cold viewport jumps in both directions. These are
+separate results: `CONTINUOUS_SCROLL_RESULT` and `DETAIL_SCROLL_RESULT`.
+`POOKIE_SCROLL_CONTINUOUS_ONLY=1` skips the large-jump paths. Samples measure
+input to `FrameRendered`, before native presentation; they are not display FPS.
+Add `POOKIE_SCROLL_PLAYING=1` and omit `--no-audio` to exercise the real playback
+poll timer, advancing fixture position, waveform colors and progress animation
+while scrolling both pages. The fixture replaces the audio transport only.
+`POOKIE_SCROLL_SETTLED=1` additionally waits for initial artwork/palette and player
+height transitions; omit it to include playback startup in the scroll samples.
+On Windows, `POOKIE_SCROLL_TOUCHPAD=1` replaces the continuous offset steps with
+2160 native fractional wheel messages per page, direction changes and a comment
+avatar hover. It exposes the fixture window and verifies alternating pixels on
+the desktop for every produced state, plus periodic samples of the scrolling
+page body. `FrameRendered` alone cannot detect a frozen presentation. Its timing
+includes DWM synchronization/readback and is not a scrolling FPS benchmark.
+The probe rejects a collapsed/minimized viewport and times out a stalled frame.
+Use a Release build, run it alone without background builds, and clear the
+environment variables afterwards. Optional `POOKIE_SCROLL_PROFILE=1` enables
+the framework profiler for attribution and adds measurement overhead.
+`--comments-ui-smoke-test` also compares the cached paragraph renderer against
+standard TextBlock pixels across fractional widths, Unicode and emoji.
+The chrome check verifies native-DPI page sampling before header downsampling,
+shared SVG visibility across independent render targets,
+and that first/repeated GPU blur passes preserve independent read/draw framebuffer
+bindings, viewport, program, VAO and texture bindings. Expanded-player checks
+require spring overshoot in both directions, retained layout and no panel overlap.
+
 `--external-browser-smoke-test` checks Linux external URL launching with a private
 `xdg-open` fixture: exact argument passing, stdout/stderr isolation including
 browser descendants, independent browser lifetime and nonzero opener exit codes.

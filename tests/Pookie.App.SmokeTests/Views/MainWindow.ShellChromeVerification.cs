@@ -33,8 +33,8 @@ internal sealed partial class MainWindow
                 Id = id, Title = "Музыка для твоего вечера " + id, Duration = 180000,
                 User = new() { Username = "Pookie" } }).ToArray(), null));
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(shellScroll) > 1000 &&
-                PageContentScroll() is { ViewportHeight: > 100 } && !shellPageScroll.IsMeasureDirty && playerChrome.ActualHeight == PlayerBarHeight &&
-                contentBottomFade.Opacity == ContentBottomFade.PlayerOpacity);
+                PageContentScroll() is { ViewportHeight: > 100 } && !shellPageScroll.IsMeasureDirty && Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 / Window.DpiScale &&
+                contentBottomFade.Strength == ContentBottomFade.PlayerOpacity);
             if (headerGlass.GlassAmount != 0 || HeaderSurface != Surface || contentSurface.CornerRadius != 0 ||
                 contentBottomFade.IsHitTestVisible || Math.Abs(contentBottomFade.Bounds.Bottom - playerChrome.Bounds.Y) > 1)
                 throw new InvalidOperationException("The resting chrome does not match the square content surface.");
@@ -43,6 +43,8 @@ internal sealed partial class MainWindow
             await VerifyShellScrollBarDragAsync();
             shellScroll.SetScrollOffsets(0, 48);
             await WaitForLikedLayoutAsync(() => headerGlass.GlassAmount > .999 && headerGlass.HasBlurredBackdrop);
+            VerifyGpuBlurState();
+            VerifyIconRenderTargets();
             CaptureUiPreview("shell-chrome-glass");
             shellScroll.SetScrollOffsets(0, 460);
             await WaitForLikedLayoutAsync(() => PageContentScroll()!.Bounds.Y < 1 && PageContentScroll()!.VerticalOffset > 0);
@@ -53,6 +55,7 @@ internal sealed partial class MainWindow
             if (native.CornerRadius != 0 || contentFrame.Bounds.Y >= 0 || native.Bounds.Bottom > playerChrome.Bounds.Y + 1)
                 throw new InvalidOperationException("Page scrolling lost the under-header viewport, square clipping or player boundary.");
             CaptureUiPreview("shell-chrome-scrolled");
+            VerifyHeaderBackdropPixels();
             var tile = likedTiles.Values.Where(item => item.Track != null && item.Cover.Bounds.Y > 200 &&
                 item.Cover.Bounds.Y < playerChrome.Bounds.Y).OrderByDescending(item => item.Cover.Bounds.Y).First();
             var fadeTrackId = tile.Track!.Id;
@@ -72,7 +75,7 @@ internal sealed partial class MainWindow
             foreach (var (width, height) in new[] { (1000, 680), (1600, 900) })
             {
                 Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
-                await WaitForLikedLayoutAsync(() => Window.ClientSize.Width == width && shellScroll.ActualWidth == width &&
+                await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 / Window.DpiScale && Math.Abs(shellScroll.ActualWidth - width) < 1 / Window.DpiScale &&
                     Math.Abs(shellScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1 && !shellPageScroll.IsMeasureDirty);
                 CaptureUiPreview($"shell-chrome-{width}x{height}");
                 CheckShellScrollBarBounds();
@@ -82,32 +85,34 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 320 && !shellPageScroll.IsArrangeDirty);
             await NavigateAsync(Page.Home);
             await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 0 && headerGlass.GlassAmount == 0 &&
-                contentFrame.ActualWidth == Math.Min(1440, Window.ClientSize.Width) && !contentFrame.IsArrangeDirty &&
+                Math.Abs(contentFrame.ActualWidth - Math.Min(1440, Window.ClientSize.Width)) < 1 / Window.DpiScale && !contentFrame.IsArrangeDirty &&
                 shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) == 0);
             CaptureUiPreview("shell-chrome-home");
             var homeBody = homeScroll.Content;
             try
             {
-                homeScroll.Content = new Border().Height(2400).Background(Color.FromRgb(220, 186, 140));
+                var samplingProbe = new HeaderSamplingProbe().Height(2400);
+                homeScroll.Content = samplingProbe;
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) > 1000);
                 shellScroll.SetScrollOffsets(0, 500);
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Math.Abs(homeScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1);
+                VerifyHeaderSampling(samplingProbe);
                 VerifyBottomFadePixels(Window.ClientSize.Width / 2);
                 CaptureUiPreview("shell-chrome-fade-home");
                 var fadeSamples = new List<double>();
-                void SampleFade() => fadeSamples.Add(contentBottomFade.Opacity);
+                void SampleFade() => fadeSamples.Add(contentBottomFade.Strength);
                 Window.FrameRendered += SampleFade;
                 try
                 {
                     playerVisible.Value = false;
-                    await WaitForLikedLayoutAsync(() => contentBottomFade.IsVisible && contentBottomFade.Opacity == 1 &&
+                    await WaitForLikedLayoutAsync(() => contentBottomFade.IsVisible && contentBottomFade.Strength == 1 &&
                         Math.Abs(contentBottomFade.Bounds.Bottom - Window.ClientSize.Height) < 1);
                     VerifyBottomFadePixels(Window.ClientSize.Width / 2);
                     CheckShellScrollBarBounds();
                     CaptureUiPreview("shell-chrome-fade-without-player");
                     playerVisible.Value = true;
-                    await WaitForLikedLayoutAsync(() => contentBottomFade.Opacity == ContentBottomFade.PlayerOpacity &&
-                        playerChrome.ActualHeight == PlayerBarHeight);
+                    await WaitForLikedLayoutAsync(() => contentBottomFade.Strength == ContentBottomFade.PlayerOpacity &&
+                        Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 / Window.DpiScale);
                     if (fadeSamples.Distinct().Count(value => value > ContentBottomFade.PlayerOpacity && value < 1) < 3)
                         throw new InvalidOperationException("The persistent bottom fade skipped its opacity transition when toggling the player.");
                 }
@@ -122,13 +127,13 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryTracks && pendingNavigationScroll == null &&
                 Math.Abs(shellScroll.VerticalOffset - 320) < 1);
             RouteWaveformPointer(new Point(2, 2));
-            await Task.Delay(200, lifetime.Token);
+            await WaitForLoginFrameAsync();
             if (KeyboardFocusFeedback.IsVisible(backButton))
                 throw new InvalidOperationException("A pointer click left a keyboard focus cue on the history button.");
             await VerifySearchScrollingAsync();
             playerVisible.Value = false;
             await WaitForLikedLayoutAsync(() => Math.Abs(shellScroll.ActualHeight - Window.ClientSize.Height) < 1 &&
-                contentBottomFade.IsVisible && contentBottomFade.Opacity == 1);
+                contentBottomFade.IsVisible && contentBottomFade.Strength == 1);
             Console.WriteLine("UI_SHELL_CHROME_OK: matching resting surfaces, real blurred under-header content, native scrollbar track/hit area below header and full-range dragging, one-to-one scroll, square viewport, pixel-verified compact persistent fade with visible content at player edge, animated opacity, readable final track, 1000x680/1600x900 bounds, glass search input/dismissal and compact connected history input without a stuck focus cue");
         }
         catch (Exception error)
@@ -140,15 +145,92 @@ internal sealed partial class MainWindow
         finally { Window.Close(); }
     }
 
+    private void VerifyIconRenderTargets()
+    {
+        var icon = Icons.View("heart-filled", 24, Color.White);
+        icon.Measure(new Size(24, 24)); icon.Arrange(new Rect(0, 0, 24, 24));
+        for (var pass = 0; pass < 2; pass++)
+        {
+            using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(24, 24, 1));
+            using var context = Window.GraphicsFactory.CreateContext(surface);
+            context.BeginFrame(surface); context.Clear(Color.Transparent); icon.Render(context); context.EndFrame();
+            var cpu = (ICpuPixelSurface)surface;
+            var pixels = cpu.GetReadOnlyPixelSpan();
+            var white = 0;
+            for (var y = 0; y < 24; y++)
+            for (var x = 0; x < 24; x++)
+            {
+                var index = y * cpu.StrideBytes + x * 4;
+                if (pixels[index] > 200 && pixels[index + 1] > 200 && pixels[index + 2] > 200 && pixels[index + 3] > 200) white++;
+            }
+            if (white < 50) throw new InvalidOperationException($"Shared icon disappeared across render targets: pass={pass}, white pixels={white}.");
+        }
+        Console.WriteLine("ICON_RENDER_TARGETS_OK: shared SVG remains visible across separate render targets");
+    }
+
+    private sealed class HeaderSamplingProbe : Control
+    {
+        internal readonly List<double> Scales = [];
+        protected override void OnRender(IGraphicsContext context)
+        {
+            Scales.Add(context.DpiScale);
+            context.FillRectangle(Bounds, Color.FromRgb(220, 186, 140));
+        }
+    }
+
+    private void VerifyHeaderSampling(HeaderSamplingProbe probe)
+    {
+        var bounds = headerGlass.Bounds;
+        var scale = Window.DpiScale;
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
+        using var context = Window.GraphicsFactory.CreateContext(surface);
+        probe.Scales.Clear();
+        context.BeginFrame(surface);
+        context.Translate(-bounds.X, -bounds.Y);
+        headerGlass.Render(context);
+        context.EndFrame();
+        if (probe.Scales.Count == 0 || probe.Scales.Any(value => Math.Abs(value - scale) > .0001))
+            throw new InvalidOperationException($"Header capture changed the page's pixel grid: native={scale}; captures={string.Join(',', probe.Scales)}.");
+        Console.WriteLine($"HEADER_SAMPLING_OK: page and header capture share native DPI {scale:F4} before downsampling");
+    }
+
+    private void VerifyHeaderBackdropPixels()
+    {
+        var bounds = headerGlass.Bounds;
+        var scale = Window.DpiScale;
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
+        using var context = Window.GraphicsFactory.CreateContext(surface);
+        context.BeginFrame(surface);
+        context.Clear(Surface); context.Translate(-bounds.X, -bounds.Y);
+        headerGlass.Render(context);
+        context.EndFrame();
+        var cpu = (ICpuPixelSurface)surface;
+        var pixels = cpu.GetReadOnlyPixelSpan();
+        var minimum = 255; var maximum = 0;
+        for (var x = 20; x < surface.PixelWidth - 20; x++)
+        {
+            var green = pixels[(surface.PixelHeight / 2) * cpu.StrideBytes + x * 4 + 1];
+            minimum = Math.Min(minimum, green); maximum = Math.Max(maximum, green);
+        }
+        if (maximum - minimum < 8)
+            throw new InvalidOperationException($"Header blur lost the page pixels: green={minimum}..{maximum}.");
+        Console.WriteLine($"SHELL_GLASS_PIXELS_OK: visible page variation through the blurred header, green={minimum}..{maximum}");
+    }
+
     private async Task VerifyHeaderSearchLayoutAsync(int width)
     {
         Window.Activate();
         await WaitForLikedLayoutAsync(() => Window.IsActive);
         OpenTopSearch();
-        await WaitForLikedLayoutAsync(() => topSearchBar.ActualWidth == 480 && topSearchBar.Opacity == 1 && topSearchInput.IsFocused);
+        await WaitForLikedLayoutAsync(() => Math.Abs(topSearchBar.ActualWidth - 480) < 1 / Window.DpiScale && topSearchBar.Opacity == 1 && topSearchInput.IsFocused);
         query.Value = "Музыка для твоего вечера";
-        await Task.Delay(220, lifetime.Token);
-        if (backButton.ActualWidth != 36 || forwardButton.ActualHeight != 36 ||
+        await WaitForLikedLayoutAsync(() => topSearchInput.Text == query.Value);
+        if (Math.Abs(backButton.ActualWidth - 36) > 1 / Window.DpiScale || Math.Abs(forwardButton.ActualHeight - 36) > 1 / Window.DpiScale ||
             Math.Abs(forwardButton.Bounds.X - backButton.Bounds.Right - 2) > 1 ||
             topSearchBar.Bounds.X <= forwardButton.Bounds.Right || topSearchBar.Bounds.Right >= settingsButton.Bounds.X ||
             Math.Abs(topSearchInput.Bounds.Y + topSearchInput.ActualHeight / 2 - ShellChromeGlass.HeaderHeight / 2) > 1 ||
@@ -157,7 +239,7 @@ internal sealed partial class MainWindow
         CaptureUiPreview($"shell-header-search-{width}");
         // A real outside click must still dismiss the field and restore navigation.
         RouteWaveformClick(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => !searching.Value && topSearchBar.Opacity == 0 && topNavigation.ActualWidth == 480);
+        await WaitForLikedLayoutAsync(() => !searching.Value && topSearchBar.Opacity == 0 && Math.Abs(topNavigation.ActualWidth - 480) < 1 / Window.DpiScale);
         if (query.Value.Length != 0 || topSearchBar.IsHitTestVisible)
             throw new InvalidOperationException("Dismissing glass search left stale text or an invisible input target.");
     }
@@ -199,7 +281,7 @@ internal sealed partial class MainWindow
             try
             {
                 RouteWaveformPointer(start); PressActionPointer(start, true);
-                if (!bar.IsMouseCaptured) throw new InvalidOperationException("The inset scrollbar thumb cannot be grabbed.");
+                await WaitForLikedLayoutAsync(() => bar.IsMouseCaptured);
                 RouteActionHeldPointer(end); PressActionPointer(end, false);
                 await WaitForLikedLayoutAsync(() => Math.Abs(shellScroll.VerticalOffset -
                     (down ? SmoothScroll.Maximum(shellScroll) : 0)) < 1 && !bar.IsMouseCaptured);

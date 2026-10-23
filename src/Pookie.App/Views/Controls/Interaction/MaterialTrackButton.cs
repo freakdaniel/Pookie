@@ -17,6 +17,7 @@ internal sealed class MaterialTrackButton : Button
     private readonly AnimationClock surfaceClock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
     private bool connected, groupStart;
     private bool glassFinish;
+    private readonly GlassSheenRaster sheen = new();
     private CoverGlassBackdrop? glassBackdrop;
     internal void UseGlassFinish() => glassFinish = true;
     internal void AttachGlassBackdrop(CoverGlassBackdrop backdrop)
@@ -137,23 +138,43 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnRender(IGraphicsContext context)
     {
         RefreshSurface();
-        if (glassBackdrop != null)
+        context.Save();
+        try
         {
-            var bounds = GetSnappedBorderBounds(Bounds);
-            var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
-            glassBackdrop.Draw(context, bounds, corners);
-            context.FillPath(GlassSheen.Shape(bounds, corners), glassTint);
+            if (!IsEffectivelyEnabled && !pending) context.GlobalAlpha *= .38f;
+            if (glassBackdrop != null)
+            {
+                var bounds = GetSnappedBorderBounds(Bounds);
+                var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
+                glassBackdrop.Draw(context, bounds, corners);
+                context.FillPath(GlassSheen.Shape(bounds, corners), glassTint);
+            }
+            else if (connected)
+                DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
+            else base.OnRender(context);
+            if (glassFinish) sheen.Draw(context, GetSnappedBorderBounds(Bounds),
+                connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35);
         }
-        else if (connected)
-            DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
-        else base.OnRender(context);
-        if (glassFinish) GlassSheen.Draw(context, GetSnappedBorderBounds(Bounds),
-            connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35);
+        finally { context.Restore(); }
+    }
+
+    protected override void RenderSubtree(IGraphicsContext context)
+    {
+        // Fading a disabled control through UIElement.Opacity allocates a
+        // viewport-sized group on MewVG/Win32. Its ink needs no separate layer.
+        context.Save();
+        try
+        {
+            if (!IsEffectivelyEnabled && !pending) context.GlobalAlpha *= .38f;
+            base.RenderSubtree(context);
+        }
+        finally { context.Restore(); }
     }
 
     protected override void OnDispose()
     {
         surfaceClock.Stop(); shapeClock.Stop();
+        sheen.Dispose();
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
         base.OnDispose();
     }

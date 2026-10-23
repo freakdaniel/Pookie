@@ -201,7 +201,7 @@ internal sealed partial class MainWindow
             RouteWaveformPointer(new(row.Title.Bounds.X + 10, row.Title.Bounds.Y + 8));
             if (row.Title.Opacity != .72) throw new InvalidOperationException("Actual title lost link hover.");
             playbackQueue.Clear(); RouteWaveformPointer(new(row.Cover.Bounds.X + 10, row.Cover.Bounds.Y + 10));
-            await WaitForLikedLayoutAsync(() => row.Overlay.Opacity > .999);
+            await WaitForLikedLayoutAsync(() => row.Overlay.Strength > .999);
             ClickHomeElement(row.PlaybackButton);
             await WaitForLikedLayoutAsync(() => playbackQueue.Current?.Track.Id == 101);
             if (page.Value != Page.Feed) throw new InvalidOperationException("Compact play button opened the track page.");

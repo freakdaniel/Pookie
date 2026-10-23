@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement TrackDetailSidebarView()
     {
-        trackDetailAvatar = new Image().Width(64).Height(64).StretchMode(Stretch.UniformToFill);
+        trackDetailAvatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(64).Height(64).StretchMode(Stretch.UniformToFill);
         trackDetailAuthorName = new TextBlock().FontSize(16).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailAuthorStats = new TextBlock().FontSize(11).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         var profile = TrackButtons.Action(new Grid().Columns("64,*").Rows("Auto").Spacing(14).Children(
@@ -49,7 +49,7 @@ internal sealed partial class MainWindow
         }
         var artistRow = new Grid().Columns("*,40").Rows("Auto").Spacing(12).Children(profile.Column(0),
             ArtistFollowButton(() => trackDetailState?.Track.User).Column(1).CenterVertical());
-        return new StackPanel().Vertical().Spacing(28).Children(artistRow, stats, trackDetailFansSection,
+        return new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(28).Children(artistRow, stats, trackDetailFansSection,
             new StackPanel().Vertical().Spacing(14).Children(SidebarHeading("Похожие треки", TrackSection.Related), trackDetailRelatedStatus, related),
             trackDetailPlaylistsSection, trackDetailAlbumsSection);
     }
@@ -69,7 +69,7 @@ internal sealed partial class MainWindow
             trackDetailState = trackDetailState! with { Sidebar = result, SidebarLoading = false };
             RenderTrackDetailSidebar();
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
         {
             if (!IsTrackDetailCurrent(id, generation)) return;
@@ -91,7 +91,7 @@ internal sealed partial class MainWindow
         if (data == null) return;
         foreach (var fan in data.Fans)
         {
-            var avatar = new Image().Width(36).Height(36).StretchMode(Stretch.UniformToFill);
+            var avatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(36).Height(36).StretchMode(Stretch.UniformToFill);
             avatar.Source = Icons.Source("user", Muted);
             var row = TrackButtons.Action(new Grid().Columns("36,*,Auto").Rows("Auto").Spacing(10).Children(
                 new Border().CornerRadius(18).ClipToBounds().Child(avatar).Column(0),

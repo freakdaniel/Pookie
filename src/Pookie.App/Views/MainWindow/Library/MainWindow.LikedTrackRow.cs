@@ -76,7 +76,7 @@ internal sealed partial class MainWindow
                 actionButtons.Column(0),
                 new StackPanel().Horizontal().Spacing(12).Right().CenterVertical().Column(1).Children(playsStat, commentsStat));
             details = new Grid().Columns("*").Rows("40,68,40").Spacing(12);
-            Root = new Grid().Columns("160,*").Rows("*").Spacing(20).Height(TrackRowLayout.Height).Children(
+            Root = new ViewportGrid().Columns("160,*").Rows("*").Spacing(20).Height(TrackRowLayout.Height).Children(
                 new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
                     .Content(artworkFrame)
                     .OnClick(() => { if (Track is { } track) open(track); }),
@@ -162,9 +162,14 @@ internal sealed partial class MainWindow
             likeButton.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
             TrackButtons.SetAvailability(likeButton, canLike, pending);
             snapActionColors = false;
+            Waveform.IsPlaying = selected && playing;
+            RefreshPosition(selected, seconds);
+        }
+
+        public void RefreshPosition(bool selected, double seconds)
+        {
             positionLabel.IsVisible = selected;
             position.Text = FormatTime(selected ? seconds : 0);
-            Waveform.IsPlaying = selected && playing;
             Waveform.Progress = selected && Track is { DurationSeconds: > 0 } track ? seconds / track.DurationSeconds : 0;
         }
 

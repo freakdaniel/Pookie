@@ -30,6 +30,7 @@ internal sealed partial class MainWindow
                 RenderTrackDetail(); return Task.CompletedTask;
             });
             await WaitForLikedLayoutAsync(() => trackCommentInput.ActualWidth > 80 && trackCommentOwnAvatar.Source is ImageSource);
+            VerifyCommentTextPixels();
             if (trackCommentSend.IsEnabled || !trackCommentInput.IsEnabled) throw new InvalidOperationException("Empty composer availability is incorrect.");
             if (trackCommentInput.Placeholder != "Твой комментарий") throw new InvalidOperationException("Unexpected comment placeholder.");
             var restingWidth = trackCommentComposer.ActualWidth;
@@ -64,7 +65,7 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => trackCommentActions.Expansion == 0 && Math.Abs(trackCommentComposer.ActualWidth - restingWidth) < 1);
                 if (trackCommentComposer.IsFocusWithin || trackCommentInput.Text != "Новый комментарий 🎧")
                     throw new InvalidOperationException("Escape lost the draft or retained editing focus.");
-                trackCommentInput.Focus(); await Task.Delay(60, lifetime.Token);
+                trackCommentInput.Focus(); await WaitForLikedLayoutAsync(() => trackCommentActions.Expansion is > 0 and < 1);
                 var interrupted = trackCommentActions.Expansion;
                 Window.FocusManager.ClearFocus();
                 if (trackCommentActions.Expansion != interrupted) throw new InvalidOperationException("Interrupted expansion jumped.");
@@ -107,11 +108,20 @@ internal sealed partial class MainWindow
             await ChangeTrackCommentSortAsync("NEWEST");
             var timeButtons = new List<Button>();
             VisualTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
-            trackDetailScroll.SetScrollOffsets(0, 260);
+            await WaitForLikedLayoutAsync(() => trackDetailComments.ActualWidth > 0 && shellPageScroll.IsReady);
+            shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + trackDetailComments.Bounds.Y - shellScroll.Bounds.Y - 160));
             await WaitForLikedLayoutAsync(() => timeButtons[0].ActualWidth > 0 && timeButtons[0].Bounds.Y > trackDetailScroll.Bounds.Y &&
                 timeButtons[0].Bounds.Y < trackDetailScroll.Bounds.Bottom - 40);
+            if (OperatingSystem.IsWindows())
+            {
+                ProbeShowWindow(Window.Handle, 5);
+                if (!ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53)) throw new InvalidOperationException("Could not expose native comment check.");
+                await WaitForLoginFrameAsync();
+                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !trackDetailComments.IsArrangeDirty);
+            }
             var time = timeButtons[0]; MoveActionPointer(new(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12));
-            await WaitForLikedLayoutAsync(() => time.IsMouseOver && time.Background == TrackButtons.HoverColor(TrackButtons.CommentTimeSurface, TrackButtons.OnCommentTime));
+            try { await WaitForLikedLayoutAsync(() => time.IsMouseOver && time.Background == TrackButtons.HoverColor(TrackButtons.CommentTimeSurface, TrackButtons.OnCommentTime)); }
+            catch (InvalidOperationException error) { throw new InvalidOperationException($"Timestamp hover failed: bounds={time.Bounds} enabled={time.IsEffectivelyEnabled} over={time.IsMouseOver} active={Window.IsActive} viewport={shellScroll.Bounds} offset={shellScroll.VerticalOffset} colour={time.Background}.", error); }
             MoveActionPointer(new(1, 1));
             await WaitForLikedLayoutAsync(() => !time.IsMouseOver && time.Background == TrackButtons.CommentTimeSurface);
             await DeleteTrackCommentAsync(track, other);

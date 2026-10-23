@@ -12,6 +12,7 @@ internal sealed partial class MainWindow
         var opacity = background.Opacity; var transitions = background.Transitions;
         Color Read()
         {
+            glass.Prepare();
             var region = new Rect(reference.Bounds.X + reference.ActualWidth / 2 - 2,
                 reference.Bounds.Y + reference.ActualHeight / 2 - 2, 4, 4);
             using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();

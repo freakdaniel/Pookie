@@ -174,7 +174,7 @@ internal static class TrackButtons
                     Setter.Create(Control.BackgroundProperty, PressedColor(surface, foreground))
                 ] },
                 new StateTrigger { Exclude = VisualStateFlags.Enabled, Setters = [
-                    Setter.Create(UIElement.OpacityProperty, .38),
+                    Setter.Create(UIElement.OpacityProperty, 1d),
                     Setter.Create(UIElement.CursorProperty, (CursorType?)CursorType.Arrow)
                 ] }
             ],

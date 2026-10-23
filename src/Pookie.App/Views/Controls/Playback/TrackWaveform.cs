@@ -14,10 +14,17 @@ internal sealed class TrackWaveform : Control
     private readonly AnimationClock colorMotion;
     private float[] samples = [], bars = [];
     private double[] emphasis = [];
+    private byte[] renderedColors = [];
     private double progress;
     private double? hoverPosition;
     private bool playing;
     private long colorTimestamp;
+    private WriteableBitmap? raster;
+    private IImage? image;
+    private IGraphicsFactory? factory;
+    private bool rasterDirty = true;
+    private Size rasterSize;
+    private double rasterScale;
     public event Action<double>? SeekRequested;
     public bool HasSamples => samples.Length > 0;
     public double Progress
@@ -51,7 +58,8 @@ internal sealed class TrackWaveform : Control
     public void SetSamples(float[] values)
     {
         colorMotion.Stop();
-        samples = values; bars = []; emphasis = [];
+        samples = values; bars = []; emphasis = []; renderedColors = [];
+        rasterDirty = true;
         // A recycled row must not inherit the previous track's hover or colors.
         hoverPosition = null;
         InvalidateVisual();
@@ -84,15 +92,18 @@ internal sealed class TrackWaveform : Control
         // mouse moves and playback ticks preserve the continuity of the transition.
         var blend = 1 - Math.Exp(-dt / .065);
         var settled = true;
+        var changed = false;
         for (var index = 0; index < emphasis.Length; index++)
         {
             var target = TargetEmphasis(index);
+            var previous = BarColor(index).R;
             emphasis[index] += (target - emphasis[index]) * blend;
             if (Math.Abs(target - emphasis[index]) < .002) emphasis[index] = target;
             else settled = false;
+            changed |= previous != BarColor(index).R;
         }
         if (settled) colorMotion.Stop();
-        InvalidateVisual();
+        if (changed) InvalidateVisual();
     }
 
     protected override Size MeasureContent(Size availableSize) => new(0, 68);
@@ -130,24 +141,83 @@ internal sealed class TrackWaveform : Control
         {
             bars = WaveformData.Resample(samples, count);
             emphasis = new double[count];
+            renderedColors = new byte[count];
             for (var index = 0; index < count; index++) emphasis[index] = TargetEmphasis(index);
+            rasterDirty = true;
         }
-        var pitch = bounds.Width / count;
+        var scale = GetDpi() / 96d;
+        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
+        var pixelHeight = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
+        var graphics = Application.Current.GraphicsFactory;
+        if (raster == null || raster.PixelWidth != width || raster.PixelHeight != pixelHeight || factory != graphics)
+        {
+            ReleaseRaster(); factory = graphics;
+            raster = new WriteableBitmap(width, pixelHeight, clear: false);
+            image = ((IImageSource)raster).CreateImage(graphics);
+        }
+        if (rasterSize != bounds.Size || rasterScale != scale) rasterDirty = true;
+        rasterSize = bounds.Size; rasterScale = scale;
+        var colorsChanged = rasterDirty;
+        for (var index = 0; !colorsChanged && index < count; index++) colorsChanged = renderedColors[index] != BarColor(index).R;
+        if (colorsChanged)
+        {
+            using var write = raster.LockForWrite();
+            var pixels = write.PixelsBgra32;
+            if (rasterDirty) pixels.Clear();
+            DrawBars(pixels, width, pixelHeight, scale);
+            rasterDirty = false;
+        }
+        context.DrawImage(image!, new Rect(bounds.X, bounds.Y, width / scale, pixelHeight / scale));
+    }
+
+    private void DrawBars(Span<byte> pixels, int width, int pixelHeight, double scale)
+    {
+        var upper = Bounds.Height * .7;
+        var pitch = Bounds.Width / bars.Length;
+        var barWidth = Math.Max(1, pitch - 1);
+        var baseline = upper * scale;
+        var count = bars.Length;
         for (var index = 0; index < count; index++)
         {
+            var color = BarColor(index);
+            if (!rasterDirty && renderedColors[index] == color.R) continue;
+            renderedColors[index] = color.R;
             var height = Math.Max(1, Math.Floor(bars[index] * upper));
-            var reflection = Math.Max(1, Math.Floor(bars[index] * (bounds.Height - upper - 1)));
-            var x = bounds.X + index * pitch;
-            var color = IdleColor.Lerp(PlayedColor, emphasis[index]);
-            context.FillRectangle(new Rect(x, baseline - height, Math.Max(1, pitch - 1), height), color);
-            context.FillRectangle(new Rect(x, baseline + 1, Math.Max(1, pitch - 1), reflection), Color.FromArgb(80, color.R, color.G, color.B));
+            var reflection = Math.Max(1, Math.Floor(bars[index] * (Bounds.Height - upper - 1)));
+            var x = index * pitch * scale;
+            FillBar(pixels, width, pixelHeight, x, baseline - height * scale, x + barWidth * scale, baseline, color);
+            FillBar(pixels, width, pixelHeight, x, baseline + scale, x + barWidth * scale, baseline + (1 + reflection) * scale,
+                Color.FromArgb(80, color.R, color.G, color.B));
         }
+    }
+
+    private Color BarColor(int index) => IdleColor.Lerp(PlayedColor, emphasis[index]);
+
+    private static void FillBar(Span<byte> pixels, int width, int height, double left, double top, double right, double bottom, Color color)
+    {
+        for (var x = Math.Max(0, (int)Math.Floor(left)); x < Math.Min(width, (int)Math.Ceiling(right)); x++)
+        {
+            var coverage = Math.Min(x + 1, right) - Math.Max(x, left);
+            for (var y = Math.Max(0, (int)Math.Floor(top)); y < Math.Min(height, (int)Math.Ceiling(bottom)); y++)
+            {
+                var alpha = (byte)Math.Round(color.A * coverage * (Math.Min(y + 1, bottom) - Math.Max(y, top)));
+                var offset = (y * width + x) * 4;
+                pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R; pixels[offset + 3] = alpha;
+            }
+        }
+    }
+
+    private void ReleaseRaster()
+    {
+        image?.Dispose(); image = null;
+        raster?.Dispose(); raster = null;
+        factory = null; rasterDirty = true;
     }
 
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
-        if (newRoot == null) { colorMotion.Stop(); hoverPosition = null; }
+        if (newRoot == null) { colorMotion.Stop(); hoverPosition = null; ReleaseRaster(); }
     }
-    protected override void OnDispose() { colorMotion.Stop(); base.OnDispose(); }
+    protected override void OnDispose() { colorMotion.Stop(); ReleaseRaster(); base.OnDispose(); }
 }

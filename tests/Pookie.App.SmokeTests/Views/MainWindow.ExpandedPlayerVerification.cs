@@ -18,7 +18,7 @@ internal sealed partial class MainWindow
         string? escapedMotionDetail = null;
         void Sample()
         {
-            if (panelAnimation.IsRunning || panelFade.IsRunning)
+            if (panelAnimation.IsRunning)
             {
                 var now = System.Diagnostics.Stopwatch.GetTimestamp();
                 if (previousMotionFrame != 0)
@@ -28,11 +28,11 @@ internal sealed partial class MainWindow
             else previousMotionFrame = 0;
             var cardLayer = (PlayerMotionLayer)expandedLayout.Children[0];
             var panelLayer = (PlayerMotionLayer)expandedLayout.Children[1];
-            if (panelAnimation.IsRunning || panelFade.IsRunning)
+            if (panelAnimation.IsRunning)
             {
                 foreach (var layer in new[] { cardLayer, panelLayer })
                 {
-                    if (layer.Opacity == 0) continue;
+                    if (layer.InkStrength == 0) continue;
                     var childBounds = layer.Children[0].Bounds;
                     var paintedBounds = new Rect(childBounds.X + layer.OffsetX, childBounds.Y + layer.OffsetY,
                         childBounds.Width, childBounds.Height);
@@ -81,9 +81,17 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => playerArtworkOverlay.Opacity > .99);
             CaptureUiPreview("expanded-cover-hover");
             var previous = Window.WindowState;
+            var previousSize = Window.ClientSize;
+            var openWatch = System.Diagnostics.Stopwatch.StartNew();
             SetExpandedPlayer(true);
             await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning && expandedCover.ActualWidth > 200);
-            if (Window.WindowState != WindowState.FullScreen || !expandedHost.IsVisible || workspace.IsHitTestVisible ||
+            if (Environment.GetEnvironmentVariable("POOKIE_RENDER_PROBE") == "1")
+            {
+                Console.WriteLine($"EXPANDED_OPEN_PROBE: {openWatch.Elapsed.TotalMilliseconds:F1}ms; window={Window.WindowState}, size={Window.ClientSize}");
+                await ProbeExpandedRenderingAsync();
+                return;
+            }
+            if (Window.WindowState != previous || Window.ClientSize != previousSize || !expandedHost.IsVisible || workspace.IsVisible || workspace.IsHitTestVisible ||
                 expandedArtwork.Source != artwork.Source || expandedProgress.Value != progress.Value ||
                 frames.Count(frame => frame.Reveal is > 0 and < 1) < 3)
                 throw new InvalidOperationException("Expanded player did not open with animation and retain playback state.");
@@ -98,7 +106,7 @@ internal sealed partial class MainWindow
                 await VerifyPausedExpandedReentryAsync();
                 SetExpandedPlayer(false);
                 await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible && Window.WindowState == previous);
-                Console.WriteLine("EXPANDED_GLASS_UI_OK: native fullscreen, blurred artwork pixels, connected feedback shapes, live shuffle click, pointer focus, artwork replacement, hover reveal and repeated paused reentry");
+                Console.WriteLine("EXPANDED_GLASS_UI_OK: in-window player, blurred artwork pixels, connected feedback shapes, live shuffle click, pointer focus, artwork replacement, hover reveal and repeated paused reentry");
                 return;
             }
             await VerifyPausedExpandedReentryAsync();
@@ -108,7 +116,7 @@ internal sealed partial class MainWindow
             if (escapedMotionBounds != 0)
                 throw new InvalidOperationException($"Animated drawing escaped its repaint region in {escapedMotionBounds} rendered samples: {escapedMotionDetail}");
             if (expandedUpcoming.Length != 999 || expandedCover.Bounds.X >= centeredX - 100 ||
-                frames.Count(frame => frame.Side is > 0 and < 1) < 3)
+                frames.Count(frame => frame.Side is > 0 and < 1) < 3 || !frames.Any(frame => frame.Side > 1.01))
                 throw new InvalidOperationException("Queue did not animate the cover left or display upcoming tracks.");
             CaptureExpandedPanelPreview("expanded-queue");
             await VerifyExpandedQueueDesignAsync();
@@ -122,11 +130,12 @@ internal sealed partial class MainWindow
             var openPanelX = ((PlayerMotionLayer)expandedLayout.Children[1]).Children[0].Bounds.X;
             frames.Clear();
             ToggleExpandedPanel(PlayerPanel.Queue);
-            await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && !panelFade.IsRunning && Math.Abs(expandedCover.Bounds.X - centeredX) < 1);
+            await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && Math.Abs(expandedCover.Bounds.X - centeredX) < 1);
             if (frames.Count(frame => frame.Side is > 0 and < 1) < 3 ||
                 frames.Any(frame => frame.PanelReveal > .01 && frame.Gap < 0) ||
-                !frames.Any(frame => frame.PanelReveal is > .01 and < .99 && frame.X > openCoverX + 1 && frame.PanelX < openPanelX - 1))
-                throw new InvalidOperationException("Closing the queue did not slide left and fade alongside the returning cover, or overlapped it.");
+                !frames.Any(frame => frame.Side < -.01) ||
+                !frames.Any(frame => frame.PanelReveal is > .01 and < .99 && frame.X > openCoverX + 1 && frame.PanelX > openPanelX + 1))
+                throw new InvalidOperationException($"Closing spring failed: intermediate={frames.Count(frame => frame.Side is > 0 and < 1)}, minimum gap={frames.Where(frame => frame.PanelReveal > .01).Select(frame => frame.Gap).DefaultIfEmpty(0).Min()}, overshoot={frames.Min(frame => frame.Side)}.");
             await VerifyExpandedVolumeAsync();
             await VerifyExpandedTimelineHoverAsync();
             for (var cycle = 0; cycle < 3; cycle++)
@@ -138,7 +147,7 @@ internal sealed partial class MainWindow
                 ToggleExpandedPanel(PlayerPanel.Queue);
                 await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && panelReveal == 1);
                 ToggleExpandedPanel(PlayerPanel.Queue);
-                await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && !panelFade.IsRunning && panelReveal == 0);
+                await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && panelReveal == 0);
             }
             ToggleExpandedPanel(PlayerPanel.Queue);
             await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning);
@@ -149,7 +158,7 @@ internal sealed partial class MainWindow
             ToggleExpandedPanel(PlayerPanel.Queue);
             await WaitForLikedLayoutAsync(() => expandedPanel.Content == expandedQueueContent);
             await WaitForLikedLayoutAsync(() => !expandedLayout.IsMeasureDirty && !expandedLayout.IsArrangeDirty &&
-                !panelAnimation.IsRunning && !panelFade.IsRunning &&
+                !panelAnimation.IsRunning &&
                 expandedQueueRows.Values.Any(row => row.Track?.Id == 3 && row.Cover.ActualWidth > 40 && row.Root.ActualHeight > 60));
             var nextRow = expandedQueueRows.Values.Single(row => row.Track?.Id == 3);
             var pixelTolerance = 1 / Window.DpiScale;
@@ -198,8 +207,8 @@ internal sealed partial class MainWindow
             if (escapedMotionBounds != 0)
                 throw new InvalidOperationException($"Animated drawing escaped its repaint region in {escapedMotionBounds} rendered samples: {escapedMotionDetail}");
             if (frameIntervals.Count > 0)
-                Console.WriteLine($"EXPANDED_MOTION_TIMING: queue=1000 tracks; frame_interval_p95_ms={frameIntervals[(int)((frameIntervals.Count - 1) * .95)]:F1}; samples={frameIntervals.Count}");
-            Console.WriteLine("EXPANDED_UI_OK: hover reset, native fullscreen, volume/time reveal and debounce, repaint bounds across repeated/interrupted motion, simultaneous closing without queue remeasurement/overlap, queue selection, shared seek/buffer and window restore");
+                Console.WriteLine($"EXPANDED_MOTION_TIMING: queue=1000 tracks; frame_interval_p95_ms={frameIntervals[(int)((frameIntervals.Count - 1) * .95)]:F1}; max_ms={frameIntervals[^1]:F1}; samples={frameIntervals.Count}");
+            Console.WriteLine("EXPANDED_UI_OK: hover reset, in-window player with unchanged native bounds/state, hidden underlying page, volume/time reveal and debounce, repaint bounds across repeated/interrupted motion, simultaneous closing without queue remeasurement/overlap, queue selection, shared seek/buffer and window restore");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("EXPANDED_UI_FAILED: " + error); }
         finally
@@ -305,7 +314,7 @@ internal sealed partial class MainWindow
         RouteExpandedPointer(new Point(1, 1));
         await WaitForLikedLayoutAsync(() => transport.Opacity < .001);
         await ToggleAsync();
-        Console.WriteLine("EXPANDED_PAUSED_REENTRY_OK: three fullscreen reopen cycles, resize culling, native intermediate and final overlay frames without clicks or progress hover");
+        Console.WriteLine("EXPANDED_PAUSED_REENTRY_OK: three in-window reopen cycles, resize culling, native intermediate and final overlay frames without clicks or progress hover");
     }
 
     private void RouteExpandedPointer(Point point)
@@ -319,6 +328,12 @@ internal sealed partial class MainWindow
     private async Task VerifyExpandedVolumeAsync()
     {
         if (!OperatingSystem.IsWindows()) return;
+        // In-window expansion no longer exposes a process started with SW_HIDE.
+        // Native mouse routing requires the diagnostic window to be on screen.
+        ProbeShowWindow(Window.Handle, 5);
+        if (!ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+            throw new InvalidOperationException("Could not expose the native expanded-player check.");
+        await WaitForLoginFrameAsync();
         if (!GetLikedActionCursor(out var originalCursor)) throw new InvalidOperationException("Could not save cursor position.");
         var widths = new List<double>();
         void Sample() => widths.Add(expandedVolume.ActualWidth);

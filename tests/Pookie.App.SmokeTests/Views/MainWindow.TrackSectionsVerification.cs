@@ -85,7 +85,10 @@ internal sealed partial class MainWindow
         if (!trackDetailState!.Sections[TrackSection.Albums].Items.Single().IsAlbum)
             throw new InvalidOperationException("Albums were mixed with ordinary playlists.");
         await OpenTrackSectionAsync(TrackSection.Related);
-        await WaitForLikedLayoutAsync(() => trackSectionRows.Count == 1 && trackSectionRows[0].Root.ActualHeight == TrackRowLayout.Height && trackSectionRows[0].Waveform.ActualHeight == 68 && trackSectionRows[0].Cover.ActualWidth == 160);
+        await WaitForLikedLayoutAsync(() => trackSectionRows.Count == 1 &&
+            Math.Abs(trackSectionRows[0].Root.ActualHeight - TrackRowLayout.Height) < 1 / Window.DpiScale &&
+            Math.Abs(trackSectionRows[0].Waveform.ActualHeight - 68) < 1 / Window.DpiScale &&
+            Math.Abs(trackSectionRows[0].Cover.ActualWidth - 160) < 1 / Window.DpiScale);
         CaptureUiPreview("track-sections-related");
         await OpenTrackSectionAsync(TrackSection.Overview);
         await WaitForLikedLayoutAsync(() => trackDetailPlaylists.ActualHeight > 200 &&

@@ -72,9 +72,8 @@ internal sealed partial class MainWindow
             coverFrame, true, collectionBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen())
             { HeroArtworkMinWidth = 176, HeroArtworkMaxWidth = 208 }.Initialize();
         collectionGlass = AttachCardGlass(hero);
-        var header = new ShadowDecorator().BlurRadius(12).OffsetY(4).ShadowColor(Color.FromArgb(60, 0, 0, 0)).CornerRadius(20)
-            .Margin(-12, -8, -12, -16)
-            .Child(new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(hero));
+        var header = new CardShadow(new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(hero))
+            .Margin(-12, -8, -12, -16);
         collectionFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").OnTextChanged(value =>
         {
             collectionFilterText = value; RefreshCollectionTracks();

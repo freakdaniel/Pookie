@@ -62,20 +62,20 @@ internal sealed partial class MainWindow
             if (!followingIds.Contains(7) || !transport.LastFollowing) throw new InvalidOperationException("Follow did not update the account state.");
             Window.WindowSize = WindowSize.Resizable(1000, 900, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 176 and <= 208 && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
-            if (collectionPlay.ActualWidth != 64 || collectionPlay.Bounds.Right >= collectionTitle.Bounds.X ||
+            if (Math.Abs(collectionPlay.ActualWidth - 64) >= 1 / Window.DpiScale || collectionPlay.Bounds.Right >= collectionTitle.Bounds.X ||
                 Math.Abs(collectionPlay.Bounds.Y - collectionTitle.Bounds.Y) > 1 ||
                 Math.Abs(collectionLike.Bounds.X - collectionPlay.Bounds.X) > 1 || collectionCopy.Bounds.Y <= collectionTitle.Bounds.Bottom ||
                 Math.Abs(collectionAuthor.Bounds.Y - collectionMeta.Bounds.Y) > 2 || collectionAuthor.Bounds.X < collectionTitle.Bounds.X ||
                 Math.Abs(follow.Bounds.Y - collectionLike.Bounds.Y) > 1 || follow.Bounds.X <= collectionCopy.Bounds.X ||
                 Math.Abs(collectionPlay.Bounds.Y - collectionCover.Bounds.Y) > 1 ||
                 Math.Abs(collectionCover.ActualWidth - collectionCover.ActualHeight) > 1 ||
-                collectionCover.ActualHeight + 48 > 256)
+                collectionCover.ActualHeight + 48 > 256 + 1 / Window.DpiScale)
                 throw new InvalidOperationException("Playlist hero did not match the track hero's title, play button, bottom actions and right-hand square cover layout.");
             await WaitForLikedLayoutAsync(() => !collectionLoadingView.Skeleton.IsVisible && collectionBackdrop.Source != null && collectionBackdrop.Opacity == 1);
             VerifyCardGlassSource(collectionGlass!, collectionCover, collectionBackdrop, collectionPlay);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 900, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth == 208 && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
+            await WaitForLikedLayoutAsync(() => Math.Abs(collectionCover.ActualWidth - 208) < 1 / Window.DpiScale && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-wide");
             if (Math.Abs(collectionRepost.Bounds.X - collectionLike.Bounds.Right - 2) > 1 ||
                 collectionLike is not MaterialTrackButton { IsConnected: true } || collectionRepost is not MaterialTrackButton { IsConnected: true } ||
@@ -88,7 +88,7 @@ internal sealed partial class MainWindow
             if (follow.Background != collectionCopy.Background) throw new InvalidOperationException("Playlist follow background differs from other inactive actions.");
             RefreshFollowingButtons();
             var compact = compactTrackRows.First(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window);
-            if (Math.Abs(compact.Cover.Bounds.X - compact.Root.Bounds.X - 8) > 1 || compact.Root.ActualHeight != 64 || compact.Cover.ActualWidth != 44 ||
+            if (Math.Abs(compact.Cover.Bounds.X - compact.Root.Bounds.X - 8) > 1 || Math.Abs(compact.Root.ActualHeight - 64) >= 1 / Window.DpiScale || Math.Abs(compact.Cover.ActualWidth - 44) >= 1 / Window.DpiScale ||
                 compact.More == null || compact.Duration.Bounds.Right >= compact.Root.Bounds.Right ||
                 likedRows.Values.Any(row => row.Root.FindVisualRoot() == Window && row.Track?.Id == 9000))
                 throw new InvalidOperationException("Playlist rows did not use compact unnumbered tracks and trailing actions.");
@@ -179,7 +179,7 @@ internal sealed partial class MainWindow
         RouteWaveformPointer(new Point(2, 2));
         await WaitForLikedLayoutAsync(() => card.Playback.Opacity < .001);
         RouteWaveformPointer(new Point(card.Frame.Bounds.X + 10, card.Frame.Bounds.Y + 10));
-        await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999 && card.Playback.PlaybackButton!.ActualWidth == 46);
+        await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999 && Math.Abs(card.Playback.PlaybackButton!.ActualWidth - 46) < 1 / Window.DpiScale);
         CaptureUiPreview("playlist-card-hover");
         var originalPlayer = player;
         try

@@ -28,8 +28,10 @@ internal sealed partial class MainWindow
 
     private void RefreshCardGlass()
     {
-        if (page.Value == Page.Track) trackDetailGlass?.RefreshArtwork();
-        if (page.Value == Page.LibraryCollection) collectionGlass?.RefreshArtwork();
+        if (expandedHost.IsVisible) expandedGlassBackdrop.Prepare();
+        if (!workspace.IsVisible) return;
+        if (page.Value == Page.Track) { trackDetailGlass?.RefreshArtwork(); trackDetailGlass?.Prepare(); }
+        if (page.Value == Page.LibraryCollection) { collectionGlass?.RefreshArtwork(); collectionGlass?.Prepare(); }
     }
 
     private void SetPlayerArtwork(ImageSource? source, long generation, bool pending = false)

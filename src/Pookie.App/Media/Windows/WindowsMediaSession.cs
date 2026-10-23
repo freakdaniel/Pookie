@@ -9,6 +9,10 @@ internal sealed class WindowsMediaSession : IMediaSession
 {
     private readonly LibSmtcController controller;
     private (string Id, string Title, string Artist, string? Artwork)? metadata;
+    private (bool Next, bool Previous)? buttons;
+    private bool? shuffle;
+    private MediaPlayback? playback;
+    private (double Position, double Duration)? timeline;
     private bool disposed;
     public event Action<MediaCommand>? Command;
 
@@ -42,24 +46,40 @@ internal sealed class WindowsMediaSession : IMediaSession
                 controller.SetThumbnailFromUri(artwork);
             else controller.ClearThumbnail();
             metadata = next;
+            buttons = null; shuffle = null; playback = null; timeline = null;
         }
-        controller.SetButtons(new() { PlayEnabled = true, PauseEnabled = true, StopEnabled = true,
-            NextEnabled = state.CanNext, PreviousEnabled = state.CanPrevious });
-        controller.IsShuffleActive = state.Shuffle;
-        controller.SetTimeline(TimeSpan.FromSeconds(state.Position), TimeSpan.FromSeconds(state.Duration));
-        controller.PlaybackStatus = state.Playback switch
+        var nextButtons = (state.CanNext, state.CanPrevious);
+        if (buttons != nextButtons)
         {
-            MediaPlayback.Playing => MediaPlaybackStatus.Playing,
-            MediaPlayback.Paused => MediaPlaybackStatus.Paused,
-            MediaPlayback.Loading => MediaPlaybackStatus.Changing,
-            _ => MediaPlaybackStatus.Stopped
-        };
+            controller.SetButtons(new() { PlayEnabled = true, PauseEnabled = true, StopEnabled = true,
+                NextEnabled = state.CanNext, PreviousEnabled = state.CanPrevious });
+            buttons = nextButtons;
+        }
+        if (shuffle != state.Shuffle) { controller.IsShuffleActive = state.Shuffle; shuffle = state.Shuffle; }
+        var nextTimeline = (state.Position, state.Duration);
+        if (timeline != nextTimeline)
+        {
+            controller.SetTimeline(TimeSpan.FromSeconds(state.Position), TimeSpan.FromSeconds(state.Duration));
+            timeline = nextTimeline;
+        }
+        if (playback != state.Playback)
+        {
+            controller.PlaybackStatus = state.Playback switch
+            {
+                MediaPlayback.Playing => MediaPlaybackStatus.Playing,
+                MediaPlayback.Paused => MediaPlaybackStatus.Paused,
+                MediaPlayback.Loading => MediaPlaybackStatus.Changing,
+                _ => MediaPlaybackStatus.Stopped
+            };
+            playback = state.Playback;
+        }
     }
 
     public void Clear()
     {
         if (disposed) return;
-        metadata = null; controller.SetMusicMetadata("", ""); controller.ClearThumbnail(); controller.Close();
+        metadata = null; buttons = null; shuffle = null; playback = null; timeline = null;
+        controller.SetMusicMetadata("", ""); controller.ClearThumbnail(); controller.Close();
     }
     public void Dispose()
     { if (disposed) return; Clear(); disposed = true; controller.Dispose(); }

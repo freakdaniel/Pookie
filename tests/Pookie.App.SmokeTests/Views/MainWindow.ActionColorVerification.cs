@@ -51,11 +51,11 @@ internal sealed partial class MainWindow
                         throw new InvalidOperationException("Pending action flashed a disabled state.");
                     Set(true);
                     if (button.Background != before) throw new InvalidOperationException("Selection colour snapped.");
-                    await Task.Delay(80, lifetime.Token);
+                    await WaitForLikedLayoutAsync(() => button.Background != before && button.Background != active);
                     var interrupted = button.Background;
                     TrackButtons.SetAvailability(button, true, false);
                     if (button.Background != interrupted) throw new InvalidOperationException("Completing a request snapped the colour.");
-                    await WaitForLikedLayoutAsync(() => button.Background == active);
+                    await WaitForLikedLayoutAsync(() => button.Background == active && InnerCorner() == 22);
                     if (InnerCorner() != 22 || shapeFrames.Count(corner => corner > 8 && corner < 22) < 3)
                         throw new InvalidOperationException("Connected selection shape snapped instead of animating.");
                     CaptureUiPreview(repost ? "track-repost-selected" : "track-like-selected");
@@ -66,7 +66,8 @@ internal sealed partial class MainWindow
                     await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);
                     Validate(colors, active, TrackButtons.GlassSurface);
                     // Reverse an unfinished transition from its visible colour.
-                    Set(true); await Task.Delay(70, lifetime.Token);
+                    Set(true);
+                    await WaitForLikedLayoutAsync(() => button.Background != TrackButtons.GlassSurface && button.Background != active);
                     var mid = button.Background; Set(false);
                     if (button.Background != mid) throw new InvalidOperationException("Retargeting restarted from a preset colour.");
                     await WaitForLikedLayoutAsync(() => button.Background == TrackButtons.GlassSurface);
@@ -75,7 +76,7 @@ internal sealed partial class MainWindow
                     var selectedHot = TrackButtons.HoverColor(active, foreground);
                     await WaitForLikedLayoutAsync(() => button.IsMouseOver && button.Background == glassHot);
                     colors.Clear(); TrackButtons.SetAvailability(button, false, true); Set(true);
-                    await Task.Delay(80, lifetime.Token);
+                    await WaitForLikedLayoutAsync(() => button.Background != glassHot && button.Background != selectedHot);
                     TrackButtons.SetAvailability(button, true, false);
                     await WaitForLikedLayoutAsync(() => button.Background == selectedHot);
                     Validate(colors, glassHot, selectedHot);

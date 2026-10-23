@@ -58,7 +58,15 @@ internal sealed class ShellPageScroll : Panel
             }
             InvalidateMeasure();
         }
-        if (inner != null) inner.CornerRadius = 0;
+        if (inner != null)
+        {
+            inner.CornerRadius = 0;
+            prefix = Math.Max(0, inner.Bounds.Y - content.Bounds.Y);
+            tail = Math.Max(0, content.Bounds.Bottom - inner.Bounds.Bottom);
+            if (VerticalBar(inner) is { } bar) { bar.Opacity = 0; bar.IsHitTestVisible = false; }
+        }
+        var nextCollapse = inner == null ? 0 : Math.Min(owner.VerticalOffset, prefix);
+        if (Math.Abs(collapse - nextCollapse) > .001) { collapse = nextCollapse; InvalidateMeasure(); }
         var next = ContentExtent();
         if (Math.Abs(extent - next) > .5) { extent = next; InvalidateMeasure(); }
     }
@@ -97,32 +105,21 @@ internal sealed class ShellPageScroll : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         var offset = owner.VerticalOffset;
-        // Reconcile a newly selected page's heading height in this layout pass,
-        // before painting. Apply native offsets before arranging their ancestors.
-        for (var pass = 0; pass < 2; pass++)
+        var maximum = inner == null ? 0 : SmoothScroll.Maximum(inner);
+        var desired = Math.Clamp(offset - prefix, 0, maximum);
+        // The final breathing room scrolls with the page. Mid-list viewports
+        // reach the player, so rows pass through the fade instead of a blank gutter.
+        var endShift = inner == null ? 0 : Math.Max(0, offset - prefix - maximum);
+        if (inner != null && (Math.Abs(inner.VerticalOffset - desired) > .001 || inner.HorizontalOffset != 0))
         {
-            offset = owner.VerticalOffset;
-            collapse = inner == null ? 0 : Math.Min(offset, prefix);
-            var maximum = inner == null ? 0 : SmoothScroll.Maximum(inner);
-            var desired = Math.Clamp(offset - prefix, 0, maximum);
-            // The final breathing room scrolls with the page. Mid-list viewports
-            // reach the player, so rows pass through the fade instead of a blank gutter.
-            var endShift = inner == null ? 0 : Math.Max(0, offset - prefix - maximum);
-            if (inner != null && (Math.Abs(inner.VerticalOffset - desired) > .001 || inner.HorizontalOffset != 0))
-            {
-                applyingOffset = true;
-                try { inner.SetScrollOffsets(0, desired); }
-                finally { applyingOffset = false; }
-            }
-            content.Measure(new Size(finalSize.Width, owner.ActualHeight + collapse));
-            content.Arrange(new Rect(Bounds.X, Bounds.Y + offset - collapse - endShift, finalSize.Width, owner.ActualHeight + collapse));
-            if (inner == null) continue;
-            prefix = Math.Max(0, inner.Bounds.Y - content.Bounds.Y);
-            tail = Math.Max(0, content.Bounds.Bottom - inner.Bounds.Bottom);
-            // The page scrollbar is the only visible scrollbar. The inner list still
-            // owns its native metrics and virtualization, including ScrollIntoView.
-            if (VerticalBar(inner) is { } bar) { bar.Opacity = 0; bar.IsHitTestVisible = false; }
+            applyingOffset = true;
+            try { inner.SetScrollOffsets(0, desired); }
+            finally { applyingOffset = false; }
         }
+        // Measure only in MeasureContent. At fractional DPI the final rounded
+        // width can differ from the constraint and remeasurement here oscillates.
+        // Refresh reconciles the heading/viewport changes at the frame boundary.
+        content.Arrange(new Rect(Bounds.X, Bounds.Y + offset - collapse - endShift, finalSize.Width, owner.ActualHeight + collapse));
         return finalSize;
     }
 

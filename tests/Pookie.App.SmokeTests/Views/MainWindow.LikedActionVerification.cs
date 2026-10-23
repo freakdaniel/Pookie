@@ -21,9 +21,28 @@ internal sealed partial class MainWindow
         if (count.FontWeight != FontWeight.Bold) throw new InvalidOperationException("Like count lost its bold weight.");
         var originalCursor = default(LikedActionPoint);
         if (OperatingSystem.IsWindows() && !GetLikedActionCursor(out originalCursor)) throw new InvalidOperationException("Could not save cursor position.");
+        if (OperatingSystem.IsWindows())
+        {
+            ProbeShowWindow(Window.Handle, 5);
+            if (!ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53)) throw new InvalidOperationException("Could not expose native action check.");
+            await WaitForLoginFrameAsync();
+        }
         CaptureUiPreview("list-before-actions");
         Window.Activate();
         await WaitForLikedLayoutAsync(() => Window.IsActive);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Window.Content is FrameworkElement root &&
+            Math.Abs(root.ActualHeight - Window.ClientSize.Height) < 2);
+        // A realized row can belong to the prefetch band. Showing the native
+        // window may also reduce the client height; move the tested row into
+        // the actual viewport before delivering physical pointer input.
+        var visibleTop = Math.Max(headerGlass.Bounds.Bottom + 16, shellScroll.Bounds.Y + 16);
+        var visibleBottom = Math.Min(shellScroll.Bounds.Bottom, Window.ClientSize.Height - PlayerBarHeight) - 16;
+        if (row.Root.Bounds.Y < visibleTop || row.Root.Bounds.Bottom > visibleBottom)
+        {
+            shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + row.Root.Bounds.Y - visibleTop);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !row.Root.IsArrangeDirty &&
+                row.Root.Bounds.Y >= visibleTop - 1 && row.Root.Bounds.Bottom <= visibleBottom + 1);
+        }
         timer.Stop();
         Button? active = null;
         try
@@ -80,6 +99,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
+            if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
             Window.ReleaseMouseCapture(); timer.Start();
             Window.FocusManager.ClearFocus();
             if (OperatingSystem.IsWindows() && !SetLikedActionCursor(originalCursor.X, originalCursor.Y)) throw new InvalidOperationException("Could not restore cursor position.");

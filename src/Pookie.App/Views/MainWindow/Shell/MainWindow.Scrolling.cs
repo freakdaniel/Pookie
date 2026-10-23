@@ -78,8 +78,11 @@ internal sealed partial class MainWindow
     private void ObservePageScrolling()
     {
         if (disposed) return;
+        ClearUnboundExpandedQueueRows();
+        if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
+        if (!workspace.IsVisible) return;
         shellPageScroll.Refresh();
-        headerGlass.Update(page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset);
+        UpdateScrolledChrome();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
         var frameWidth = Math.Min(1440, Window.ClientSize.Width);
         if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
@@ -88,8 +91,6 @@ internal sealed partial class MainWindow
             contentFrame.InvalidateMeasure();
         }
         if (playlistCollectionVisible.Value && collectionDescriptionExpanded) RefreshCollectionDescriptionGeometry();
-        ClearUnboundExpandedQueueRows();
-        if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
         if (page.Value == Page.Search && searchLayoutPending)
         {
             searchLayoutPending = false;
@@ -121,6 +122,8 @@ internal sealed partial class MainWindow
         likedEditPositions.Clear();
         CheckPageEnd(); CheckTrackSectionEnd();
     }
+
+    private void UpdateScrolledChrome() => headerGlass.Update(page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset);
 
     private static void DisablePreviewGridScrolling(ItemsControl grid)
     {
@@ -219,6 +222,7 @@ internal sealed partial class MainWindow
 
     private void DisposePageScrolling()
     {
+        shellScroll.ScrollChanged -= UpdateScrolledChrome;
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
         Window.FrameRendered -= ObservePageScrolling;
         foreach (var (viewer, motion) in smoothScrolls)

@@ -21,7 +21,9 @@ internal sealed partial class MainWindow
         trackDetailWaveform.SeekRequested += fraction => { if (trackDetailState is { } state) Run(() => SeekLikedTrackAsync(state.Track, fraction)); };
         trackDetailPosition = new TextBlock().Text("0:00").FontSize(11).Bold().Right();
         trackDetailDuration = new TextBlock().FontSize(11).Right();
-        trackDetailWaveformLayer = new Grid().Columns("*").Rows("*").Height(146).Children(trackDetailWaveform);
+        trackDetailMarkerLayer = new CommentMarkerLayer();
+        trackDetailMarkerLayer.Columns("*").Rows("*").Height(146);
+        trackDetailWaveformLayer = new ViewportGrid().Columns("*").Rows("*").Height(146).Children(trackDetailWaveform, trackDetailMarkerLayer);
         trackDetailWaveformLayer.SizeChanged += _ => PositionTrackCommentMarkers();
         var waveform = new Grid().Columns("*,42").Rows("Auto").Spacing(8).Children(trackDetailWaveformLayer.Column(0),
             new StackPanel().Vertical().Spacing(12).Margin(0, 91, 0, 0).Column(1).Children(trackDetailPosition, trackDetailDuration));
@@ -47,12 +49,11 @@ internal sealed partial class MainWindow
             new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(playlist, copy, queue));
         var coverFrame = new Border().Width(320).Height(320).CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
         var heroColumns = new TrackPageColumns(
-            new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
+            new ViewportGrid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
             coverFrame, true, trackDetailBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen()).Initialize();
         var hero = new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(heroColumns);
         trackDetailGlass = AttachCardGlass(heroColumns);
-        var heroShadow = new ShadowDecorator().BlurRadius(12).OffsetY(4).ShadowColor(Color.FromArgb(60, 0, 0, 0))
-            .CornerRadius(20).Margin(-12, -8, -12, -16).Child(hero);
+        var heroShadow = new CardShadow(hero).Margin(-12, -8, -12, -16);
         trackDetailError = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         trackDetailDescription = new MultiLineTextBox { IsReadOnly = true, Wrap = true, SizeToDocument = true }
             .Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(14).FontWeight(FontWeight.Normal).Foreground(Muted);
@@ -61,10 +62,10 @@ internal sealed partial class MainWindow
         trackDetailLicense = new TextBlock().FontSize(12).Foreground(Muted);
         trackDetailCommentsTitle = new TextBlock().FontSize(21).Bold();
         trackDetailCommentsStatus = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
-        trackDetailComments = new StackPanel().Vertical().Spacing(26);
+        trackDetailComments = new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds }.Vertical().Spacing(26);
         trackDetailMoreComments = TrackButtons.Action(new TextBlock().Text("Ещё комментарии").FontSize(14).SemiBold()
             .Foreground(TrackButtons.OnSurface), () => Run(MoreTrackCommentsAsync), TrackButtons.Text).Left();
-        var content = new StackPanel().Vertical().Spacing(24).Column(0).Children(trackDetailDescription, trackDetailLicense,
+        var content = new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(24).Column(0).Children(trackDetailDescription, trackDetailLicense,
             new Border().Height(1).Background(Raised),
             new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(trackDetailCommentsTitle.Column(0).CenterVertical(), TrackCommentSortView().Column(1)),
             trackDetailCommentsStatus, trackDetailComments, trackDetailMoreComments);
@@ -74,7 +75,7 @@ internal sealed partial class MainWindow
         // Extend the viewport equally for the shadow; the matching inner padding
         // keeps the page aligned with the full content width on both sides.
         return trackDetailScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Margin(-12, 0, -12, 0)
-            .Content(new StackPanel().Vertical().Spacing(24).Padding(12, 8, 12, 28)
+            .Content(new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(24).Padding(12, 8, 12, 28)
                 .Children(heroShadow, trackDetailError, sections, body, TrackDetailSectionContentView()));
     }
 

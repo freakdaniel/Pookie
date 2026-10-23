@@ -35,26 +35,26 @@ internal sealed partial class MainWindow
             await VerifyLyricsLoadingFadeAsync("lyrics-transition");
             audio.State = new(12, 3000, false, false, false); Poll(); await Task.Delay(900, lifetime.Token);
             var active = lyricsRows.Single(pair => pair.Value.Row?.Index == 4);
-            if (lyricsActiveLine != 4 || Math.Abs(active.Key.Bounds.Y + active.Key.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4) > 4 || active.Value.Text.Opacity < .99)
+            if (lyricsActiveLine != 4 || Math.Abs(active.Key.Bounds.Y + active.Key.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4) > 4 || active.Value.Text.Foreground.A / 255d < .99)
                 throw new InvalidOperationException("Active lyric was not centered/highlighted.");
             if (lyricsRows.Count > 64) throw new InvalidOperationException("Lyrics materialized all 1000 rows instead of virtualizing them.");
             CaptureExpandedPanelPreview("lyrics-synced");
             var restingGap = lyricsRows.Values.Single(view => view.Row?.Index == 3);
             if (LyricsWaveDots.Diameter <= 10 || restingGap.Dots.WaveAmount != 0 ||
                 Enumerable.Range(0, 3).Any(index => restingGap.Dots.VerticalOffset(index) != 0) ||
-                Math.Abs(restingGap.Dots.Opacity - restingGap.Text.Opacity) > .01)
+                Math.Abs(restingGap.Dots.Foreground.A / 255d - restingGap.Text.Foreground.A / 255d) > .01)
                 throw new InvalidOperationException("Inactive dots were not thicker, aligned and shaded like lyric lines.");
             await Task.Delay(300, lifetime.Token); Poll();
             if (lyricsActiveLine != 4) throw new InvalidOperationException("Paused lyrics advanced with wall time.");
 
             var next = lyricsRows.First(pair => pair.Value.Row?.Index == 5);
-            var beforeHover = next.Value.Text.Opacity;
+            var beforeHover = next.Value.Text.Foreground.A / 255d;
             RouteExpandedPointer(new Point(next.Key.Bounds.X + next.Key.ActualWidth / 2, next.Key.Bounds.Y + next.Key.ActualHeight / 2));
             await Task.Delay(80, lifetime.Token);
-            if (next.Value.Text.Opacity <= beforeHover || next.Value.Text.Opacity >= 1)
+            if (next.Value.Text.Foreground.A / 255d <= beforeHover || next.Value.Text.Foreground.A / 255d >= 1)
                 throw new InvalidOperationException("Lyric hover had no intermediate animation.");
             await Task.Delay(220, lifetime.Token);
-            if (next.Value.Text.Opacity < .99 || next.Key.Background != Color.Transparent)
+            if (next.Value.Text.Foreground.A / 255d < .99 || next.Key.Background != Color.Transparent)
                 throw new InvalidOperationException("Lyric hover did not highlight the text transparently.");
             RouteWaveformClick(new Point(next.Key.Bounds.X + next.Key.ActualWidth / 2, next.Key.Bounds.Y + next.Key.ActualHeight / 2));
             await WaitForLikedLayoutAsync(() => audio.SeekCount > 0);
@@ -79,7 +79,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == 3 && view.Dots.IsVisible));
             await Task.Delay(80, lifetime.Token);
             var startingGap = lyricsRows.Values.Single(view => view.Row?.Index == 3);
-            if (startingGap.Dots.WaveAmount <= 0 || startingGap.Dots.WaveAmount >= 1 || startingGap.Dots.Opacity >= 1)
+            if (startingGap.Dots.WaveAmount <= 0 || startingGap.Dots.WaveAmount >= 1 || startingGap.Dots.Foreground.A / 255d >= 1)
                 throw new InvalidOperationException("Wave dots snapped into movement or active color.");
             await Task.Delay(350, lifetime.Token);
             var gap = lyricsRows.Values.Single(view => view.Row?.Index == 3);
@@ -94,10 +94,10 @@ internal sealed partial class MainWindow
             audio.State = audio.State with { Playing = true }; Poll(); await Task.Delay(400, lifetime.Token);
             CaptureExpandedPanelPreview("lyrics-gap");
             audio.State = audio.State with { Position = 12 }; Poll(); await Task.Delay(80, lifetime.Token);
-            if (gap.Dots.WaveAmount <= 0 || gap.Dots.WaveAmount >= 1 || gap.Dots.Opacity <= .48 || gap.Dots.Opacity >= 1)
+            if (gap.Dots.WaveAmount <= 0 || gap.Dots.WaveAmount >= 1 || gap.Dots.Foreground.A / 255d <= .48 || gap.Dots.Foreground.A / 255d >= 1)
                 throw new InvalidOperationException("Completed gap did not smoothly settle or dim.");
             await Task.Delay(350, lifetime.Token);
-            if (gap.Dots.WaveAmount != 0 || Math.Abs(gap.Dots.Opacity - .48) > .01)
+            if (gap.Dots.WaveAmount != 0 || Math.Abs(gap.Dots.Foreground.A / 255d - .48) > .01)
                 throw new InvalidOperationException("Completed gap did not return to an aligned inactive row.");
             CaptureExpandedPanelPreview("lyrics-gap-settled");
 
@@ -144,7 +144,7 @@ internal sealed partial class MainWindow
             Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => lyricsScroll.ActualWidth < 500 && lyricsFontSize <= 32 && !expandedLayout.IsMeasureDirty);
             await Task.Delay(650, lifetime.Token); CaptureExpandedPanelPreview("lyrics-narrow");
-            Window.WindowState = WindowState.FullScreen;
+            Window.WindowSize = WindowSize.Resizable(1440, 900, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => lyricsScroll.ActualWidth > 500);
 
             var spedIdentity = new LyricsIdentity(track.Id, track.Title + " (ꜱᴘᴇᴇᴅ + reverb by DJ Speed)", track.Author, 2500);

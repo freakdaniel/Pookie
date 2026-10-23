@@ -194,8 +194,7 @@ internal sealed partial class MainWindow
         trackDetailPlayIcon.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         trackDetailPlay.ToolTip(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
         trackDetailWaveform.IsPlaying = selected && isPlaying.Value;
-        trackDetailWaveform.Progress = selected && track.DurationSeconds > 0 ? likedPlaybackPosition / track.DurationSeconds : 0;
-        trackDetailPosition.Text = FormatTime(selected ? likedPlaybackPosition : 0);
+        RefreshTrackDetailPosition();
         var liked = likedIds.Contains(track.Id);
         TrackButtons.SetGlyph(trackDetailHeart, liked ? "heart-filled" : "heart", liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
         TrackButtons.SetTextColor(trackDetailLikeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
@@ -204,6 +203,14 @@ internal sealed partial class MainWindow
         trackDetailLike.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
         trackDetailLikeCount.Text = DetailCount(track.LikesCount);
         TrackButtons.SetAvailability(trackDetailLike, CanLikeTrack(track), IsLikePending(track));
+    }
+
+    private void RefreshTrackDetailPosition()
+    {
+        if (page.Value != Page.Track || trackDetailState is not { } state) return;
+        var selected = state.Track.Id == current?.Id;
+        trackDetailWaveform.Progress = selected && state.Track.DurationSeconds > 0 ? likedPlaybackPosition / state.Track.DurationSeconds : 0;
+        trackDetailPosition.Text = FormatTime(selected ? likedPlaybackPosition : 0);
     }
 
     private void RenderTrackDetailRelated()
@@ -270,8 +277,13 @@ internal sealed partial class MainWindow
     private void AttachTrackTitle(TextBlock title, Func<SoundCloudTrack?> track)
     {
         title.Cursor = CursorType.Hand;
-        title.MouseEnter += () => title.Opacity = .72;
-        title.MouseLeave += () => title.Opacity = 1;
+        Color resting = title.Foreground;
+        title.MouseEnter += () =>
+        {
+            resting = title.Foreground;
+            title.Foreground = Color.FromArgb((byte)Math.Round(resting.A * .72), resting.R, resting.G, resting.B);
+        };
+        title.MouseLeave += () => title.Foreground = resting;
         title.MouseDown += args =>
         {
             if (args.Button != MouseButton.Left || track() is not { } item) return;

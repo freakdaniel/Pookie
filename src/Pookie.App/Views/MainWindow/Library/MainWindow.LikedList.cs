@@ -81,6 +81,19 @@ internal sealed partial class MainWindow
         RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }
 
+    private void RefreshPlaybackPosition(double seconds)
+    {
+        likedPlaybackPosition = seconds;
+        if (current == null) return;
+        foreach (var row in likedRows.Values)
+            if (row.Track?.Id == current.Id) row.RefreshPosition(true, seconds);
+        foreach (var (_, view) in chatMusicViews)
+            if (view.IsCurrent() && view.Row.Track?.Id == current.Id && view.Item is { } item &&
+                (item.Playlist != null ? playbackQueue.Context?.Key == item.Key : item.Track?.Id == current.Id))
+                view.Row.RefreshPosition(true, seconds);
+        RefreshTrackDetailPosition();
+    }
+
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)
     {
         if (current?.Id != track.Id)

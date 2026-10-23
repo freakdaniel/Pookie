@@ -9,15 +9,12 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
     private double sideAmount, revealAmount, sideTarget, panelReveal;
     private double coverSize, panelWidth, gap;
     private double center, split;
-    private double panelOffsetFrom, panelRevealFrom;
 
     internal double SideAmount => sideAmount;
 
     internal void SetSideTarget(double target)
     {
         if (sideTarget == target) return;
-        panelOffsetFrom = target > 0 && panelReveal == 0 ? 36 : panel.OffsetX;
-        panelRevealFrom = panelReveal;
         sideTarget = target;
         InvalidateArrange();
     }
@@ -27,7 +24,7 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         revealAmount = reveal;
         sideAmount = side;
         panelReveal = panelAmount;
-        panel.Opacity = panelAmount;
+        panel.InkStrength = Math.Clamp(panelAmount, 0, 1);
         ApplyMotion();
     }
 
@@ -38,12 +35,10 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         var y = 40 * (1 - revealAmount);
         var settled = Math.Abs(sideTarget - sideAmount) < .000001 && revealAmount > .999999;
         card.Move(animatedX - restingX, y, settled);
-        var panelFraction = sideTarget > 0
-            ? (panelRevealFrom < 1 ? (panelReveal - panelRevealFrom) / (1 - panelRevealFrom) : 1)
-            : (panelRevealFrom > 0 ? 1 - panelReveal / panelRevealFrom : 1);
-        var panelOffsetTo = sideTarget > 0 ? 0 : -Math.Min(36, gap * .35);
-        panel.Move(panelOffsetFrom + (panelOffsetTo - panelOffsetFrom) * Math.Clamp(panelFraction, 0, 1),
-            y, settled && panelReveal > .999999);
+        // Keep room between the cover and the panel throughout the same spring
+        // in either direction. No delayed fade is needed to hide an intersection.
+        var closedOffset = Math.Max(36, center - split - gap + 24);
+        panel.Move(closedOffset * (1 - sideAmount), y, settled && panelReveal > .999999);
     }
 
     // FrameworkElement removes the outer margin before MeasureContent. Using
@@ -71,14 +66,16 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         // A render translation does not change layout bounds. Keep the host's
         // repaint region large enough for both endpoints and the vertical reveal,
         // with a margin for device-pixel rounding and antialiased edges.
+        var bounceMargin = Math.Max(24, Math.Abs(center - split) * .1);
         card.ArrangeWithin(
             new Rect(Bounds.X + Math.Min(center, split), Bounds.Y + y,
-                coverSize + Math.Abs(center - split), cardHeight + 40).Inflate(2, 2),
+                coverSize + Math.Abs(center - split), cardHeight + 40).Inflate(bounceMargin, 2),
             new Rect(Bounds.X + x, Bounds.Y + y, coverSize, cardHeight));
         var panelX = Bounds.X + split + coverSize + gap;
         var panelHeight = Math.Max(0, finalSize.Height - 32);
+        var closedOffset = Math.Max(36, center - split - gap + 24);
         panel.ArrangeWithin(
-            new Rect(panelX - 36, Bounds.Y + 16, panelWidth + 72, panelHeight + 40).Inflate(2, 2),
+            new Rect(panelX, Bounds.Y + 16, panelWidth + closedOffset, panelHeight + 40).Inflate(bounceMargin, 2),
             new Rect(panelX, Bounds.Y + 16, panelWidth, panelHeight));
         ApplyMotion();
         return finalSize;

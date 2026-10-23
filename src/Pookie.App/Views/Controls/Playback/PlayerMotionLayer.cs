@@ -11,6 +11,12 @@ internal sealed class PlayerMotionLayer : Panel
     private Rect contentBounds;
     internal double OffsetX { get; private set; }
     internal double OffsetY { get; private set; }
+    private double inkStrength = 1;
+    internal double InkStrength
+    {
+        get => inkStrength;
+        set { if (inkStrength == value) return; inkStrength = value; InvalidateVisual(); }
+    }
 
     internal PlayerMotionLayer(FrameworkElement child)
     {
@@ -50,7 +56,9 @@ internal sealed class PlayerMotionLayer : Panel
 
     protected override void RenderSubtree(IGraphicsContext context)
     {
+        if (inkStrength <= 0) return;
         context.Save();
+        context.GlobalAlpha *= (float)inkStrength;
         context.Translate(OffsetX, OffsetY);
         base.RenderSubtree(context);
         context.Restore();

@@ -26,10 +26,10 @@ internal sealed partial class MainWindow
             var manual = playbackQueue.Enqueue(data[1]); RefreshQueue(); queueOpen.Value = true;
             RouteWaveformPointer(new Point(2, 2));
             await WaitForLikedLayoutAsync(() => compactTrackRows.Count(row => row.EntryId == duplicate.EntryId && queueList.IsAncestorOf(row.Root)) == 1 &&
-                compactTrackRows.Any(row => row.EntryId == first.EntryId && queueList.IsAncestorOf(row.Root) && row.Overlay.Opacity > .999));
+                compactTrackRows.Any(row => row.EntryId == first.EntryId && queueList.IsAncestorOf(row.Root) && row.Overlay.Strength > .999));
             var duplicateRow = compactTrackRows.Single(row => row.EntryId == duplicate.EntryId && queueList.IsAncestorOf(row.Root));
             var currentRow = compactTrackRows.Single(row => row.EntryId == first.EntryId && queueList.IsAncestorOf(row.Root));
-            if (duplicateRow.Root.ContextMenu == null || currentRow.Overlay.Opacity < .99 || duplicateRow.Overlay.Opacity > .01)
+            if (duplicateRow.Root.ContextMenu == null || currentRow.Overlay.Strength < .99 || duplicateRow.Overlay.Strength > .01)
                 throw new InvalidOperationException("Duplicate queue occurrences shared active state or lacked editing actions.");
             async Task InvokeQueueMenu(CompactTrackRow row, string name)
             {

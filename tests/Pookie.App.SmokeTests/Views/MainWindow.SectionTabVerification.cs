@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
@@ -13,24 +14,45 @@ internal sealed partial class MainWindow
             button.StyleName == "section-button" && button.FindVisualChild<TextBlock>() is TextBlock label && label.Text == title)!;
         async Task StableActive(Button button, string name)
         {
-            await WaitForLikedLayoutAsync(() => button.ActualWidth > 20);
+            await WaitForLikedLayoutAsync(() => button.ActualWidth > 20 && shellPageScroll.IsReady &&
+                pendingNavigationScroll == null && !navigationHistory[navigationIndex].Pending);
             RouteWaveformPointer(new Point(2, 2));
-            await Task.Delay(300, lifetime.Token);
+            await WaitForLoginFrameAsync();
+            bool Settled()
+            {
+                var settled = button.FindVisualChild<TextBlock>() is TextBlock { Foreground: var color } && color == Color.White;
+                VisualTree.Visit(button, element =>
+                {
+                    if (element is Image or TextBlock or Border && element is UIElement visual && visual.Opacity is > 0 and < 1)
+                        settled = false;
+                });
+                return settled;
+            }
+            await WaitForLikedLayoutAsync(Settled);
             if (button.IsEnabled || button.Focus() || button.FindVisualChild<TextBlock>() is not TextBlock { Foreground: var foreground } || foreground != Color.White)
                 throw new InvalidOperationException($"Active {name} is clickable, focusable or lost its white label");
             var before = CaptureSectionButton(button);
             var generation = navigationGeneration; var historyCount = navigationHistory.Count;
-            var offset = NavigationScroll()?.VerticalOffset;
+            var offset = shellScroll.VerticalOffset;
             var center = new Point(button.Bounds.X + button.ActualWidth / 2, button.Bounds.Y + button.ActualHeight / 2);
+            async Task ObserveUnchanged(string input)
+            {
+                // Nav icons/labels transition over 250 ms. Inspect every
+                // rendered frame throughout that interval, including geometry.
+                var started = Stopwatch.GetTimestamp();
+                do
+                {
+                    await WaitForLoginFrameAsync();
+                    if (!before.SequenceEqual(CaptureSectionButton(button)) || generation != navigationGeneration ||
+                        historyCount != navigationHistory.Count || offset != shellScroll.VerticalOffset)
+                        throw new InvalidOperationException($"{input} changed active {name}: generation={generation}/{navigationGeneration}, history={historyCount}/{navigationHistory.Count}, offset={offset}/{shellScroll.VerticalOffset}.");
+                }
+                while (Stopwatch.GetElapsedTime(started).TotalMilliseconds < 250);
+            }
             RouteWaveformPointer(center);
-            await Task.Delay(250, lifetime.Token);
-            if (!before.SequenceEqual(CaptureSectionButton(button)))
-                throw new InvalidOperationException($"Hover changed the rendered active {name}");
+            await ObserveUnchanged("Hover");
             for (var click = 0; click < 3; click++) RouteWaveformClick(center);
-            await Task.Delay(250, lifetime.Token);
-            if (!before.SequenceEqual(CaptureSectionButton(button)) || generation != navigationGeneration ||
-                historyCount != navigationHistory.Count || offset != NavigationScroll()?.VerticalOffset)
-                throw new InvalidOperationException($"Repeated clicks reloaded active {name}, changed its appearance or reset scrolling");
+            await ObserveUnchanged("Repeated clicks");
         }
 
         await NavigateAsync(Page.Home);
@@ -44,7 +66,7 @@ internal sealed partial class MainWindow
         ReplaceTracks(new(Enumerable.Range(90000, 30).Select(id => new SoundCloudTrack { Id = id, Title = "Трек " + id }).ToArray(), null));
         await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 300);
         NavigationScroll()!.SetScrollOffsets(0, 20);
-        await Task.Delay(100, lifetime.Token);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Math.Abs(NavigationScroll()!.VerticalOffset - 20) < 1);
         await StableActive(Tab("Лайки"), "scrolled likes tab");
         var library = Tab("Библиотека");
         if (!library.IsEnabled) throw new InvalidOperationException("Top-bar library overview is unavailable from a child page");
@@ -61,7 +83,7 @@ internal sealed partial class MainWindow
         });
         await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 300);
         NavigationScroll()!.SetScrollOffsets(0, 20);
-        await Task.Delay(100, lifetime.Token);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Math.Abs(NavigationScroll()!.VerticalOffset - 20) < 1);
         await StableActive(Tab("Треки"), "scrolled search tracks tab");
         CaptureUiPreview("active-search-tab");
         var all = Tab("Всё");
@@ -83,6 +105,7 @@ internal sealed partial class MainWindow
             (int)Math.Ceiling(button.ActualWidth * scale), (int)Math.Ceiling(button.ActualHeight * scale), scale));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         context.BeginFrame(surface);
+        context.Clear(Color.Transparent);
         context.Translate(-button.Bounds.X, -button.Bounds.Y);
         button.Render(context);
         context.EndFrame();

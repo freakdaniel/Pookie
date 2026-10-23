@@ -10,8 +10,7 @@ internal sealed partial class MainWindow
     private enum PlayerPanel { None, Lyrics, Queue }
     private readonly PlayerBackdrop expandedBackdrop = new();
     private readonly AnimationClock expandedAnimation = new(TimeSpan.FromMilliseconds(380), Easing.CubicBezier(.16, 1, .3, 1));
-    private readonly AnimationClock panelAnimation = new(TimeSpan.FromMilliseconds(460), Easing.CubicBezier(.16, 1, .3, 1));
-    private readonly AnimationClock panelFade = new(TimeSpan.FromMilliseconds(160), Easing.CubicBezier(.2, 0, 0, 1));
+    private readonly AnimationClock panelAnimation = new(TimeSpan.FromMilliseconds(460), PanelSpring);
     private readonly ObservableValue<bool> expandedQueueActive = new(false), expandedLyricsActive = new(false);
     private readonly BufferedTrack expandedBuffer = new();
     private readonly LoadingTrack expandedLoading = new();
@@ -31,9 +30,17 @@ internal sealed partial class MainWindow
     private FrameworkElement expandedQueueContent = null!, expandedLyricsContent = null!;
     private bool expandedOpen, syncingExpandedProgress;
     private PlayerPanel expandedPanelMode;
-    private WindowState expandedPreviousState;
     private double expandedReveal, expandedFrom, expandedTo, panelFrom, panelTo;
-    private double panelReveal, panelRevealFrom, panelFadeFrom;
+    private double panelReveal, panelRevealFrom;
+
+    private static double PanelSpring(double time)
+    {
+        // Settle within a fraction of a device pixel before the endpoint. The
+        // framework's spring normalizes to four decay constants, leaving a
+        // visible endpoint jump for a panel that travels several hundred pixels.
+        static double Position(double t) => 1 - Math.Exp(-9.1 * t) * (Math.Cos(10.639 * t) + 9.1 / 10.639 * Math.Sin(10.639 * t));
+        return Position(Math.Clamp(time, 0, 1)) / Position(1);
+    }
 
     private FrameworkElement ExpandedPlayer()
     {
@@ -137,34 +144,23 @@ internal sealed partial class MainWindow
             expandedReveal = expandedTo;
             expandedHost.Opacity = expandedReveal;
             expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, panelReveal);
-            if (expandedOpen) return;
+            if (expandedOpen) { workspace.IsVisible = false; return; }
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
             if (overviewRefreshPending) RefreshOverviewSections();
             workspace.IsHitTestVisible = workspace.IsEnabled;
-            Window.WindowState = expandedPreviousState;
             expandedLoading.SetLoading(false);
             playerArtworkButton.Focus();
             playerArtworkOverlay.Opacity = 0;
         };
         panelAnimation.TickCallback = amount =>
         {
-            if (panelTo > 0) panelReveal = panelRevealFrom + (1 - panelRevealFrom) * amount;
+            panelReveal = Math.Clamp(panelRevealFrom + (panelTo - panelRevealFrom) * amount, 0, 1);
             expandedLayout.SetMotion(expandedReveal, panelFrom + (panelTo - panelFrom) * amount, panelReveal);
         };
         panelAnimation.CompletedCallback = () =>
         {
             panelReveal = panelTo > 0 ? 1 : 0;
             expandedLayout.SetMotion(expandedReveal, panelTo, panelReveal);
-        };
-        panelFade.TickCallback = amount =>
-        {
-            panelReveal = panelFadeFrom * (1 - amount);
-            expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, panelReveal);
-        };
-        panelFade.CompletedCallback = () =>
-        {
-            panelReveal = 0;
-            expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, 0);
         };
         progress.OnValueChanged(_ => SyncExpandedTimeline());
         playerVisible.Changed += () => { if (!playerVisible.Value) ResetExpandedPlayer(); };
@@ -223,17 +219,15 @@ internal sealed partial class MainWindow
             if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
             {
-                expandedPreviousState = Window.WindowState;
                 expandedPositionLabel.Opacity = expandedDurationLabel.Opacity = 0;
             }
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = true;
             workspace.IsHitTestVisible = false;
             queueOpen.Value = profileOpen.Value = false;
-            Window.WindowState = WindowState.FullScreen;
             playerArtworkOverlay.Opacity = 0;
             SyncExpandedTimeline(); RefreshExpandedQueue();
         }
-        else { CancelSeek(); SetExpandedVolumeOpen(false); }
+        else { workspace.IsVisible = true; CancelSeek(); SetExpandedVolumeOpen(false); }
         expandedFrom = expandedReveal;
         expandedTo = open ? 1 : 0;
         expandedAnimation.Start();
@@ -247,14 +241,8 @@ internal sealed partial class MainWindow
         expandedPanelMode = next;
         expandedQueueActive.Value = next == PlayerPanel.Queue;
         expandedLyricsActive.Value = next == PlayerPanel.Lyrics;
-        panelAnimation.Stop(); panelFade.Stop();
-        if (next == PlayerPanel.None)
-        {
-            panelFadeFrom = panelReveal;
-            panelFade.Start();
-            BeginExpandedPanelMotion(false);
-        }
-        else BeginExpandedPanelMotion(true);
+        panelAnimation.Stop();
+        BeginExpandedPanelMotion(next != PlayerPanel.None);
         if (next == PlayerPanel.Queue) RefreshExpandedQueue();
         SetLyricsPanelActive(next == PlayerPanel.Lyrics && expandedOpen);
     }
@@ -279,7 +267,6 @@ internal sealed partial class MainWindow
         panelRevealFrom = panelReveal;
         expandedLayout.SetSideTarget(panelTo);
         panelAnimation.Duration = TimeSpan.FromMilliseconds(460);
-        panelAnimation.EasingFunction = open ? Easing.CubicBezier(.16, 1, .3, 1) : Easing.CubicBezier(.55, 0, .3, 1);
         panelAnimation.Start();
     }
 
@@ -297,14 +284,14 @@ internal sealed partial class MainWindow
     private void ResetExpandedPlayer()
     {
         SetLyricsPanelActive(false);
-        expandedAnimation.Stop(); panelAnimation.Stop(); panelFade.Stop();
-        if (expandedHost.IsVisible && !disposed) Window.WindowState = expandedPreviousState;
+        expandedAnimation.Stop(); panelAnimation.Stop();
+        if (expandedHost.IsVisible) workspace.IsVisible = true;
         expandedOpen = false; expandedReveal = expandedFrom = expandedTo = panelFrom = panelTo = 0;
         expandedPanelMode = PlayerPanel.None;
         expandedQueueActive.Value = expandedLyricsActive.Value = false;
         expandedPositionLabel.Opacity = expandedDurationLabel.Opacity = 0;
         SetExpandedVolumeOpen(false);
-        panelReveal = panelRevealFrom = panelFadeFrom = 0;
+        panelReveal = panelRevealFrom = 0;
         expandedLayout.SetSideTarget(0);
         expandedLayout.SetMotion(0, 0, 0);
         expandedHost.Opacity = 0;

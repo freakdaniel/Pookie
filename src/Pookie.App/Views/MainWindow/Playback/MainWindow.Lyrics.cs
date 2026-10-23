@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
     private int lyricsActiveLine = -1;
     private bool lyricsFollow = true, lyricsPlaying;
     private double lyricsFontSize = 40, lyricsSpacer;
+    private double? lyricsFollowTarget;
     private DispatcherTimer lyricsFollowTimer = null!;
     private static readonly TimeSpan LyricsFollowDelay = TimeSpan.FromSeconds(7);
     private readonly PaginationItems lyricsItems = new(LoadingRowStyle.Compact, item => ((LyricsDisplayRow)item).Index);
@@ -67,7 +68,7 @@ internal sealed partial class MainWindow
             var text = new TextBlock().FontSize(lyricsFontSize).Bold().Foreground(Color.White)
                 .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap);
             text.LineSpacing = 6;
-            var dots = new LyricsWaveDots().Width(90).Height(60).CenterHorizontal().CenterVertical();
+            var dots = new LyricsWaveDots().Foreground(Color.White).Width(90).Height(60).CenterHorizontal().CenterVertical();
             var content = new Grid().Columns("*").Rows("*").Children(text, dots);
             Button button = null!;
             button = new Button().Background(Color.Transparent).BorderThickness(0).Padding(12, 18).Content(content)
@@ -76,8 +77,10 @@ internal sealed partial class MainWindow
                 .OnMouseLeave(() => { lyricsRows[button].Hovered = lyricsRows[button].Pressed = false; RefreshLyricsRow(lyricsRows[button]); });
             button.MouseDown += args => { if (args.Button == MouseButton.Left) { lyricsRows[button].Pressed = true; RefreshLyricsRow(lyricsRows[button]); } };
             button.MouseUp += _ => { lyricsRows[button].Pressed = false; RefreshLyricsRow(lyricsRows[button]); };
-            text.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
-            dots.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
+            // Fade the ink, not a composited subtree. On MewVG an Opacity group
+            // allocates and paints another render surface for every visible line.
+            text.Transitions = [Transition.Create(Control.ForegroundProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
+            dots.Transitions = [Transition.Create(Control.ForegroundProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
             lyricsRows[button] = new(text, dots);
             context.Register("button", button);
             return button;
@@ -161,7 +164,7 @@ internal sealed partial class MainWindow
                 lyricsResolvedFingerprint = result.Status == LyricsStatus.Unavailable ? null : identity.Fingerprint;
                 ApplyLyrics(result);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) when (request.IsCancellationRequested) { return; }
             finally { if (lyricsRequest == request) lyricsRequest = null; request.Dispose(); }
         });
     }
@@ -175,6 +178,7 @@ internal sealed partial class MainWindow
     private void RenderLyrics()
     {
         if (lyricsList == null) return;
+        lyricsFollowTarget = null;
         var document = lyricsResult.Document;
         lyricsMessage.Text = preferences.LyricsEnabled ? "Для текущего трека\nотсутствует текст" : "Тексты песен отключены\nв настройках";
         var hasText = lyricsResult.Status is LyricsStatus.Synced or LyricsStatus.Plain;
@@ -208,7 +212,7 @@ internal sealed partial class MainWindow
         var opacity = row.Index == -3 ? .5 : row.Index < 0 ? 0 : view.Pressed ? .75 :
             view.Hovered || row.Index == lyricsActiveLine ? 1 : lyricsResult.Status == LyricsStatus.Plain ? .85 :
             Math.Abs(row.Index - lyricsActiveLine) == 1 ? .48 : .23;
-        view.Text.Opacity = view.Dots.Opacity = opacity;
+        view.Text.Foreground = view.Dots.Foreground = Color.FromArgb((byte)Math.Round(opacity * 255), 255, 255, 255);
         view.Dots.SetActive(view.Dots.IsVisible && row.Index == lyricsActiveLine && expandedOpen && expandedPanelMode == PlayerPanel.Lyrics &&
             lyricsPlaying && isPlaying.Value && !playbackLoading.Value);
     }
@@ -237,6 +241,9 @@ internal sealed partial class MainWindow
         var selected = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
         if (selected == null) { lyricsList.ScrollIntoView(index + 1); return; }
         var position = lyricsScroll.VerticalOffset + selected.Bounds.Y + selected.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4;
+        position = Math.Round(position * Window.DpiScale) / Window.DpiScale;
+        if (lyricsFollowTarget is { } previous && Math.Abs(previous - position) < .5 / Window.DpiScale) return;
+        lyricsFollowTarget = position;
         smoothScrolls[lyricsScroll].ScrollTo(position);
     }
 
@@ -244,11 +251,13 @@ internal sealed partial class MainWindow
     {
         if (!preferences.LyricsAutoScroll || lyricsResult.Status != LyricsStatus.Synced) return;
         lyricsFollow = false;
+        lyricsFollowTarget = null;
         lyricsFollowTimer.Stop(); lyricsFollowTimer.Start();
     }
     private void ResumeLyricsFollowing()
     {
         lyricsFollowTimer.Stop(); lyricsFollow = preferences.LyricsEnabled && preferences.LyricsAutoScroll;
+        lyricsFollowTarget = null;
         // Paused playback can leave the render loop idle when the timer expires.
         // Request the frame that starts centering, even with no moving controls.
         if (expandedOpen && expandedPanelMode == PlayerPanel.Lyrics) Window.InvalidateVisual();

@@ -13,6 +13,7 @@ internal sealed partial class MainWindow
 
     private Grid ArtworkLayer(Image cover)
     {
+        cover.VectorCacheMode = ImageVectorCacheMode.Direct;
         var skeleton = new LibrarySkeleton { ArtworkOnly = true, IsVisible = false };
         artworkLoading.Add(cover, skeleton);
         return new Grid().Columns("*").Rows("*").Children(cover, skeleton);

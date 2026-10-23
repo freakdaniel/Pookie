@@ -7,27 +7,28 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private Grid trackDetailWaveformLayer = null!;
+    private CommentMarkerLayer trackDetailMarkerLayer = null!;
     private readonly List<(Button Button, double Fraction)> trackCommentMarkers = [];
     private readonly HashSet<(long Track, long Comment, long Generation)> pendingTrackReplies = [];
 
     private FrameworkElement TrackCommentView(SoundCloudComment comment, SoundCloudTrack track, bool reply = false)
     {
         var size = reply ? 28 : 44;
-        var avatar = new Image().Width(size).Height(size).StretchMode(Stretch.UniformToFill);
+        var avatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(size).Height(size).StretchMode(Stretch.UniformToFill);
         avatar.Source = Icons.Source("user", Muted);
-        var name = new TextBlock().Text(comment.User?.Username ?? "Пользователь SoundCloud").FontSize(14).Bold().CenterVertical()
+        var name = new CommentTextBlock().Text(comment.User?.Username ?? "Пользователь SoundCloud").FontSize(14).Bold().CenterVertical()
             .MaxWidth(200).TextTrimming(TextTrimming.CharacterEllipsis);
         var top = new StackPanel().Horizontal().Spacing(6).Children(name);
         if (ValidCommentTime(comment, track) is { } timestamp)
         {
-            top.Add(new TextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
-            var time = TrackButtons.Action(new TextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
+            top.Add(new CommentTextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
+            var time = TrackButtons.Action(new CommentTextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
                 .Foreground(TrackButtons.OnCommentTime), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
                 TrackButtons.CommentTime, 24).Padding(6, 0);
             top.Add(time);
         }
         var age = DetailAge(comment.CreatedAt);
-        if (age.Length > 0) top.Add(new TextBlock().Text("· " + age).FontSize(12).Foreground(Muted).CenterVertical());
+        if (age.Length > 0) top.Add(new CommentTextBlock().Text("· " + age).FontSize(12).Foreground(Muted).CenterVertical());
         var more = TrackButtons.Icon(Icons.View("dots-three", 20).Center(), () => { }, TrackButtons.Text, 28);
         var menu = new ContextMenu();
         var copy = new Command("pookie.comment.copy", "Скопировать текст");
@@ -44,10 +45,10 @@ internal sealed partial class MainWindow
         }
         more.OnClick(() => menu.Show(more)); more.ContextMenu = menu;
         var actions = new StackPanel().Horizontal().Spacing(12).Children(
-            TrackButtons.Action(new TextBlock().Text("Ответить").FontSize(13).SemiBold(),
+            TrackButtons.Action(new CommentTextBlock().Text("Ответить").FontSize(13).SemiBold(),
                 () => OpenSoundCloudPage(track.PermalinkUrl), TrackButtons.Text, 28).Padding(0), more);
         var text = new StackPanel().Vertical().Spacing(4).Column(1).Children(top,
-            new TextBlock().Text(comment.Body).FontSize(14).FontWeight(FontWeight.Normal).TextWrapping(TextWrapping.Wrap), actions);
+            new CommentTextBlock().Text(comment.Body).FontSize(14).FontWeight(FontWeight.Normal).TextWrapping(TextWrapping.Wrap), actions);
         if (!reply)
         {
             var replies = new StackPanel().Vertical().Spacing(14).Margin(0, 10, 0, 0);
@@ -86,7 +87,7 @@ internal sealed partial class MainWindow
                 RepliesCursor = result.Cursor == comment.RepliesCursor ? null : result.Cursor }).ToArray();
             trackDetailState = trackDetailState with { Comments = trackDetailState.Comments with { Comments = comments } };
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested || lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested || lifetime.IsCancellationRequested) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
         { if (IsTrackDetailCurrent(track.Id, generation)) status.Value = FriendlyError(error); }
         finally
@@ -105,24 +106,30 @@ internal sealed partial class MainWindow
         Run(async () =>
         {
             var source = await SharedArtworkAsync(url);
-            if (source != null && IsTrackDetailCurrent(trackId, generation)) image.Source = source;
+            if (source != null && IsTrackDetailCurrent(trackId, generation))
+            { image.Source = source; trackDetailMarkerLayer.RefreshSnapshot(); }
         });
     }
 
     private void RenderTrackCommentMarkers()
     {
-        foreach (var marker in trackCommentMarkers) trackDetailWaveformLayer.Remove(marker.Button);
+        trackDetailMarkerLayer.Clear(); trackDetailMarkerLayer.RefreshSnapshot();
         trackCommentMarkers.Clear();
         if (!preferences.ShowCommentMarkers || trackDetailState is not { } state) return;
         foreach (var comment in state.Comments.Comments.Where(c => ValidCommentTime(c, state.Track) != null).Take(50))
         {
             var fraction = comment.Timestamp!.Value / state.Track.Duration;
-            var image = new Image().Width(24).Height(24).StretchMode(Stretch.UniformToFill);
+            var image = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(24).Height(24).StretchMode(Stretch.UniformToFill);
             image.Source = Icons.Source("user", Muted);
             var marker = TrackButtons.Icon(new Border().CornerRadius(12).ClipToBounds().Child(image),
                 () => Run(() => SeekLikedTrackAsync(state.Track, fraction)), TrackButtons.Text, 24).Left().Top()
                 .ToolTip($"{comment.User?.Username}: {comment.Body}");
-            trackCommentMarkers.Add((marker, fraction)); trackDetailWaveformLayer.Add(marker);
+            // The cached strip must include complete avatars even when it is
+            // captured while their screen positions are partly above the window.
+            VisualTree.Visit(marker, element => { if (element is UIElement visual) visual.SkipViewportCull = true; });
+            marker.MouseEnter += trackDetailMarkerLayer.Interact;
+            marker.MouseLeave += trackDetailMarkerLayer.Interact;
+            trackCommentMarkers.Add((marker, fraction)); trackDetailMarkerLayer.Add(marker);
             LoadTrackDetailAvatar(image, comment.User?.AvatarUrl, state.Track.Id);
         }
         PositionTrackCommentMarkers();
@@ -133,6 +140,7 @@ internal sealed partial class MainWindow
         var width = trackDetailWaveformLayer.ActualWidth;
         foreach (var (button, fraction) in trackCommentMarkers)
             button.Margin = new Thickness(Math.Clamp(fraction * width - 12, 0, Math.Max(0, width - 24)), 103, 0, 0);
+        trackDetailMarkerLayer.RefreshSnapshot();
     }
 
     private void OpenSoundCloudPage(string? value)

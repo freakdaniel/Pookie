@@ -22,11 +22,17 @@ internal sealed partial class MainWindow
         try
         {
             await VerifyFaviconCacheAsync();
-            timer.Stop(); Window.Activate();
+            timer.Stop();
+            if (OperatingSystem.IsWindows())
+            {
+                ProbeShowWindow(Window.Handle, 5);
+                if (!ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53)) throw new InvalidOperationException("Could not expose native description check.");
+            }
+            Window.Activate();
             await WaitForLikedLayoutAsync(() => Window.IsActive);
             trackDescriptionLinks.LoadIcon = async (uri, token) =>
             {
-                iconRequests.Add(uri.Host); await Task.Delay(30, token);
+                iconRequests.Add(uri.Host); await Task.Yield(); token.ThrowIfCancellationRequested();
                 return uri.Host == "example.com" ? favicon : null;
             };
             trackDescriptionLinks.OpenLink = opened.Add;
@@ -66,7 +72,9 @@ internal sealed partial class MainWindow
             var start = new Point(rects[0].X + 2, rects[0].Y + rects[0].Height / 2);
             var last = rects[^1]; var end = new Point(last.Right - 2, last.Y + last.Height / 2);
             RouteWaveformPointer(start); PressActionPointer(start, true);
+            await WaitForLikedLayoutAsync(() => trackDetailDescription.IsFocused);
             RouteActionHeldPointer(end); PressActionPointer(end, false);
+            await WaitForLoginFrameAsync();
             if (!trackDetailDescription.IsFocused || trackDetailDescription.SelectionLength < 10 || opened.Count != 1)
                 throw new InvalidOperationException("Dragging through a description link opened it or failed to select text.");
             CaptureUiPreview("track-description-selected");

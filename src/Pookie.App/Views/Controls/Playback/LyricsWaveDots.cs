@@ -42,7 +42,7 @@ internal sealed class LyricsWaveDots : Control
         for (var i = 0; i < 3; i++)
         {
             var y = Bounds.Y + Bounds.Height / 2 - VerticalOffset(i);
-            context.FillEllipse(new Rect(center + (i - 1) * 24 - Diameter / 2, y - Diameter / 2, Diameter, Diameter), Color.White);
+            context.FillEllipse(new Rect(center + (i - 1) * 24 - Diameter / 2, y - Diameter / 2, Diameter, Diameter), Foreground);
         }
     }
     protected override void OnDispose() { Reset(); base.OnDispose(); }

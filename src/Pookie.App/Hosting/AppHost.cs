@@ -9,6 +9,9 @@ internal static class AppHost
     internal static async Task RunAsync(AppRunOptions options, Action<MainWindow>? configureWindow = null)
     {
         StartupLog.Event("app.host-start");
+        // Intel's Windows OpenGL presentation can stop updating after a driver
+        // reset while input/audio remain alive. Use the native Windows backend;
+        // app-owned bounded blur does not depend on its image-filter pipeline.
 #if POOKIE_LINUX
         X11Platform.Register(); MewVGX11Backend.Register();
 #elif POOKIE_WINDOWS
@@ -54,6 +57,7 @@ internal static class AppHost
             finally
             {
                 AppLog.For("Pookie").Information("Приложение закрыто");
+                Icons.ReleaseRasters();
                 AppLog.Shutdown();
                 native.CleanupIsolatedData();
             }

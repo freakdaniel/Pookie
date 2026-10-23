@@ -48,6 +48,8 @@ internal static class GlassSheen
 internal sealed class ArtworkGlassSheen : Control
 {
     private readonly double radius;
+    private readonly GlassSheenRaster sheen = new();
     internal ArtworkGlassSheen(double radius = 20) { this.radius = radius; IsHitTestVisible = false; }
-    protected override void OnRender(IGraphicsContext context) => GlassSheen.Draw(context, Bounds, new CornerRadius(radius));
+    protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius));
+    protected override void OnDispose() { sheen.Dispose(); base.OnDispose(); }
 }

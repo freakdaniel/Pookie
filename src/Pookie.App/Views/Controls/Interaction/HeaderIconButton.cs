@@ -9,6 +9,7 @@ namespace Pookie.App;
 internal sealed class HeaderIconButton : Button
 {
     private readonly bool start;
+    private readonly GlassSheenRaster sheen = new();
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
     private double layer, from, target;
 
@@ -26,7 +27,6 @@ internal sealed class HeaderIconButton : Button
     private void RefreshState()
     {
         Cursor = IsEffectivelyEnabled ? CursorType.Hand : CursorType.Arrow;
-        if (Content is UIElement glyph) glyph.Opacity = IsEffectivelyEnabled ? 1 : .38;
         var next = !IsEffectivelyEnabled ? 0 : IsPressed || KeyboardFocusFeedback.IsVisible(this) ? .12 : IsMouseOver ? .08 : 0;
         if (target == next) return;
         motion.Stop(); from = layer; target = next;
@@ -47,11 +47,23 @@ internal sealed class HeaderIconButton : Button
         var shape = GlassSheen.Shape(Bounds, corners);
         context.FillPath(shape, GlassSheen.Surface);
         if (layer > 0) context.FillPath(shape, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));
-        GlassSheen.Draw(context, Bounds, corners, layer / .12);
+        sheen.Draw(context, Bounds, corners, layer / .12);
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
             context.DrawPath(GlassSheen.Shape(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4),
                 start ? new CornerRadius(16, 4, 4, 16) : new CornerRadius(4, 16, 16, 4)), TrackButtons.OnSurface, 2);
     }
 
-    protected override void OnDispose() { motion.Stop(); base.OnDispose(); }
+    protected override void RenderSubtree(IGraphicsContext context)
+    {
+        // A single icon needs alpha on its draw, not another opacity surface.
+        context.Save();
+        try
+        {
+            if (!IsEffectivelyEnabled) context.GlobalAlpha *= .38f;
+            base.RenderSubtree(context);
+        }
+        finally { context.Restore(); }
+    }
+
+    protected override void OnDispose() { sheen.Dispose(); motion.Stop(); base.OnDispose(); }
 }

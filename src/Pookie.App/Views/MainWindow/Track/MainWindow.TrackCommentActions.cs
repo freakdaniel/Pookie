@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement TrackCommentComposerView()
     {
-        trackCommentOwnAvatar = new Image().Width(28).Height(28).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", Muted));
+        trackCommentOwnAvatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(28).Height(28).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", Muted));
         trackCommentInput = new TextBox().Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(13)
             .Placeholder("Твой комментарий").CenterVertical().OnTextChanged(text =>
             {
@@ -34,6 +34,7 @@ internal sealed partial class MainWindow
                 if (e.Key == Key.Enter) { e.Handled = true; Run(PostTrackCommentAsync); }
             });
         trackCommentInput.MaxLength = CommentWriteRequest.MaxBodyLength;
+        trackCommentInput.Opacity = 1;
         trackCommentSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 20).Center(),
             () => Run(PostTrackCommentAsync), TrackButtons.Text, 32).CenterVertical();
         trackCommentDraftTime = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical().IsVisible(false);
@@ -161,7 +162,7 @@ internal sealed partial class MainWindow
             if (CommitTrackCommentState(state.Track.Id, latest => AddPostedComment(latest, comment, state.CommentDraft)))
                 status.Value = "Комментарий отправлен";
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException or ArgumentException)
         { if (api.Session == session && IsTrackDetailCurrent(state.Track.Id, generation)) status.Value = FriendlyError(error); }
         finally
@@ -231,7 +232,7 @@ internal sealed partial class MainWindow
                     Track = state.Track with { CommentCount = Math.Max(0, (state.Track.CommentCount ?? state.Comments.Comments.Length) - 1) } };
             })) status.Value = "Комментарий удалён";
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { }
+        catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
         { if (api.Session == session && IsTrackDetailCurrent(track.Id, generation)) status.Value = FriendlyError(error); }
         finally { pendingCommentDeletes.Remove((session, comment.Id)); }

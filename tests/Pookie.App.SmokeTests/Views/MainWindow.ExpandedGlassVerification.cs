@@ -23,6 +23,7 @@ internal sealed partial class MainWindow
         // sampled backdrop; a translucent flat fill cannot satisfy this check.
         byte[] ReadCover(bool blur)
         {
+            if (blur) expandedGlassBackdrop.Prepare();
             var bounds = expandedArtwork.Bounds;
             using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
             using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
@@ -67,7 +68,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The glass backdrop retained pixels from the previous artwork.");
             shuffle.Value = false;
             RouteExpandedPointer(new Point(expandedCover.Bounds.X + 8, expandedCover.Bounds.Y + expandedCover.ActualHeight / 2));
-            await Task.Delay(200, lifetime.Token);
+            await WaitForLoginFrameAsync();
             foreach (var brightness in new byte[] { 255, 8 })
             {
                 SetPlayerArtwork(ImageSource.FromBgraPixels(1, 1, [brightness, brightness, brightness, 255], hasAlpha: false), playGeneration);

@@ -65,7 +65,7 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero && view.Hero.Card.ActualWidth > 100));
         var hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero;
         await WaitForLikedLayoutAsync(() => hero.Backdrop.Source != null && hero.Backdrop.Opacity > .999);
-        if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || hero.Tracks[0].Root.ActualHeight != 64 ||
+        if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || Math.Abs(hero.Tracks[0].Root.ActualHeight - 64) > 1 / Window.DpiScale ||
             !SearchBlocks().Any(block => block.Title == "Исполнители") || !SearchBlocks().Any(block => block.Title == "Альбомы") || !SearchBlocks().Any(block => block.Title == "Плейлисты"))
             throw new InvalidOperationException("Search did not show a best result, compact songs and grouped entity cards");
         var songsHeading = hero.SongsSection.Children.OfType<TextBlock>().Single();
@@ -127,7 +127,7 @@ internal sealed partial class MainWindow
             searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Cards && view.Block.Items?.Length == 4));
         await SearchFixture(SearchSection.Tracks, Enumerable.Range(0, 100).Select(index => LibraryItem.FromTrack(track with { Id = 71000 + index })).ToArray());
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.LibraryTrack is { Track.Id: 71000 } row &&
-            row.Root.ActualHeight == 172 && row.Cover.ActualWidth == 160 && row.Waveform.ActualHeight == 68));
+            Math.Abs(row.Root.ActualHeight - 172) < 1 / Window.DpiScale && Math.Abs(row.Cover.ActualWidth - 160) < 1 / Window.DpiScale && Math.Abs(row.Waveform.ActualHeight - 68) < 1 / Window.DpiScale));
         var librarySearchRows = searchViews.Values.Where(view => view.Block?.Kind == SearchBlockKind.LibraryTrack &&
             view.LibraryTrack?.Track != null).Select(view => view.LibraryTrack!).OrderBy(row => row.Root.Bounds.Y).ToArray();
         var firstSearchRow = librarySearchRows.First(row => row.Track!.Id == 71000);

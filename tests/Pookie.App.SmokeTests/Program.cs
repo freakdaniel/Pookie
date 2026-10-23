@@ -10,6 +10,13 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROFILE") == "1")
+        {
+            AppContext.SetSwitch("Aprillz.MewUI.DevTools.Enabled", true);
+            var profilerType = typeof(Window).Assembly.GetType("Aprillz.MewUI.Diagnostics.PerformanceProfiler", throwOnError: true)!;
+            var profiler = profilerType.GetProperty("Instance")!.GetValue(null)!;
+            profilerType.GetProperty("IsEnabled")!.SetValue(profiler, true);
+        }
         if (BrowserChildHost.TryRun(args, out var childExitCode)) { Environment.ExitCode = childExitCode; return; }
         RunAsync(args).GetAwaiter().GetResult();
     }

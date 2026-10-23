@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Aprillz.MewUI;
+using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
 namespace Pookie.App;
@@ -41,8 +42,20 @@ internal sealed partial class MainWindow
             else await OpenTrackPageAsync(fixtures[0]);
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState is { CommentsLoading: false, RelatedLoading: false, SidebarLoading: false } &&
                 !navigationHistory[navigationIndex].Pending && trackDetailWaveform.HasSamples && trackDetailCover.Source is ImageSource);
+            if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROBE") == "1")
+            { await ProbeDetailScrollingAsync(); return; }
             if (current?.Id != originalPlayback || playGeneration != originalGeneration)
                 throw new InvalidOperationException("Opening a title started playback.");
+            var seekPoint = new Point(trackDetailWaveform.Bounds.X + 30, trackDetailWaveform.Bounds.Y + 30);
+            if (((UIElement)Window.Content!).HitTest(seekPoint) != trackDetailWaveform)
+                throw new InvalidOperationException("Comment avatars intercepted the waveform outside their buttons.");
+            if (trackCommentMarkers.FirstOrDefault().Button is { } marker)
+            {
+                var hit = ((UIElement)Window.Content!).HitTest(new Point(marker.Bounds.X + 12, marker.Bounds.Y + 12));
+                var belongs = false;
+                VisualTree.Visit(marker, element => { if (ReferenceEquals(element, hit)) belongs = true; });
+                if (!belongs) throw new InvalidOperationException("Cached comment avatars lost their input targets.");
+            }
             if (trackDetailState!.Comments.Comments.Length != 1 || trackDetailRelatedRows.Count(row => row.Root.IsVisible) != 1 ||
                 !trackDetailTitle.Text.Contains("Этажи") || !trackDetailDescription.Text.Contains("релиза"))
                 throw new InvalidOperationException("Track metadata, comments or related tracks were not displayed.");
@@ -52,7 +65,7 @@ internal sealed partial class MainWindow
             var countedState = trackDetailState;
             trackDetailState = countedState with { Track = countedState.Track with { RepostsCount = 0 } };
             RefreshRepostState();
-            await WaitForLikedLayoutAsync(() => !trackDetailRepostCount.IsVisible && trackDetailRepost.ActualWidth == 44);
+            await WaitForLikedLayoutAsync(() => !trackDetailRepostCount.IsVisible && Math.Abs(trackDetailRepost.ActualWidth - 44) < 1 / Window.DpiScale);
             trackDetailState = countedState; RefreshRepostState();
             await WaitForLikedLayoutAsync(() => trackDetailRepostCount.IsVisible && trackDetailRepostCount.Text == "28" && trackDetailRepost.ActualWidth > 44);
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
@@ -127,7 +140,7 @@ internal sealed partial class MainWindow
                 BindLibraryTrackRow(copyRow, fixtures[0] with { RepostsCount = count });
                 await WaitForLikedLayoutAsync(() => count is > 0
                     ? rowCounter.IsVisible && rowCounter.Text == "28" && rowRepost.ActualWidth > 40
-                    : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && rowRepost.ActualWidth == 40);
+                    : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && Math.Abs(rowRepost.ActualWidth - 40) < 1 / Window.DpiScale);
             }
             BindLibraryTrackRow(copyRow, fixtures[0] with { PermalinkUrl = null });
             var listActions = new List<Aprillz.MewUI.Controls.Button>();
@@ -157,6 +170,7 @@ internal sealed partial class MainWindow
                 trackDetailTitle.Text = title; trackDetailAuthor.Text = author; trackDetailMeta.Text = meta;
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 &&
                     Window.Content is Aprillz.MewUI.Controls.FrameworkElement root && Math.Abs(root.ActualWidth - width) < 1 &&
+                    Math.Abs(contentFrame.ActualWidth - Math.Min(1440, width)) < 1 && shellPageScroll.IsReady &&
                     !trackDetailScroll.IsMeasureDirty && !trackDetailScroll.IsArrangeDirty);
                 await WaitForLoginFrameAsync();
                 if (Math.Abs(trackDetailBackdrop.Bounds.X - contentFrame.Bounds.X - contentFrame.Padding.Left) > 1 ||

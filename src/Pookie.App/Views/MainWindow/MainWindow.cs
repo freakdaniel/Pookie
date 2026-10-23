@@ -640,7 +640,7 @@ internal sealed partial class MainWindow : IDisposable
                 finally { updatingProgress = false; }
                 AnimatePlaybackProgress(state);
                 currentTime.Value = FormatTime(state.Position);
-                RefreshLikedRows(state.Position);
+                RefreshPlaybackPosition(state.Position);
                 TickLyrics(state.Position, state.Playing && !state.Buffering);
             }
             totalTime.Value = FormatTime(progress.Maximum);

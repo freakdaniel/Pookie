@@ -63,7 +63,8 @@ internal sealed partial class MainWindow
         contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
             .Padding(36, ShellChromeGlass.HeaderHeight + 30, 36, 0).Child(startupContent);
         shellScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0);
-        shellPageScroll = new ShellPageScroll(contentFrame, shellScroll, PageContentScroll, delta =>
+        var glassContent = new GlassContentFrame(contentFrame);
+        shellPageScroll = new ShellPageScroll(glassContent, shellScroll, PageContentScroll, delta =>
         {
             if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.Scroll(delta);
             var before = shellScroll.VerticalOffset;
@@ -75,10 +76,11 @@ internal sealed partial class MainWindow
         waveSettingsOpen.Changed += () => homeWaveLayout.SetOpen(waveSettingsOpen.Value);
         page.Changed += () => { if (page.Value != Page.Home) waveSettingsOpen.Value = false; };
         contentSurface = new Border().Background(Surface).Child(homeWaveLayout);
-        headerGlass = new ShellChromeGlass(contentFrame, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
+        headerGlass = new ShellChromeGlass(glassContent, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
+        shellScroll.ScrollChanged += UpdateScrolledChrome;
         contentBottomFade = new ContentBottomFade(Surface).Height(ContentBottomFade.FadeHeight).Bottom().IsHitTestVisible(false);
-        contentBottomFade.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
-        contentBottomFade.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? ContentBottomFade.PlayerOpacity : 1d);
+        contentBottomFade.Transitions = [Transition.Create(ContentBottomFade.StrengthProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
+        contentBottomFade.Bind(ContentBottomFade.StrengthProperty, playerVisible, visible => visible ? ContentBottomFade.PlayerOpacity : 1d);
         // Use the arranged viewport as well as native resize notifications. Some platforms
         // apply programmatic window sizes without delivering ClientSizeChanged first.
         contentSurface.SizeChanged += e =>
@@ -165,15 +167,15 @@ internal sealed partial class MainWindow
             .Padding(2).Width(34).Height(34).CornerRadius(17)
             .OnClick(() => { profileOpen.Value = !profileOpen.Value; queueOpen.Value = false; }).CenterVertical();
         var settingsGlyph = Icons.View("gear", 24, Muted);
-        settingsGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
-        settingsGlyph.Opacity = 0.84;
+        var subduedSettings = Surface.Lerp(Muted, .84);
+        TrackButtons.SetGlyph(settingsGlyph, "gear", subduedSettings, animate: false);
         settingsButton = new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Content(new Grid().Columns("*").Rows("*").Children(
                 settingsGlyph.CenterHorizontal().CenterVertical()))
             .Padding(2).Width(34).Height(34).CornerRadius(17)
-            .OnMouseEnter(() => settingsGlyph.Opacity = 1)
-            .OnMouseLeave(() => settingsGlyph.Opacity = 0.84)
+            .OnMouseEnter(() => TrackButtons.SetGlyph(settingsGlyph, "gear", Muted))
+            .OnMouseLeave(() => TrackButtons.SetGlyph(settingsGlyph, "gear", page.Value == Page.Settings ? Muted : subduedSettings))
             .OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value))).CenterVertical();
-        page.Changed += () => settingsGlyph.Opacity = page.Value == Page.Settings ? 1 : 0.84;
+        page.Changed += () => TrackButtons.SetGlyph(settingsGlyph, "gear", page.Value == Page.Settings || settingsButton.IsMouseOver ? Muted : subduedSettings);
 
         return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 8).Children(
             new StackPanel().Horizontal().Spacing(16).CenterVertical().Column(0).Children(

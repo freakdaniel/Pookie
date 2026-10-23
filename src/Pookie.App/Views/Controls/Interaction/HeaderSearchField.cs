@@ -52,6 +52,7 @@ internal sealed class HeaderSearchField : ContentControl
 
     private sealed class GlassSurface : ContentControl
     {
+        private readonly GlassSheenRaster sheen = new();
         internal double Emphasis { get; set; }
 
         protected override void RenderSubtree(IGraphicsContext context)
@@ -65,7 +66,9 @@ internal sealed class HeaderSearchField : ContentControl
         {
             if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
             context.FillRoundedRectangle(Bounds, 20, 20, Color.FromArgb((byte)(218 + Emphasis * 18), 49, 49, 55));
-            GlassSheen.Draw(context, Bounds, new CornerRadius(20), Emphasis);
+            sheen.Draw(context, Bounds, new CornerRadius(20), Emphasis);
         }
+
+        protected override void OnDispose() { sheen.Dispose(); base.OnDispose(); }
     }
 }

@@ -7,6 +7,7 @@ namespace Pookie.App;
 
 internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool paintSurface = true) : Button
 {
+    private readonly GlassSheenRaster sheen = new();
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private bool active, feedback;
     private bool? connectedStart;
@@ -72,7 +73,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
             context.FillPath(shape, tint);
         }
         if (layer > 0) context.FillPath(shape, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));
-        if (paintSurface) GlassSheen.Draw(context, Bounds, corners, .35 + layer / .12 * .65);
+        if (paintSurface) sheen.Draw(context, Bounds, corners, .35 + layer / .12 * .65);
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
             context.DrawPath(GlassSheen.Shape(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4), corners), TrackButtons.OnSurface, 2);
     }
@@ -80,12 +81,13 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     protected override void OnDispose()
     {
         if (backdrop != null) backdrop.Changed -= InvalidateVisual;
-        motion.Stop(); base.OnDispose();
+        sheen.Dispose(); motion.Stop(); base.OnDispose();
     }
 }
 
 internal sealed class ExpandedGlassSurface : ContentControl
 {
+    private readonly GlassSheenRaster sheen = new();
     private CoverGlassBackdrop? backdrop;
     internal ExpandedGlassSurface(CoverGlassBackdrop? backdrop = null)
     { if (backdrop != null) SetBackdrop(backdrop); }
@@ -103,7 +105,7 @@ internal sealed class ExpandedGlassSurface : ContentControl
             Background.A > 0 ? GlassSheen.AdaptTint(Background, backdrop?.Brightness(Bounds) ?? 0) :
             GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
         context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, tint);
-        GlassSheen.Draw(context, Bounds, corners, .35);
+        sheen.Draw(context, Bounds, corners, .35);
     }
 
     protected override void RenderSubtree(IGraphicsContext context)
@@ -113,5 +115,5 @@ internal sealed class ExpandedGlassSurface : ContentControl
         finally { context.Restore(); }
     }
 
-    protected override void OnDispose() { if (backdrop != null) backdrop.Changed -= InvalidateVisual; base.OnDispose(); }
+    protected override void OnDispose() { sheen.Dispose(); if (backdrop != null) backdrop.Changed -= InvalidateVisual; base.OnDispose(); }
 }
