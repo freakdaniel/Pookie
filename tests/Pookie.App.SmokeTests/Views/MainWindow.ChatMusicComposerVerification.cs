@@ -92,9 +92,12 @@ internal sealed partial class MainWindow
         await MoveNavigationAsync(-1); chatTimer.Stop();
         await WaitForLikedLayoutAsync(() => page.Value == Page.Chats && chatInput.Text == text && recognizer.Count == 1);
         await SendChatAsync();
+        // Durable persistence yields before POST. Navigation's older GET may
+        // still own the thread; its queued refresh supplies the canonical row.
+        await WaitForLikedLayoutAsync(() => !chatThreadBusy && chatMessages.Any(message => message.SenderId == me!.Id && message.Body == text));
         if (!chatMessages.Any(message => message.SenderId == me!.Id && message.Body == text) || chatInput.Text != "" ||
             chatPending.ContainsKey(chatRecipient!.Id) || chatOutgoing.GetValueOrDefault(chatRecipient.Id)?.State == ChatDelivery.Failed)
-            throw new InvalidOperationException("The recognized link or caption was lost when sending the source message.");
+            throw new InvalidOperationException($"The recognized link or caption was lost when sending the source message: enabled={chatSend.IsEnabled}; sending={chatSending}; pending={chatPending.Count}; input_length={chatInput.Text.Length}; message_found={chatMessages.Any(message => message.SenderId == me!.Id && message.Body == text)}; outgoing={chatOutgoing.GetValueOrDefault(chatRecipient!.Id)?.State}; status={chatThreadStatus.Value}.");
         chatInput.Text = draft;
     }
 

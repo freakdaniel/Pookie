@@ -28,6 +28,7 @@ internal sealed partial class MainWindow
 
     private void RefreshCardGlass()
     {
+        if (disposed || Window.WindowState == WindowState.Minimized) return;
         if (expandedHost.IsVisible) expandedGlassBackdrop.Prepare();
         if (!workspace.IsVisible) return;
         foreach (var row in likedRows.Values) row.PrepareTrackArtGlass(contentFrame.Bounds);
@@ -94,15 +95,15 @@ internal sealed partial class MainWindow
 
     // Cache metadata, pruning and the first pixel decode must not run in a row's
     // binding/render pass. Only publishing the prepared source returns to the UI.
-    private Task<ImageSource?> FetchImageAsync(string? url, CancellationToken token) =>
-        Task.Run(() => FetchImageCoreAsync(url, token), token);
+    private Task<ImageSource?> FetchImageAsync(string? url, CancellationToken token, int maximumSide = 1024) =>
+        Task.Run(() => FetchImageCoreAsync(url, token, maximumSide), token);
 
-    private async Task<ImageSource?> FetchImageCoreAsync(string? url, CancellationToken token)
+    private async Task<ImageSource?> FetchImageCoreAsync(string? url, CancellationToken token, int maximumSide)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !SoundCloudWebClient.IsMediaUri(uri)) return null;
         var cached = await imageDiskCache.ReadAsync(uri.AbsoluteUri, token);
         if (cached != null)
-            try { return PrepareImage(cached); }
+            try { return PrepareImage(cached,maximumSide); }
             catch (ArgumentException error)
             { Pookie.Logging.AppLog.Failure("Pookie.Artwork", "Повреждённая обложка в кеше; загружаем заново", error, Serilog.Events.LogEventLevel.Debug); }
         try
@@ -118,20 +119,16 @@ internal sealed partial class MainWindow
                 bytes.Write(buffer, 0, count);
             }
             var payload = bytes.ToArray();
-            var image = PrepareImage(payload);
+            var image = PrepareImage(payload,maximumSide);
             await imageDiskCache.WriteAsync(uri.AbsoluteUri, payload, token);
             return image;
         }
         catch (Exception error) when (error is HttpRequestException or ArgumentException) { return null; }
     }
 
-    private static ImageSource PrepareImage(byte[] payload)
+    private static ImageSource PrepareImage(byte[] payload,int maximumSide = 1024)
     {
-        var image = ImageSource.FromBytes(payload);
-        // FromBytes is lazy: without this, JPEG decoding happens on the first
-        // rendered scrolling frame even when the download itself is asynchronous.
-        image.EnsureDecode(image.PixelWidth, image.PixelHeight);
-        return image;
+        return Storage.ArtworkImage.Prepare(payload,maximumSide);
     }
 
     private async Task<ImageSource?> FetchLargeArtworkAsync(SoundCloudTrack track, CancellationToken token)
@@ -164,7 +161,6 @@ internal sealed partial class MainWindow
         {
             if (source != null)
             {
-                if (coverCache.Count >= 256) coverCache.Remove(coverCache.Keys.First());
                 coverCache[track.Id] = source;
             }
             SetPlayerArtwork(source, generation);

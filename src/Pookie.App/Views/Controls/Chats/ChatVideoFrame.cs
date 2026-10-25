@@ -47,7 +47,7 @@ internal sealed class ChatVideoFrame : Panel
         if (bitmap != null)
         {
             using var read = bitmap.LockForWrite(markDirtyOnDispose: false);
-            return ImageSource.FromBgraPixels(bitmap.PixelWidth, bitmap.PixelHeight, read.PixelsBgra32.ToArray());
+            return ImageSource.FromBgraPixels(bitmap.PixelWidth, bitmap.PixelHeight, read.PixelsBgra32.ToArray(), hasAlpha: false);
         }
         return Picture.Source as ImageSource;
     }

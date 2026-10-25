@@ -28,7 +28,7 @@ internal sealed partial class MainWindow
         chatAttach.OnKeyDown(e => { if (e.Key is Key.Up or Key.Down) { e.Handled = true; ShowChatAttachMenu(); } });
     }
     private void ShowChatAttachMenu()
-    { if (CanAttachChat() && !chatFilePickerOpen && Window.IsActive) { CloseShellMenus(); chatAttachMenu.Show(); } }
+    { if (CanAttachChat() && !chatFilePickerOpen && Window.IsActive) { CloseChatGifs(); CloseChatMessageMenu(); CloseShellMenus(); chatAttachMenu.Show(); } }
     private void CloseChatAttachMenu(bool immediate = false)
     { chatAttachInteraction?.Stop(); chatAttachMenu?.Close(immediate); }
 }

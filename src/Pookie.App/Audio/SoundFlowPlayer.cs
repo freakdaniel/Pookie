@@ -87,19 +87,33 @@ public sealed class SoundFlowPlayer : IAudioPlayer
             decoding.Add(next.Completion);
             var format = await next.Ready.WaitAsync(operationToken).ConfigureAwait(false);
             operationToken.ThrowIfCancellationRequested();
-            lock (stateSync)
+            AudioPlaybackDevice? nextDevice = null;
+            SoundPlayer? nextPlayer = null;
+            try
             {
-                if (request != generation || disposed) throw new OperationCanceledException();
-                provider = next;
-                preparingProvider = null;
-                if (!analysisCaptureEnabled) provider.DisableAnalysisCapture();
-                source = target;
-                endedReported = false;
-                device = engine.InitializePlaybackDevice(null, format);
-                player = new SoundPlayer(engine, format, provider) { Volume = volume };
-                device.MasterMixer.AddComponent(player);
-                if (!paused) player.Play();
-                device.Start();
+                // Native creation/start may wait on the device. The UI's Poll,
+                // Volume and Pause only take the short publication lock below.
+                nextDevice = engine.InitializePlaybackDevice(null, format);
+                nextPlayer = new SoundPlayer(engine, format, next);
+                nextDevice.MasterMixer.AddComponent(nextPlayer);
+                nextDevice.Start();
+                lock (stateSync)
+                {
+                    if (request != generation || disposed) throw new OperationCanceledException();
+                    provider = next; preparingProvider = null;
+                    if (!analysisCaptureEnabled) provider.DisableAnalysisCapture();
+                    source = target; endedReported = false;
+                    nextPlayer.Volume = volume;
+                    if (!paused) nextPlayer.Play();
+                    device = nextDevice; player = nextPlayer;
+                    nextDevice = null; nextPlayer = null;
+                }
+            }
+            finally
+            {
+                if (nextDevice != null) nextDevice.Stop();
+                if (nextPlayer != null) { nextDevice?.MasterMixer.RemoveComponent(nextPlayer); nextPlayer.Dispose(); }
+                nextDevice?.Dispose();
             }
         }
         catch { next?.Dispose(); StopCore(); throw; }
@@ -188,30 +202,34 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     }
     private void StopCore(bool keepCache = false)
     {
+        AudioPlaybackDevice? oldDevice; SoundPlayer? oldPlayer;
+        StreamingProvider? oldProvider, oldPreparing;
+        EncodedTrackCache? oldCache = null;
         lock (stateSync)
         {
-            // Stop the callback before disposing the provider. Decoders finish cancellation on their worker.
-            device?.Stop();
-            player?.Pause();
-            if (player != null) device?.MasterMixer.RemoveComponent(player);
-            player?.Dispose(); provider?.Dispose(); preparingProvider?.Dispose(); device?.Dispose();
-            preparingProvider = null;
-            player = null; provider = null; device = null; source = null;
+            oldDevice = device; oldPlayer = player; oldProvider = provider; oldPreparing = preparingProvider;
+            preparingProvider = null; player = null; provider = null; device = null; source = null;
             lock (preparationSync) { pending?.Cancel(); pending?.Dispose(); pending = null; }
-            if (!keepCache && cache != null)
-            {
-                cache.Dispose();
-                decoding.Add(cache.Completion);
-                cache = null;
-            }
+            if (!keepCache) { oldCache = cache; cache = null; }
         }
+        // operations serializes native ownership. No device wait holds stateSync.
+        oldDevice?.Stop(); oldPlayer?.Pause();
+        if (oldPlayer != null) oldDevice?.MasterMixer.RemoveComponent(oldPlayer);
+        oldPlayer?.Dispose(); oldProvider?.Dispose();
+        if (!ReferenceEquals(oldPreparing, oldProvider)) oldPreparing?.Dispose();
+        oldDevice?.Dispose();
+        if (oldCache != null) { oldCache.Dispose(); decoding.Add(oldCache.Completion); }
     }
+
     public void Dispose()
     {
-        if (disposed) return;
-        disposed = true; Stop();
-        // Never destroy native decoder factories while a cancelled worker is still using them.
-        release = ReleaseAsync();
+        lock (stateSync)
+        {
+            if (disposed) return;
+            disposed = true;
+            // Shutdown callers await release; native teardown never blocks UI disposal.
+            release = Task.Run(async () => { await StopAsync().ConfigureAwait(false); await ReleaseAsync().ConfigureAwait(false); });
+        }
     }
     public async ValueTask DisposeAsync() { Dispose(); await release!.ConfigureAwait(false); }
     private async Task ReleaseAsync()

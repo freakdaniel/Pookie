@@ -49,5 +49,11 @@ internal sealed class CardShadow : Panel
     protected override UIElement? OnHitTest(Point point) =>
         IsVisible && IsHitTestVisible && IsEffectivelyEnabled ? child.HitTest(point) : null;
 
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) { raster?.Dispose(); raster = null; }
+    }
+
     protected override void OnDispose() { raster?.Dispose(); base.OnDispose(); }
 }

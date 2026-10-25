@@ -6,13 +6,13 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private void VerifyCardGlassSource(CoverGlassBackdrop glass, Image cover, Image background, FrameworkElement reference)
+    private async Task VerifyCardGlassSourceAsync(CoverGlassBackdrop glass, Image cover, Image background, FrameworkElement reference)
     {
         var originalCover = cover.Source; var originalBackground = background.Source;
         var opacity = background.Opacity; var transitions = background.Transitions;
-        Color Read()
+        async Task<Color> Read()
         {
-            glass.Prepare();
+            await WaitForLikedLayoutAsync(() => { glass.Prepare(); return glass.IsCurrent; });
             var region = new Rect(reference.Bounds.X + reference.ActualWidth / 2 - 2,
                 reference.Bounds.Y + reference.ActualHeight / 2 - 2, 4, 4);
             using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
@@ -30,21 +30,21 @@ internal sealed partial class MainWindow
             background.Transitions = []; background.Opacity = 1;
             background.Source = ImageSource.FromBgraPixels(1, 1, [64, 128, 192, 255], hasAlpha: false);
             glass.RefreshArtwork();
-            var before = Read();
+            var before = await Read();
             // The scrim must be present in the sampled pixels, rather than
             // sampling the brighter uncomposited image or the cover column.
             if (before.R > 130 || before.G > 110 || before.B > 85)
                 throw new InvalidOperationException($"Card glass omitted the background scrim: {before}.");
             cover.Source = ImageSource.FromBgraPixels(1, 1, [255, 255, 255, 255], hasAlpha: false);
             glass.RefreshArtwork();
-            if (Distance(before, Read()) > 2)
+            if (Distance(before, await Read()) > 2)
                 throw new InvalidOperationException("Card controls sampled the foreground cover instead of the unchanged card background.");
             background.Source = ImageSource.FromBgraPixels(1, 1, [30, 180, 40, 255], hasAlpha: false);
             glass.RefreshArtwork();
-            if (Distance(before, Read()) < 35)
+            if (Distance(before, await Read()) < 35)
                 throw new InvalidOperationException("Card glass did not follow the actual background change.");
             background.Source = null; glass.RefreshArtwork();
-            var empty = Read();
+            var empty = await Read();
             if (Math.Max(empty.R, Math.Max(empty.G, empty.B)) > 65)
                 throw new InvalidOperationException("Card glass retained an old cover after its background was cleared.");
         }

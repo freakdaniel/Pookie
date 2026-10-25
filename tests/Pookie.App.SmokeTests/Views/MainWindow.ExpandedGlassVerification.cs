@@ -21,9 +21,15 @@ internal sealed partial class MainWindow
 
         // The sharp green ring in the artwork fixture must soften in the actual
         // sampled backdrop; a translucent flat fill cannot satisfy this check.
-        byte[] ReadCover(bool blur)
+        async Task<byte[]> ReadCover(bool blur)
         {
-            if (blur) expandedGlassBackdrop.Prepare();
+            if (blur)
+            {
+                expandedGlassBackdrop.Prepare();
+                // CPU blur now completes on a worker. Wait before acquiring
+                // a GL scope; pixel assertions below still check the real ink.
+                await WaitForLikedLayoutAsync(() => expandedGlassBackdrop.IsCurrent);
+            }
             var bounds = expandedArtwork.Bounds;
             using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
             using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
@@ -38,7 +44,7 @@ internal sealed partial class MainWindow
             for (var x = 0; x < row.Length; x++) row[x] = pixels[(surface.PixelHeight / 2) * cpu.StrideBytes + x * 4 + 1];
             return row;
         }
-        var raw = ReadCover(false); var blurred = ReadCover(true);
+        var raw = await ReadCover(false); var blurred = await ReadCover(true);
         int Edge(byte[] row) => Enumerable.Range(20, row.Length - 40).Max(x => Math.Abs(row[x + 1] - row[x]));
         if (!expandedGlassBackdrop.HasBlurredArtwork || Edge(raw) < 20 || Edge(blurred) >= Edge(raw) * .7 ||
             blurred.Max() - blurred.Min() < 25)
@@ -63,7 +69,7 @@ internal sealed partial class MainWindow
             var replacement = ImageSource.FromBgraPixels(1, 1, [35, 45, 210, 255], hasAlpha: false);
             SetPlayerArtwork(replacement, playGeneration);
             await WaitForLoginFrameAsync();
-            var replaced = ReadCover(true);
+            var replaced = await ReadCover(true);
             if (replaced.Max() > 55 || replaced.Min() < 35 || Math.Abs(replaced.Average(value => (double)value) - blurred.Average(value => (double)value)) < 30)
                 throw new InvalidOperationException("The glass backdrop retained pixels from the previous artwork.");
             shuffle.Value = false;
@@ -73,7 +79,7 @@ internal sealed partial class MainWindow
             {
                 SetPlayerArtwork(ImageSource.FromBgraPixels(1, 1, [brightness, brightness, brightness, 255], hasAlpha: false), playGeneration);
                 await WaitForLoginFrameAsync();
-                ReadCover(true);
+                await ReadCover(true);
                 var pixels = CaptureSectionButton(shuffleButton);
                 var width = (int)Math.Ceiling(shuffleButton.ActualWidth * Window.DpiScale);
                 var index = ((int)(shuffleButton.ActualHeight / 2 * Window.DpiScale) * width + (int)(5 * Window.DpiScale)) * 4;

@@ -9,7 +9,9 @@ internal sealed partial class MainWindow
 {
     // A cover owns its loading layer. Registering it must not keep removed sidebar cards alive.
     private readonly ConditionalWeakTable<Image, LibrarySkeleton> artworkLoading = new();
-    private readonly Dictionary<string, Task<ImageSource?>> artworkRequests = [];
+    private static readonly Storage.CacheBudget ArtworkCacheBudget = new(64L * 1024 * 1024);
+    private static long ArtworkBytes(ImageSource source) => (long)source.PixelWidth * source.PixelHeight * 4;
+    private readonly Storage.AsyncResourceCache<string, ImageSource> artworkRequests = new(256, ArtworkCacheBudget, ArtworkBytes);
 
     private Grid ArtworkLayer(Image cover)
     {
@@ -38,13 +40,7 @@ internal sealed partial class MainWindow
     private Task<ImageSource?> SharedArtworkAsync(string? url)
     {
         if (string.IsNullOrEmpty(url)) return Task.FromResult<ImageSource?>(null);
-        if (artworkRequests.TryGetValue(url, out var existing)) return existing;
-        if (artworkRequests.Count >= 256)
-        {
-            var completed = artworkRequests.FirstOrDefault(entry => entry.Value.IsCompleted);
-            if (completed.Key != null) artworkRequests.Remove(completed.Key);
-        }
-        return artworkRequests[url] = FetchSharedArtworkAsync(url);
+        return artworkRequests.GetAsync(url, () => FetchSharedArtworkAsync(url), lifetime.Token);
     }
 
     private async Task<ImageSource?> FetchSharedArtworkAsync(string url)
@@ -101,7 +97,6 @@ internal sealed partial class MainWindow
             : await SharedArtworkAsync(url);
         if (source != null && !disposed && url != null)
         {
-            if (collectionImages.Count >= 256) collectionImages.Remove(collectionImages.Keys.First());
             collectionImages[url] = source;
         }
         return source;

@@ -113,6 +113,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 if (worker == null || worker.Stopped)
                 {
                     worker = StartupLog.Run("browser.worker-start", () => new Worker(account, fixtureUri, profilePath, BrowserChanged));
+                    workers.RemoveAll(item => item.Completion.IsCompleted);
                     workers.Add(worker);
                 }
                 current = worker;

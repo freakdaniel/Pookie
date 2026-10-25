@@ -40,6 +40,20 @@ internal static class GlassSheen
     }
 }
 
+// One shape per owner, invalidated only when layout or connected corners change.
+internal sealed class GlassGeometry
+{
+    private Rect bounds;
+    private CornerRadius corners;
+    private PathGeometry? shape;
+    internal PathGeometry Get(Rect nextBounds, CornerRadius nextCorners)
+    {
+        if (shape == null || bounds != nextBounds || corners != nextCorners)
+        { bounds = nextBounds; corners = nextCorners; shape = GlassSheen.Shape(bounds, corners); }
+        return shape;
+    }
+}
+
 // This layer belongs above artwork/scrim and below labels, waveforms and buttons.
 internal sealed class ArtworkGlassSheen : Control
 {
@@ -47,5 +61,11 @@ internal sealed class ArtworkGlassSheen : Control
     private readonly GlassSheenRaster sheen = new();
     internal ArtworkGlassSheen(double radius = 20) { this.radius = radius; IsHitTestVisible = false; }
     protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius), minimumScale: GetDpi() / 96d);
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) sheen.Dispose();
+    }
+
     protected override void OnDispose() { sheen.Dispose(); base.OnDispose(); }
 }

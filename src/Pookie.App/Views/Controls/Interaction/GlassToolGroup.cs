@@ -35,5 +35,11 @@ internal sealed class GlassToolGroup : ContentControl
         sheen.Draw(context, Bounds, new CornerRadius(20), emphasis, GetDpi() / 96d);
     }
 
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) { motion.Stop(); emphasis = target; sheen.Dispose(); }
+    }
+
     protected override void OnDispose() { motion.Stop(); sheen.Dispose(); base.OnDispose(); }
 }

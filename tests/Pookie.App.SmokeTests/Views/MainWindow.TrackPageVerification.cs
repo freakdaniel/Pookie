@@ -77,7 +77,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
                 trackDetailCommentsTitle.ActualHeight > 0);
             await VerifyLongTrackHeroResizeAsync();
-            VerifyCardGlassSource(trackDetailGlass!, trackDetailCover, trackDetailBackdrop, trackDetailPlay);
+            await VerifyCardGlassSourceAsync(trackDetailGlass!, trackDetailCover, trackDetailBackdrop, trackDetailPlay);
             await VerifyTrackArtHeroAsync(trackArt);
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
             if (trackDetailTitle.Bounds.Y >= trackDetailAuthor.Bounds.Y || trackDetailPlay.Bounds.X >= trackDetailTitle.Bounds.X ||

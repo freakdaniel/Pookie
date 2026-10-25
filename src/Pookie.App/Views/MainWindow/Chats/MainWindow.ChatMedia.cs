@@ -49,6 +49,7 @@ internal sealed partial class MainWindow
 
     private void QueueChatMediaPreview(Pookie.SoundCloud.ChatMessage message, long peer)
     {
+        if (disposed || !workspace.IsVisible || page.Value != Page.Chats || ChatMediaReference.Parse(message.Body) == null) return;
         var visible=chatRecipient?.Id==peer && ChatRows.Any(r=>r.Bound&&r.Message?.Id==message.Id&&r.Root.Bounds.Bottom>chatViewport.Bounds.Y&&r.Root.Bounds.Y<chatViewport.Bounds.Bottom);
         var inboxVisible=((FrameworkElement)chatColumns.Children[0]).IsVisible && chatInboxBindings.Any(p=>p.Value.Recipient.Id==peer&&p.Value.LastMessage?.Id==message.Id&&p.Key.Bounds.Bottom>chatColumns.Bounds.Y&&p.Key.Bounds.Y<chatColumns.Bounds.Bottom);
         if ((!visible&&!inboxVisible)||chatMediaLoads.Count>=4)return;
@@ -545,6 +546,7 @@ internal sealed partial class MainWindow
     {
         VisualTree.Visit(element, child =>
         {
+            if (child is ChatMediaSkeleton skeleton) skeleton.SetActive(false);
             if (child is ChatPhotoFrame frame) frame.Stop();
             if (child is ChatVideoFrame video) video.Stop();
             if (child is ChatMusicLoading loading) loading.Stop();

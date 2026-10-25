@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
         var fileCard = (ChatFileCard)fileRow.Attachments.FindVisualChild<ChatFileCard>()!;
         await WaitForLikedLayoutAsync(() => !fileRow.Content.IsResizing);
         if (fileCard.DetailLabel.Text != "87 Б" || fileRow.Bubble.ActualHeight > 72 || Math.Abs(fileCard.DetailLabel.Bounds.Bottom - fileRow.Time.Bounds.Bottom) > 1)
-            throw new InvalidOperationException("Document bubble lost its compact file/size/time layout.");
+            throw new InvalidOperationException($"Document bubble lost its compact file/size/time layout: detail={fileCard.DetailLabel.Text}, bubble={fileRow.Bubble.Bounds}, detailBounds={fileCard.DetailLabel.Bounds}, time={fileRow.Time.Bounds}, content={fileRow.Content.Bounds}.");
         var photo = Fixture("chat-small.png");
         var asFile = media.Add(new(90, 42, "", [new("photo.png", "image/png", photo, true)]));
         transport.AddIncoming(asFile); await RefreshChatsAsync();

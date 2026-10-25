@@ -99,14 +99,13 @@ internal sealed unsafe class ChatVideoSession : IAsyncDisposable
             var next = Interlocked.Read(ref frameVersion);
             if (disposed || plane == null || version == next || next == 0) return false;
             if (bitmap == null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
-            { bitmap?.Dispose(); bitmap = new WriteableBitmap(width, height); }
+            { bitmap?.Dispose(); bitmap = new WriteableBitmap(width, height, clear: false, hasAlpha: false); }
             using var write = bitmap.LockForWrite();
             var pixels = write.PixelsBgra32;
             for (var row = 0; row < height; row++)
             {
                 var target = pixels.Slice(row * width * 4, width * 4);
                 new ReadOnlySpan<byte>((byte*)plane + row * pitch, width * 4).CopyTo(target);
-                for (var i = 3; i < target.Length; i += 4) target[i] = 255;
             }
             version = next; return true;
         }

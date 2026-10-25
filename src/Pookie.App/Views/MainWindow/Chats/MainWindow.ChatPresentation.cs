@@ -7,6 +7,8 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private bool chatPresentationDirty = true;
+    private (Rect Bounds, double Offset, double Maximum, int Loads) chatPresentationGeometry;
     private sealed class ChatMessageItem(ChatMessage message)
     {
         internal readonly string Key = message.Id;
@@ -46,6 +48,7 @@ internal sealed partial class MainWindow
     }
     private void RefreshChatTimeline()
     {
+        chatPresentationDirty = true;
         var rows = chatMessages.Where(m=>!ChatProtocol.Project(m,chatAccountId,chatRecipient?.Id??0).IsReaction).OrderBy(ChatOrder).DistinctBy(m=>(m.SenderId,ChatProtocol.Project(m,chatAccountId,chatRecipient?.Id??0).EventId??m.Id)).ToList();
         if (chatRecipient != null && chatOutgoing.TryGetValue(chatRecipient.Id, out var outgoing)&&!ChatProtocol.Project(outgoing.Message,chatAccountId,chatRecipient.Id).IsReaction) rows.Add(outgoing.Message);
         var current = chatMessageItems.ToDictionary(item => item.Id);
@@ -69,7 +72,7 @@ internal sealed partial class MainWindow
     private void RestoreChatOutbox()
     {
         foreach (var pending in chatPending.Values)
-            chatOutgoing[pending.RecipientId] = new(new($"pending:{pending.RecipientId}:{pending.CreatedAt.UtcTicks}", chatAccountId, pending.Body, pending.CreatedAt),
+            chatOutgoing[pending.RecipientId] = new(new ChatMessage($"pending:{pending.RecipientId}:{pending.CreatedAt.UtcTicks}", chatAccountId, pending.Body, pending.CreatedAt){ClientContent=pending.ClientContent},
                 chatDrafts.GetValueOrDefault(pending.RecipientId, pending.Body), [], null)
             { State = ChatDelivery.Failed, Error = "Отправка не подтверждена. Нажми, чтобы проверить.", BeforeSendIds = pending.BeforeIds?.ToHashSet() ?? [] };
     }

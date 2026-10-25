@@ -56,7 +56,7 @@ internal sealed class PlayerMotionLayer : Panel
 
     protected override void RenderSubtree(IGraphicsContext context)
     {
-        if (inkStrength <= 0) return;
+        if (inkStrength <= 0 || FindVisualRoot() is Window { WindowState: WindowState.Minimized }) return;
         context.Save();
         context.GlobalAlpha *= (float)inkStrength;
         context.Translate(OffsetX, OffsetY);

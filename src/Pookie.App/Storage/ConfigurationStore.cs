@@ -63,6 +63,9 @@ internal sealed record AppConfiguration
 internal sealed class ConfigurationStore(AppDataPaths paths)
 {
     private readonly string file = Path.Combine(paths.Config, "settings.json");
+    private SnapshotWriter<AppConfiguration>? writer;
+    internal Task SaveAsync(AppConfiguration configuration) => (writer ??= new(Save)).SaveAsync(configuration.Normalize());
+    internal Task FlushAsync() => writer?.FlushAsync() ?? Task.CompletedTask;
     public AppConfiguration Load()
     {
         try

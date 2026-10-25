@@ -14,6 +14,7 @@ internal sealed partial class MainWindow
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
             await ShowWorkspaceAsync();
+            Window.Activate();await WaitForLikedLayoutAsync(()=>Window.IsActive);
 
             // Fractional pixel constraints must converge to a painted frame, including
             // the empty thread shown beside the inbox before a conversation is selected.

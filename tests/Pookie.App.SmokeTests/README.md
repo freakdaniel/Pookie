@@ -40,6 +40,14 @@ external links and all music/social sections (including activity and next pages)
 Set `POOKIE_PROFILE_PROBE_PATH` to a dedicated temporary directory to run it while
 the normal app is open; it creates a separate browser profile without copying cookies.
 
+`--chat-emoji-ui-smoke-test --no-audio` checks the anchored Emoji/GIF panel,
+native caret/selection/undo, Russian search and its header transition, virtualized
+offline artwork and its bounded cache, GIF skeletons/previews with a local HTTP
+handler, animation cleanup, quick and expanded message reactions, 36-character
+transport references, reaction/timestamp geometry, narrow/wide windows, Escape,
+conversation changes, and 10,000 menu rebinds. It never sends real messages or
+opens the microphone. GIFs remain available through the existing KLIPY setting.
+
 On Windows, `POOKIE_RENDER_PROBE=1` with `--expanded-glass-ui-smoke-test --no-audio`
 runs an isolated rendering diagnostic. It records player opening time, lyric frame
 times with the underlying page visible/hidden, and scrolling frame times. For the
@@ -258,8 +266,8 @@ replies. All writes use a local fixture transport.
 500px artwork, including cards removed during an active loading shimmer. Weak-reference
 checks verify that removed controls/pixels collect, cached SVG icons do not retain views,
 and live/recycled loading layers stop and resume their clocks. It prints managed memory
-and process RSS for diagnostics; assertions check object lifetimes rather than OS memory
-thresholds. It uses isolated app data and makes no SoundCloud requests.
+and process RSS for diagnostics. Its rendered-resource checks also bound GPU growth
+when Linux DRM counters are available. It uses isolated app data and makes no SoundCloud requests.
 
 `--playlist-page-network-probe <SoundCloud playlist URL>` verifies real playlist
 metadata, ordered track loading and playlist like/repost state reads through the native WebView.
@@ -667,8 +675,18 @@ worker and a 256 MiB budget. Encrypted media has a separate 512 MiB LRU cache.
 `Chats/<account>/workspace.json` and the existing `drafts.json` retain folders,
 pins, favorites, positions, drafts and uncertain sends independently of cache cleanup.
 Favorited ciphertext is retained under `Chats/<account>/FavoriteMedia`.
-Plain text and `p1` media remain compatible; `p2:` Base64URL envelopes carry replies
-and reaction events between Pookie clients. Unknown envelopes remain visible text.
+Plain text, `p1` media and legacy inline `p2:` envelopes remain readable. New
+text replies and reactions use `p3:` references of at most 36 characters through
+the existing encrypted attachment hosting; JSON/Base64 stays outside SoundCloud.
+The locally authenticated payload is stored separately from the original wire
+body, preserving confirmation, FTS search, offline replies and reaction replay.
+Unresolved payloads can be retried; history search also retries cached unresolved
+references and reports incomplete results when hosting is unavailable. Extension
+downloads are deduplicated, limited to four at once and capped at 1 MiB each;
+decoded payload caching has a 4 MiB budget. `ChatEnvelopeHostingTests` use only a
+local HTTP handler, including corrupted/cross-conversation/oversized packages,
+20,000-character replies, durable outbox, ciphertext cache and database restoration.
+Unknown envelopes remain visible text.
 Voice uses mono Opus when available, otherwise 16 kHz/16-bit PCM WAV, up to five
 minutes/16 MiB. The unit suite exercises encoding/restoring voice without capture devices.
 
@@ -677,6 +695,13 @@ saved messages, inline thread search, sidebar message search, intermediate panel
 animation frames, readable information panels, and scrim boundaries,
 idle loading controls, and centered microphone/send glyphs at every tested DPI.
 Preview captures use fixture conversations only.
+
+Chat workspace checks cover full-width layouts from 780 to 2560 logical pixels.
+Side panels stay 360px wide, while the header, message rows and composer share
+a centered column up to 696px. Docking requires room for that complete column;
+below a 1480px client width, details overlay the unchanged conversation. Tests
+check the 188px center shift, intermediate opening/closing frames, the history
+scrollbar at the outer edge, and restoring ordinary page limits after navigation.
 
 Chat search opens from the left header without a separate page title. The suite
 checks intermediate sidebar-opacity and connected-result-height frames, passive
@@ -699,3 +724,25 @@ feeds the bundled 48 kHz encoder. Tests also verify conversion across block
 boundaries, a monotonic waveform cursor under packet arrival jitter, and visible
 paused-waveform geometry after actual encoding. Wave edges fade through alpha,
 so previews keep their translucent parent surface.
+
+`--memory-ui-smoke-test` also renders 400 frames of transient offscreen text:
+its GPU text storage must stop growing after warmup. It repeatedly creates,
+renders, removes and reattaches glass cards, checking process GPU allocations
+through Linux DRM fdinfo when available. It also rebinds a message menu 10,000
+times, holds voice initialization to verify superseded VLC ownership, and checks
+that cleanup preserves voice drafts before account restoration. Voice fixtures use
+synthetic silent PCM; no real account, messages or microphone are used.
+See `tools/mewui-patch/README.md` for the pinned MewUI X11 fix.
+
+`--playback-memory-ui-smoke-test --no-audio` exercises a selected chat track's
+queue and fullscreen player with real local PCM decoding through SoundFlow's
+silent output, an inactive window, the queue, synced lyrics and minimization.
+It prints actual GPU allocations, managed heap, RSS, text/scratch cache sizes and
+native image counts. Default wall time is 120 seconds;
+`POOKIE_PLAYBACK_SOAK_SECONDS=2400` runs the same scenario for 40 real minutes
+(allowed range 40–3600 seconds). Audio and all API replies are local fixtures;
+`--no-audio` disables the ordinary player before the test creates its silent one.
+Stream resolution and external Discord/MPRIS integrations are outside this UI
+fixture. `PlaybackMemoryTests` separately drains 40 minutes of PCM through the
+production HTTP-range, disk-cache, decoder and bounded-queue path at full speed,
+including analysis capture and cache cleanup, without a 40-minute allocation.

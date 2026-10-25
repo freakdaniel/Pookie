@@ -125,11 +125,11 @@ internal sealed class ChatMediaHosting : IDisposable
         return ChatMediaReference.Parse(reference.Code);
     }
 
-    internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null)
+    internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null, int maximumBytes = int.MaxValue)
     {
         if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
         var cache=DiskCache;
-        if(cache!=null && await cache.ReadAsync(reference.Code,token) is {} cached)
+        if(cache!=null && await cache.ReadAsync(reference.Code,token,maximumBytes) is {} cached)
         {
             try{return await Task.Run(()=>ChatMediaCrypto.Decrypt(cached,reference.Key,sender,recipient),token);}
             catch(Exception error)when(error is CryptographicException or InvalidDataException){ /* Ignore corrupt cached bytes; authenticate the network copy. */ }
@@ -145,7 +145,7 @@ internal sealed class ChatMediaHosting : IDisposable
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone
             ? "Вложение больше недоступно на хостинге." : "Не удалось загрузить вложение. Попробуй ещё раз.");
         var previewDelivered = false;
-        var bytes = await ReadBoundedAsync(response.Content, reference.Provider == 'q' ? ChatMediaArchive.MaxArchiveBytes : ChatMediaArchive.MaxEncryptedBytes, requestToken, previewReady == null ? null : async prefix =>
+        var bytes = await ReadBoundedAsync(response.Content, Math.Min(maximumBytes, reference.Provider == 'q' ? ChatMediaArchive.MaxArchiveBytes : ChatMediaArchive.MaxEncryptedBytes), requestToken, previewReady == null ? null : async prefix =>
         {
             if (previewDelivered) return;
             var offset = PreviewOffset(prefix.Span, reference.Provider);

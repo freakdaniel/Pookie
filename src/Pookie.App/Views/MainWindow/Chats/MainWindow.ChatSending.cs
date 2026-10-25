@@ -86,7 +86,7 @@ internal sealed partial class MainWindow
         string? plainBody=null;
         if(files.Length==0&&gif==null)
         {
-            try{plainBody=reply==null?draft.Trim():ChatProtocol.Reply(user.Id,recipient.Id,reply.MessageId,reply.Preview,draft.Trim());}
+            try{plainBody=reply==null?draft.Trim():ChatProtocol.Reply(user.Id,recipient.Id,reply.MessageId,reply.Preview,draft.Trim(),hosted:true);}
             catch(ArgumentException){chatThreadStatus.Value="Ответ слишком длинный. Сократи текст перед отправкой.";return;}
         }
         var documents = chatDocumentFiles.ToHashSet(chatDocumentFiles.Comparer);
@@ -130,14 +130,15 @@ internal sealed partial class MainWindow
                 finally { foreach (var item in attachments) System.Security.Cryptography.CryptographicOperations.ZeroMemory(item.Data); }
                 if (body.Length > 36) throw new InvalidOperationException("Код вложения превышает 36 символов.");
             }
-            else body = plainBody!;
+            else body = reply==null ? plainBody! : await chatEnvelopes.UploadAsync(chatMedia,plainBody!,user.Id,recipient.Id,token);
             if (!ChatWriteCurrent(user.Id, token)) return;
-            outgoing.Message = outgoing.Message with { Body = body }; RefreshChatTimeline();
+            var clientContent=files.Length==0 && gif==null && reply!=null ? plainBody : null;
+            outgoing.Message = outgoing.Message with { Body = body, ClientContent=clientContent }; RefreshChatTimeline();
             var label = files.Length > 0 || gif != null ? "Медиа" : ChatProtocol.Clip(draft,255);
-            var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray());
+            var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray(),clientContent);
             chatPending[recipient.Id] = pending;
             // Commit before POST: a process crash must never cause an automatic replay.
-            try { store.Save(new(chatDrafts.Where(p => p.Value.Length > 0).TakeLast(50).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary()), preferences.ChatSaveDrafts); }
+            try { await store.SaveAsync(new(chatDrafts.Where(p => p.Value.Length > 0).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary()), preferences.ChatSaveDrafts); }
             catch { chatPending.Remove(recipient.Id); throw; }
             await SendPendingChatAsync(pending, user.Id, recipient, token);
             if (ChatWriteCurrent(user.Id, token) && !chatPending.ContainsKey(recipient.Id))
@@ -179,10 +180,15 @@ internal sealed partial class MainWindow
 
     private async Task SendPendingChatAsync(ChatPending pending, long account, SoundCloudUser recipient, CancellationToken token)
     {
+        if (!ChatWriteCurrent(account,token)) return;
+        if(pending.ClientContent!=null && (!ChatEnvelopeHosting.IsReference(pending.Body) || pending.Body.Length>ChatEnvelopeHosting.MaxWireLength))
+            throw new InvalidOperationException("Некорректный короткий код сообщения.");
         var conversation = await api.SendMessageAsync(account, recipient.Id, pending.Body, token);
         if (!ChatWriteCurrent(account, token)) return;
         if (conversation.Recipient.Id != recipient.Id || conversation.LastMessage is not { } confirmed || confirmed.SenderId != account || confirmed.Body != pending.Body)
             throw new SoundCloudException("SoundCloud не подтвердил содержимое отправленного сообщения.");
+        confirmed=confirmed with{ClientContent=pending.ClientContent};
+        conversation=conversation with{LastMessage=confirmed};
         chatPending.Remove(recipient.Id);
         if (chatOutgoing.TryGetValue(recipient.Id, out var outgoing))
         { outgoing.State = ChatDelivery.Sent; outgoing.Error = null; outgoing.Message = outgoing.Message with { Body = confirmed.Body, SentAt = confirmed.SentAt }; RefreshChatTimeline(); }

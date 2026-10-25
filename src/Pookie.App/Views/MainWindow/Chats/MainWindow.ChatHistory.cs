@@ -12,28 +12,22 @@ internal sealed partial class MainWindow
     private ChatWorkspaceState chatWorkspace = ChatWorkspaceStore.Empty;
     private bool chatDiskRestored, chatWindowHasNewer, chatWindowBusy;
     private Dictionary<string, Dictionary<long, string>> chatReactions = [];
-    private void InitializeChatHistory(long account)
-    {
-        chatHistory = new(dataPaths, account);
-        chatMedia.DiskCache = new(dataPaths, account);
-        chatWorkspaceStore = new(dataPaths, account);
-        chatWorkspace = chatWorkspaceStore.Load();
-        RefreshChatFavoriteMedia();
-        if (!preferences.ChatSaveDrafts) chatWorkspace = chatWorkspace with { Drafts = null };
-        CleanupChatVoiceFiles();
-        chatDiskRestored = false; RefreshChatFolders();
-    }
     private void RefreshChatFavoriteMedia()
     {
         if (chatMedia.DiskCache is { } cache)
-            Run(() => cache.SetPinnedAsync(chatWorkspace.Favorites.Select(f => f.Message.Body).Where(body => ChatMediaReference.Parse(body) != null).Distinct()));
+            Run(() => cache.SetPinnedAsync(chatWorkspace.Favorites.Select(f => ChatEnvelopeHosting.StorageCode(f.Message.Body)).Where(body => ChatMediaReference.Parse(body) != null).Distinct()));
     }
     private void SaveChatWorkspace()
     {
-        if (chatWorkspaceStore == null) return;
-        try { chatWorkspaceStore.Save(preferences.ChatSaveDrafts ? chatWorkspace : chatWorkspace with { Drafts = null }); }
-        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
-        { chatThreadStatus.Value = "Не удалось сохранить локальные данные чатов."; }
+        if (!chatAccountReady || chatWorkspaceStore == null) return;
+        var store = chatWorkspaceStore;
+        var save = store.SaveAsync(preferences.ChatSaveDrafts ? chatWorkspace : chatWorkspace with { Drafts = null });
+        Run(async () =>
+        {
+            try { await save; }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
+            { if (!disposed && chatWorkspaceStore == store) chatThreadStatus.Value = "Не удалось сохранить локальные данные чатов."; }
+        });
     }
     private async Task RestoreChatHistoryAsync()
     {

@@ -18,6 +18,7 @@ internal sealed partial class MainWindow
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
             await ShowWorkspaceAsync();
+            Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             transport.DelayList = true;
             var opening = NavigateAsync(Page.Chats);
             await WaitForLikedLayoutAsync(() => transport.ListReady != null && chatInboxLoading.Skeleton.Running && chatInboxLoading.Skeleton.ActualHeight > 100 && startupContent.Opacity > .95);
@@ -369,7 +370,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && chatSend.IsEnabled);
             await Task.Delay(350);
             CaptureUiPreview("chats-wide");
-            Window.WindowSize = WindowSize.Resizable(820, 780, minWidth: 760, minHeight: 600);
+            Window.WindowSize = WindowSize.Resizable(780, 780, minWidth: 760, minHeight: 600);
             await WaitForLikedLayoutAsync(() => chatColumns.ActualWidth < 760 && chatBack.IsVisible && !((FrameworkElement)chatColumns.Children[0]).IsVisible);
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             foreach (var row in ChatRows.Where(r => r.Message != null && r.Root.ActualHeight > 0))

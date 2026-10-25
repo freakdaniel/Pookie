@@ -53,7 +53,21 @@ internal sealed class LinuxWindowClipboard : IClipboardService, IDisposable
         value = ""; return false;
     }
 
-    private bool ReadSelection(string targetName, out string value)
+    // A separate X connection belongs exclusively to this worker. Never pump
+    // the visible window's connection, or GTK, from a background thread.
+    internal async Task<string?> ReadTextAsync(CancellationToken token)
+    {
+        if (OwnsSelection()) return text;
+        var result = await Task.Run(() =>
+        {
+            using var read = new LinuxWindowClipboard(window, null, selectionName);
+            if (read.display != 0 && (read.ReadSelection("UTF8_STRING", out var value, token) || read.ReadSelection("STRING", out value, token))) return value;
+            return null;
+        }, token);
+        return result ?? (reader == null ? null : await reader.ReadTextAsync(token));
+    }
+
+    private bool ReadSelection(string targetName, out string value, CancellationToken token = default)
     {
         value = "";
         if (requestWindow == 0)
@@ -70,6 +84,7 @@ internal sealed class LinuxWindowClipboard : IClipboardService, IDisposable
             var timeout = Stopwatch.StartNew();
             while (timeout.ElapsedMilliseconds < 1500)
             {
+                token.ThrowIfCancellationRequested();
                 while (XPending(display) > 0)
                 {
                     XNextEvent(display, buffer);

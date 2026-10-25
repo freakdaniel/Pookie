@@ -16,6 +16,9 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
     private readonly Dictionary<string, long> progressiveLengths = [];
     private readonly CancellationTokenSource lifetime = new();
     private readonly string directory = Path.Combine(CacheRoot, Guid.NewGuid().ToString("N"));
+    private readonly object directorySync = new();
+    private FileStream? directoryLease;
+    private static readonly Lazy<Task> orphanCleanup = new(() => Task.Run(() => PruneOrphans(CacheRoot,DateTime.UtcNow.AddDays(-7))));
     private Task prefetch = Task.CompletedTask;
     private bool disposed;
     private bool prefetchFailed;
@@ -72,8 +75,13 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
 
     private async Task<string> StoreAsync(byte[] bytes)
     {
-        if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
-        else Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        lock (directorySync)
+        {
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(directory);
+            else Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            directoryLease ??= new FileStream(Path.Combine(directory,".active"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+        }
+        _ = orphanCleanup.Value;
         var path = Path.Combine(directory, Guid.NewGuid().ToString("N"));
         await File.WriteAllBytesAsync(path, bytes, lifetime.Token);
         return path;
@@ -155,7 +163,8 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
             if (disposed) return;
             disposed = true;
             lifetime.Cancel();
-            Completion = CleanupAsync(files.Values.Cast<Task>().Append(prefetch).ToArray());
+            var pendingCleanup = files.Values.Cast<Task>().Append(prefetch).ToArray();
+            Completion = Task.Run(() => CleanupAsync(pendingCleanup));
         }
     }
 
@@ -165,6 +174,7 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
         catch (Exception) { AppLog.For("Pookie.Audio").Debug("Загрузка кэша завершилась до получения всех данных"); }
         try
         {
+            lock(directorySync) { directoryLease?.Dispose(); directoryLease = null; }
             var target = Path.GetFullPath(directory);
             if (!string.Equals(Path.GetDirectoryName(target), CacheRoot,
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
@@ -174,5 +184,28 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { AppLog.For("Pookie.Audio").Warning("Не удалось очистить временный аудиокэш"); }
         lifetime.Dispose();
+    }
+    internal static void PruneOrphans(string root,DateTime cutoff)
+    {
+        try
+        {
+            if(!Directory.Exists(root))return;
+            foreach(var path in Directory.EnumerateDirectories(root))
+            {
+                var info=new DirectoryInfo(path);
+                if(!Guid.TryParseExact(info.Name,"N",out _) || info.LinkTarget!=null || info.LastWriteTimeUtc>=cutoff)continue;
+                var marker=Path.Combine(path,".active");
+                // Legacy directories have no ownership proof. Never guess that
+                // another running version has stopped using them.
+                if(!File.Exists(marker))continue;
+                try
+                {
+                    using(var lease=new FileStream(marker,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { }
+                    Directory.Delete(path,recursive:true);
+                }
+                catch(Exception error) when(error is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch(Exception error) when(error is IOException or UnauthorizedAccessException) { }
     }
 }

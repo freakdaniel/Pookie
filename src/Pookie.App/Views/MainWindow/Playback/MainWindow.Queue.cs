@@ -194,7 +194,7 @@ internal sealed partial class MainWindow
     private void EndPlayback()
     {
         FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Stopped);
-        ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();
+        ++playGeneration; playLoading?.Cancel(); CancelSeek(); if (player != null) Run(player.StopAsync);
         audioReady = audioPreparing = paused = false;
         isPlaying.Value = playbackLoading.Value = false;
         presence?.Clear(); RefreshLikedPlayback(); RefreshQueue();

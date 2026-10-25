@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
         entry.Account == chatAccountId && entry.Revision == chatRevision && chatRecipient?.Id == entry.Peer && chatMediaLibrary == entry.Library && chatLibraryPreviews.Contains(entry);
     private void QueueChatLibraryPreviews()
     {
-        if (disposed || chatLibraryPreviews.Count == 0 || chatLibraryPreviewActive >= 2 || chatDetailsScroll == null || !chatColumns.DetailsOpen || chatMediaTransition is { Animating: true }) return;
+        if (disposed || !workspace.IsVisible || Window.WindowState == WindowState.Minimized || chatLibraryPreviews.Count == 0 || chatLibraryPreviewActive >= 2 || chatDetailsScroll == null || !chatColumns.DetailsOpen || chatMediaTransition is { Animating: true }) return;
         foreach (var entry in chatLibraryPreviews.ToArray())
         {
             if (chatLibraryPreviewActive >= 2) break;

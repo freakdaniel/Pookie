@@ -67,6 +67,21 @@ internal sealed class GtkClipboardService : IClipboardService
         return request.Completed && request.Text != null;
     }
 
+    internal async Task<string?> ReadTextAsync(CancellationToken token)
+    {
+        var request = pendingRead;
+        if (request == null)
+        {
+            pendingRead = request = new();
+            var handle = GCHandle.Alloc(request);
+            gtk_clipboard_request_text(clipboard,textReceived,GCHandle.ToIntPtr(handle));
+        }
+        try { await request.Ready.Task.WaitAsync(TimeSpan.FromMilliseconds(1500),token); }
+        catch (TimeoutException) { return null; }
+        finally { if (request.Completed && pendingRead == request) pendingRead = null; }
+        return request.Text;
+    }
+
     public void Pump()
     {
         for (var count = 0; count < 32 && g_main_context_iteration(0, 0) != 0; count++) { }
@@ -80,12 +95,14 @@ internal sealed class GtkClipboardService : IClipboardService
             var request = (ReadRequest)handle.Target!;
             request.Text = text == 0 ? null : Marshal.PtrToStringUTF8(text);
             request.Completed = true;
+            request.Ready.TrySetResult();
         }
         finally { handle.Free(); }
     }
 
     private sealed class ReadRequest
     {
+        internal readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Completed;
         public string? Text;
     }

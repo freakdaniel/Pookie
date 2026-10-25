@@ -86,7 +86,7 @@ internal sealed partial class MainWindow
         shellPageScroll.Refresh();
         UpdateScrolledChrome();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
-        var frameWidth = Math.Min(1440, Window.ClientSize.Width);
+        var frameWidth = page.Value == Page.Chats ? Window.ClientSize.Width : Math.Min(1440, Window.ClientSize.Width);
         if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
         {
             UpdateContentFrameWidth(frameWidth);

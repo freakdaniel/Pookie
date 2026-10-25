@@ -118,7 +118,11 @@ internal static class TrackButtons
         internal GlyphColor(Image image)
         {
             this.image = image;
-            clock.TickCallback = amount => { current = from.Lerp(target, amount); image.Source = Icons.Source(name!, current); };
+            clock.TickCallback = amount =>
+            {
+                current = from.Lerp(target, amount);
+                image.Source = amount >= 1 ? Icons.Source(name!, target) : Icons.TransitionSource(name!, current);
+            };
         }
         internal void Set(string glyph, Color color, bool animate)
         {
@@ -126,7 +130,7 @@ internal static class TrackButtons
             var first = name == null; name = glyph; target = color; clock.Stop();
             if (first || !animate || image.FindVisualRoot() is not Window)
             { current = color; image.Source = Icons.Source(glyph, color); return; }
-            from = current; image.Source = Icons.Source(glyph, current); clock.Start();
+            from = current; image.Source = Icons.TransitionSource(glyph, current); clock.Start();
         }
     }
 

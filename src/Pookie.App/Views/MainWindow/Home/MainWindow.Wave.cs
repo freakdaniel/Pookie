@@ -23,6 +23,12 @@ internal sealed partial class MainWindow
     private readonly Dictionary<long, (string? Cursor, DateTimeOffset Fetched)> waveRelated = [];
     private readonly HashSet<string> waveMixesLoaded = [];
     private Task? waveCandidateFetch;
+    private (long Account, WaveTaste Taste)? restoredWaveProfile;
+    private async Task RestoreWaveProfileAsync(long account,CancellationToken token)
+    {
+        var taste = await Task.Run(() => waveStore.Load(account),token);
+        token.ThrowIfCancellationRequested(); restoredWaveProfile = (account,taste);
+    }
     private string? waveLikesCursor;
     private ListeningJournal? waveJournal;
     private string waveJournalPath = "";
@@ -45,7 +51,11 @@ internal sealed partial class MainWindow
         var account = me?.Id ?? 0;
         if (account == waveAccount) return;
         ClearWaveData(); waveAccount = account;
-        if (account > 0 && !demo) waveTaste = waveStore.Load(account);
+        if (account > 0 && !demo)
+        {
+            waveTaste = restoredWaveProfile is { } saved && saved.Account == account ? saved.Taste : waveStore.Load(account);
+            restoredWaveProfile = null;
+        }
         waveTaste.SessionId = waveListening.SessionId;
         AddWaveCandidates(waveTaste.KnownTracks);
         if (account > 0 && !demo) Run(LoadWaveLearningAsync);
@@ -54,9 +64,19 @@ internal sealed partial class MainWindow
     {
         waveSaveTimer.Stop();
         if (waveAccount <= 0 || demo || !waveTaste.Dirty) return;
-        try { waveStore.Save(waveAccount, waveTaste); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { Pookie.Logging.AppLog.For("Pookie.Wave").Debug(error, "Не удалось сохранить профиль волны"); }
+        var taste = waveTaste; var snapshot = taste.Snapshot();
+        var saving = waveStore.SaveAsync(waveAccount,snapshot);
+        Run(async () =>
+        {
+            try
+            {
+                await saving;
+                var currentSnapshot = taste.Snapshot();
+                if (snapshot.Mode == currentSnapshot.Mode && snapshot.Tracks.SequenceEqual(currentSnapshot.Tracks)) taste.Saved();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Pookie.Logging.AppLog.Failure("Pookie.Wave", "Не удалось сохранить профиль волны", error, Serilog.Events.LogEventLevel.Debug); }
+        });
     }
     private void ScheduleWaveSave() { waveSaveTimer.Stop(); waveSaveTimer.Start(); }
     private void FinishWaveListening(bool skipped = false, ListeningEndReason? reason = null)

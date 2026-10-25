@@ -13,17 +13,19 @@ internal interface IChatMusicFooter
 
 // Measure the caption before choosing a media bubble's width. The image stays at
 // its natural size; a wider caption extends its backdrop, never the image itself.
-internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock caption, FrameworkElement open, Border footer) : Panel
+internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock caption, FrameworkElement open, Border footer, ChatReactionStrip reactions) : Panel
 {
     private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(260), Easing.CubicBezier(.2, 0, 0, 1));
     private Size resizeFrom, resizeTo;
     private double resizeAmount = 1;
     private bool resizePending;
-    internal bool IsResizing => resize.IsRunning;
+    private Point resizeFooterFrom;
+    internal bool IsResizing => resizePending || resize.IsRunning;
     internal Action? ResizeTick;
     internal void AnimateMediaChange()
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
+        resizeFooterFrom = new(footer.Bounds.X - Bounds.X, footer.Bounds.Y - Bounds.Y);
         resizeFrom = new(ActualWidth, ActualHeight); resizePending = true;
     }
     internal void StopResize() { resize.Stop(); resizePending = false; resizeAmount = 1; }
@@ -56,7 +58,7 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
     internal bool InlineFooter => inlineFooter;
     internal bool PhotoOnly => PhotoMode && !caption.IsVisible;
     internal double MusicCaptionTop => musicMode && caption.IsVisible ? attachments.Bounds.Bottom : Bounds.Bottom;
-    internal ChatBubbleContent Initialize() { Add(attachments); Add(caption); Add(open); Add(footer); return this; }
+    internal ChatBubbleContent Initialize() { Add(attachments); Add(caption); Add(open); Add(reactions); Add(footer); return this; }
     internal void SetPhoto(Size? size, bool video = false) { videoMode = video; PhotoMode = true; photoSize = size ?? new(180, 120); InvalidateMeasure(); }
     internal void SetMusic() { musicMode = true; InvalidateMeasure(); }
     internal void Reset() { musicMode = videoMode = false; PhotoMode = false; CaptionBackground = Color.Transparent; InvalidateMeasure(); }
@@ -111,6 +113,28 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
             if (message.LastLineAt(textWidth) is { } last && last.Bounds.Right+footer.DesiredSize.Width+11 <= textWidth)
                 inlineFooter = lastLineFooter = true;
         }
+        reactions.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        if (reactions.HasContent)
+        {
+            width = Math.Min(available, Math.Max(width, reactions.DesiredSize.Width + (PhotoOnly ? 16 : footer.DesiredSize.Width + (PhotoMode ? 28 : 8))));
+            if (caption.IsVisible) caption.Measure(new Size(Math.Max(1, width - (PhotoMode ? 24 : 0)), double.PositiveInfinity));
+            var contentHeight = attachments.IsVisible ? attachments.DesiredSize.Height : 0;
+            var oldHeight = contentHeight;
+            if (!fileOnly && !musicOnly && !voiceOnly)
+            {
+                if (inlineFooter) oldHeight += Math.Max(caption.DesiredSize.Height, footer.DesiredSize.Height) + (PhotoMode ? 16 : musicMode ? 6 : 0);
+                else
+                {
+                    if (caption.IsVisible) oldHeight += caption.DesiredSize.Height + (PhotoMode ? 12 : oldHeight > 0 ? 6 : 0);
+                    if (open.IsVisible) oldHeight += open.DesiredSize.Height + 6;
+                    if (!PhotoOnly) oldHeight += footer.DesiredSize.Height + 6 + (PhotoMode ? 6 : 0);
+                }
+            }
+            inlineFooter = lastLineFooter = false;
+            if (caption.IsVisible) contentHeight += caption.DesiredSize.Height + (PhotoMode ? 16 : contentHeight > 0 ? 6 : 0);
+            if (open.IsVisible) contentHeight += open.DesiredSize.Height + 6;
+            return AnimateSize(new(width, oldHeight + (contentHeight - oldHeight) * reactions.Reveal + reactions.DesiredSize.Height));
+        }
         var height = attachments.IsVisible ? attachments.DesiredSize.Height : 0;
         if (fileOnly || musicOnly || voiceOnly) return AnimateSize(new(width, height));
         if (inlineFooter) return AnimateSize(new(width, height + Math.Max(caption.DesiredSize.Height, footer.DesiredSize.Height) + (PhotoMode ? 16 : musicMode ? 6 : 0)));
@@ -132,9 +156,16 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
             y += caption.DesiredSize.Height;
         }
         if (open.IsVisible) { y += 6; open.Arrange(new Rect(x, y, width, open.DesiredSize.Height)); y += open.DesiredSize.Height; }
-        var footerY = voiceOnly && voice != null ? voice.DurationLabel.Bounds.Bottom-footer.DesiredSize.Height : musicOnly ? attachments.Bounds.Bottom - 20 - footer.DesiredSize.Height / 2 : fileOnly ? attachments.Bounds.Bottom - 7 - footer.DesiredSize.Height : PhotoOnly ? Bounds.Bottom - footer.DesiredSize.Height - 5 : inlineFooter ?
+        reactions.Arrange(reactions.HasContent ? new Rect(x + (PhotoMode ? 8 : 0), y, Math.Max(0, width - (PhotoMode ? 16 : 0)), reactions.DesiredSize.Height) : Rect.Empty);
+        var footerY = voiceOnly && voice != null ? voice.DurationLabel.Bounds.Bottom-footer.DesiredSize.Height : musicOnly ? attachments.Bounds.Bottom - 20 - footer.DesiredSize.Height / 2 : fileOnly ? attachments.Bounds.Bottom - 7 - footer.DesiredSize.Height : PhotoOnly ? attachments.Bounds.Bottom - footer.DesiredSize.Height - 5 : reactions.HasContent ? Bounds.Bottom - footer.DesiredSize.Height - 4 : inlineFooter ?
             y - footer.DesiredSize.Height + 1 : y + 6;
-        footer.Arrange(new Rect(x + width - footer.DesiredSize.Width - (PhotoMode ? 7 : 0), footerY,
+        var footerX = x + width - footer.DesiredSize.Width - (PhotoMode ? 7 : 0);
+        if (resize.IsRunning)
+        {
+            footerX = x + resizeFooterFrom.X + (footerX - x - resizeFooterFrom.X) * resizeAmount;
+            footerY = Bounds.Y + resizeFooterFrom.Y + (footerY - Bounds.Y - resizeFooterFrom.Y) * resizeAmount;
+        }
+        footer.Arrange(new Rect(footerX, footerY,
             footer.DesiredSize.Width, footer.DesiredSize.Height));
         return finalSize;
     }
@@ -144,6 +175,16 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         if ((!PhotoMode && !musicMode) || captionBackground.A == 0) return;
         var top = attachments.IsVisible ? attachments.Bounds.Bottom : Bounds.Y;
         context.FillRectangle(new Rect(Bounds.X, top, Bounds.Width, Math.Max(0, Bounds.Bottom - top)), captionBackground);
+    }
+    protected override void RenderSubtree(IGraphicsContext context)
+    {
+        if (!PhotoOnly || !reactions.HasContent) { base.RenderSubtree(context); return; }
+        // Reactions below bare media do not turn its lower corners into square
+        // edges. The timestamp continues to float over the original image.
+        context.Save();
+        try { context.SetClipRoundedRect(attachments.Bounds, 18, 18); attachments.Render(context); }
+        finally { context.Restore(); }
+        caption.Render(context); open.Render(context); reactions.Render(context); footer.Render(context);
     }
 }
 

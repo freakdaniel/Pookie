@@ -75,7 +75,7 @@ internal sealed partial class MainWindow
                 RouteWaveformPointer(new(homeHero.Bounds.X + 12, homeHero.Bounds.Y + 12));
                 await WaitForLikedLayoutAsync(() => !waveBackdrop.ChangingColor);
                 if (paletteFrames.Count < 4 || waveBackdrop.Colors == paletteBefore)
-                    throw new InvalidOperationException("Wave color transition did not render intermediate colors.");
+                    throw new InvalidOperationException($"Wave color transition did not render intermediate colors: frames={paletteFrames.Count}; unchanged={waveBackdrop.Colors == paletteBefore}; window={Window.WindowState}.");
                 await WaitForLoginFrameAsync(); CaptureUiPreview("wave-settings");
                 // Retarget an unfinished transition while paused; colors must stay continuous.
                 isPlaying.Value = false; RefreshHomeHeroPlayback();
@@ -191,21 +191,25 @@ internal sealed partial class MainWindow
             transport.FailMixes = false;
             if (waveCandidateFetch != null) await waveCandidateFetch;
 
-            // The same routing contract applies to native compact rows and liked tiles.
-            BeginNavigation(new(Page.Feed)); ReplaceTracks(new(transport.Recent, null));
-            await WaitForLikedLayoutAsync(() => compactTrackRows.Any(row => row.Track?.Id == 101 && list.IsAncestorOf(row.Root) && row.Root.ActualWidth > 100));
-            var row = compactTrackRows.First(row => row.Track?.Id == 101 && list.IsAncestorOf(row.Root));
+            // Compact rows now live in the feed's recent sidebar; the former
+            // standalone list is no longer attached to the feed page.
+            localRecent.Clear();localRecent.AddRange(transport.Recent.Select(track=>LibraryItem.FromTrack(track)));
+            await OpenFeedAsync(force:true);
+            await WaitForLikedLayoutAsync(() => feedSidebarRows.Any(row => row.Track?.Id == 101 && row.Root.ActualWidth > 100));
+            var row = feedSidebarRows.First(row => row.Track?.Id == 101);
             if (row.Title.ActualWidth > row.Root.ActualWidth / 2) throw new InvalidOperationException("Short compact title stretches across the row.");
             RouteWaveformPointer(new(row.Title.Bounds.Right + 60, row.Title.Bounds.Y + 8));
             if (row.Title.Opacity != 1) throw new InvalidOperationException("Empty row space triggers the title link hover.");
+            var restingTitle = row.Title.Foreground;
             RouteWaveformPointer(new(row.Title.Bounds.X + 10, row.Title.Bounds.Y + 8));
-            if (row.Title.Opacity != .72) throw new InvalidOperationException("Actual title lost link hover.");
+            if (row.Title.Opacity != 1 || row.Title.Foreground != Color.FromArgb((byte)Math.Round(restingTitle.A*.72),restingTitle.R,restingTitle.G,restingTitle.B))
+                throw new InvalidOperationException("Actual title lost its foreground hover or allocated an opacity layer.");
             playbackQueue.Clear(); RouteWaveformPointer(new(row.Cover.Bounds.X + 10, row.Cover.Bounds.Y + 10));
             await WaitForLikedLayoutAsync(() => row.Overlay.Strength > .999);
             ClickHomeElement(row.PlaybackButton);
             await WaitForLikedLayoutAsync(() => playbackQueue.Current?.Track.Id == 101);
             if (page.Value != Page.Feed) throw new InvalidOperationException("Compact play button opened the track page.");
-            ClickHomeElement(row.Author);
+            ClickHomeElement(row.Title);
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState?.Track.Id == 101);
             libraryLikes = new(transport.Recent, null); ShowLibraryTracks(); likesAsList.Value = false; RefreshLikedViews();
             await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == 101 && likedGrid.IsAncestorOf(tile.Root) && tile.Root.ActualWidth > 100));
@@ -215,7 +219,7 @@ internal sealed partial class MainWindow
             ClickHomeElement(tile.PlaybackButton);
             await WaitForLikedLayoutAsync(() => playbackQueue.Current?.Track.Id == 101);
             if (page.Value != Page.LibraryTracks) throw new InvalidOperationException("Liked tile play button opened the track page.");
-            ClickHomeElement(tile.Author);
+            ClickHomeElement(tile.Title);
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState?.Track.Id == 101);
             transport.RelatedReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var late = NavigateHomeAsync(force: true);

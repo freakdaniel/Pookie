@@ -90,6 +90,12 @@ internal sealed class ShellChromeGlass(GlassContentFrame content, Color surface)
         gpuBlur?.Dispose(); gpuBlur = null;
         renderer?.Dispose(); renderer = null; raster?.Dispose(); raster = null;
     }
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) ClearRaster();
+    }
+
     protected override void OnDispose() { ClearRaster(); base.OnDispose(); }
 }
 

@@ -8,6 +8,7 @@
     <ProjectReference Include="../../src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <Compile Include="../../src/Pookie.App/Playback/Queue/*.cs" Link="Queue/%(Filename)%(Extension)" />
     <Compile Include="../../src/Pookie.App/Home/*.cs" Link="Home/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Pookie.App/Storage/SnapshotWriter.cs" Link="Storage/SnapshotWriter.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Pookie.Recommendations\Pookie.Recommendations.csproj" />

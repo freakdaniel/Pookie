@@ -92,7 +92,7 @@ internal sealed partial class MainWindow
     private void RefreshWaveMotion()
     {
         if (waveBackdrop == null) return;
-        var visible = !disposed && !expandedOpen && page.Value == Page.Home;
+        var visible = !disposed && Window?.WindowState != WindowState.Minimized && !expandedOpen && page.Value == Page.Home;
         waveBackdrop.SetActive(visible && playbackQueue.Context?.Key == WaveQueueKey && isPlaying.Value && !playbackLoading.Value, waveTaste.Mode, visible);
     }
     private void ResetHomeHero()

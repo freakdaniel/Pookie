@@ -90,7 +90,7 @@ internal sealed partial class MainWindow
                 if (playbackQueue.Current is { } entry) playbackQueue.SetPreparation(entry.EntryId, PlaybackPreparation.Stopped);
                 bufferedTrack.Reset();
                 expandedBuffer.Reset();
-                ++playGeneration; playLoading?.Cancel(); CancelSeek(); player?.Stop();
+                ++playGeneration; playLoading?.Cancel(); CancelSeek(); if (player != null) Run(player.StopAsync);
                 audioPreparing = audioReady = paused = false;
                 isPlaying.Value = playbackLoading.Value = false;
                 presence?.Clear(); RefreshLikedPlayback(); UpdateSystemMedia();

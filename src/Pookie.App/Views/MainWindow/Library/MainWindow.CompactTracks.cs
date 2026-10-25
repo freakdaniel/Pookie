@@ -84,7 +84,7 @@ internal sealed partial class MainWindow
     {
         if (track != null && Equals(row.Track, track)) { RefreshCompactTrackRow(row); return; }
         row.Track = track;
-        if (track == null) { row.EntryId = null; row.Hovered = false; row.Overlay.Strength = row.HoverFill.Strength = 0; StopCardArtwork(row.Cover); return; }
+        if (track == null) { row.EntryId = null; row.Hovered = false; row.Overlay.Strength = row.HoverFill.Strength = 0; StopCardArtwork(row.Cover); row.Cover.Source = null; return; }
         row.Title.Text = track.Title; row.Author.Text = track.Author; row.Duration.Text = FormatTime(track.DurationSeconds);
         SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
         if (loadArtwork) Run(async () =>

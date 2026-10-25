@@ -9,7 +9,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly Dictionary<Grid, LikedTrackRow> likedRows = [];
-    private readonly Dictionary<string, Task<float[]?>> waveformRequests = [];
+    private readonly Storage.AsyncResourceCache<string, float[]> waveformRequests = new(256, new Storage.CacheBudget(4 * 1024 * 1024), samples => samples.LongLength * sizeof(float));
     private readonly SemaphoreSlim waveformGate = new(3);
     private double likedPlaybackPosition;
 
@@ -142,16 +142,7 @@ internal sealed partial class MainWindow
         if (uri.AbsolutePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
             uri = new UriBuilder(uri) { Path = uri.AbsolutePath[..^4] + ".json" }.Uri;
         if (!uri.AbsolutePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return null;
-        if (!waveformRequests.TryGetValue(uri.AbsoluteUri, out var request))
-        {
-            if (waveformRequests.Count >= 256)
-            {
-                var expired = waveformRequests.FirstOrDefault(entry => entry.Value.IsCompleted);
-                if (expired.Key != null) waveformRequests.Remove(expired.Key);
-            }
-            waveformRequests[uri.AbsoluteUri] = request = FetchWaveformAsync(uri);
-        }
-        return await request;
+        return await waveformRequests.GetAsync(uri.AbsoluteUri, () => FetchWaveformAsync(uri), lifetime.Token);
     }
 
     private Task<float[]?> FetchWaveformAsync(Uri uri) => Task.Run(() => FetchWaveformCoreAsync(uri), lifetime.Token);

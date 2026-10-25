@@ -10,6 +10,8 @@ namespace Pookie.App;
 internal static class Icons
 {
     private static readonly Dictionary<(string, uint), IVectorImageSource> sources = [];
+    private static readonly Dictionary<string, string> templates = [];
+    internal static int CachedSourceCount => sources.Count;
     private static IVectorImageSource? logoSource;
     private static PathGeometry? logoGeometry;
 
@@ -20,14 +22,28 @@ internal static class Icons
     {
         var key = (name, color.ToArgb());
         if (sources.TryGetValue(key, out var cached)) return cached;
-        var assembly = typeof(Icons).Assembly;
-        var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith($".Assets.Icons.{name}.svg", StringComparison.Ordinal));
-        using var stream = assembly.GetManifestResourceStream(resource)!;
-        using var reader = new StreamReader(stream);
-        var tint = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-        var svg = new ImmutableIconSource(SimpleSvgSource.FromString(reader.ReadToEnd().Replace("currentColor", tint)));
+        var svg = CreateTintedSource(name, color, cacheRaster: true);
         sources.Add(key, svg);
         return svg;
+    }
+
+    // Intermediate hover/selection colours belong to one animation frame. A
+    // process-wide entry for each shade retained its SVG and GPU rasters forever.
+    internal static IVectorImageSource TransitionSource(string name, Color color) =>
+        CreateTintedSource(name, color, cacheRaster: false);
+
+    private static IVectorImageSource CreateTintedSource(string name, Color color, bool cacheRaster)
+    {
+        if (!templates.TryGetValue(name, out var template))
+        {
+            var assembly = typeof(Icons).Assembly;
+            var resource = $"Pookie.App.Assets.Icons.{name}.svg";
+            using var stream = assembly.GetManifestResourceStream(resource)!;
+            using var reader = new StreamReader(stream);
+            templates[name] = template = reader.ReadToEnd();
+        }
+        var tint = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        return new ImmutableIconSource(SimpleSvgSource.FromString(template.Replace("currentColor", tint)), cacheRaster);
     }
 
     internal static IVectorImageSource? CountryFlag(string? code)
@@ -54,7 +70,7 @@ internal static class Icons
     {
         var name = pause ? "pause-solid" : "play-solid";
         var assembly = typeof(Icons).Assembly;
-        var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith($".Assets.Icons.{name}.svg", StringComparison.Ordinal));
+        var resource = $"Pookie.App.Assets.Icons.{name}.svg";
         using var stream = assembly.GetManifestResourceStream(resource)!;
         var svg = XDocument.Load(stream);
         var glyph = PathGeometry.Parse(svg.Descendants().Single(element => element.Name.LocalName == "path").Attribute("d")!.Value);
@@ -73,7 +89,7 @@ internal static class Icons
         if (logoSource == null)
         {
             var assembly = typeof(Icons).Assembly;
-            var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith(".Assets.logo.svg", StringComparison.Ordinal));
+            var resource = "Pookie.App.Assets.logo.svg";
             using var stream = assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);
             logoSource = new ImmutableIconSource(SimpleSvgSource.FromString(reader.ReadToEnd()));
@@ -83,7 +99,7 @@ internal static class Icons
 
     // These cached SVGs never mutate. Exposing SimpleSvgSource's Changed event would let
     // each Image subscribe to a process-wide source and retain its removed parent card.
-    private sealed class ImmutableIconSource(SimpleSvgSource source) : IVectorImageSource
+    private sealed class ImmutableIconSource(SimpleSvgSource source, bool cacheRaster = true) : IVectorImageSource
     {
         private readonly List<(IGraphicsFactory Factory, int Width, int Height, IRenderSurface Surface, IImage Image)> rasters = [];
         public Size IntrinsicSize => source.IntrinsicSize;
@@ -93,7 +109,7 @@ internal static class Icons
             // Direct2D target bitmaps cannot be shared with every independent
             // offscreen target. Its native path cache already retains geometry;
             // draw those paths directly for both the window and glass captures.
-            if (OperatingSystem.IsWindows()) { source.Render(context, destRect); return; }
+            if (OperatingSystem.IsWindows() || !cacheRaster) { source.Render(context, destRect); return; }
             var transform = context.GetTransform();
             var scale = context.DpiScale * Math.Max(Math.Sqrt(transform.M11 * transform.M11 + transform.M12 * transform.M12),
                 Math.Sqrt(transform.M21 * transform.M21 + transform.M22 * transform.M22));
@@ -167,7 +183,7 @@ internal static class Icons
         if (logoGeometry == null)
         {
             var assembly = typeof(Icons).Assembly;
-            var resource = assembly.GetManifestResourceNames().Single(n => n.EndsWith(".Assets.logo.svg", StringComparison.Ordinal));
+            var resource = "Pookie.App.Assets.logo.svg";
             using var stream = assembly.GetManifestResourceStream(resource)!;
             var svg = XDocument.Load(stream);
             var path = svg.Descendants().Single(element => element.Name.LocalName == "path");

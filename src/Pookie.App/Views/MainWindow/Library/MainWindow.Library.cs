@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
     private readonly Dictionary<string, (ItemsControl Grid, TextBlock Empty)> overviewSections = [];
     private readonly Dictionary<Button, (LibraryItem Item, Image Cover, Border Frame, TextBlock Title, TextBlock Author, TrackArtworkOverlay Playback)> collectionCards = [];
     private readonly Dictionary<Button, int> collectionCardPositions = [];
-    private readonly Dictionary<string, ImageSource> collectionImages = [];
+    private readonly Storage.ResourceCache<string, ImageSource> collectionImages = new(256, ArtworkCacheBudget, ArtworkBytes);
     private readonly ObservableValue<string> librarySectionTitle = new("");
     private readonly ObservableValue<string> librarySectionStatus = new("");
     private readonly List<LibraryItem> localRecent = [];

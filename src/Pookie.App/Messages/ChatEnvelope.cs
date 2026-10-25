@@ -17,14 +17,18 @@ internal sealed record ChatEnvelope(int Version, string Type, string EventId, lo
     public override string ToString() => "Pookie message envelope (content redacted)";
 }
 internal sealed record ChatMessageProjection(ChatMessage Source, string Text, ChatReplyReference? Reply,
-    bool IsReaction, string? Reaction, string? EventId);
+    bool IsReaction, string? Reaction, string? EventId, string? TargetId = null);
 
 /// <summary>Only the transport's sender is authoritative. Invalid extensions remain readable text.</summary>
 internal static class ChatProtocol
 {
+    private sealed record CachedProjection(long Account,long Peer,ChatMessageProjection Result);
+    private sealed class ProjectionSlot { internal CachedProjection? Value; }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ChatMessage,ProjectionSlot> Projections=new();
     internal static readonly string[] Reactions = ["👍", "❤️", "🔥", "😂", "😮", "👎"];
-    internal static string Reply(long account, long peer, string target, string preview, string text) =>
-        Encode(new(2, "reply", Guid.NewGuid().ToString("N"), OtherPartyKey(account, peer), target, text, Clip(preview, 160), ParticipantId: Math.Max(account, peer)));
+    internal const int MaxHostedContent = 200000;
+    internal static string Reply(long account, long peer, string target, string preview, string text, bool hosted = false) =>
+        Encode(new(2, "reply", Guid.NewGuid().ToString("N"), OtherPartyKey(account, peer), target, text, Clip(preview, 160), ParticipantId: Math.Max(account, peer)), hosted);
     internal static string React(long account, long peer, string target, string? emoji) =>
         Encode(new(2, "reaction", Guid.NewGuid().ToString("N"), OtherPartyKey(account, peer), target, Emoji: emoji, ParticipantId: Math.Max(account, peer)));
     // Stable across both participants; no envelope-supplied author or recipient is trusted.
@@ -38,30 +42,43 @@ internal static class ChatProtocol
         var end = index >= 0 ? boundaries[index] : boundaries[Math.Max(0, ~index - 1)];
         return text[..end];
     }
-    internal static string Encode(ChatEnvelope envelope)
+    internal static string Encode(ChatEnvelope envelope, bool hosted = false)
     {
         var body = "p2:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(envelope, ChatProtocolJson.Default.ChatEnvelope))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        if (body.Length > 20000) throw new ArgumentException("Сообщение с ответом слишком длинное.");
+        if (body.Length > (hosted ? MaxHostedContent : ChatRequest.MaxBodyLength)) throw new ArgumentException("Сообщение с ответом слишком длинное.");
         return body;
     }
     internal static ChatMessageProjection Project(ChatMessage message, long account, long peer)
     {
-        var plain = new ChatMessageProjection(message, message.Body, null, false, null, null);
-        if (message.SenderId != account && message.SenderId != peer || !message.Body.StartsWith("p2:", StringComparison.Ordinal) || message.Body.Length > 20000) return plain;
+        // Immutable messages can share one decoded projection across layout,
+        // previews and indexing. Weak keys do not retain old history windows.
+        var slot=Projections.GetValue(message,static _=>new());
+        var cached=Volatile.Read(ref slot.Value);
+        if(cached?.Account==account && cached.Peer==peer)return cached.Result;
+        var result=ProjectCore(message,account,peer);
+        Volatile.Write(ref slot.Value,new(account,peer,result));return result;
+    }
+    private static ChatMessageProjection ProjectCore(ChatMessage message,long account,long peer)
+    {
+        var hosted = ChatEnvelopeHosting.IsReference(message.Body);
+        var plain = new ChatMessageProjection(message, hosted ? "Сообщение Pookie" : message.Body, null, false, null, null);
+        var body = hosted ? message.ClientContent : message.Body;
+        if (message.SenderId != account && message.SenderId != peer || body == null || !body.StartsWith("p2:", StringComparison.Ordinal) ||
+            body.Length > (hosted ? MaxHostedContent : ChatRequest.MaxBodyLength)) return plain;
         try
         {
-            var raw = message.Body[3..];
+            var raw = body[3..];
             if (raw.Length == 0 || raw.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_')) return plain;
             raw = raw.Replace('-', '+').Replace('_', '/');
             var envelope = JsonSerializer.Deserialize(Convert.FromBase64String(raw.PadRight((raw.Length + 3) / 4 * 4, '=')), ChatProtocolJson.Default.ChatEnvelope);
             if (envelope is not { Version: 2, EventId.Length: 32, TargetId.Length: > 0 and <= 512 } ||
                 !Guid.TryParseExact(envelope.EventId, "N", out var eventIdentity) || envelope.PeerId != OtherPartyKey(account, peer) || envelope.ParticipantId != Math.Max(account, peer)) return plain;
             if (envelope.Type == "reply" && envelope.Text is { Length: > 0 and <= 20000 } && envelope.Preview is { Length: <= 160 })
-                return new(message, envelope.Text, new(peer, envelope.TargetId, envelope.Preview), false, null, eventIdentity.ToString("N"));
+                return new(message, envelope.Text, new(peer, envelope.TargetId, envelope.Preview), false, null, eventIdentity.ToString("N"), envelope.TargetId);
             if (envelope.Type == "reaction" && envelope.Text == null && envelope.Preview == null &&
-                (envelope.Emoji == null || Reactions.Contains(envelope.Emoji)))
-                return new(message, "Реакция " + (envelope.Emoji ?? "снята"), null, true, envelope.Emoji, eventIdentity.ToString("N"));
+                (envelope.Emoji == null || Reactions.Contains(envelope.Emoji) || ChatEmojiCatalog.IsEmoji(envelope.Emoji)))
+                return new(message, "Реакция " + (envelope.Emoji ?? "снята"), null, true, envelope.Emoji, eventIdentity.ToString("N"), envelope.TargetId);
         }
         catch (Exception error) when (error is JsonException or FormatException or ArgumentException) { }
         return plain;
@@ -74,17 +91,12 @@ internal static class ChatProtocol
         {
             var projection = Project(message, account, peer);
             if (!projection.IsReaction || !events.Add((message.SenderId, projection.EventId!))) continue;
-            var target = DecodeTarget(message.Body);
+            var target = projection.TargetId!;
             if (!result.TryGetValue(target, out var participants)) result[target] = participants = [];
             if (projection.Reaction == null) participants.Remove(message.SenderId);
             else participants[message.SenderId] = projection.Reaction;
         }
         return result;
-    }
-    internal static string DecodeTarget(string body)
-    {
-        var raw = body[3..].Replace('-', '+').Replace('_', '/');
-        return JsonSerializer.Deserialize(Convert.FromBase64String(raw.PadRight((raw.Length + 3) / 4 * 4, '=')), ChatProtocolJson.Default.ChatEnvelope)!.TargetId;
     }
 }
 [JsonSerializable(typeof(ChatEnvelope))]

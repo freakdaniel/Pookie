@@ -8,7 +8,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly ObservableValue<bool> playlistCollectionVisible = new(false);
-    private readonly Dictionary<string, CollectionDetail> collectionDetails = [];
+    private readonly Storage.ResourceCache<string, CollectionDetail> collectionDetails = new(64, new Storage.CacheBudget(16 * 1024 * 1024), detail => 512L + detail.Tracks.Tracks.Length * 1024L);
     private ItemsControl collectionTrackList = null!;
     private Image collectionCover = null!, collectionBackdrop = null!, collectionPlayIcon = null!;
     private TextBlock collectionTitle = null!, collectionAuthor = null!, collectionMeta = null!, collectionDescription = null!;

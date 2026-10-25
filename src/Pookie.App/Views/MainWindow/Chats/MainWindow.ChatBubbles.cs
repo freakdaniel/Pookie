@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
         private readonly Button quote;
         private readonly ChatMessageFrame frame;
         internal readonly ChatQuoteView Quote = new(ChatAccent);
-        private readonly StackPanel reactions = new StackPanel().Horizontal().Spacing(3);
+        internal readonly ChatReactionStrip Reactions;
         internal readonly StackPanel Attachments = new StackPanel().Vertical().Spacing(8);
         internal Image MusicBackdrop = null!;
         private Border? musicContent;
@@ -44,20 +44,27 @@ internal sealed partial class MainWindow
         internal bool Bound;
         private readonly MainWindow owner;
         private readonly AnimationClock highlight=new(TimeSpan.FromMilliseconds(900),Easing.Linear);
+        private readonly TextBlock openLabel=new TextBlock().Text("↓").FontSize(20);
         internal ChatBubbleRow(MainWindow owner)
         {
             this.owner = owner;
+            Reactions = new(emoji => { if (Message is { } message) owner.Run(() => owner.ReactToChatAsync(message, emoji)); });
             Body.Copy = owner.CopyText;
             Body.SelectionClick=()=>{if(owner.chatSelected.Count==0||Message==null)return false;owner.ToggleChatSelection(Message);return true;};
             Body.OpenMusic = url => owner.Run(() => owner.OpenChatMusicUrlAsync(url));
             Error = TrackButtons.Action(new TextBlock().Text("!").FontSize(12).Bold().Foreground(Color.FromRgb(255, 132, 132)),
                 () => owner.Run(owner.RetryChatOutgoingAsync), TrackButtons.Text, 20).Padding(4, 0).IsVisible(false);
-            Open = TrackButtons.Action(new TextBlock().Text("↓").FontSize(20), () => owner.Run(() => owner.OpenChatMediaAsync(this)), TrackButtons.Tonal, 34).CenterHorizontal();
+            Open = TrackButtons.Action(openLabel, () =>
+            {
+                if(Message is {} message && ChatEnvelopeHosting.IsReference(message.Body))owner.Run(()=>owner.RetryChatEnvelopeAsync(message,owner.chatRecipient?.Id??0));
+                else owner.Run(() => owner.OpenChatMediaAsync(this));
+            }, TrackButtons.Tonal, 34).CenterHorizontal();
             deliveryIcon = new Grid().Columns("*").Rows("*").Width(14).Height(14)
                 .Children(Spinner.Center(), Checks.CenterHorizontal().Bottom().Margin(0, 0, 0, 1), Error.Width(14).Height(14).Padding(0).Center());
             var footer = new StackPanel().Horizontal().Spacing(2).Right().Children(Time, deliveryIcon);
             Footer = new Border().BorderThickness(0).Child(footer).IsHitTestVisible(false);
-            Content = new ChatBubbleContent(Attachments, Body, Open, Footer).Initialize();
+            Content = new ChatBubbleContent(Attachments, Body, Open, Footer, Reactions).Initialize();
+            Reactions.Changing = () => { owner.CaptureChatPanelAnchor(); Content.AnimateMediaChange(); };
             Content.ResizeTick = () => { if (Bound && FollowMediaResize && owner.page.Value == Page.Chats) owner.RequestChatBottom(); };
             Bubble = new Border().BorderThickness(0).CornerRadius(18).Padding(10, 6).Child(Content).MaxWidth(520).Left();
             Footer.Transitions = [Transition.Create(UIElement.OpacityProperty, 140)];
@@ -69,7 +76,7 @@ internal sealed partial class MainWindow
             {if(ReplyReference() is {} reply)owner.Run(()=>owner.JumpChatMessageAsync(reply.PeerId,reply.MessageId));},TrackButtons.Text,42).Padding(0).CornerRadius(4).MaxWidth(520).IsVisible(false);
             ((FrameworkElement)quote.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
             frame = new ChatMessageFrame(quote, Bubble).Initialize();
-            Motion.Content = new StackPanel().Vertical().Children(DateBadge,frame,reactions);
+            Motion.Content = new StackPanel().Vertical().Children(DateBadge,frame);
             Root = new Border().Background(Color.Transparent).Padding(0).Child(Motion);
             var copy = new Command("pookie.chat.copy", "Скопировать текст");
             var retry = new Command("pookie.chat.retry", "Повторить отправку");
@@ -90,7 +97,25 @@ internal sealed partial class MainWindow
             foreach(var emoji in ChatProtocol.Reactions)
             {var command=new Command("chat.react."+emoji,emoji); Root.Commands.Register(command,()=>{if(Message!=null)owner.Run(()=>owner.ReactToChatAsync(Message,emoji));},()=>!owner.chatSending);ReactionCommands.Add(command);}
             CopyCommand = copy; RetryCommand = retry; RemoveCommand = remove; SaveCommand = save;
+            menuItems = new[] { reply, copy, favorite, select }.Select(command => new MenuItem(command)).ToArray();
+            retryItem = new(retry); removeItem = new(remove); saveItem = new(save);
+            foreach (var item in menuItems) menu.Items.Add(item);
+            Root.ContextMenu = menu;
+            Root.Focusable = true;
+            Root.MouseDown += e =>
+            {
+                if (e.Button != MouseButton.Right) return;
+                e.Handled = true; Root.Focus(); owner.OpenChatMessageMenu(this, e.GetPosition(owner.Window));
+            };
+            Root.KeyDown += e =>
+            {
+                if (e.Key != Key.F10 || !e.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+                e.Handled = true; owner.OpenChatMessageMenu(this, new(Bubble.Bounds.X + 20, Bubble.Bounds.Y + 20));
+            };
         }
+        private readonly ContextMenu menu = new();
+        private readonly MenuItem[] menuItems;
+        private readonly MenuItem retryItem, removeItem, saveItem;
         private readonly Command CopyCommand, RetryCommand, RemoveCommand, SaveCommand,ReplyCommand,FavoriteCommand,SelectCommand;
         private readonly List<Command> ReactionCommands=[];
         private string? CopyContent() => Body.SelectedText ?? (Message == null ? null : ChatMediaReference.Parse(Message.Body) == null ? ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0).Text :
@@ -98,7 +123,7 @@ internal sealed partial class MainWindow
         internal void Bind(ChatMessage message)
         {
             Bound = true;
-            if (Message?.SenderId == message.SenderId && (Message.Body == message.Body ||
+            if (Message?.SenderId == message.SenderId && Message.ClientContent==message.ClientContent && (Message.Body == message.Body ||
                 Message.Id == message.Id && owner.ChatOutgoing(message)?.HasMedia == true))
             {
                 Message = message; Time.Text = ChatPresentation.Time(message.SentAt);
@@ -116,7 +141,13 @@ internal sealed partial class MainWindow
             var projection=ChatProtocol.Project(message,owner.chatAccountId,owner.chatRecipient?.Id??0);
             Body.IsVisible = !media && projection.Text.Length > 0; Body.Text = media ? "" : projection.Text;
             Open.IsVisible = false;
-            if (media) owner.BindChatMediaPreview(this);
+            openLabel.Text="↓";openLabel.FontSize=20;
+            if (ChatEnvelopeHosting.IsReference(message.Body) && projection.EventId==null)
+            {
+                openLabel.Text="Загрузить сообщение";openLabel.FontSize=12;
+                Open.IsVisible=true;
+            }
+            else if (media) owner.BindChatMediaPreview(this);
             else owner.BindChatMusic(this);
             RefreshDate(); RefreshDelivery(); RefreshExtensions();
             UpdateMenu();
@@ -124,11 +155,14 @@ internal sealed partial class MainWindow
         }
         private void UpdateMenu()
         {
-            var menu = new ContextMenu().Item(ReplyCommand).Item(CopyCommand).Item(FavoriteCommand).Item(SelectCommand);
-            foreach(var command in ReactionCommands)menu.Item(command);
-            if (owner.ChatOutgoing(Message) != null) menu.Item(RetryCommand).Item(RemoveCommand);
-            if (Message != null && (owner.ChatOutgoing(Message)?.HasMedia == true || ChatMediaReference.Parse(Message.Body) != null)) menu.Item(SaveCommand);
-            Root.ContextMenu = menu;
+            SetMenuItem(retryItem, owner.ChatOutgoing(Message) != null);
+            SetMenuItem(removeItem, owner.ChatOutgoing(Message) != null);
+            SetMenuItem(saveItem, Message != null && (owner.ChatOutgoing(Message)?.HasMedia == true || ChatMediaReference.Parse(Message.Body) != null));
+        }
+        private void SetMenuItem(MenuItem item, bool visible)
+        {
+            if (visible) { if (!menu.Items.Contains(item)) menu.Items.Add(item); }
+            else menu.Items.Remove(item);
         }
         internal void Highlight()
         {
@@ -149,12 +183,10 @@ internal sealed partial class MainWindow
             var projection=ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0);
             RefreshQuote();
             var own=Message.SenderId==owner.chatAccountId;
-            frame.HorizontalAlignment=reactions.HorizontalAlignment=own?HorizontalAlignment.Right:HorizontalAlignment.Left;
-            reactions.Clear();
-            if(owner.chatReactions.TryGetValue(Message.Id,out var authors))
-                foreach(var group in authors.GroupBy(p=>p.Value))
-                {var emoji=group.Key;reactions.Add(TrackButtons.Action(new TextBlock().Text(emoji+" "+group.Count()).FontSize(12),()=>owner.Run(()=>owner.ReactToChatAsync(Message,emoji)),group.Any(p=>p.Key==owner.chatAccountId)?TrackButtons.Tonal:TrackButtons.Text,26).Padding(7,0));}
-            reactions.IsVisible=reactions.Children.Count>0;
+            frame.HorizontalAlignment=own?HorizontalAlignment.Right:HorizontalAlignment.Left;
+            var chips = owner.chatReactions.GetValueOrDefault(Message.Id)?.GroupBy(p => p.Value).OrderBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => new ChatReactionChip(g.Key, g.Select(p => p.Key).Order().ToArray(), g.Any(p => p.Key == owner.chatAccountId))).ToArray() ?? [];
+            Reactions.Set(Message.Id, chips, author => author == owner.chatAccountId ? owner.profileAvatar.Source : owner.chatHeaderAvatar.Source, Bound && owner.Window.IsActive);
             var connected=owner.ChatMessageGroup(Message);
             Root.Margin=new Thickness(0,connected.Previous?2:8,0,0);
             var corners=own?new CornerRadius(18,connected.Previous?6:18,connected.Next?6:18,18):new CornerRadius(connected.Previous?6:18,18,18,connected.Next?6:18);
@@ -236,6 +268,7 @@ internal sealed partial class MainWindow
         {
             Quote.BeginBinding(); Quote.Set("","",null); quote.IsVisible = false;
             highlight.Stop(); Bound = false; DateBadge.Opacity = 1; Content.StopResize();
+            Reactions.Reset();
             ItemKey = null; MediaKey = null; MediaResolved = FollowMediaResize = false; ++MediaGeneration;
             Load?.Cancel(); Load?.Dispose(); Load = null;
             Motion.Finish(); Spinner.IsActive = false;

@@ -1,4 +1,5 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)tools/mewui-patch/MewUiPatch.targets" />
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App'">
     <None Include="$(MSBuildThisFileDirectory)licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

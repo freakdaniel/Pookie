@@ -68,7 +68,17 @@ internal sealed partial class MainWindow
         {
             var data = await chatClipboardRead(ChatReadToken());
             if (disposed || me?.Id != account || chatRecipient?.Id != recipient || revision != chatRevision || generation != chatAttachmentGeneration) return;
-            if (data == null) { chatMusicEditor?.Paste(); return; }
+            if (data == null)
+            {
+                var clipboard = chatInput.ClipboardService ?? windowClipboard;
+                if (clipboard is not LinuxWindowClipboard linuxClipboard) { chatMusicEditor?.Paste(); return; }
+                var before = chatInput.Text; var start = chatInput.SelectionStart; var length = chatInput.SelectionLength;
+                var focused = Window.FocusManager.FocusedElement;
+                var text = await linuxClipboard.ReadTextAsync(ChatReadToken());
+                if (!disposed && chatRecipient?.Id == recipient && revision == chatRevision && generation == chatAttachmentGeneration &&
+                    ReferenceEquals(Window.FocusManager.FocusedElement,focused) && chatInput.Text == before && chatInput.SelectionStart == start && chatInput.SelectionLength == length && text != null) chatMusicEditor?.PasteText(text);
+                return;
+            }
             var files = data.Files;
             if (data.Image != null) files = [chatAttachmentStaging.AddImage(data.Image, data.Extension)];
             await AddChatFilesCoreAsync(files, revision, generation);

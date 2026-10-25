@@ -7,6 +7,29 @@ namespace Pookie.Playback.Tests;
 
 public sealed class WaveTests
 {
+    [Fact]
+    public async Task PendingProfileWritesDoNotBlockReadsOrLoseRapidAccountSwitches()
+    {
+        var path=Path.Combine(Path.GetTempPath(),"pookie-wave-pending-"+Guid.NewGuid().ToString("N"));
+        var store=new WaveProfileStore(path);
+        var diskGate=typeof(WaveProfileStore).GetField("gate",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
+        using var entered=new ManualResetEventSlim();using var release=new ManualResetEventSlim();
+        var blocking=Task.Run(()=>{lock(diskGate){entered.Set();release.Wait();}});
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            var first=new WaveTaste();first.SetMode(WaveMode.Favorites);
+            var second=new WaveTaste();second.SetMode(WaveMode.Discoveries);
+            var saveFirst=store.SaveAsync(42,first.Snapshot());var saveSecond=store.SaveAsync(43,second.Snapshot());
+            Assert.False(saveFirst.IsCompleted);Assert.False(saveSecond.IsCompleted);
+            Assert.Equal(WaveMode.Favorites,store.Load(42).Mode);
+            Assert.Equal(WaveMode.Discoveries,store.Load(43).Mode);
+            release.Set();await blocking;await Task.WhenAll(saveFirst,saveSecond);await store.FlushAsync();
+            Assert.Equal(WaveMode.Favorites,store.Load(42).Mode);
+            Assert.Equal(WaveMode.Discoveries,store.Load(43).Mode);
+        }
+        finally{release.Set();await blocking;await store.FlushAsync();if(Directory.Exists(path))Directory.Delete(path,true);}
+    }
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-11T12:00:00Z");
     private static SoundCloudTrack Track(long id, string artist = "Artist", string? title = null) => new() {
         Id = id, Title = title ?? "Track " + id, Duration = 180000, Genre = "Rock", User = new() { Id = id, Username = artist } };

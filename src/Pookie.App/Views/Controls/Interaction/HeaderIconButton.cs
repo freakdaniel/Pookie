@@ -8,6 +8,7 @@ namespace Pookie.App;
 // Compact connected actions, with the same glass finish as the search field.
 internal sealed class HeaderIconButton : Button
 {
+    private readonly GlassGeometry geometry = new(), focusGeometry = new();
     private readonly bool start;
     private readonly GlassSheenRaster sheen = new();
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
@@ -44,12 +45,12 @@ internal sealed class HeaderIconButton : Button
     protected override void OnRender(IGraphicsContext context)
     {
         var corners = start ? new CornerRadius(18, 6, 6, 18) : new CornerRadius(6, 18, 18, 6);
-        var shape = GlassSheen.Shape(Bounds, corners);
+        var shape = geometry.Get(Bounds, corners);
         context.FillPath(shape, GlassSheen.Surface);
         if (layer > 0) context.FillPath(shape, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));
         sheen.Draw(context, Bounds, corners, layer / .12, GetDpi() / 96d);
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
-            context.DrawPath(GlassSheen.Shape(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4),
+            context.DrawPath(focusGeometry.Get(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4),
                 start ? new CornerRadius(16, 4, 4, 16) : new CornerRadius(4, 16, 16, 4)), TrackButtons.OnSurface, 2);
     }
 

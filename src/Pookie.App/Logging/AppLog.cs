@@ -41,10 +41,11 @@ public static class AppLog
                     Directory.CreateDirectory(DirectoryPath);
                     if (!OperatingSystem.IsWindows())
                         File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                    configuration.WriteTo.File(new JsonFormatter(renderMessage: true), Path.Combine(DirectoryPath, "pookie-.log"),
+                    var fileLogger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.File(new JsonFormatter(renderMessage: true), Path.Combine(DirectoryPath, "pookie-.log"),
                         restrictedToMinimumLevel: file, rollingInterval: RollingInterval.Day,
                         fileSizeLimitBytes: 8 * 1024 * 1024, rollOnFileSizeLimit: true,
-                        retainedFileCountLimit: 14, shared: true);
+                        retainedFileCountLimit: 14, shared: true).CreateLogger();
+                    configuration.WriteTo.Sink(new BufferedFileSink(fileLogger), restrictedToMinimumLevel: file);
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 { fileError = error; }

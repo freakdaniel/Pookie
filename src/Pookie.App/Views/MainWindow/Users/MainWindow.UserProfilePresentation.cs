@@ -187,17 +187,11 @@ internal sealed partial class MainWindow
     }
 
     // Keep decoded hero images across navigation; the disk cache also survives restarts.
-    private readonly Dictionary<string, Task<ImageSource?>> userHeroImages = [];
+    private readonly Storage.AsyncResourceCache<string, ImageSource> userHeroImages = new(64, ArtworkCacheBudget, ArtworkBytes);
     private Task<ImageSource?> UserHeroImageAsync(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return Task.FromResult<ImageSource?>(null);
-        if (userHeroImages.TryGetValue(url, out var image))
-        {
-            if (!image.IsCompleted || image.IsCompletedSuccessfully && image.Result != null) return image;
-            userHeroImages.Remove(url); // A temporary failure must not become a permanent cached absence.
-        }
-        if (userHeroImages.Count >= 64) userHeroImages.Remove(userHeroImages.Keys.First());
-        return userHeroImages[url] = FetchImageAsync(url, lifetime.Token);
+        return userHeroImages.GetAsync(url, () => FetchImageAsync(url, lifetime.Token, maximumSide: 2048), lifetime.Token);
     }
 
     private void LoadUserArtwork(SoundCloudUser user)

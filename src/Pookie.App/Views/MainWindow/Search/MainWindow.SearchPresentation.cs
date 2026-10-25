@@ -161,7 +161,7 @@ internal sealed partial class MainWindow
     private void ClearSearchHero(SearchHero hero)
     {
         ++hero.BindingGeneration;
-        hero.Item = null; StopCardArtwork(hero.Cover);
+        hero.Item = null; StopCardArtwork(hero.Cover); hero.Cover.Source = null;
         SetSearchHeroBackdrop(hero, null);
         foreach (var row in hero.Tracks) BindCompactTrackRow(row, null);
     }

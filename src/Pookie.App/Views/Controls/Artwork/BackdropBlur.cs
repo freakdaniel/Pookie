@@ -12,6 +12,7 @@ internal sealed class BackdropBlur : IDisposable
     private readonly byte[] first, second;
     private readonly int width, height;
     internal IImage Image { get; }
+    internal bool Ready { get; private set; }
     internal ReadOnlySpan<byte> Pixels => first;
 
     internal BackdropBlur(IGraphicsFactory factory, int width, int height)
@@ -26,6 +27,17 @@ internal sealed class BackdropBlur : IDisposable
     {
         var pixels = source.GetReadOnlyPixelSpan();
         for (var y = 0; y < height; y++) pixels.Slice(y * source.StrideBytes, width * 4).CopyTo(first.AsSpan(y * width * 4));
+        Process(sigma); Upload();
+    }
+    // Capture while the render scope is current; process after it is released.
+    // Only one job may own these scratch arrays at a time.
+    internal void Capture(ICpuPixelSurface source)
+    {
+        var pixels = source.GetReadOnlyPixelSpan();
+        for (var y = 0; y < height; y++) pixels.Slice(y * source.StrideBytes,width * 4).CopyTo(first.AsSpan(y * width * 4));
+    }
+    internal void Process(double sigma)
+    {
         var lower = Math.Max(1, (int)Math.Floor(Math.Sqrt(4 * sigma * sigma + 1)) | 1);
         if (lower > Math.Sqrt(4 * sigma * sigma + 1)) lower = Math.Max(1, lower - 2);
         var count = (int)Math.Round((12 * sigma * sigma - 3 * lower * lower - 12 * lower - 9) / (-4d * lower - 4));
@@ -35,9 +47,8 @@ internal sealed class BackdropBlur : IDisposable
             Box(first, second, radius, horizontal: true);
             Box(second, first, radius, horizontal: false);
         }
-        using var write = bitmap.LockForWrite();
-        first.CopyTo(write.PixelsBgra32);
     }
+    internal void Upload() { using var write = bitmap.LockForWrite(); first.CopyTo(write.PixelsBgra32); Ready = true; }
 
     private void Box(byte[] input, byte[] output, int radius, bool horizontal)
     {

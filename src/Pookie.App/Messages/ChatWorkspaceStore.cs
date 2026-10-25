@@ -9,14 +9,32 @@ internal sealed record ChatFolder(string Id, string Name, long[] Peers);
 internal sealed record ChatFavorite(long PeerId, ChatMessage Message, DateTimeOffset SavedAt);
 internal sealed record ChatReadPosition(string? MessageId, double Y, bool Bottom);
 internal sealed record ChatVoiceDraft(string Path, ChatVoiceMetadata Metadata);
-internal sealed record ChatDraft(string Text, ChatReplyReference? Reply = null, ChatVoiceDraft? Voice = null);
+internal sealed record ChatDraft(string Text, ChatReplyReference? Reply = null, ChatVoiceDraft? Voice = null)
+{
+    internal bool IsEmpty => Text.Length == 0 && Reply == null && Voice == null;
+}
 internal sealed record ChatWorkspaceState(ChatFolder[] Folders, long[] Pins, ChatFavorite[] Favorites,
-    Dictionary<long, ChatReadPosition> Positions, long? LastPeer = null, Dictionary<long, ChatDraft>? Drafts = null, bool SavedOpen = false);
+    Dictionary<long, ChatReadPosition> Positions, long? LastPeer = null, Dictionary<long, ChatDraft>? Drafts = null, bool SavedOpen = false, string[]? RecentEmoji = null);
 
 /// <summary>Durable account data. Never placed under Cache or evicted with history.</summary>
 internal sealed class ChatWorkspaceStore(AppDataPaths paths, long account)
 {
     private readonly string directory = Path.Combine(paths.Root, "Chats", account.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private SnapshotWriter<ChatWorkspaceState>? writer;
+    private ChatWorkspaceState? lastSnapshot;
+    private Task lastSave = Task.CompletedTask;
+    internal Task SaveAsync(ChatWorkspaceState state)
+    {
+        if (!lastSave.IsFaulted && lastSnapshot is { } previous && previous.LastPeer == state.LastPeer && previous.SavedOpen == state.SavedOpen &&
+            ReferenceEquals(previous.RecentEmoji, state.RecentEmoji) &&
+            ReferenceEquals(previous.Folders,state.Folders) && ReferenceEquals(previous.Pins,state.Pins) && ReferenceEquals(previous.Favorites,state.Favorites) &&
+            Same(previous.Positions,state.Positions) && Same(previous.Drafts,state.Drafts)) return lastSave;
+        lastSnapshot = state with { Positions = new(state.Positions), Drafts = state.Drafts == null ? null : new(state.Drafts) };
+        return lastSave = (writer ??= new(Save)).SaveAsync(lastSnapshot);
+    }
+    private static bool Same<T>(Dictionary<long,T>? left, Dictionary<long,T>? right) => left == null || right == null ? left == right :
+        left.Count == right.Count && left.All(pair => right.TryGetValue(pair.Key,out var value) && EqualityComparer<T>.Default.Equals(value,pair.Value));
+    internal Task FlushAsync() => writer?.FlushAsync() ?? Task.CompletedTask;
     internal ChatWorkspaceState Load()
     {
         try
@@ -30,11 +48,12 @@ internal sealed class ChatWorkspaceStore(AppDataPaths paths, long account)
             {
                 Folders = state.Folders.Where(f => f is { Id.Length: > 0 and <= 64, Name.Length: > 0 and <= 40, Peers.Length: <= 2000 }).Take(30).ToArray(),
                 Pins = state.Pins.Where(p => p > 0).Distinct().Take(100).ToArray(),
+                RecentEmoji = state.RecentEmoji?.Where(ChatEmojiCatalog.IsEmoji).Distinct(StringComparer.Ordinal).Take(40).ToArray(),
                 Favorites = state.Favorites.Where(f => f.PeerId > 0 && f.Message is { Body.Length: <= 20000, Id.Length: > 0 and <= 512 }).DistinctBy(f => (f.PeerId, f.Message.Id)).ToArray(),
                 Positions = state.Positions.Where(p => p.Key > 0 && p.Value != null && double.IsFinite(p.Value.Y) && (p.Value.MessageId == null || p.Value.MessageId.Length <= 512)).Take(2000).ToDictionary(),
                 Drafts = state.Drafts?.Where(p => p.Key > 0 && p.Value is { Text.Length: <= 20000 } &&
                     (p.Value.Reply == null || p.Value.Reply is { MessageId.Length: > 0 and <= 512, Preview.Length: <= 160 } && p.Value.Reply.PeerId == p.Key) &&
-                    (p.Value.Voice == null || p.Value.Voice is { Path.Length: > 0 and <= 4096, Metadata.Valid: true })).Take(50).ToDictionary()
+                    (p.Value.Voice == null || p.Value.Voice is { Path.Length: > 0 and <= 4096, Metadata.Valid: true }) && !p.Value.IsEmpty).ToDictionary()
             };
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return Empty; }

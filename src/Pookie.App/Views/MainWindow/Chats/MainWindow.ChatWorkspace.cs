@@ -173,7 +173,7 @@ internal sealed partial class MainWindow
     {
         if (chatHistory == null || me == null || api.Session == null) return;
         chatHistorySearch?.Cancel(); chatHistorySearch?.Dispose(); chatHistorySearch = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
-        var token = chatHistorySearch.Token; var store = chatHistory; var account = chatAccountId; var total = 0;
+        var token = chatHistorySearch.Token; var store = chatHistory; var account = chatAccountId; var total = 0;var incomplete=false;
         var progressControl = chatHistoryProgress;
         chatHistoryLoading = true;
         RefreshChatSearchActivity(chatFindMessages);
@@ -188,7 +188,7 @@ internal sealed partial class MainWindow
                 var listCursor = chatListCursor; var listed = new HashSet<string>();
                 while (listCursor != null && listed.Add(listCursor))
                 {
-                    var dialogs = await api.GetConversationsAsync(account, listCursor, token);
+                    var dialogs = await GetChatConversationsAsync(account, listCursor, token);
                     await store.SaveDialogsAsync(dialogs.Conversations, token);
                     foreach (var dialog in dialogs.Conversations)
                     {
@@ -200,20 +200,33 @@ internal sealed partial class MainWindow
             }
             foreach (var peer in peers)
             {
-                var cached = await store.LoadWindowAsync(peer, token: token); if (cached.Complete) continue;
+                var cached = await store.LoadWindowAsync(peer, token: token);
+                if(!cached.Complete)
+                {
                 string? cursor = cached.Cursor; var visited = new HashSet<string>();
                 do
                 {
                     token.ThrowIfCancellationRequested();
-                    var page = await api.GetMessagesAsync(account, peer, cursor, token);
+                    var page = await GetChatMessagesAsync(account, peer, cursor, token);
                     await store.SavePageAsync(account, peer, page, cursor, token); total += page.Messages.Length;
                     if (chatHistory != store) return;
                     if (chatHistoryProgress != null) chatHistoryProgress.Text = $"Проверено сообщений: {total}";
                     if (chatFindMessages) await SearchChatMessagesAsync(scanning: true); else if (chatMediaLibraryKind is { } kind) await RenderChatMediaLibraryAsync(kind);
                     cursor = page.NextHref;
                 } while (cursor != null && visited.Add(cursor));
+                }
+                incomplete |= !await ResolveStoredChatEnvelopesAsync(store,account,peer,token);
+                if(chatFindMessages)await SearchChatMessagesAsync(scanning:true);
             }
-            if (chatHistory == store && chatHistorySearch?.Token == token && progressControl != null) progressControl.Text = "Поиск завершён";
+            if (chatHistory == store && chatHistorySearch?.Token == token)
+            {
+                if(progressControl!=null)progressControl.Text=incomplete ? "Часть сообщений недоступна" : "Поиск завершён";
+                if(incomplete)
+                {
+                    const string detail="Часть сообщений Pookie не загрузилась. Повтори поиск позже.";
+                    if(chatThreadSearchOpen)chatThreadStatus.Value=detail;else chatsStatus.Value=detail;
+                }
+            }
         }
         catch (OperationCanceledException) { if (chatHistory == store && chatHistorySearch?.Token == token) { if (chatHistoryProgress != null) chatHistoryProgress.Text = "Поиск остановлен"; } }
         catch (Exception error) { if (chatHistory == store && chatHistorySearch?.Token == token) { if (chatThreadSearchOpen) chatThreadStatus.Value = ChatActionError(error); else chatsStatus.Value = ChatActionError(error); chatScanKey = null; } }
@@ -248,7 +261,7 @@ internal sealed partial class MainWindow
                 var cursor = (string?)null; var visited = new HashSet<string>();
                 do
                 {
-                    var result = await api.GetMessagesAsync(chatAccountId, peer, cursor, ChatReadToken());
+                    var result = await GetChatMessagesAsync(chatAccountId, peer, cursor, ChatReadToken());
                     await CacheChatPageAsync(chatAccountId, peer, result, cursor, ChatReadToken());
                     if (chatRecipient?.Id != peer) return;
                     if (result.Messages.Any(m => m.Id == id)) break;

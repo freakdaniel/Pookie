@@ -102,16 +102,18 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
         var span = spans.FirstOrDefault(value => Matches(value, editor.Document) && value.Start < caret && caret < value.End);
         if (span != null) editor.MoveCaret(span.End, false);
     }
-    internal void InsertText(string text)
+    internal bool InsertText(string text, int maximum = int.MaxValue)
     {
-        if (editor.IsReadOnly || text.Length == 0) return;
+        if (editor.IsReadOnly || text.Length == 0) return false;
         PrepareInsertion();
         var start = editor.SelectionStart; var end = start + editor.SelectionLength;
         // Keep the raw URL delimited, including when typing immediately after pasting it.
         var prefix = !char.IsWhiteSpace(text[0]) && spans.Any(span => span.End == start && Matches(span, editor.Document));
         var suffix = !char.IsWhiteSpace(text[^1]) && spans.Any(span => span.Start == end && Matches(span, editor.Document));
+        if (editor.Text.Length - editor.SelectionLength + text.Length + (prefix ? 1 : 0) + (suffix ? 1 : 0) > maximum) return false;
         editor.ReplaceSelection((prefix ? " " : "") + text + (suffix ? " " : ""));
         if (suffix) editor.MoveCaret(editor.CaretPosition - 1, false);
+        return true;
     }
     internal void Paste()
     {
@@ -119,6 +121,10 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
         if (clipboard?.TryGetText(out var text) != true) return;
         // Metadata arrives asynchronously. Leave the caret outside a freshly pasted URL
         // even when the user starts typing before its title has been resolved.
+        PasteText(text);
+    }
+    internal void PasteText(string text)
+    {
         if (ChatMusicLink.Find(text).Any(url => text.EndsWith(url, StringComparison.Ordinal))) text += " ";
         InsertText(text);
     }

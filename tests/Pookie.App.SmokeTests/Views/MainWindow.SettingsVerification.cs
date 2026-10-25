@@ -166,6 +166,7 @@ internal sealed partial class MainWindow
             await SelectSettingsTabAsync(SettingsSection.General);
             await SetSettingsChoiceAsync("startup", 1);
             SaveConfiguration();
+            await configuration.FlushAsync();
             var saved = configuration.Load();
             if (saved.AutoContinue || saved.LyricsEnabled || saved.SendPlaybackHistory || saved.WaveLearningEnabled || saved.WaveAnalysisEnabled ||
                 !saved.LikesAsList || saved.StartupPage != "library" || !saved.ChatSendOnEnter || saved.ChatAutoLoad || saved.ChatBackgroundRefresh || saved.KlipyEnabled)
@@ -234,6 +235,7 @@ internal sealed partial class MainWindow
     private async Task VerifySettingsDraftCleanupBeforeOpeningChatsAsync()
     {
         SaveConfiguration();
+        await configuration.FlushAsync();
         if (page.Value == Page.Chats || chatAccountId != 0 || configuration.Load().ChatBackgroundRefresh)
             throw new InvalidOperationException("Draft-cleanup fixture must start before opening Chats, with persisted background polling disabled.");
         var store = new ChatLocalStore(dataPaths, me!.Id);
@@ -246,15 +248,19 @@ internal sealed partial class MainWindow
         await ClearChatDraftsAsync();
         AssertPreserved("Clear drafts");
         ResetChats(); // Recreate the uninitialized-account condition for the switch.
+        await FlushChatPersistenceAsync();
         store.Save(state);
         UpdatePreferences(p => p with { ChatSaveDrafts = false });
+        await WaitForSettingsLayoutAsync(() => chatAccountReady && chatPending.ContainsKey(91) && chatDrafts.Count == 0);
+        await FlushChatPersistenceAsync();
         AssertPreserved("Disable draft persistence");
         SaveConfiguration();
+        await configuration.FlushAsync();
         if (configuration.Load().ChatSaveDrafts)
             throw new InvalidOperationException("Disabled draft persistence was not saved.");
 
         UpdatePreferences(p => p with { ChatSaveDrafts = true });
-        ResetChats(); store.Save(new([], []));
+        ResetChats(); await FlushChatPersistenceAsync(); store.Save(new([], []));
         Console.WriteLine("UI_SETTINGS_DRAFT_CLEANUP_OK: clear/disable before first Chats visit removes persisted drafts while preserving durable outbox/read positions with background polling disabled");
 
         void AssertPreserved(string action)

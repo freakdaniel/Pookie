@@ -58,6 +58,10 @@ internal sealed class GlassSheenRaster : IDisposable
     private IImage? image;
     private IGraphicsFactory? factory;
     private double paintedEmphasis = double.NaN;
+    private readonly GlassGeometry clip = new(), edge = new();
+    private Rect edgeBounds;
+    private double edgeEmphasis = double.NaN;
+    private Pen? edgePen;
 
     internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0)
     {
@@ -85,11 +89,19 @@ internal sealed class GlassSheenRaster : IDisposable
         context.Save();
         try
         {
-            context.SetClipPath(GlassSheen.Shape(bounds, corners));
+            context.SetClipPath(clip.Get(bounds, corners));
             context.DrawImage(image!, bounds);
         }
         finally { context.Restore(); }
-        GlassSheen.DrawEdge(context, bounds, corners, emphasis);
+        if (edgePen == null || edgeBounds != bounds || edgeEmphasis != emphasis)
+        {
+            edgeBounds = bounds; edgeEmphasis = emphasis;
+            edgePen = new Pen(new LinearGradientBrush(new Point(bounds.X,bounds.Y),new Point(bounds.X,bounds.Bottom),
+                [new(0,Color.FromArgb((byte)(28+emphasis*16),255,255,255)),new(.55,Color.FromArgb(9,255,255,255)),new(1,Color.FromArgb(4,255,255,255))]),1);
+        }
+        var insetBounds = new Rect(bounds.X+.5,bounds.Y+.5,Math.Max(0,bounds.Width-1),Math.Max(0,bounds.Height-1));
+        var insetCorners = new CornerRadius(Math.Max(0,corners.TopLeft-.5),Math.Max(0,corners.TopRight-.5),Math.Max(0,corners.BottomRight-.5),Math.Max(0,corners.BottomLeft-.5));
+        context.DrawPath(edge.Get(insetBounds,insetCorners),edgePen);
     }
 
     internal static void FillPixels(Span<byte> pixels, int width, int height, double emphasis)

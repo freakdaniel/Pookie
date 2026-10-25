@@ -123,6 +123,12 @@ internal sealed class PlayerBackdrop : Control
         rasterFactory = null;
     }
 
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) ClearRaster();
+    }
+
     protected override void OnDispose()
     {
         clock.Stop();

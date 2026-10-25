@@ -147,6 +147,7 @@ internal sealed partial class MainWindow
             SettingsAction("Исходный код", "github.com/freakdaniel/Pookie", "Открыть проект", () => OpenSettingsUrl("https://github.com/freakdaniel/Pookie"), externalLink: true)),
         SettingsGroup("Авторы и лицензии",
             SettingsAction("Иллюстрации", "Icons8", "Открыть сайт", OpenIllustrationCredits, externalLink: true),
+            SettingsAction("Эмодзи", "Twemoji · CC BY 4.0; данные Unicode / CLDR", "Открыть проект", () => OpenSettingsUrl("https://github.com/jdecked/twemoji"), externalLink: true),
             SettingsAction("Лицензии компонентов", "Условия использования библиотек, шрифтов и моделей", "Открыть папку",
                 () => OpenSettingsPath(Path.Combine(AppContext.BaseDirectory, "licenses")))));
 }

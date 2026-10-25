@@ -72,7 +72,7 @@ internal sealed partial class MainWindow
                 collectionCover.ActualHeight + 48 > 256 + 1 / Window.DpiScale)
                 throw new InvalidOperationException("Playlist hero did not match the track hero's title, play button, bottom actions and right-hand square cover layout.");
             await WaitForLikedLayoutAsync(() => !collectionLoadingView.Skeleton.IsVisible && collectionBackdrop.Source != null && collectionBackdrop.Opacity == 1);
-            VerifyCardGlassSource(collectionGlass!, collectionCover, collectionBackdrop, collectionPlay);
+            await VerifyCardGlassSourceAsync(collectionGlass!, collectionCover, collectionBackdrop, collectionPlay);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 900, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => Math.Abs(collectionCover.ActualWidth - 208) < 1 / Window.DpiScale && collectionTitle.Bounds.Right < collectionCover.Bounds.X);

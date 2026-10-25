@@ -74,7 +74,11 @@ internal sealed partial class MainWindow
         shellScroll.Content = shellPageScroll;
         homeWaveLayout = new HomeWaveLayout(shellScroll, WaveSettingsView());
         waveSettingsOpen.Changed += () => homeWaveLayout.SetOpen(waveSettingsOpen.Value);
-        page.Changed += () => { if (page.Value != Page.Home) waveSettingsOpen.Value = false; };
+        page.Changed += () =>
+        {
+            if (page.Value != Page.Home) waveSettingsOpen.Value = false;
+            UpdateContentFrameWidth(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
+        };
         contentSurface = new Border().Background(Surface).Child(homeWaveLayout);
         headerGlass = new ShellChromeGlass(glassContent, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
         shellScroll.ScrollChanged += UpdateScrolledChrome;
@@ -114,8 +118,8 @@ internal sealed partial class MainWindow
 
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
-        return new Grid().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), ChatAttachMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0));
+        return new PresentationRoot().Columns("*").Rows("*").Children(
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0));
     }
 
     private FrameworkElement StartupSplash()
@@ -337,7 +341,6 @@ internal sealed partial class MainWindow
         {
             source = await SharedArtworkAsync(track.ArtworkUrl ?? track.User?.AvatarUrl);
             if (source == null || disposed) return null;
-            if (libraryCoverCache.Count >= 256) libraryCoverCache.Remove(libraryCoverCache.Keys.First());
             libraryCoverCache[track.Id] = source;
         }
         return source;

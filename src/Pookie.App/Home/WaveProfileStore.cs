@@ -7,8 +7,34 @@ namespace Pookie.App.Home;
 internal sealed class WaveProfileStore(string directory)
 {
     private readonly object gate = new();
+    private readonly object pendingSync = new();
+    private readonly Dictionary<long, Storage.SnapshotWriter<WaveProfile>> writers = new();
+    private readonly Dictionary<long, WaveProfile> accepted = new();
+    internal Task SaveAsync(long userId, WaveProfile profile)
+    {
+        lock (pendingSync)
+        {
+            if (!writers.TryGetValue(userId,out var writer)) writers[userId] = writer = new(snapshot => { lock(gate) SaveSnapshot(userId,snapshot); });
+            accepted[userId] = profile;
+            return CompleteSaveAsync(userId,profile,writer,writer.SaveAsync(profile));
+        }
+    }
+    private async Task CompleteSaveAsync(long userId,WaveProfile profile,Storage.SnapshotWriter<WaveProfile> writer,Task saving)
+    {
+        await saving.ConfigureAwait(false);
+        await writer.FlushAsync().ConfigureAwait(false);
+        lock(pendingSync)
+        {
+            if (accepted.GetValueOrDefault(userId) != profile || !writer.FlushAsync().IsCompleted) return;
+            accepted.Remove(userId); writers.Remove(userId);
+        }
+    }
+    internal Task FlushAsync() { lock(pendingSync)return Task.WhenAll(writers.Values.Select(writer=>writer.FlushAsync())); }
     internal WaveTaste Load(long userId)
     {
+        // A rapid account switch must see the accepted snapshot even while its
+        // background write is pending; it must not wait for another disk writer.
+        lock(pendingSync) if(accepted.TryGetValue(userId,out var snapshot))return new(snapshot);
         lock (gate) return LoadCore(userId);
     }
     private WaveTaste LoadCore(long userId)
@@ -26,13 +52,17 @@ internal sealed class WaveProfileStore(string directory)
     }
     private void SaveCore(long userId, WaveTaste taste)
     {
+        SaveSnapshot(userId,taste.Snapshot()); taste.Saved();
+    }
+    private void SaveSnapshot(long userId, WaveProfile snapshot)
+    {
         var file = PathFor(userId); Directory.CreateDirectory(directory);
         var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(taste.Snapshot(), WaveJson.Default.WaveProfile));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(snapshot, WaveJson.Default.WaveProfile));
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            File.Move(temporary, file, overwrite: true); taste.Saved();
+            File.Move(temporary, file, overwrite: true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }

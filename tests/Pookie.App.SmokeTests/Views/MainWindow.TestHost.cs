@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
     private bool chromeUiSmoke;
     private bool settingsUiSmoke;
     private bool queueContinuationUiSmoke;
-    private bool chatNavigationUiSmoke;
+    private bool chatNavigationUiSmoke, chatEmojiUiSmoke;
     private bool chatVideoLiveUi;
     private bool uiSmoke;
     private bool loginUiSmoke;
@@ -27,7 +27,7 @@ internal sealed partial class MainWindow
     private bool trackPageUiSmoke;
     private bool trackPageLiveUi;
     private bool likesEditsUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
-    private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke;
+    private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
 
@@ -43,9 +43,11 @@ internal sealed partial class MainWindow
         queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
         chatsUiSmoke = chatMusicUiSmoke || chatMediaUiSmoke || args.Contains("--chats-ui-smoke-test");
         chatNavigationUiSmoke = args.Contains("--chat-navigation-ui-smoke-test");
+        chatEmojiUiSmoke = args.Contains("--chat-emoji-ui-smoke-test");
         chatVideoLiveUi = args.Contains("--chat-video-live-ui-probe");
         waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
         memoryUiSmoke = args.Contains("--memory-ui-smoke-test");
+        playbackMemoryUiSmoke = args.Contains("--playback-memory-ui-smoke-test");
         uiSmoke = args.Contains("--ui-smoke-test");
         loginUiSmoke = args.Contains("--login-ui-smoke-test");
         browserShutdownSmoke = args.Contains("--browser-shutdown-smoke-test");
@@ -79,7 +81,7 @@ internal sealed partial class MainWindow
 
     partial void OnInitialized()
     {
-        if (uiSmoke || expandedUiSmoke)
+        if (uiSmoke || expandedUiSmoke || playbackMemoryUiSmoke)
         {
             lyricsService.Dispose();
             lyricsService = new(new EmptyLyricsProvider(), Path.Combine(dataPaths.Cache, "FixtureLyrics"));
@@ -92,9 +94,11 @@ internal sealed partial class MainWindow
         if (settingsUiSmoke) Run(VerifySettingsUiAsync);
         if (queueContinuationUiSmoke) Run(VerifyQueueContinuationAsync);
         if (chatNavigationUiSmoke) Run(VerifyChatNavigationUiAsync);
+        if (chatEmojiUiSmoke) Run(VerifyChatEmojiUiAsync);
         if (chatVideoLiveUi) Run(VerifyChatVideoLiveUiAsync);
         if (waveQueueUiSmoke) Run(VerifyWaveQueueUiAsync);
         if (memoryUiSmoke) Run(VerifyArtworkLifetimeAsync);
+        if (playbackMemoryUiSmoke) Run(VerifyBackgroundPlaybackMemoryAsync);
         if (uiSmoke) Run(VerifyUiAsync);
         if (loginUiSmoke) Run(VerifyLoginUiAsync);
         if (browserShutdownSmoke) Run(StartBrowserShutdownCheckAsync);

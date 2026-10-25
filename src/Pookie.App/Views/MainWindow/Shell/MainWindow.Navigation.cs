@@ -24,8 +24,8 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<double> volume = new(70);
     private readonly ObservableValue<string> queueStatus = new("Выбери трек, чтобы собрать очередь");
     private readonly HashSet<long> likedIds = [];
-    private readonly Dictionary<long, ImageSource> coverCache = [];
-    private readonly Dictionary<long, ImageSource> libraryCoverCache = [];
+    private readonly Storage.ResourceCache<long, ImageSource> coverCache = new(256, ArtworkCacheBudget, ArtworkBytes);
+    private readonly Storage.ResourceCache<long, ImageSource> libraryCoverCache = new(256, ArtworkCacheBudget, ArtworkBytes);
     private readonly SemaphoreSlim coverGate = new(4);
     private CancellationTokenSource? likedLoading;
     private Task? likedTask;

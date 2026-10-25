@@ -16,6 +16,9 @@ internal sealed class WaveBackdrop : Control
     private IImage? image;
     private IGraphicsFactory? factory;
     private readonly Vector3[] samples = new Vector3[160 * 64];
+    private byte[]? pixels;
+    private bool rendering, ready, disposed;
+    private long generation;
     private double phase, phaseFrom;
     private long frame;
     private bool dirty = true;
@@ -53,41 +56,59 @@ internal sealed class WaveBackdrop : Control
     }
     protected override void OnRender(IGraphicsContext context)
     {
+        if (disposed || FindVisualRoot() is Window { WindowState: WindowState.Minimized }) return;
         var graphics = Application.IsRunning ? Application.Current.GraphicsFactory : Application.DefaultGraphicsFactory;
         var scale = Math.Max(context.DpiScale, GetDpi() / 96d);
         var width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
         var height = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
         if (image == null || factory != graphics || image.PixelWidth != width || image.PixelHeight != height)
         {
+            generation++; ready = false;
             image?.Dispose(); bitmap?.Dispose();
             bitmap = new WriteableBitmap(width, height, clear: false, hasAlpha: false);
             image = ((IImageSource)bitmap).CreateImage(graphics); factory = graphics; dirty = true;
         }
-        if (dirty)
+        if (dirty && !rendering)
         {
-            using var write = bitmap!.LockForWrite();
-            var palette = new[] { colors.Start, colors.Middle, colors.End };
-            for (var y = 0; y < 64; y++)
-            for (var x = 0; x < 160; x++)
+            dirty = false; rendering = true;
+            var revision = generation; var palette = colors; var position = phase;
+            var output = pixels is { } reusable && reusable.Length == width*height*4 ? reusable : new byte[width*height*4]; pixels = null;
+            var dispatcher = Application.Current.Dispatcher!;
+            _ = Task.Run(() =>
             {
-                double r = 21, g = 20, b = 28;
-                for (var i = 0; i < 3; i++)
+                FillSamples(samples,palette,position);
+                FillPixels(output,width,height,samples);
+                dispatcher.BeginInvoke(() =>
                 {
-                    var dx = x / 160d - (.3 + i * .2 + Math.Sin(phase + i * 2) * .1);
-                    var dy = y / 64d - (.5 + Math.Cos(phase + i * 2) * .22);
-                    var glow = Math.Exp(-(dx * dx * 12 + dy * dy * 3)) * .55;
-                    r += palette[i].X * glow; g += palette[i].Y * glow; b += palette[i].Z * glow;
-                }
-                // Keep the centre readable beneath the primary action.
-                var shade = 1 - .25 * Math.Exp(-Math.Pow((x / 160d - .5) * 5, 2));
-                samples[y * 160 + x] = new((float)(r * shade), (float)(g * shade), (float)(b * shade));
-            }
-            // Keep the expensive glow calculation small, but interpolate its
-            // fractional channels before dithering at the final physical size.
-            FillPixels(write.PixelsBgra32, width, height, samples);
-            dirty = false;
+                    rendering = false;
+                    if (disposed) return;
+                    if (revision == generation && bitmap != null)
+                    {
+                        using var write = bitmap.LockForWrite(); output.CopyTo(write.PixelsBgra32); ready = true; pixels = output;
+                    }
+                    InvalidateVisual();
+                });
+            });
         }
-        context.FillRectangle(Bounds, new ImageBrush(image!, new Rect(0, 0, width, height), Bounds));
+        if (ready) context.DrawImage(image!,Bounds);
+        else context.FillRectangle(Bounds,Color.FromRgb(24,24,24));
+    }
+    private static void FillSamples(Span<Vector3> samples,PlayerGradient colors,double phase)
+    {
+        var palette = new[] { colors.Start,colors.Middle,colors.End };
+        for(var y=0;y<64;y++)for(var x=0;x<160;x++)
+        {
+            double r=21,g=20,b=28;
+            for(var i=0;i<3;i++)
+            {
+                var dx=x/160d-(.3+i*.2+Math.Sin(phase+i*2)*.1);
+                var dy=y/64d-(.5+Math.Cos(phase+i*2)*.22);
+                var glow=Math.Exp(-(dx*dx*12+dy*dy*3))*.55;
+                r+=palette[i].X*glow;g+=palette[i].Y*glow;b+=palette[i].Z*glow;
+            }
+            var shade=1-.25*Math.Exp(-Math.Pow((x/160d-.5)*5,2));
+            samples[y*160+x]=new((float)(r*shade),(float)(g*shade),(float)(b*shade));
+        }
     }
     internal static void FillPixels(Span<byte> pixels, int width, int height, ReadOnlySpan<Vector3> samples)
     {
@@ -108,5 +129,5 @@ internal sealed class WaveBackdrop : Control
             }
         }
     }
-    protected override void OnDispose() { clock.Stop(); colorClock.Stop(); image?.Dispose(); bitmap?.Dispose(); base.OnDispose(); }
+    protected override void OnDispose() { disposed = true; generation++; pixels = null; clock.Stop(); colorClock.Stop(); image?.Dispose(); bitmap?.Dispose(); base.OnDispose(); }
 }

@@ -9,6 +9,7 @@ namespace Pookie.App;
 // MewUI 0.22 can snap their setters before the new state's transition starts.
 internal sealed class MaterialTrackButton : Button
 {
+    private readonly GlassGeometry geometry = new();
     private Color? target;
     private bool passive;
     private bool suppressStateLayer;
@@ -157,8 +158,9 @@ internal sealed class MaterialTrackButton : Button
             {
                 var bounds = GetSnappedBorderBounds(Bounds);
                 var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
-                glassBackdrop.Draw(context, bounds, corners);
-                context.FillPath(GlassSheen.Shape(bounds, corners), glassTint);
+                var shape = geometry.Get(bounds,corners);
+                glassBackdrop.Draw(context, bounds, corners, shape);
+                context.FillPath(shape, glassTint);
             }
             else if (connected)
                 DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
@@ -180,6 +182,18 @@ internal sealed class MaterialTrackButton : Button
             base.RenderSubtree(context);
         }
         finally { context.Restore(); }
+    }
+
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null)
+        {
+            surfaceClock.Stop(); shapeClock.Stop();
+            if (target is { } color) Background = color;
+            glassTint = glassTintTarget; innerCorner = shapeTarget;
+            sheen.Dispose();
+        }
     }
 
     protected override void OnDispose()

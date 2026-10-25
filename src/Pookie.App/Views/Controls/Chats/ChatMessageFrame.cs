@@ -7,6 +7,7 @@ namespace Pookie.App;
 // A reply belongs to its message and follows the bubble's measured width.
 internal sealed class ChatMessageFrame(FrameworkElement quote, Border bubble) : Panel
 {
+    private readonly GlassGeometry geometry = new();
     private Color surface;
     private CornerRadius corners = new(18);
     internal void SetAppearance(Color color,CornerRadius radius) { surface = color; corners = radius; InvalidateVisual(); }
@@ -37,12 +38,12 @@ internal sealed class ChatMessageFrame(FrameworkElement quote, Border bubble) : 
         return finalSize;
     }
     protected override void OnRender(IGraphicsContext context)
-    { if (quote.IsVisible) context.FillPath(GlassSheen.Shape(Bounds,corners),surface); }
+    { if (quote.IsVisible) context.FillPath(geometry.Get(Bounds,corners),surface); }
     protected override void RenderSubtree(IGraphicsContext context)
     {
         if (!quote.IsVisible) { base.RenderSubtree(context); return; }
         context.Save();
-        try { context.SetClipPath(GlassSheen.Shape(Bounds,corners)); base.RenderSubtree(context); }
+        try { context.SetClipPath(geometry.Get(Bounds,corners)); base.RenderSubtree(context); }
         finally { context.Restore(); }
     }
 }

@@ -10,13 +10,13 @@ internal sealed class ChatStage(FrameworkElement content, bool centerReadingColu
     protected override Size MeasureContent(Size availableSize)
     {
         var room = Math.Max(0,availableSize.Width-(rightInset?.Invoke() ?? 0));
-        content.Measure(new Size(centerReadingColumn ? Math.Min(696, room) : room, availableSize.Height));
+        content.Measure(new Size(centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room, availableSize.Height));
         return availableSize;
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
         var room = Math.Max(0,finalSize.Width-(rightInset?.Invoke() ?? 0));
-        var width = centerReadingColumn ? Math.Min(696, room) : room;
+        var width = centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room;
         content.Arrange(new Rect(Bounds.X + (room - width) / 2, Bounds.Y, width, finalSize.Height));
         return finalSize;
     }

@@ -25,8 +25,9 @@ internal sealed class ChatTabs : Panel
         KeyDown += e =>
         {
             if (e.Key is not (Key.Left or Key.Right) || tabs.Count == 0) return;
-            e.Handled = true; var index = Math.Clamp(selected + (e.Key == Key.Left ? -1 : 1), 0, tabs.Count - 1);
-            if (index == selected) return;
+            e.Handled = true; var step = e.Key == Key.Left ? -1 : 1; var index = selected + step;
+            while (index >= 0 && index < tabs.Count && !tabs[index].IsVisible) index += step;
+            if (index < 0 || index >= tabs.Count) return;
             Select(index); tabs[index].Focus(); actions[index]();
         };
         MouseWheel += e => { if (total > ActualWidth) { ScrollBy(-(e.Delta.X + e.Delta.Y)*48); e.Handled = true; } };
@@ -44,7 +45,7 @@ internal sealed class ChatTabs : Panel
     }
     internal void Select(int index)
     {
-        if (index < 0 || index >= tabs.Count) return;
+        if (index < 0 || index >= tabs.Count || !tabs[index].IsVisible) return;
         selected = index;
         for (var i = 0; i < labels.Count; i++)
         {
@@ -53,10 +54,12 @@ internal sealed class ChatTabs : Panel
         }
         Retarget(animate: true);
     }
+    internal void SetTabVisible(int index, bool visible)
+    { if (index < 0 || index >= tabs.Count || tabs[index].IsVisible == visible) return; tabs[index].IsVisible = visible; initialized = false; InvalidateMeasure(); }
     private void Retarget(bool animate)
     {
         if (tabs.Count == 0 || ActualWidth <= 0) return;
-        targetX = 4 + tabs.Take(selected).Sum(t => t.DesiredSize.Width);
+        targetX = 4 + tabs.Take(selected).Where(t => t.IsVisible).Sum(t => t.DesiredSize.Width);
         targetWidth = tabs[selected].DesiredSize.Width;
         targetOffset = Math.Clamp(offset, Math.Max(0, targetX + targetWidth + 4 - ActualWidth), Math.Max(0, Math.Min(targetX - 4, total - ActualWidth)));
         motion.Stop();
@@ -67,7 +70,7 @@ internal sealed class ChatTabs : Panel
     protected override Size MeasureContent(Size availableSize)
     {
         total = 8;
-        foreach (var tab in tabs) { tab.Measure(new Size(double.PositiveInfinity, 40)); total += tab.DesiredSize.Width; }
+        foreach (var tab in tabs.Where(t => t.IsVisible)) { tab.Measure(new Size(double.PositiveInfinity, 40)); total += tab.DesiredSize.Width; }
         return new Size(double.IsFinite(availableSize.Width) ? availableSize.Width : total, 48);
     }
     protected override Size ArrangeOverride(Size finalSize)
@@ -75,7 +78,7 @@ internal sealed class ChatTabs : Panel
         if (!initialized || Math.Abs(arrangedWidth - finalSize.Width) > .1 || Math.Abs(targetWidth - (tabs.ElementAtOrDefault(selected)?.DesiredSize.Width ?? 0)) > .1) Retarget(false);
         arrangedWidth = finalSize.Width;
         var x = Bounds.X + 4 - offset;
-        foreach (var tab in tabs) { tab.Arrange(new Rect(x, Bounds.Y + 4, tab.DesiredSize.Width, 40)); x += tab.DesiredSize.Width; }
+        foreach (var tab in tabs.Where(t => t.IsVisible)) { tab.Arrange(new Rect(x, Bounds.Y + 4, tab.DesiredSize.Width, 40)); x += tab.DesiredSize.Width; }
         return finalSize;
     }
     protected override void RenderSubtree(IGraphicsContext context)

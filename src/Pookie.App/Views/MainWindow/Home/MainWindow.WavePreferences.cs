@@ -71,7 +71,7 @@ internal sealed partial class MainWindow
                 waveTaste = WaveProfileStore.WithoutLearning(waveTaste.Snapshot());
                 waveTaste.SessionId = waveListening.SessionId;
                 waveLearning = null; waveAnalyzedTrack = null;
-                waveStore.Save(account, waveTaste);
+                await waveStore.SaveAsync(account, waveTaste.Snapshot());
             }
             // All accepted writes run on the same worker before this deletion.
             // Cancelled inference cannot publish a vector after the barrier.

@@ -38,7 +38,7 @@ internal sealed partial class MainWindow
         var point = new Point(row.Waveform.Bounds.X + 40, row.Waveform.Bounds.Y + 20);
         if (((UIElement)Window.Content!).HitTest(point) != row.Waveform)
             throw new InvalidOperationException("Track Art intercepted waveform input.");
-        VerifyCardGlassSource(row.TrackArtGlass, row.Cover, row.TrackArt, actions);
+        await VerifyCardGlassSourceAsync(row.TrackArtGlass, row.Cover, row.TrackArt, actions);
         CaptureUiPreview("track-art-list");
         const string lateUrl = "https://i1.sndcdn.com/track-art-late-row.jpg";
         var late = new TaskCompletionSource<ImageSource?>(TaskCreationOptions.RunContinuationsAsynchronously);

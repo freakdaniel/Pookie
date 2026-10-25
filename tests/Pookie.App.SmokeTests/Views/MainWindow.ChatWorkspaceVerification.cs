@@ -38,12 +38,17 @@ internal sealed partial class MainWindow
         RouteChatEscape();if(chatSelectionBar.IsVisible)throw new InvalidOperationException("Escape did not close selection.");
         await VerifyChatReplyUiAsync(target);chatInput.Text="Связанный ответ";await SendChatAsync();
         if(chatReply!=null||!chatMessages.Any(m=>ChatProtocol.Project(m,42,90).Reply?.MessageId==target.Id))throw new InvalidOperationException("Reply was not confirmed and projected through the outbox.");
+        var shortReply=chatMessages.Last(m=>ChatProtocol.Project(m,42,90).Reply?.MessageId==target.Id);
+        if(!ChatEnvelopeHosting.IsReference(shortReply.Body) || shortReply.Body.Length>36 || shortReply.ClientContent==null)
+            throw new InvalidOperationException("Reply leaked its inline payload into the SoundCloud transport.");
         await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && ChatRows.Any(row => row.Bound && row.Quote.IsVisible && row.Quote.Title.Length > 0));
         await WaitForLoginFrameAsync(); CaptureUiPreview("chats-reply-message");
         await VerifyChatFooterUiAsync(target);
         var visibleCount=chatMessageItems.Count;await ReactToChatAsync(target,"🔥");
         if(chatMessageItems.Count!=visibleCount||chatReactions.GetValueOrDefault(target.Id)?.GetValueOrDefault(42)!="🔥")throw new InvalidOperationException("Reaction became a text bubble or was not projected.");
         await ReactToChatAsync(target,"🔥");if(chatReactions.GetValueOrDefault(target.Id)?.ContainsKey(42)==true)throw new InvalidOperationException("Second reaction did not remove own emoji.");
+        if(chatMessages.Where(m=>ChatProtocol.Project(m,42,90).IsReaction).Any(m=>!ChatEnvelopeHosting.IsReference(m.Body) || m.Body.Length>36))
+            throw new InvalidOperationException("Reaction leaked its inline payload into the SoundCloud transport.");
         var avatarBeforeSearch = me!.AvatarUrl;
         const string cachedAvatarUrl = "https://i1.sndcdn.com/search-avatar-fixture.jpg";
         var cachedAvatar = ImageSource.FromBgraPixels(1,1,[220,140,80,255],hasAlpha:false);
@@ -131,33 +136,42 @@ internal sealed partial class MainWindow
         CaptureUiPreview("chats-neutral-wide");
         VerifyChatScrollColumn();
         chatRecipient = chatRecipient! with { AvatarUrl = cachedAvatarUrl };
-        foreach(var width in new[]{1840,1000,800})
+        foreach(var width in new[]{2560,1920,1480,1440,1000,780})
         {
             Window.WindowSize=WindowSize.Resizable(width,900,minWidth:760,minHeight:600);
-            await WaitForLikedLayoutAsync(() => !chatColumns.IsArrangeDirty && !chatColumns.Animating);
+            await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width-width)<1 && Math.Abs(chatColumns.ActualWidth-(width-32))<1 && !chatColumns.IsArrangeDirty && !chatColumns.Animating);
+            VerifyChatReferenceGeometry(detailsOpen: false);
             var beforeWidth = ((FrameworkElement)chatColumns.Children[1]).ActualWidth;
+            var beforeCenter = chatComposer.Bounds.X + chatComposer.ActualWidth / 2;
             var motionFrames = new List<double>();
             void SampleMotion() => motionFrames.Add(((FrameworkElement)chatColumns.Children[1]).ActualWidth);
             chatViewport.BeforePaint += SampleMotion;
             OpenChatInfo();
-            await WaitForLikedLayoutAsync(()=>Math.Abs(Window.ClientSize.Width-width)<1&&Math.Abs(chatColumns.ActualWidth-(Math.Min(1440,width)-72))<1&&!chatColumns.IsMeasureDirty&&!chatColumns.IsArrangeDirty&&!chatColumns.Animating&&chatDetailsCard.Opacity>.99 && !chatHistoryLoading);
+            await WaitForLikedLayoutAsync(()=>Math.Abs(Window.ClientSize.Width-width)<1&&Math.Abs(chatColumns.ActualWidth-(width-32))<1&&!chatColumns.IsMeasureDirty&&!chatColumns.IsArrangeDirty&&!chatColumns.Animating&&chatDetailsCard.Opacity>.99 && !chatHistoryLoading);
             chatViewport.BeforePaint -= SampleMotion;
             VerifyChatScrollColumn();
+            VerifyChatReferenceGeometry(detailsOpen: true);
             await WaitForLikedLayoutAsync(() => chatProfileBackdrop.Target != new PlayerPalette(ChatGlassSurface,ChatGlassSurface,ChatGlassSurface) && !chatProfileBackdrop.Animating);
             if (chatColumns.Children[0] is not GlassCard inboxCard || inboxCard.Background != chatIdentityCard.Background || chatDetailsCard.Background != chatComposer.Background)
                 throw new InvalidOperationException("Chat side panels do not share the header and composer glass surface.");
             if (Math.Abs(chatDetailsCard.Bounds.Bottom - chatComposer.Bounds.Bottom) > 1 / Window.DpiScale ||
                 inboxCard.IsVisible && Math.Abs(inboxCard.Bounds.Bottom - chatComposer.Bounds.Bottom) > 1 / Window.DpiScale)
                 throw new InvalidOperationException("Chat side panels lost the composer bottom inset.");
-            var shouldDock=chatColumns.ActualWidth>=1232;
+            var shouldDock=width>=1480;
             var afterWidth = ((FrameworkElement)chatColumns.Children[1]).ActualWidth;
+            var centerShift = beforeCenter - chatComposer.Bounds.X - chatComposer.ActualWidth / 2;
+            if (Math.Abs(centerShift - (shouldDock ? 188 : 0)) > 2 / Window.DpiScale ||
+                Math.Abs(beforeWidth - afterWidth - (shouldDock ? 360 : 0)) > 2 / Window.DpiScale)
+                throw new InvalidOperationException($"Drawer changed the reference geometry at {width}: center shift={centerShift}, viewport shrink={beforeWidth-afterWidth}.");
             if (shouldDock && !motionFrames.Any(w => w > afterWidth + 2 && w < beforeWidth - 2))
                 throw new InvalidOperationException("The conversation snapped to its final width instead of animating with the information panel.");
-            if (!shouldDock && chatColumns.Children[2] is Border scrim && scrim.Bounds.X < ((FrameworkElement)chatColumns.Children[1]).Bounds.X - 1)
-                throw new InvalidOperationException("Information scrim dims the unrelated inbox.");
+            if (!shouldDock && chatColumns.Children[2] is Border outsideClickLayer &&
+                (outsideClickLayer.Background != Color.Transparent || !outsideClickLayer.IsHitTestVisible ||
+                 outsideClickLayer.Bounds.X < ((FrameworkElement)chatColumns.Children[1]).Bounds.X - 1))
+                throw new InvalidOperationException("The compact information panel must dismiss on an invisible layer confined to the conversation.");
             if(shouldDock&&(chatOptions.Bounds.Right>chatDetailsCard.Bounds.X-15||chatComposer.Bounds.Right>chatDetailsCard.Bounds.X-15))throw new InvalidOperationException("Docked details overlap conversation.");
             CaptureUiPreview("chats-workspace-"+width);
-            if (width == 1840)
+            if (width == 1920)
             {
                 await VerifyChatProfileGradientAsync();
                 OpenChatThreadSearch(); chatMessageSearch.Text = "Связанный"; await SearchChatMessagesAsync();
@@ -179,10 +193,11 @@ internal sealed partial class MainWindow
             var closeSamples = new List<(double Reveal,int Passes)>();
             void SampleClose() => closeSamples.Add((chatColumns.Reveal,chatRestorePasses));
             Window.FrameRendered += SampleClose;
-            if (width == 1840) RouteWaveformClick(SettingsCenter(close)); else RouteChatEscape();
+            if (width == 1920) RouteWaveformClick(SettingsCenter(close)); else RouteChatEscape();
             if(chatColumns.DetailsOpen)throw new InvalidOperationException("Closing attachments did not start.");
             await WaitForLikedLayoutAsync(() => !chatColumns.Animating && !chatDetailsCard.IsVisible && chatRestoreOffset == null);
             Window.FrameRendered -= SampleClose;
+            VerifyChatReferenceGeometry(detailsOpen: false);
             if (!closeSamples.Any(sample => sample.Reveal > .01 && sample.Reveal < .99) || closeSamples.Zip(closeSamples.Skip(1)).Any(pair => pair.Second.Reveal > pair.First.Reveal+.001))
                 throw new InvalidOperationException("Closing details snapped or reversed instead of sliding through intermediate frames.");
             // This fixture keeps the reading width unchanged. Ordinary window
@@ -194,6 +209,16 @@ internal sealed partial class MainWindow
             if (closedAnchor == null || Math.Abs(closedAnchor.Root.Bounds.Y-viewer.Bounds.Y-anchorY) > 2/Window.DpiScale)
                 throw new InvalidOperationException("Closing details displaced the visible history anchor.");
         }
+        // Returning to an ordinary page must restore its own content limit,
+        // including when no native window resize accompanies navigation.
+        Window.WindowSize=WindowSize.Resizable(2560,900,minWidth:760,minHeight:600);
+        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-2528)<1);
+        BeginNavigation(new(Page.Home));
+        await WaitForLikedLayoutAsync(() => Math.Abs(contentFrame.ActualWidth-1440)<1 && contentFrame.Padding.Left==36);
+        BeginNavigation(new(Page.Chats));
+        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-2528)<1 && !chatColumns.IsArrangeDirty);
+        VerifyChatReferenceGeometry(detailsOpen: false);
+        Console.WriteLine("UI_CHAT_WIDE_LAYOUT_OK: full-width page, 360px sidebars, shared 696px column, 188px dock shift, overlay below 1480px, outer scrollbar and restored page limits");
         Window.WindowSize=WindowSize.Resizable(1280,900,minWidth:760,minHeight:600);
         var nativeDpi=Window.Dpi;
         try
@@ -255,7 +280,8 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && !chatComposerLayout.IsChangingMode && chatComposerLayout.VoiceAmount>.99 && chatVoiceBar.ActualWidth > 100 && !chatColumns.Animating);
         Window.FrameRendered -= SampleVoiceMode;
         if (!voiceFrames.Any(frame=>frame.Amount>.02 && frame.Amount<.98 && frame.Text>.02 && frame.Voice>.02))
-            throw new InvalidOperationException("Starting voice capture snapped the editor instead of cross-fading both surfaces.");
+            throw new InvalidOperationException("Starting voice capture snapped the editor instead of cross-fading both surfaces: " +
+                string.Join("; ", voiceFrames.Select(frame => $"{frame.Amount:F3}/{frame.Text:F3}/{frame.Voice:F3}")));
         if (chatVoiceBar.Bounds.Y < chatComposer.Bounds.Y || chatVoiceBar.Bounds.Bottom > chatComposer.Bounds.Bottom || chatInput.IsVisible)
             throw new InvalidOperationException("Voice recording is not integrated into the composer surface.");
         CaptureUiPreview("chats-synthetic-recording");
@@ -337,11 +363,33 @@ internal sealed partial class MainWindow
         transport.FailReads=true;await RefreshChatsAsync();
         if(!restoredIds.SequenceEqual(chatMessageItems.Select(m=>m.Id)))throw new InvalidOperationException("Offline refresh discarded restored history.");
         OpenChatGlobalSearch(); chatSearch.Text="Связанный"; await SearchChatsAsync();
-        me=new(){Id=7,Username="Другой аккаунт"};EnsureChatAccount();await RestoreChatHistoryAsync();
+        me=new(){Id=7,Username="Другой аккаунт"};await EnsureChatAccountAsync();await RestoreChatHistoryAsync();
         if(chatMessageItems.Count!=0||chatWorkspace.Favorites.Length!=0||chatRecipient!=null||chatGlobalSearchResults.Children.Count!=0||chatSearch.Text.Length!=0||chatGlobalSearchFrame.IsVisible||chatColumns.DetailsOpen)throw new InvalidOperationException("Account switch exposed previous chats.");
-        me=new(){Id=42,Username="Ты"};EnsureChatAccount();await RestoreChatHistoryAsync();chatTimer.Stop();transport.FailReads=false;
+        me=new(){Id=42,Username="Ты"};await EnsureChatAccountAsync();await RestoreChatHistoryAsync();chatTimer.Stop();transport.FailReads=false;
         if(chatRecipient?.Id!=90||chatWorkspace.Favorites.Length!=1)throw new InvalidOperationException("Account return lost durable favorites or last conversation.");
         Console.WriteLine("UI_CHAT_WORKSPACE_OK: folders, pins, favorites, selection, replies, reactions, FTS, dock/overlay, Escape and synthetic voice drafts");
+    }
+
+    private void VerifyChatReferenceGeometry(bool detailsOpen)
+    {
+        var tolerance=2/Window.DpiScale;
+        var viewport=Window.ClientSize.Width;
+        var inbox=(FrameworkElement)chatColumns.Children[0];
+        var stage=(FrameworkElement)chatColumns.Children[1];
+        var docked=detailsOpen && viewport>=1480;
+        if(Math.Abs(chatColumns.ActualWidth-(viewport-32))>tolerance || Math.Abs(chatColumns.Bounds.X-16)>tolerance ||
+            inbox.IsVisible && Math.Abs(inbox.ActualWidth-360)>tolerance)
+            throw new InvalidOperationException($"Chat outer/left geometry differs at {viewport}: columns={chatColumns.Bounds}, inbox={inbox.Bounds}.");
+        var start=chatColumns.Bounds.X+(inbox.IsVisible ? 376 : 0);
+        var end=chatColumns.Bounds.Right-(docked ? 376 : 0);
+        var expectedWidth=Math.Min(696,end-start);
+        var expectedCenter=(start+end)/2;
+        foreach(var chrome in new FrameworkElement[]{chatIdentityCard,chatComposer})
+            if(Math.Abs(chrome.ActualWidth-expectedWidth)>tolerance || Math.Abs(chrome.Bounds.X+chrome.ActualWidth/2-expectedCenter)>tolerance)
+                throw new InvalidOperationException($"Chat chrome no longer shares the reference reading column at {viewport}: actual={chrome.Bounds}, expected center={expectedCenter}, width={expectedWidth}.");
+        if(Math.Abs(stage.Bounds.X-start)>tolerance || detailsOpen &&
+            (Math.Abs(chatDetailsCard.ActualWidth-360)>tolerance || Math.Abs(chatDetailsCard.Bounds.Right-chatColumns.Bounds.Right)>tolerance))
+            throw new InvalidOperationException("Chat panels do not follow the available workspace edges.");
     }
 
     private void VerifyChatScrollColumn()

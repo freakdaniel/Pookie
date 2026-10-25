@@ -76,6 +76,12 @@ internal sealed class GlassContentFrame : Panel
         renderer?.Dispose(); renderer = null;
         raster?.Dispose(); raster = null;
     }
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) ClearRaster();
+    }
+
     protected override void OnDispose() { ClearRaster(); base.OnDispose(); }
 
     private sealed class SampleLevel : IDisposable

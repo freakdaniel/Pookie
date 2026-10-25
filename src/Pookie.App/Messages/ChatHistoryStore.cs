@@ -15,7 +15,7 @@ internal sealed record ChatHistoryWindow(ChatMessage[] Messages, string? Cursor,
 internal sealed class ChatHistoryStore : IAsyncDisposable
 {
     internal const long DefaultBudget = 256L * 1024 * 1024;
-    private readonly Channel<Action<SqliteConnection>> work = Channel.CreateUnbounded<Action<SqliteConnection>>(new() { SingleReader = true });
+    private readonly Channel<Action<SqliteConnection>> work = Channel.CreateBounded<Action<SqliteConnection>>(new BoundedChannelOptions(128) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly Task worker;
     private readonly string path;
     private readonly long budget;
@@ -44,7 +44,8 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
                 CREATE TABLE IF NOT EXISTS attachments(peer INTEGER NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,name TEXT NOT NULL, PRIMARY KEY(peer,id,kind,name));
                 CREATE TABLE IF NOT EXISTS events(peer INTEGER NOT NULL,event_id TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(peer,event_id));
                 CREATE TABLE IF NOT EXISTS reactions(peer INTEGER NOT NULL,target TEXT NOT NULL,sender INTEGER NOT NULL,emoji TEXT,stamp INTEGER NOT NULL,event_id TEXT NOT NULL,PRIMARY KEY(peer,target,sender));
-                PRAGMA user_version=1;
+                CREATE TABLE IF NOT EXISTS resolved_content(peer INTEGER NOT NULL,id TEXT NOT NULL,wire TEXT NOT NULL,content TEXT NOT NULL,PRIMARY KEY(peer,id));
+                PRAGMA user_version=2;
                 """);
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             await foreach (var item in work.Reader.ReadAllAsync()) item(db);
@@ -58,17 +59,29 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
             while (work.Reader.TryRead(out var item)) item(failed);
         }
     }
-    private Task<T> Run<T>(Func<SqliteConnection, T> action, CancellationToken token = default)
+    private async Task<T> Run<T>(Func<SqliteConnection, T> action, CancellationToken token = default)
     {
-        if (token.IsCancellationRequested) return Task.FromCanceled<T>(token);
+        token.ThrowIfCancellationRequested();
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!work.Writer.TryWrite(db =>
+        using var canceled = token.Register(() => completion.TrySetCanceled(token));
+        try { await work.Writer.WriteAsync(db =>
         {
-            if (token.IsCancellationRequested) { completion.TrySetCanceled(token); return; }
-            try { completion.TrySetResult(action(db)); }
-            catch (Exception error) { try { Execute(db, "ROLLBACK"); } catch { } completion.TrySetException(error); }
-        })) completion.TrySetException(new ObjectDisposedException(nameof(ChatHistoryStore)));
-        return completion.Task;
+            if (completion.Task.IsCompleted) return;
+            try
+            {
+                T result;
+                using (token.Register(() => { if (db.Handle != null) SQLitePCL.raw.sqlite3_interrupt(db.Handle); })) result = action(db);
+                token.ThrowIfCancellationRequested();
+                completion.TrySetResult(result);
+            }
+            catch (Exception error)
+            {
+                try { Execute(db, "ROLLBACK"); } catch { }
+                if (token.IsCancellationRequested) completion.TrySetCanceled(token); else completion.TrySetException(error);
+            }
+        }, token).ConfigureAwait(false); }
+        catch (ChannelClosedException) { throw new ObjectDisposedException(nameof(ChatHistoryStore)); }
+        return await completion.Task.ConfigureAwait(false);
     }
     private static int Execute(SqliteConnection db, string sql, params (string Name, object? Value)[] args)
     {
@@ -105,31 +118,42 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
         }
         return result.OrderByDescending(c => c.LastMessage?.SentAt).ToArray();
     }, token);
-    internal Task SavePageAsync(long account, long peer, ChatMessagePage page, string? requestedCursor = null, CancellationToken token = default) => Run(db =>
+    internal Task SavePageAsync(long account, long peer, ChatMessagePage page, string? requestedCursor = null, CancellationToken token = default, bool updateRange = true) => Run(db =>
     {
         Execute(db, "BEGIN IMMEDIATE");
         {
-            foreach (var message in page.Messages)
+            foreach (var incoming in page.Messages)
             {
+                var message=incoming;
                 if (message.SenderId != account && message.SenderId != peer || message.Body.Length > 20000 || message.Id.Length > 512) continue;
+                var hosted=ChatEnvelopeHosting.IsReference(message.Body);
+                if(hosted)Execute(db,"INSERT INTO resolved_content VALUES($p,$i,$b,'') ON CONFLICT(peer,id) DO UPDATE SET wire=$b,content='' WHERE resolved_content.wire<>$b",("$p",peer),("$i",message.Id),("$b",message.Body));
+                if(hosted && message.ClientContent==null)
+                {
+                    using var content=Command(db,"SELECT NULLIF(content,'') FROM resolved_content WHERE peer=$p AND id=$i AND wire=$b",("$p",peer),("$i",message.Id),("$b",message.Body));
+                    message=message with{ClientContent=content.ExecuteScalar() as string};
+                }
                 using var existing = Command(db, "SELECT 1 FROM messages WHERE peer=$p AND id=$i", ("$p", peer), ("$i", message.Id));
                 var known = existing.ExecuteScalar() != null;
                 Execute(db, "INSERT INTO messages VALUES($p,$i,$s,$b,$d,$t) ON CONFLICT(peer,id) DO UPDATE SET touched=$t",
                     ("$p", peer), ("$i", message.Id), ("$s", message.SenderId), ("$b", message.Body), ("$d", message.SentAt.ToUnixTimeMilliseconds()), ("$t", Now));
                 var projection = ChatProtocol.Project(message, account, peer);
-                if (!projection.IsReaction && !known)
+                var resolved=hosted && projection.EventId!=null;
+                if(resolved)Execute(db,"INSERT INTO resolved_content VALUES($p,$i,$b,$c) ON CONFLICT(peer,id) DO UPDATE SET wire=$b,content=$c",("$p",peer),("$i",message.Id),("$b",message.Body),("$c",message.ClientContent));
+                if(!known || hosted)Execute(db,"DELETE FROM message_search WHERE peer=$p AND id=$i",("$p",peer),("$i",message.Id));
+                if (!projection.IsReaction && (!known || resolved) && (!hosted || resolved))
                     Execute(db, "INSERT INTO message_search(body,peer,id) VALUES($b,$p,$i)", ("$b", projection.Text), ("$p", peer), ("$i", message.Id));
                 else if (projection.IsReaction && Execute(db, "INSERT OR IGNORE INTO events VALUES($p,$event,$id)", ("$p", peer), ("$event", message.SenderId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + projection.EventId), ("$id", message.Id)) > 0)
                     Execute(db, """
                         INSERT INTO reactions VALUES($p,$target,$sender,$emoji,$stamp,$event)
                         ON CONFLICT(peer,target,sender) DO UPDATE SET emoji=$emoji,stamp=$stamp,event_id=$event
                         WHERE $stamp>reactions.stamp OR ($stamp=reactions.stamp AND $event>reactions.event_id)
-                        """, ("$p", peer), ("$target", ChatProtocol.DecodeTarget(message.Body)), ("$sender", message.SenderId),
+                        """, ("$p", peer), ("$target", projection.TargetId), ("$sender", message.SenderId),
                         ("$emoji", projection.Reaction), ("$stamp", message.SentAt.ToUnixTimeMilliseconds()), ("$event", projection.EventId));
-                var kind = ChatMediaReference.Parse(message.Body) != null ? "media" : ChatMusicLink.Find(message.Body).Length > 0 ? "music" : projection.Text.Contains("https://", StringComparison.OrdinalIgnoreCase) ? "link" : null;
+                var kind = projection.IsReaction ? null : ChatMediaReference.Parse(message.Body) != null ? "media" : ChatMusicLink.Find(projection.Text).Length > 0 ? "music" : projection.Text.Contains("https://", StringComparison.OrdinalIgnoreCase) ? "link" : null;
                 if (kind != null) Execute(db, "INSERT OR IGNORE INTO attachments VALUES($p,$i,$k,'')", ("$p", peer), ("$i", message.Id), ("$k", kind));
             }
-            Execute(db, "INSERT INTO ranges VALUES($p,$c,$n,$f,$t) ON CONFLICT(peer,cursor) DO UPDATE SET next_cursor=$n,complete=$f,touched=$t",
+            if(updateRange)Execute(db, "INSERT INTO ranges VALUES($p,$c,$n,$f,$t) ON CONFLICT(peer,cursor) DO UPDATE SET next_cursor=$n,complete=$f,touched=$t",
                 ("$p", peer), ("$c", requestedCursor ?? ""), ("$n", page.NextHref), ("$f", page.NextHref == null ? 1 : 0), ("$t", Now));
             Execute(db, "COMMIT");
         }
@@ -140,8 +164,8 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
         limit = Math.Clamp(limit, 1, 200);
         var result = new List<ChatMessage>();
         // Center on a saved anchor when it exists; otherwise recover the latest window.
-        using var command = Command(db, anchor == null ? "SELECT id,sender,body,stamp FROM messages WHERE peer=$p ORDER BY stamp DESC,id DESC LIMIT $l" :
-            "SELECT id,sender,body,stamp FROM messages WHERE peer=$p ORDER BY ABS(stamp-COALESCE((SELECT stamp FROM messages WHERE peer=$p AND id=$a),9223372036854775807)),stamp DESC LIMIT $l",
+        using var command = Command(db, anchor == null ? "SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p ORDER BY stamp DESC,id DESC LIMIT $l" :
+            "SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p ORDER BY ABS(stamp-COALESCE((SELECT stamp FROM messages WHERE peer=$p AND id=$a),9223372036854775807)),stamp DESC LIMIT $l",
             ("$p", peer), ("$a", anchor), ("$l", limit));
         using (var reader = command.ExecuteReader()) while (reader.Read()) result.Add(ReadMessage(reader));
         if (result.Count > 0) Execute(db, "UPDATE messages SET touched=$t WHERE peer=$p AND stamp BETWEEN $a AND $b", ("$t", Now), ("$p", peer), ("$a", result.Min(m => m.SentAt.ToUnixTimeMilliseconds())), ("$b", result.Max(m => m.SentAt.ToUnixTimeMilliseconds())));
@@ -157,9 +181,14 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
     }, token);
     internal Task<ChatMessage?> FindMessageAsync(long peer,string id,CancellationToken token = default) => Run(db =>
     {
-        using var command = Command(db,"SELECT id,sender,body,stamp FROM messages WHERE peer=$p AND id=$i",("$p",peer),("$i",id));
+        using var command = Command(db,"SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p AND id=$i",("$p",peer),("$i",id));
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadMessage(reader) : null;
+    },token);
+    internal Task<ChatMessage[]> UnresolvedExtensionsAsync(long peer,CancellationToken token=default) => Run(db=>
+    {
+        using var command=Command(db,"SELECT m.id,m.sender,m.body,m.stamp,NULL FROM messages m JOIN resolved_content e ON e.peer=m.peer AND e.id=m.id AND e.wire=m.body WHERE m.peer=$p AND e.content='' ORDER BY m.stamp DESC LIMIT 100",("$p",peer));
+        using var reader=command.ExecuteReader();var result=new List<ChatMessage>();while(reader.Read())result.Add(ReadMessage(reader));return result.ToArray();
     },token);
     internal Task SaveMediaMetadataAsync(long peer, string id, MediaFile[] files, string caption, CancellationToken token = default) => Run(db =>
     {
@@ -188,18 +217,18 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
     }, token);
     internal Task<ChatMessage[]> MediaMessagesAsync(long peer, CancellationToken token = default, int offset = 0) => Run(db =>
     {
-        using var command = Command(db, "SELECT m.id,m.sender,m.body,m.stamp FROM messages m WHERE m.peer=$p AND EXISTS(SELECT 1 FROM attachments a WHERE a.peer=m.peer AND a.id=m.id) ORDER BY m.stamp DESC LIMIT 50 OFFSET $o", ("$p", peer), ("$o", Math.Max(0, offset)));
+        using var command = Command(db, "SELECT m.id,m.sender,m.body,m.stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=m.peer AND e.id=m.id AND e.wire=m.body) FROM messages m WHERE m.peer=$p AND EXISTS(SELECT 1 FROM attachments a WHERE a.peer=m.peer AND a.id=m.id) ORDER BY m.stamp DESC LIMIT 50 OFFSET $o", ("$p", peer), ("$o", Math.Max(0, offset)));
         using var reader = command.ExecuteReader(); var result = new List<ChatMessage>(); while (reader.Read()) result.Add(ReadMessage(reader)); return result.ToArray();
     }, token);
     internal Task<ChatMessage[]> BeforeAsync(long peer, ChatMessage first, int limit = 100, CancellationToken token = default) => Run(db =>
     {
-        using var command = Command(db, "SELECT id,sender,body,stamp FROM messages WHERE peer=$p AND (stamp<$s OR (stamp=$s AND id<$i)) ORDER BY stamp DESC,id DESC LIMIT $n", ("$p", peer), ("$s", first.SentAt.ToUnixTimeMilliseconds()), ("$i", first.Id), ("$n", Math.Clamp(limit, 1, 100)));
+        using var command = Command(db, "SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p AND (stamp<$s OR (stamp=$s AND id<$i)) ORDER BY stamp DESC,id DESC LIMIT $n", ("$p", peer), ("$s", first.SentAt.ToUnixTimeMilliseconds()), ("$i", first.Id), ("$n", Math.Clamp(limit, 1, 100)));
         using var reader = command.ExecuteReader(); var result = new List<ChatMessage>();
         while (reader.Read()) result.Add(ReadMessage(reader)); result.Reverse(); return result.ToArray();
     }, token);
     internal Task<ChatMessage[]> AfterAsync(long peer, ChatMessage last, int limit = 100, CancellationToken token = default) => Run(db =>
     {
-        using var command = Command(db, "SELECT id,sender,body,stamp FROM messages WHERE peer=$p AND (stamp>$s OR (stamp=$s AND id>$i)) ORDER BY stamp,id LIMIT $n", ("$p", peer), ("$s", last.SentAt.ToUnixTimeMilliseconds()), ("$i", last.Id), ("$n", Math.Clamp(limit, 1, 100)));
+        using var command = Command(db, "SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p AND (stamp>$s OR (stamp=$s AND id>$i)) ORDER BY stamp,id LIMIT $n", ("$p", peer), ("$s", last.SentAt.ToUnixTimeMilliseconds()), ("$i", last.Id), ("$n", Math.Clamp(limit, 1, 100)));
         using var reader = command.ExecuteReader(); var result = new List<ChatMessage>();
         while (reader.Read()) result.Add(ReadMessage(reader)); return result.ToArray();
     }, token);
@@ -209,11 +238,11 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
         var match = string.Join(" AND ", words);
         if (match.Length == 0) return [];
         using var command = Command(db, """
-            SELECT m.peer,m.id,m.sender,m.body,m.stamp FROM message_search f JOIN messages m ON m.peer=f.peer AND m.id=f.id
+            SELECT m.peer,m.id,m.sender,m.body,m.stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=m.peer AND e.id=m.id AND e.wire=m.body) FROM message_search f JOIN messages m ON m.peer=f.peer AND m.id=f.id
             WHERE message_search MATCH $q AND ($p IS NULL OR m.peer=$p) ORDER BY m.stamp DESC LIMIT 100
             """, ("$q", match), ("$p", peer));
         using var reader = command.ExecuteReader(); var result = new List<ChatSearchHit>();
-        while (reader.Read()) result.Add(new(reader.GetInt64(0), new(reader.GetString(1), reader.GetInt64(2), reader.GetString(3), DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4)))));
+        while (reader.Read()) result.Add(new(reader.GetInt64(0), new(reader.GetString(1), reader.GetInt64(2), reader.GetString(3), DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4))){ClientContent=reader.IsDBNull(5)?null:reader.GetString(5)}));
         return result.ToArray();
     }, token);
     internal Task<Dictionary<string, Dictionary<long, string>>> ReactionsAsync(long peer, CancellationToken token = default, IEnumerable<string>? targets = null)
@@ -233,19 +262,20 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
     }
     internal Task<ChatMessage?> FindConfirmationAsync(long peer, long account, ChatPending pending, CancellationToken token = default) => Run(db =>
     {
-        using var command = Command(db, "SELECT id,sender,body,stamp FROM messages WHERE peer=$p AND sender=$s AND body=$b AND stamp>=$d ORDER BY stamp DESC LIMIT 100", ("$p", peer), ("$s", account), ("$b", pending.Body), ("$d", pending.CreatedAt.AddSeconds(-5).ToUnixTimeMilliseconds()));
+        using var command = Command(db, "SELECT id,sender,body,stamp,(SELECT NULLIF(content,'') FROM resolved_content e WHERE e.peer=messages.peer AND e.id=messages.id AND e.wire=messages.body) FROM messages WHERE peer=$p AND sender=$s AND body=$b AND stamp>=$d ORDER BY stamp DESC LIMIT 100", ("$p", peer), ("$s", account), ("$b", pending.Body), ("$d", pending.CreatedAt.AddSeconds(-5).ToUnixTimeMilliseconds()));
         using var reader = command.ExecuteReader(); while (reader.Read()) { var message = ReadMessage(reader); if (pending.BeforeIds?.Contains(message.Id) != true) return message; }
         return null;
     }, token);
-    private static ChatMessage ReadMessage(SqliteDataReader reader) => new(reader.GetString(0), reader.GetInt64(1), reader.GetString(2), DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)));
+    private static ChatMessage ReadMessage(SqliteDataReader reader) => new(reader.GetString(0), reader.GetInt64(1), reader.GetString(2), DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3))){ClientContent=reader.IsDBNull(4)?null:reader.GetString(4)};
     internal Task<long> SizeAsync() => Run(db => { using var command = Command(db, "PRAGMA page_count"); var pages = (long)command.ExecuteScalar()!; using var size = Command(db, "PRAGMA page_size"); return pages * (long)size.ExecuteScalar()!; });
-    internal Task ClearAsync() => Run(db => { Execute(db, "DELETE FROM messages; DELETE FROM message_search; DELETE FROM ranges; DELETE FROM media_metadata; DELETE FROM reactions; DELETE FROM events; DELETE FROM attachments; DELETE FROM dialogs; INSERT INTO message_search(message_search) VALUES('rebuild'); VACUUM; PRAGMA wal_checkpoint(TRUNCATE)"); return true; });
+    internal Task ClearAsync() => Run(db => { Execute(db, "DELETE FROM resolved_content; DELETE FROM messages; DELETE FROM message_search; DELETE FROM ranges; DELETE FROM media_metadata; DELETE FROM reactions; DELETE FROM events; DELETE FROM attachments; DELETE FROM dialogs; INSERT INTO message_search(message_search) VALUES('rebuild'); VACUUM; PRAGMA wal_checkpoint(TRUNCATE)"); return true; });
     private void Maintain(SqliteConnection db)
     {
         long Scalar(string sql) { using var command = Command(db, sql); return Convert.ToInt64(command.ExecuteScalar()); }
-        var estimated = Scalar("SELECT COALESCE(SUM(length(body)*2+length(id)*2+256),0) FROM messages");
         var physical = Scalar("PRAGMA page_count") * Scalar("PRAGMA page_size");
-        if (estimated < budget / 3 && physical < budget * .85) return;
+        // page_count is constant time. Do not scan the history after every poll.
+        if (physical < budget * .85) return;
+        var estimated = Scalar("SELECT (SELECT COALESCE(SUM(length(body)*2+length(id)*2+256),0) FROM messages)+(SELECT COALESCE(SUM(length(content)*2),0) FROM resolved_content)");
         // Reclaim FTS pages as well as rows. Check actual allocated size, not just body lengths.
         for (var pass = 0; pass < 64; pass++)
         {
@@ -256,10 +286,10 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
             var remove = Math.Clamp((long)Math.Ceiling((estimated - budget / 4) / average), 1, Math.Max(1, Math.Min(10000, total)));
             Execute(db, "INSERT INTO evict SELECT peer,id FROM messages ORDER BY touched,stamp LIMIT $n", ("$n", remove));
             var count = Scalar("SELECT COUNT(*) FROM evict");
-            Execute(db, "DELETE FROM ranges WHERE peer IN (SELECT peer FROM evict); DELETE FROM events WHERE peer IN (SELECT peer FROM evict); DELETE FROM reactions WHERE peer IN (SELECT peer FROM evict); DELETE FROM media_metadata WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM attachments WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM message_search WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM messages WHERE (peer,id) IN (SELECT peer,id FROM evict)");
+            Execute(db, "DELETE FROM ranges WHERE peer IN (SELECT peer FROM evict); DELETE FROM events WHERE peer IN (SELECT peer FROM evict); DELETE FROM reactions WHERE peer IN (SELECT peer FROM evict); DELETE FROM media_metadata WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM attachments WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM message_search WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM resolved_content WHERE (peer,id) IN (SELECT peer,id FROM evict); DELETE FROM messages WHERE (peer,id) IN (SELECT peer,id FROM evict)");
             Execute(db, "COMMIT; INSERT INTO message_search(message_search) VALUES('rebuild'); VACUUM; PRAGMA wal_checkpoint(TRUNCATE)");
             physical = Scalar("PRAGMA page_count") * Scalar("PRAGMA page_size");
-            estimated = Scalar("SELECT COALESCE(SUM(length(body)*2+length(id)*2+256),0) FROM messages");
+            estimated = Scalar("SELECT (SELECT COALESCE(SUM(length(body)*2+length(id)*2+256),0) FROM messages)+(SELECT COALESCE(SUM(length(content)*2),0) FROM resolved_content)");
             if (count == 0 && physical >= budget * .85)
             {
                 Execute(db, "DELETE FROM dialogs WHERE peer IN (SELECT peer FROM dialogs ORDER BY touched LIMIT 100); DELETE FROM media_metadata WHERE NOT EXISTS(SELECT 1 FROM messages m WHERE m.peer=media_metadata.peer AND m.id=media_metadata.id); VACUUM; PRAGMA wal_checkpoint(TRUNCATE)");

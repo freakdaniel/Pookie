@@ -35,7 +35,13 @@ internal sealed partial class MainWindow
         {
             preferences = preferences with { Volume = volume.Value, PreviousVolume = previousVolume, DiscordEnabled = discordEnabled.Value,
                 Shuffle = shuffle.Value, LikesAsList = likesAsList.Value, Repeat = playbackQueue.Repeat };
-            configuration.Save(preferences);
+            var save = configuration.SaveAsync(preferences);
+            Run(async () =>
+            {
+                try { await save; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { if (!disposed) settingsMessage.Value = status.Value = "Не удалось сохранить настройки Pookie."; }
+            });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { if (!disposed) settingsMessage.Value = status.Value = "Не удалось сохранить настройки Pookie."; }

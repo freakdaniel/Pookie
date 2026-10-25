@@ -9,7 +9,12 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyChatReplyUiAsync(ChatMessage target)
     {
-        await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && !chatColumns.Animating);
+        // Saved-message/selection changes invalidate layout before a resize
+        // clock starts. Sample the settled composer, not its preceding frame.
+        Window.Activate();
+        await WaitForLikedLayoutAsync(()=>Window.IsActive);
+        await WaitForLoginFrameAsync();
+        await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && !chatColumns.Animating && !chatComposer.IsMeasureDirty && !chatComposer.IsArrangeDirty);
         var height = chatComposer.ActualHeight; var bottom = chatComposer.Bounds.Bottom; var sendY = SettingsCenter(chatSend).Y;
         var opening = new List<(double Height,double Reply,double Bottom,double Send)>();
         void SampleOpening() => opening.Add((chatComposer.ActualHeight,chatComposerLayout.ReplyHeight,chatComposer.Bounds.Bottom,SettingsCenter(chatSend).Y));
@@ -21,7 +26,8 @@ internal sealed partial class MainWindow
         if (!integrated || Math.Abs(chatComposer.ActualHeight-height-48)>1/Window.DpiScale || chatReplyQuote.Title.Length == 0 || chatReplyQuote.Preview != ChatReplyPreview(target,90))
             throw new InvalidOperationException("The reply is not a compact two-line quote inside the composer.");
         if (!opening.Any(s => s.Reply is > 1 and < 47) || opening.Any(s => Math.Abs(s.Bottom-bottom)>1/Window.DpiScale || Math.Abs(s.Send-sendY)>1/Window.DpiScale))
-            throw new InvalidOperationException("Reply expansion snapped or moved the composer bottom/send button.");
+            throw new InvalidOperationException($"Reply expansion snapped or moved the composer bottom/send button: baseline={bottom:F2}/{sendY:F2}; frames="+
+                string.Join(";",opening.Select(s=>$"{s.Reply:F2}/{s.Bottom:F2}/{s.Send:F2}")));
         if (ChatRows.Any(row => row.Root.FindVisualRoot() == Window && row.Root.Bounds.Bottom > chatViewport.Bounds.Y && row.Root.Bounds.Y < chatViewport.Bounds.Bottom && row.Root.ActualHeight > 0 &&
             (!row.Bound || row.Message == null || row.Body.Text.Length == 0 || row.Body.ActualWidth < 1)))
             throw new InvalidOperationException("Returning from saved messages left cleared message containers behind the reply composer.");

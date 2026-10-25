@@ -26,11 +26,13 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => handler.DownloadReady != null && chatLibraryPreviews.Count == 2 && chatLibraryPreviews.Any(e=>e.Tile.Loading && e.Tile.Shimmering));
             CaptureUiPreview("chats-library-photo-skeletons");
 
-            var library = chatMediaLibrary; var body = chatDetailsBody; var generation = chatDetailsGeneration;
             var identity = ((Grid)chatNormalIdentity).Children.OfType<Button>().Single(b=>b.Content is Grid);
             RouteWaveformPointer(SettingsCenter(chatName)); await Task.Delay(250);
             if (chatIdentityCard.HoverEnabled || identity.Background.A != 0)
                 throw new InvalidOperationException("The conversation header still adds a hover background.");
+            // Background history may refresh attachments during the hover delay.
+            // Capture immediately before the synchronous click under test.
+            var library = chatMediaLibrary; var body = chatDetailsBody; var generation = chatDetailsGeneration;
             RouteWaveformClick(SettingsCenter(chatName));
             if (chatMediaLibrary != library || chatDetailsBody != body || chatDetailsGeneration != generation || chatMediaLibraryKind != "Фото")
                 throw new InvalidOperationException("Clicking the open profile header rebuilt its information panel.");

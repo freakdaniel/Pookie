@@ -17,13 +17,14 @@ internal sealed class ChatMediaDiskCache
     { if (account <= 0) throw new ArgumentOutOfRangeException(nameof(account)); directory = Path.Combine(paths.Cache, "Chats", account.ToString(System.Globalization.CultureInfo.InvariantCulture), "Media"); favorites = Path.Combine(paths.Root, "Chats", account.ToString(System.Globalization.CultureInfo.InvariantCulture), "FavoriteMedia"); this.budget = Math.Max(0, budget); }
     private static string NameFor(string code) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code))) + ".bin";
     private string PathFor(string code) => Path.Combine(pinned.Contains(NameFor(code)) ? favorites : directory, NameFor(code));
-    internal async Task<byte[]?> ReadAsync(string code, CancellationToken token)
+    internal async Task<byte[]?> ReadAsync(string code, CancellationToken token, int maximumBytes = int.MaxValue)
     {
         await io.WaitAsync(token).ConfigureAwait(false);
         try
         {
             var path = PathFor(code); if (!File.Exists(path)) return null;
             if (new FileInfo(path).Length > ChatMediaArchive.MaxEncryptedBytes) { File.Delete(path); return null; }
+            if (new FileInfo(path).Length > maximumBytes) return null;
             var bytes = await File.ReadAllBytesAsync(path, token).ConfigureAwait(false); File.SetLastWriteTimeUtc(path, DateTime.UtcNow); return bytes;
         }
         catch (IOException) { return null; }

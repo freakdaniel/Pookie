@@ -28,7 +28,7 @@ internal sealed partial class MainWindow
     private ChatColumns chatColumns = null!;
     private DispatcherTimer chatTimer = null!, chatSearchTimer = null!, chatDraftTimer = null!;
     private ChatMediaHosting chatMedia = new();
-    private readonly KlipyClient klipy = new();
+    private KlipyClient klipy = new();
     private readonly List<ChatConversation> chatConversations = [];
     private readonly List<ChatMessage> chatMessages = [];
     private readonly Dictionary<long, string> chatDrafts = [];
@@ -124,7 +124,7 @@ internal sealed partial class MainWindow
         });
         InitializeChatMusicEditor();
         chatAttach = TrackButtons.Icon(Icons.View("paperclip", 22), () => Run(() => PickChatFilesAsync()), TrackButtons.Text, 40);
-        chatGif = TrackButtons.Action(new TextBlock().Text("GIF").FontSize(12).Bold(), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40).Padding(8, 0);
+        chatGif = TrackButtons.Icon(Icons.View("smiley", 23), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40).ToolTip("Эмодзи и GIF");
         chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");
         chatSend.Content = chatSendGlyph;
         chatAttachmentLabel = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
@@ -139,7 +139,7 @@ internal sealed partial class MainWindow
             () => chatColumns.ActualHeight * .4 - 16, () => chatComposer.Background);
         chatComposerSurface = new(chatComposerLayout);
         chatComposerSurface.ResizeStarted = () => chatFollowLayout = chatFollowLayout || chatWasAtBottom || chatScrollBottom || ChatIsAtBottom();
-        chatComposer = new GlassCard().Background(ChatGlassSurface).CornerRadius(24).Padding(4).Margin(0, 0, 0, 16).MaxWidth(696).CenterHorizontal().Child(chatComposerSurface);
+        chatComposer = new GlassCard().Background(ChatGlassSurface).CornerRadius(24).Padding(4).Margin(0, 0, 0, 16).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(chatComposerSurface);
         chatInput.GotFocus += () => RefreshChatComposerSurface();
         chatInput.LostFocus += () => RefreshChatComposerSurface();
         chatHeaderAvatar = new Image().Width(38).Height(38).StretchMode(Stretch.UniformToFill);
@@ -151,7 +151,7 @@ internal sealed partial class MainWindow
         ((MaterialTrackButton)identity).SuppressStateLayer();
         var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, Muted), OpenChatThreadSearch, TrackButtons.Text, 36).ToolTip("Поиск в переписке");
         chatNormalIdentity = new Grid().Columns("Auto,*,36,36").Rows("*").Spacing(8).Children(chatBack.Column(0).CenterVertical(), identity.Column(1).CenterVertical(), find.Column(2).CenterVertical());
-        chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(696).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
+        chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
         chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
             .CornerRadius(18).ToolTip("Действия с диалогом");
         ((Grid)chatNormalIdentity).Add(chatOptions.Column(3).CenterVertical());
@@ -181,6 +181,7 @@ internal sealed partial class MainWindow
         var threadSurface = new ChatStage(new Grid().Columns("*").Rows("*").Children(thread, new ChatStage(ChatThreadSearchResults(), rightInset: () => chatColumns.ScrollGutter).Initialize()), centerReadingColumn: false).Initialize();
         chatColumns = new ChatColumns(new GlassCard(Surface).Background(ChatGlassSurface).CornerRadius(24).Padding(12).Margin(0, 0, 0, 16).Child(inbox), threadSurface, compact => chatBack.IsVisible = compact).Initialize();
         chatColumns.SetDetails(CreateChatDetails()); chatColumns.CloseDetails=CloseChatDetails;
+        chatColumns.OverlayHeader = chatIdentityCard;
         chatColumns.SizeChanged += _ => chatComposerLayout.InvalidateMeasure();
         chatTimer = new DispatcherTimer(TimeSpan.FromSeconds(1));
         chatTimer.Tick += () =>
@@ -262,7 +263,7 @@ internal sealed partial class MainWindow
     {
         var row = new ChatBubbleRow(this); chatRows.Add(row.Root, row); context.Register("row", row.Root); return new ChatMessageColumn(row.Root, () => chatColumns.ScrollGutter).Initialize();
     }, (_, message, _, context) => { var row = ChatRow(context); row.Bind(message.Message); row.ItemKey = message.Key; },
-       (_, _, _, context) => ChatRow(context).Bound = false);
+       (_, _, _, context) => { ChatRow(context).Bound = false; chatPresentationDirty = true; });
 
     private ChatBubbleRow ChatRow(TemplateContext context) => chatRows.TryGetValue(context.Get<Border>("row"), out var row) ? row : throw new InvalidOperationException("Missing chat row.");
 

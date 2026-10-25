@@ -5,19 +5,13 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private readonly Dictionary<string, Task<ImageSource?>> trackArtRequests = [];
+    private readonly Storage.AsyncResourceCache<string, ImageSource> trackArtRequests = new(128, ArtworkCacheBudget, ArtworkBytes);
 
     private Task<ImageSource?> GetTrackArtAsync(SoundCloudTrack track)
     {
         if (!Uri.TryCreate(track.TrackArtUrl, UriKind.Absolute, out var uri) || !SoundCloudWebClient.IsMediaUri(uri))
             return Task.FromResult<ImageSource?>(null);
-        if (trackArtRequests.TryGetValue(uri.AbsoluteUri, out var existing)) return existing;
-        if (trackArtRequests.Count >= 128)
-        {
-            var completed = trackArtRequests.FirstOrDefault(pair => pair.Value.IsCompleted);
-            if (completed.Key != null) trackArtRequests.Remove(completed.Key);
-        }
-        return trackArtRequests[uri.AbsoluteUri] = FetchTrackArtAsync(uri.AbsoluteUri);
+        return trackArtRequests.GetAsync(uri.AbsoluteUri, () => FetchTrackArtAsync(uri.AbsoluteUri), lifetime.Token);
     }
 
     private async Task<ImageSource?> FetchTrackArtAsync(string url)

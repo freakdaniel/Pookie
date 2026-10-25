@@ -8,6 +8,7 @@ namespace Pookie.App;
 // One continuous colour field behind the panel title, avatar and name.
 internal sealed class ChatProfileBackdrop : GlassCard
 {
+    private readonly GlassGeometry geometry = new();
     private const int Rows = 96;
     private readonly Color surface;
     private readonly AnimationClock reveal = new(TimeSpan.FromMilliseconds(650), Easing.CubicBezier(.2, 0, 0, 1));
@@ -92,11 +93,17 @@ internal sealed class ChatProfileBackdrop : GlassCard
         context.Save();
         try
         {
-            context.SetClipPath(GlassSheen.Shape(Bounds, new CornerRadius(CornerRadius)));
+            context.SetClipPath(geometry.Get(Bounds, new CornerRadius(CornerRadius)));
             context.DrawImage(image!, new Rect(Bounds.X, Bounds.Y-scrollOffset, Bounds.Width, Math.Min(270, Bounds.Height)));
         }
         finally { context.Restore(); }
     }
     private void ClearRaster() { image?.Dispose(); image = null; raster?.Dispose(); raster = null; }
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        base.OnVisualRootChanged(oldRoot, newRoot);
+        if (newRoot == null) ClearRaster();
+    }
+
     protected override void OnDispose() { reveal.Stop(); ClearRaster(); base.OnDispose(); }
 }

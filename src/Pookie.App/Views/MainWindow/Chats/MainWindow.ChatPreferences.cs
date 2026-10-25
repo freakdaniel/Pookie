@@ -11,10 +11,13 @@ internal sealed partial class MainWindow
     {
         if (before.ChatSaveDrafts != preferences.ChatSaveDrafts)
         {
-            EnsureChatAccount();
+            Run(async () =>
+            {
+            await EnsureChatAccountAsync();
             chatDraftTimer.Stop();
             if (!preferences.ChatSaveDrafts) chatDrafts.Clear();
             SaveChatDraft(); // Pending sends and read positions are always durable.
+            });
         }
         if (before.ChatBackgroundRefresh != preferences.ChatBackgroundRefresh)
         {
@@ -24,7 +27,7 @@ internal sealed partial class MainWindow
         if (before.ChatAutoLoad != preferences.ChatAutoLoad) CancelChatAutomaticMedia();
         if (before.KlipyEnabled != preferences.KlipyEnabled && !preferences.KlipyEnabled)
         {
-            CloseChatGifs(); CancelKlipyReads();
+            if (chatEmojiPopup.IsOpen) SetChatEmojiMode(false); CancelKlipyReads();
             if (chatSelectedGif != null) { chatSelectedGif = null; UpdateChatAttachments(); }
         }
         if (before.ChatAnimateGifs != preferences.ChatAnimateGifs)
@@ -57,7 +60,7 @@ internal sealed partial class MainWindow
 
     private async Task ClearChatDraftsAsync()
     {
-        EnsureChatAccount();
+        await EnsureChatAccountAsync();
         chatDraftTimer.Stop(); chatDrafts.Clear();
         var voices=chatWorkspace.Drafts?.Values.Select(d=>d.Voice).OfType<ChatVoiceDraft>().ToArray()??[];
         await DeleteChatVoiceAsync();
@@ -72,6 +75,7 @@ internal sealed partial class MainWindow
         finally { chatRenderingDraft = false; }
         ClearChatAttachments();
         SaveChatState(); RefreshChatComposer();
+        await FlushChatPersistenceAsync();
     }
 
     private void ClearChatMemoryCache()

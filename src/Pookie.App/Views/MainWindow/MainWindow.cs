@@ -54,6 +54,7 @@ internal sealed partial class MainWindow : IDisposable
     private NativeBrowserSession? browser;
     private (NativeBrowserSession Session, Action<BrowserRequestEvent> Handler)? browserNotifications;
     private readonly List<NativeBrowserSession> browserSessions = [];
+    private Task browserClosing = Task.CompletedTask;
     private SoundCloudUser? me;
     private SoundCloudTrack? current;
     private string? nextHref;
@@ -80,7 +81,7 @@ internal sealed partial class MainWindow : IDisposable
             ? "platform.browser.webkit" : "platform.browser.infiniframe");
         configuration = new ConfigurationStore(dataPaths);
         imageDiskCache = new ImageDiskCache(dataPaths);
-        imageDiskCache.Prune();
+        _ = Task.Run(() => { try { imageDiskCache.Prune(); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { AppLog.Failure("Pookie.Storage", "Не удалось очистить кеш обложек", error, LogEventLevel.Debug); } });
         configurationTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(300));
         configurationTimer.Tick += SaveConfiguration;
         RestoreConfiguration();
@@ -132,9 +133,8 @@ internal sealed partial class MainWindow : IDisposable
             .OnClosed(Dispose);
         Window.Closing += args =>
         {
-            if(chatVoiceRecorder is not {Recording:true}&&!chatVoiceBusy)return;
             var deferral=args.GetDeferral();
-            Run(async()=>{try{await FinishChatVoiceBeforeCloseAsync();}finally{deferral.Complete();}});
+            Run(async()=>{try{await FinishChatVoiceBeforeCloseAsync(); RememberChatThread(); await FlushChatPersistenceAsync();}finally{deferral.Complete();}});
         };
         Window.FrameRendered += RestoreNavigationScroll;
         Window.FrameRendered += ArrangeChatScroll;
@@ -142,6 +142,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
         Window.FrameRendered += DismissUnfocusedShellMenus;
+        Window.FrameRendered += ObserveChatPopups;
         Window.FrameRendered += RefreshCardGlass;
         Window.ClientSizeChanged += size =>
         {
@@ -150,6 +151,8 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
+            if (e.Key == Key.Escape && chatMessageMenu.IsOpen) { e.Handled = true; CloseChatMessageMenu(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && page.Value == Page.Chats && chatThreadSearchOpen) { e.Handled=true;CloseChatSearch();return; }
             if (e.Key == Key.Escape && page.Value == Page.Chats && chatColumns.DetailsOpen) { e.Handled=true;CloseChatDetails();return; }
             if (e.Key == Key.Escape && chatSelected.Count>0) { e.Handled=true;ClearChatSelection();return; }
@@ -167,9 +170,15 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
-        Window.Deactivated += () => CloseShellMenus(true);
+        Window.Deactivated += () => { CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); };
         chatTimer.Start();
         Window.Activated += () => { chatNextPoll = default; if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync); };
+        Window.WindowStateChanged += state =>
+        {
+            if (state == WindowState.Minimized) progressAnimation.Stop();
+            RefreshWaveMotion();
+            if (Window.Content is UIElement content) content.InvalidateVisual();
+        };
     }
 
     private void OnWindowLoaded()
@@ -207,7 +216,10 @@ internal sealed partial class MainWindow : IDisposable
         if (Window?.ClientSize.Width is > 0 and var clientWidth) availableWidth = Math.Min(availableWidth, clientWidth);
         if (availableWidth > 0)
         {
-            contentFrame.Width = Math.Min(1440, availableWidth);
+            var chats = page.Value == Page.Chats;
+            contentFrame.MaxWidth = chats ? double.PositiveInfinity : 1440;
+            contentFrame.Width = chats ? availableWidth : Math.Min(1440, availableWidth);
+            contentFrame.Padding = new Thickness(chats ? 16 : 36, ShellChromeGlass.HeaderHeight + 30, chats ? 16 : 36, 0);
             playerContentFrame.Width = Math.Min(1440, availableWidth);
             var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
             playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 18 - 4, 60, 180);
@@ -245,7 +257,9 @@ internal sealed partial class MainWindow : IDisposable
                 {
                     var connected = new NativeBrowserSession(saved);
                     AttachBrowser(connected);
-                    me = await StartupLog.RunAsync("session.profile-verify", () => connected.GetMeAsync(lifetime.Token));
+                    var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => connected.GetMeAsync(lifetime.Token));
+                    await RestoreWaveProfileAsync(restoredProfile.Id,lifetime.Token);
+                    me = restoredProfile;
                     api.Session = connected.Account;
                     profile.Value = me.Username;
                     signedIn.Value = true;
@@ -536,6 +550,8 @@ internal sealed partial class MainWindow : IDisposable
         SoundCloudUser connectedProfile;
         try { connectedProfile = await connectedBrowser.GetMeAsync(token); token.ThrowIfCancellationRequested(); }
         catch { await connectedBrowser.DisposeAsync(); throw; }
+        try { await RestoreWaveProfileAsync(connectedProfile.Id,token); }
+        catch { await connectedBrowser.DisposeAsync(); throw; }
         AttachBrowser(connectedBrowser);
         likedLoading?.Cancel(); likedTask = null;
         likedIds.Clear(); likedIdsReady = false; ResetReposts(); ResetFollowing();
@@ -641,6 +657,14 @@ internal sealed partial class MainWindow : IDisposable
             AnalyzePlayingWaveTrack();
             PollPlaybackHistory();
             UpdateSystemMedia(state);
+            if (Window.WindowState == WindowState.Minimized)
+            {
+                // Keep audio, queue advancement and listening history alive.
+                // Presentation catches up from the next real snapshot on restore.
+                presence?.Update(new(current.Title,current.Author,current.ArtworkUrl ?? current.User?.AvatarUrl,current.PermalinkUrl,state.Position,state.Duration,state.Playing));
+                if (state.Ended && !advancing) { advancing = true; Run(() => SkipAsync(1,naturalEnd:true)); }
+                return;
+            }
             var seekPreview = seekDragging || pendingSeek != null || seeking;
             if (!seekPreview)
             {
@@ -732,6 +756,7 @@ internal sealed partial class MainWindow : IDisposable
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;
+        Window.FrameRendered -= ObserveChatPopups;
         Window.FrameRendered -= RefreshCardGlass;
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
@@ -760,7 +785,11 @@ internal sealed partial class MainWindow : IDisposable
     {
         Dispose();
         await FinishWaveJournalAsync().ConfigureAwait(false);
+        await FlushChatPersistenceAsync().ConfigureAwait(false);
+        await configuration.FlushAsync().ConfigureAwait(false);
+        await waveStore.FlushAsync().ConfigureAwait(false);
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
+        await browserClosing.ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);
         foreach (var file in demoFiles)
             try { File.Delete(file); }
@@ -778,7 +807,11 @@ internal sealed partial class MainWindow : IDisposable
     private void AttachBrowser(NativeBrowserSession connected)
     {
         DetachBrowserNotifications();
-        browser?.Dispose();
+        if (browser is { } previous)
+        {
+            previous.Dispose(); browserSessions.Remove(previous);
+            browserClosing = Task.WhenAll(browserClosing, previous.DisposeAsync().AsTask());
+        }
         browser = connected;
         api.BrowserTransport = connected;
         browserSessions.Add(connected);

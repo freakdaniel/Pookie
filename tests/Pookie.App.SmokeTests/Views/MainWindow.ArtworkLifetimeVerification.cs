@@ -41,6 +41,12 @@ internal sealed partial class MainWindow
             if (!skeleton.Running) throw new InvalidOperationException("Reattached loading artwork did not resume its shimmer.");
             trackDetailPlaylists.Clear();
             StopCardArtwork(image); layer.Dispose();
+            VerifyChatMenuOwnership();
+            await VerifyUnrestoredVoiceDraftRetentionAsync();
+            await VerifyVoiceStartupOwnershipAsync();
+            VerifyOffscreenTextGpuLifetime();
+            await VerifyGlassGpuLifetimeAsync();
+            await VerifyAnimatedIconLifetimeAsync();
             Console.WriteLine("ARTWORK_LIFETIME_OK: removed sidebar cards/pixels collect; live skeletons remain registered");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("ARTWORK_LIFETIME_FAILED: " + error); }

@@ -23,6 +23,7 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Browser/Filtering/blacklist.json" LogicalName="Pookie.App.Browser.Filtering.blacklist.json" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Icons/*.svg" LogicalName="Pookie.App.Assets.Icons.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Flags/*.svg" LogicalName="Pookie.App.Assets.Flags.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Emoji/*" LogicalName="Pookie.App.Assets.Emoji.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Stickle/*.png" LogicalName="Pookie.App.Assets.Stickle.%(Filename)%(Extension)" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/logo.svg" LogicalName="Pookie.App.Assets.logo.svg" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Branding/*" LogicalName="Pookie.App.Assets.Branding.%(Filename)%(Extension)" />
