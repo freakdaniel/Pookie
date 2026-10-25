@@ -5,6 +5,7 @@ namespace Pookie.App;
 internal static class ArtworkBackdrop
 {
     internal static readonly Color CardScrim = Color.FromArgb(145, 18, 18, 18);
+    internal static readonly Color TrackArtScrim = Color.FromArgb(170, 18, 18, 22);
     internal static ImageSource? CreateMixed(IReadOnlyList<ImageSource> sources, double visibility = .24)
     {
         // Blur each cover before mixing so neither a seam nor a sharp collage is visible.

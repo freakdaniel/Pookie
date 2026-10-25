@@ -155,7 +155,7 @@ internal sealed partial class MainWindow
         opening = ActivateChatAttachmentAsync(videoRow.Message!.Id, 0);
         if (Math.Abs(chatVideoExpansion - replacingExpansion) > .001)
             throw new InvalidOperationException("Replacing video reset an in-progress enlargement.");
-        await opening; await WaitForLikedLayoutAsync(() => chatVideoExpansion > .999);
+        await opening; await WaitForLikedLayoutAsync(() => chatVideoExpansion == 1 && !chatVideoExpansionClock.IsRunning);
         opening = ActivateChatAttachmentAsync(videoRow.Message!.Id, 0);
         if (chatVideoSurface.Reveal != 1 || chatVideoExpansion != 1)
             throw new InvalidOperationException("Replacing an enlarged video reset its backdrop or replayed the opening fade.");

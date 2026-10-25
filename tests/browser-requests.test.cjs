@@ -681,3 +681,16 @@ test('an ordinary rejected chat POST is not retried and closing a check prevents
     assert.equal(posts,1);
   }
 });
+
+test('user profile reads allow metadata, urn web links and scoped music/social collections only', async () => {
+  const h = harness(() => response(200, {collection:[]}));
+  const paths = ['/stream/users/7', '/users/7', '/users/soundcloud:users:7/web-profiles', '/users/soundcloud%3Ausers%3A7/web-profiles',
+    '/users/7/tracks', '/users/7/albums', '/users/7/playlists_without_albums', '/stream/users/7/reposts',
+    '/users/7/comments', '/users/7/likes', '/users/7/followers', '/users/7/followings'];
+  for (const [i,path] of paths.entries()) { h.window.__pookieRequest(apiRead(2000+i,path)); await tick(); }
+  assert.equal(h.calls.length,paths.length);
+  for (const [i,path] of ['/users/7/emails','/users/7/settings','/users/0','/users/soundcloud:tracks:7/web-profiles','/stream/users/7/delete'].entries()) {
+    h.window.__pookieRequest(apiRead(2100+i,path)); await tick();
+  }
+  assert.equal(h.calls.length,paths.length);
+});

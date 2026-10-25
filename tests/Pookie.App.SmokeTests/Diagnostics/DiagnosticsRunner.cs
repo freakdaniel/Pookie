@@ -13,6 +13,8 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Contains("--user-profile-network-probe")) { await UserProfileNetworkProbe.RunAsync(); return true; }
+        if (args.Contains("--feed-network-probe")) { await FeedNetworkProbe.RunAsync(); return true; }
         if (args.Contains("--external-browser-smoke-test")) { await ExternalBrowserSmokeTest.RunAsync(); return true; }
         if (args.Length == 2 && args[0] == "--external-browser-child")
         { await Pookie.App.Platform.ExternalBrowser.OpenAsync(args[1], CancellationToken.None); return true; }

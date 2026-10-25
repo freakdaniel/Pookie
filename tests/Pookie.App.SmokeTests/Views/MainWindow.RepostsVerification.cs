@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
         await ToggleTrackRepostAsync(first);
         if (transport.RepostRequests != 1) throw new InvalidOperationException("Duplicate repost sent.");
         transport.Complete(first.Id); await remove;
-        if (repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Tonal || !Action(first.Id).IsEnabled)
+        if (repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Glass || !Action(first.Id).IsEnabled)
             throw new InvalidOperationException("Repost removal failed to update the row.");
         var add = ToggleTrackRepostAsync(first);
         if (!transport.LastReposted) throw new InvalidOperationException("Add repost sent DELETE.");

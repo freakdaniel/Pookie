@@ -20,6 +20,10 @@ public static partial class LyricsMatcher
     }
     private static IEnumerable<LyricsQuery> MatchingQueries(LyricsIdentity identity) =>
         identity.Queries().Concat(identity.Queries(stripParentheses: true)).Distinct();
+    private static LyricsCandidate AlignMetadata(LyricsIdentity identity, LyricsCandidate candidate) =>
+        MatchingQueries(identity).Any(query => NormalizeTitle(query.Title).Length > 0 && Normalize(query.Artist).Length > 0 &&
+            NormalizeTitle(query.Title) == NormalizeTitle(candidate.ArtistName) && Normalize(query.Artist) == Normalize(candidate.TrackName))
+            ? candidate with { TrackName = candidate.ArtistName, ArtistName = candidate.TrackName } : candidate;
     internal static (string Artist, string Title)? SplitArtistTitle(string text)
     {
         // Separators in an edit credit or bracketed metadata cannot split artist/title.
@@ -161,7 +165,7 @@ public static partial class LyricsMatcher
     {
         var original = SpedUpOriginal(identity);
         if (original == null) return null;
-        return candidates.DistinctBy(candidate => candidate.Id)
+        return candidates.Select(candidate => AlignMetadata(original, candidate)).DistinctBy(candidate => candidate.Id)
             .Select(candidate => (Candidate: candidate, Score: OriginalScore(original, candidate), Document: candidate.ToDocument()))
             .Where(item => item.Score >= 0 && !item.Document.Instrumental && !string.IsNullOrWhiteSpace(item.Document.PlainText))
             .OrderByDescending(item => CanScale(identity, item.Candidate, item.Document))
@@ -198,11 +202,16 @@ public static partial class LyricsMatcher
     }
 
     public static bool Matches(LyricsIdentity identity, LyricsCandidate candidate) => Score(identity, candidate) >= 0;
-    public static bool IsExact(LyricsIdentity identity, LyricsCandidate candidate) => Matches(identity, candidate) &&
-        MatchingQueries(identity).Any(query => NormalizeTitle(query.Title) == NormalizeTitle(candidate.TrackName) &&
-            ArtistSimilarity(query.Artist, candidate.ArtistName) == 1) && Math.Abs(identity.Duration - candidate.Duration) <= 2;
+    public static bool IsExact(LyricsIdentity identity, LyricsCandidate candidate)
+    {
+        candidate = AlignMetadata(identity, candidate);
+        return Matches(identity, candidate) &&
+            MatchingQueries(identity).Any(query => NormalizeTitle(query.Title) == NormalizeTitle(candidate.TrackName) &&
+                ArtistSimilarity(query.Artist, candidate.ArtistName) == 1) && Math.Abs(identity.Duration - candidate.Duration) <= 2;
+    }
 
     public static LyricsCandidate? Choose(LyricsIdentity identity, IEnumerable<LyricsCandidate> candidates) => candidates
+        .Select(candidate => AlignMetadata(identity, candidate))
         .DistinctBy(candidate => candidate.Id)
         .Select(candidate => (Candidate: candidate, Score: Score(identity, candidate), Document: candidate.ToDocument()))
         .Where(item => item.Score >= 0 && (item.Document.Instrumental || !string.IsNullOrWhiteSpace(item.Document.PlainText)))
@@ -215,6 +224,7 @@ public static partial class LyricsMatcher
 
     private static double Score(LyricsIdentity identity, LyricsCandidate candidate, double titleMinimum = .78, double artistMinimum = .75)
     {
+        candidate = AlignMetadata(identity, candidate);
         if (Versions(identity.Queries()[0].Title) != Versions(candidate.TrackName ?? "")) return -1;
         var tolerance = Math.Clamp(identity.Duration * .05, 5, 15);
         var durationKnown = identity.Duration > 0 && double.IsFinite(identity.Duration);

@@ -6,7 +6,7 @@ namespace Pookie.App;
 
 // Sample the fullscreen artwork, or the card's composited background layers.
 // Moving either retained surface only changes sampling coordinates.
-internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null) : IDisposable
+internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null, FrameworkElement? background = null) : IDisposable
 {
     private const double BlurRadius = 12;
     private IRenderSurface? raster;
@@ -16,12 +16,16 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private IImageSource? source;
     private Size size;
     private double sampledOpacity;
+    private bool dirty;
     private IImageSource? observedSource;
     private double observedOpacity = double.NaN;
     private readonly byte[] brightness = new byte[32 * 32];
     internal bool HasBlurredArtwork => blurred != null;
-    internal bool IsCard => card != null;
+    internal bool IsCard => card != null || background != null;
+    private Rect BackgroundBounds => card?.Bounds ?? background?.Bounds ?? artwork.Bounds;
     internal event Action? Changed;
+    // Keep the last prepared image until the next frame snapshot is ready.
+    internal void Invalidate() => dirty = true;
     internal void RefreshArtwork()
     {
         if (observedSource == artwork.Source && observedOpacity == artwork.Opacity) return;
@@ -32,27 +36,36 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     // reading GPU pixels inside a button's opacity layer disrupts the live frame.
     internal void Prepare()
     {
-        var bounds = card?.Bounds ?? artwork.Bounds;
-        if ((card == null && artwork.Source == null) || bounds.Width <= 0 || bounds.Height <= 0) return;
+        var bounds = BackgroundBounds;
+        if ((card == null && background == null && artwork.Source == null) || bounds.Width <= 0 || bounds.Height <= 0) return;
         var graphics = Application.Current.GraphicsFactory;
-        if (blurred == null || source != artwork.Source || sampledOpacity != artwork.Opacity ||
+        if (dirty || blurred == null || source != artwork.Source || sampledOpacity != artwork.Opacity ||
             size.Width != bounds.Width || size.Height != bounds.Height || factory != graphics)
         {
             using var rendering = graphics.AcquireBackgroundRenderScope();
-            Clear(); factory = graphics; source = artwork.Source; sampledOpacity = artwork.Opacity; size = bounds.Size;
+            if (raster == null || size != bounds.Size || factory != graphics)
+            {
+                Clear(); factory = graphics; size = bounds.Size;
+                var scale = Math.Min(1, 512 / Math.Max(bounds.Width, bounds.Height));
+                raster = graphics.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+                    Math.Max(1, (int)Math.Ceiling(bounds.Width * scale)), Math.Max(1, (int)Math.Ceiling(bounds.Height * scale)),
+                    scale, debugName: "ArtworkControlGlass"));
+                renderer = graphics.CreateContext(raster);
+                blurred = new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight);
+            }
+            source = artwork.Source; sampledOpacity = artwork.Opacity;
             observedSource = source; observedOpacity = sampledOpacity;
-            var scale = Math.Min(1, 512 / Math.Max(bounds.Width, bounds.Height));
-            raster = graphics.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
-                Math.Max(1, (int)Math.Ceiling(bounds.Width * scale)), Math.Max(1, (int)Math.Ceiling(bounds.Height * scale)),
-                scale, debugName: "ExpandedCoverGlass"));
-            renderer = graphics.CreateContext(raster);
-            renderer.BeginFrame(raster); renderer.Clear(Color.FromRgb(29, 29, 29));
-            renderer.Translate(-bounds.X, -bounds.Y);
-            if (card == null) artwork.Render(renderer);
-            else card.RenderGlassBackground(renderer);
-            renderer.EndFrame();
-            blurred = new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight);
-            blurred.Update((ICpuPixelSurface)raster, BlurRadius * scale / 3);
+            renderer!.BeginFrame(raster); renderer.Save();
+            try
+            {
+                renderer.Clear(Color.FromRgb(29, 29, 29)); renderer.Translate(-bounds.X, -bounds.Y);
+                if (card != null) card.RenderGlassBackground(renderer);
+                else if (background != null) background.Render(renderer);
+                else artwork.Render(renderer);
+            }
+            finally { renderer.Restore(); renderer.EndFrame(); }
+            blurred!.Update((ICpuPixelSurface)raster, BlurRadius * Math.Min(1, 512 / Math.Max(bounds.Width, bounds.Height)) / 3);
+            dirty = false;
             // Share one brightness map for each background snapshot across all buttons.
             var pixels = blurred.Pixels;
             var stride = raster.PixelWidth * 4;
@@ -70,7 +83,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     internal void Draw(IGraphicsContext context, Rect region, CornerRadius corners)
     {
         if (blurred == null || factory != Application.Current.GraphicsFactory) return;
-        var bounds = card?.Bounds ?? artwork.Bounds;
+        var bounds = BackgroundBounds;
         context.Save();
         try
         {
@@ -83,7 +96,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     internal double Brightness(Rect region)
     {
         if (blurred == null) return 0;
-        var bounds = card?.Bounds ?? artwork.Bounds;
+        var bounds = BackgroundBounds;
         var total = 0d;
         for (var y = 0; y < 3; y++)
         for (var x = 0; x < 3; x++)

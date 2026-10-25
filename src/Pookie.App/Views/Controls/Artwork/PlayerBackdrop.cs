@@ -9,7 +9,6 @@ internal sealed class PlayerBackdrop : Control
 {
     private readonly AnimationClock clock;
     private const int RasterRows = 64;
-    private const int MaximumRasterWidth = 512;
     private WriteableBitmap? rasterSource;
     private IImage? rasterImage;
     private IGraphicsFactory? rasterFactory;
@@ -61,7 +60,8 @@ internal sealed class PlayerBackdrop : Control
     internal void RenderRegion(IGraphicsContext context, Rect region)
     {
         if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
-        var width = Math.Clamp((int)Math.Ceiling(Bounds.Width * context.DpiScale), 1, MaximumRasterWidth);
+        var scale = Math.Max(context.DpiScale, GetDpi() / 96d);
+        var width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
         var factory = Application.IsRunning ? Application.Current.GraphicsFactory : Application.DefaultGraphicsFactory;
         var changed = rasterImage == null || rasterImage.PixelWidth != width || rasterFactory != factory;
         if (changed)
@@ -77,7 +77,8 @@ internal sealed class PlayerBackdrop : Control
         // Bake the actual intermediate colour into one opaque image. Its final
         // frame uses exactly the same drawing/compositing path as every earlier
         // frame, with no opacity-dependent endpoint or completion handoff.
-        // A bounded horizontal raster avoids full-window pixel uploads.
+        // Keep one texel per physical column so interpolation cannot erase
+        // the dither. Only 64 rows are uploaded, then tiled vertically.
         if (changed || rasterPalette != CurrentGradient)
         {
             using var write = rasterSource!.LockForWrite();
@@ -85,7 +86,7 @@ internal sealed class PlayerBackdrop : Control
             rasterPalette = CurrentGradient;
         }
         context.FillRectangle(region, new ImageBrush(rasterImage!, new Rect(0, 0, width, RasterRows),
-            new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / context.DpiScale), TileMode.TileY));
+            new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / scale), TileMode.TileY));
     }
 
     internal static byte[] CreateRaster(PlayerPalette palette, int width) => CreateRaster(PlayerGradient.FromPalette(palette), width);

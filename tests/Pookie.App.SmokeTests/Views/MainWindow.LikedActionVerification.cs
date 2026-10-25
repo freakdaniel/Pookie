@@ -11,7 +11,7 @@ internal sealed partial class MainWindow
         var buttons = new List<Button>();
         VisualTree.Visit(row.Root, element =>
         {
-            if (element is Button button && button.StyleName is TrackButtons.Tonal or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
+            if (element is Button button && button.StyleName is TrackButtons.Glass or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
         });
         if (buttons.Count != 4) throw new InvalidOperationException("Like/repost/playlist/copy actions are missing.");
         if (buttons[0] is not MaterialTrackButton { IsConnected: true } || buttons[1] is not MaterialTrackButton { IsConnected: true } ||
@@ -55,12 +55,12 @@ internal sealed partial class MainWindow
                 try
                 {
                     Window.FocusManager.ClearFocus();
-                    var surface = button.StyleName == TrackButtons.Selected ? TrackButtons.SelectedSurface : button.StyleName == TrackButtons.Reposted ? TrackButtons.RepostedSurface : TrackButtons.TonalSurface;
-                    var foreground = button.StyleName == TrackButtons.Selected ? TrackButtons.OnSelected : button.StyleName == TrackButtons.Reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface;
+                    var surface = TrackButtons.Surface(button.StyleName!);
+                    var foreground = TrackButtons.Foreground(button.StyleName!);
                     var center = new Point(button.Bounds.X + button.Bounds.Width / 2, button.Bounds.Y + button.Bounds.Height / 2);
                     MoveActionPointer(center);
                     await WaitForLikedLayoutAsync(() => button.IsMouseOver && button.Background == TrackButtons.HoverColor(surface, foreground));
-                    if (button.BorderThickness != 0 || button.CornerRadius != 20 || Math.Abs(button.ActualHeight - 40) > 1 / Window.DpiScale || button.Cursor != CursorType.Hand)
+                    if (button.BorderThickness != 0 || button.CornerRadius != TrackRowLayout.ActionSize / 2 || Math.Abs(button.ActualHeight - TrackRowLayout.ActionSize) > 1 / Window.DpiScale || button.Cursor != CursorType.Hand)
                         throw new InvalidOperationException("Material action lost its pill shape, size or hand cursor.");
                     CaptureUiPreview(button == buttons[0] ? "like-hover" : button == buttons[1] ? "repost-hover" : button == buttons[2] ? "playlist-hover" : "copy-hover");
                     var connected = button is MaterialTrackButton { IsConnected: true };

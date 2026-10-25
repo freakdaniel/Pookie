@@ -56,9 +56,10 @@ Embedded SVGs from https://github.com/phosphor-icons/core at commit
 Most icons are upstream duotone assets, including squares-four, list-bullets, copy,
 chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
 Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
-clock-counter-clockwise, thumbs-down and paperclip use assets/regular/ variants;
+clock-counter-clockwise, thumbs-down, paperclip, list and trash use assets/regular/ variants;
 the filled dislike variant is assets/fill/thumbs-down-fill.svg.
 Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
+Profile badges also use upstream fill assets seal-fill.svg and crown-simple-fill.svg.
 Full terms and attribution: licenses/MIT.txt.
 """
 
@@ -192,3 +193,21 @@ precedence = "closest"
 SPDX-FileCopyrightText = "StbImageSharpTeam"
 SPDX-License-Identifier = "MIT"
 SPDX-FileComment = "Unmodified StbImageSharp 2.30.16, source commit 125af70cb557033f2c46aec8e82eaaf72ac49817; https://github.com/StbSharp/StbImageSharp. NuGet offers Unlicense OR MIT; Pookie uses the MIT option. Complete terms: licenses/MIT.txt. Used for bounded, incremental GIF decoding in chats."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Flags/*.svg"
+precedence = "closest"
+SPDX-FileCopyrightText = "2013 Panayiotis Lipiridis"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = """
+Country flags from https://github.com/lipis/flag-icons, tag v7.3.2 (4x3).
+Local SVG use references expanded for the MewUI renderer by tools/import-country-flags.py.
+Full upstream notice and permission: licenses/MIT.txt. No runtime CDN dependency.
+"""
+
+[[annotations]]
+path = ["src/Pookie.App/Assets/Icons/microphone.svg", "src/Pookie.App/Assets/Icons/plus.svg"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Daniel Freak"
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileComment = "Original geometric icons for the native chat interface."

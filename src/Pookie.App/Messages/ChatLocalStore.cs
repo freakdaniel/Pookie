@@ -10,7 +10,7 @@ internal sealed record ChatPending(long RecipientId, string Body, string Label, 
 }
 internal sealed record ChatLocalState(Dictionary<long, string> Drafts, ChatPending[] Pending, Dictionary<long, ChatUnreadState>? Unread = null);
 
-// Only drafts and the small durable outbox. Received media stays in bounded memory.
+// Backward-compatible drafts and durable outbox. History and workspace data have separate stores.
 internal sealed class ChatLocalStore(AppDataPaths paths, long accountId)
 {
     private readonly string directory = Path.Combine(paths.Root, "Chats", accountId.ToString(System.Globalization.CultureInfo.InvariantCulture));

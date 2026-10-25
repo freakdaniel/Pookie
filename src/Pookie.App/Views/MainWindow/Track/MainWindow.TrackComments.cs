@@ -18,6 +18,7 @@ internal sealed partial class MainWindow
         avatar.Source = Icons.Source("user", Muted);
         var name = new CommentTextBlock().Text(comment.User?.Username ?? "Пользователь SoundCloud").FontSize(14).Bold().CenterVertical()
             .MaxWidth(200).TextTrimming(TextTrimming.CharacterEllipsis);
+        AttachUserLink(name, () => comment.User); AttachUserLink(avatar, () => comment.User);
         var top = new StackPanel().Horizontal().Spacing(6).Children(name);
         if (ValidCommentTime(comment, track) is { } timestamp)
         {

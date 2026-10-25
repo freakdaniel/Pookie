@@ -91,12 +91,11 @@ internal sealed partial class MainWindow
         };
         likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
             .OnTextChanged(value => { likedFilterText = value; RefreshLikedViews(); });
-        var viewSwitch = new Border().Background(TrackButtons.TonalSurface).BorderThickness(0).CornerRadius(20).Padding(4).Height(40)
-            .Child(new StackPanel().Horizontal().Spacing(4).Children(
-                LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true)));
+        var viewSwitch = new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
+            LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true)));
         var tools = new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
             new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(), viewSwitch);
-        var filterField = MaterialSearchField.Create(likedFilter);
+        var filterField = MaterialSearchField.CreateGlass(likedFilter);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
@@ -161,6 +160,7 @@ internal sealed partial class MainWindow
     {
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id, isPlaying.Value);
         RefreshCollectionCardsPlayback();
+        RefreshUserProfilePlayback();
         RefreshHomeHeroPlayback();
         RefreshLikedRows();
     }

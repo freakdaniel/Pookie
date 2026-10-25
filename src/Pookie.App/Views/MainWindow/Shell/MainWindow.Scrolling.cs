@@ -49,6 +49,7 @@ internal sealed partial class MainWindow
         Pookie.SoundCloud.SoundCloudTrack track => ("track", track.Id),
         CollectionTrackEntry entry => ("collection-track", entry.Position),
         Pookie.SoundCloud.LibraryItem entry => entry.Key,
+        Pookie.SoundCloud.FeedEntry entry => entry.Key,
         SearchBlock block => (block.Kind, block.Kind switch
         {
             SearchBlockKind.Hero => "hero",
@@ -66,6 +67,7 @@ internal sealed partial class MainWindow
         var control = page.Value switch
         {
             Page.Search => searchList,
+            Page.Feed => feedList,
             Page.LibraryTracks => likesAsList.Value ? likedList : likedGrid,
             var collection when IsCollectionPage(collection) => playlistCollectionVisible.Value ? collectionTrackList : collectionGrid,
             _ => (ScrollableItemsBase)list
@@ -120,7 +122,7 @@ internal sealed partial class MainWindow
         // Positions belong to this edit's first layout, never to rows realized
         // later by scrolling or pagination.
         likedEditPositions.Clear();
-        CheckPageEnd(); CheckTrackSectionEnd();
+        CheckPageEnd(); CheckTrackSectionEnd(); CheckUserProfileEnd();
     }
 
     private void UpdateScrolledChrome() => headerGlass.Update(page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset);
@@ -135,8 +137,10 @@ internal sealed partial class MainWindow
     private string? PageCursor() => page.Value switch
     {
         Page.Home => null,
+        Page.Feed => feedState?.Cursor,
         Page.Library => null,
         Page.Track => null,
+        Page.UserProfile => null,
         Page.Chats => null,
         Page.Settings => null,
         Page.Search => searchResults?.NextHref,
@@ -144,7 +148,7 @@ internal sealed partial class MainWindow
         _ => nextHref
     };
 
-    private int PageItemCount() => page.Value == Page.Search ? searchResults?.Items.Length ?? 0 :
+    private int PageItemCount() => page.Value == Page.Feed ? VisibleFeedEntries.Length : page.Value == Page.Search ? searchResults?.Items.Length ?? 0 :
         IsCollectionPage(page.Value) ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? collectionTrackList : collectionGrid)?.DataCount ?? 0 :
         page.Value == Page.LibraryTracks ? pageItems.GetValueOrDefault(likesAsList.Value ? likedList : likedGrid)?.DataCount ?? 0 : tracks.Count;
 
@@ -184,7 +188,8 @@ internal sealed partial class MainWindow
         RefreshPaginationSkeletons(true);
         try
         {
-            if (page.Value == Page.Search) await LoadMoreSearchAsync();
+            if (page.Value == Page.Feed) await LoadFeedAsync(append: true);
+            else if (page.Value == Page.Search) await LoadMoreSearchAsync();
             else if (IsCollectionPage(page.Value)) await LoadMoreLibraryAsync();
             else await MoreAsync();
             if (disposed || generation != navigationGeneration) return;

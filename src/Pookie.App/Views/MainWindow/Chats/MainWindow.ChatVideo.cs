@@ -97,10 +97,13 @@ internal sealed partial class MainWindow
         {
             await OpenChatVideoAsync(file, messageId, index);
         }
+        else if(file.Voice!=null) await ActivateChatVoiceMessageAsync(messageId,index);
         else await SaveChatAttachmentAsync(messageId, index);
     }
     private async Task OpenChatVideoAsync(ChatAttachment file, string messageId, int index)
     {
+        await StopChatVoicePlaybackAsync();
+        if(chatVoiceRecorder is {Recording:true,Paused:false})chatVoiceRecorder.Pause();
         var message = chatMessageItems.FirstOrDefault(item => item.Id == messageId)?.Message;
         var row = ChatRows.FirstOrDefault(item => item.Message?.Id == messageId);
         ChatVideoFrame? inline = null;

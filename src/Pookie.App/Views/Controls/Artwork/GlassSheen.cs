@@ -27,13 +27,9 @@ internal static class GlassSheen
     internal static PathGeometry Shape(Rect bounds, CornerRadius corners) => PathGeometry.FromRoundedRect(bounds,
         corners.TopLeft, corners.TopRight, corners.BottomRight, corners.BottomLeft);
 
-    internal static void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1)
+    internal static void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
-        context.FillPath(Shape(bounds, corners), new LinearGradientBrush(
-            new Point(bounds.X, bounds.Y), new Point(bounds.Right, bounds.Bottom),
-            [new(0, Color.FromArgb((byte)(17 + emphasis * 6), 255, 255, 255)),
-             new(.45, Color.FromArgb(5, 255, 255, 255)), new(1, Color.FromArgb(1, 255, 255, 255))]));
         var edge = new Rect(bounds.X + .5, bounds.Y + .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1));
         var inset = new CornerRadius(Math.Max(0, corners.TopLeft - .5), Math.Max(0, corners.TopRight - .5),
             Math.Max(0, corners.BottomRight - .5), Math.Max(0, corners.BottomLeft - .5));
@@ -50,6 +46,6 @@ internal sealed class ArtworkGlassSheen : Control
     private readonly double radius;
     private readonly GlassSheenRaster sheen = new();
     internal ArtworkGlassSheen(double radius = 20) { this.radius = radius; IsHitTestVisible = false; }
-    protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius));
+    protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius), minimumScale: GetDpi() / 96d);
     protected override void OnDispose() { sheen.Dispose(); base.OnDispose(); }
 }

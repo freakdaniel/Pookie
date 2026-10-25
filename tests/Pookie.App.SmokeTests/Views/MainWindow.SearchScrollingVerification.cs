@@ -68,6 +68,18 @@ internal sealed partial class MainWindow
         if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || Math.Abs(hero.Tracks[0].Root.ActualHeight - 64) > 1 / Window.DpiScale ||
             !SearchBlocks().Any(block => block.Title == "Исполнители") || !SearchBlocks().Any(block => block.Title == "Альбомы") || !SearchBlocks().Any(block => block.Title == "Плейлисты"))
             throw new InvalidOperationException("Search did not show a best result, compact songs and grouped entity cards");
+        void CheckCompactSearchClip(CompactTrackRow row)
+        {
+            var viewport = (ScrollViewer)searchList.FindVisualChild<ScrollViewer>()!;
+            if (row.HoverFill.Bounds.X < viewport.Bounds.X - .5 || row.HoverFill.Bounds.Right > viewport.Bounds.Right + .5 ||
+                row.Duration.Bounds.Right + 6 > row.HoverFill.Bounds.Right + 1)
+                throw new InvalidOperationException($"Search hover was clipped by its actual scroll viewport: hover={row.HoverFill.Bounds}, viewport={viewport.Bounds}");
+        }
+        CheckCompactSearchClip(hero.Tracks[0]);
+        hero.Tracks[0].Hovered = true; RefreshCompactTrackRow(hero.Tracks[0]);
+        await WaitForLikedLayoutAsync(() => hero.Tracks[0].HoverFill.Strength > .999);
+        CaptureUiPreview("search-song-hover");
+        hero.Tracks[0].Hovered = false; RefreshCompactTrackRow(hero.Tracks[0]);
         var songsHeading = hero.SongsSection.Children.OfType<TextBlock>().Single();
         if (Math.Abs(hero.Tracks[0].Cover.Bounds.X - songsHeading.Bounds.X) > 1 ||
             hero.Tracks[0].HoverFill.Bounds.X >= songsHeading.Bounds.X ||
@@ -96,6 +108,7 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width < 760 && searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero &&
             view.Hero.SongsSection.Bounds.Y > view.Hero.Card.Bounds.Bottom));
         hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero;
+        CheckCompactSearchClip(hero.Tracks[0]);
         CaptureUiPreview("search-narrow");
         Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width >= 999 && searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero &&
@@ -127,13 +140,13 @@ internal sealed partial class MainWindow
             searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Cards && view.Block.Items?.Length == 4));
         await SearchFixture(SearchSection.Tracks, Enumerable.Range(0, 100).Select(index => LibraryItem.FromTrack(track with { Id = 71000 + index })).ToArray());
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.LibraryTrack is { Track.Id: 71000 } row &&
-            Math.Abs(row.Root.ActualHeight - 172) < 1 / Window.DpiScale && Math.Abs(row.Cover.ActualWidth - 160) < 1 / Window.DpiScale && Math.Abs(row.Waveform.ActualHeight - 68) < 1 / Window.DpiScale));
+            Math.Abs(row.Root.ActualHeight - TrackRowLayout.Height) < 1 / Window.DpiScale && Math.Abs(row.Cover.ActualWidth - TrackRowLayout.CoverSize) < 1 / Window.DpiScale && Math.Abs(row.Waveform.ActualHeight - TrackRowLayout.WaveformHeight) < 1 / Window.DpiScale));
         var librarySearchRows = searchViews.Values.Where(view => view.Block?.Kind == SearchBlockKind.LibraryTrack &&
             view.LibraryTrack?.Track != null).Select(view => view.LibraryTrack!).OrderBy(row => row.Root.Bounds.Y).ToArray();
         var firstSearchRow = librarySearchRows.First(row => row.Track!.Id == 71000);
         var nextSearchRow = librarySearchRows.First(row => row.Track!.Id == 71001);
         if (searchList.ItemsSource.Count != 100 || librarySearchRows.Length > 20 ||
-            Math.Abs(nextSearchRow.Root.Bounds.Y - firstSearchRow.Root.Bounds.Y - 208) > 1 ||
+            Math.Abs(nextSearchRow.Root.Bounds.Y - firstSearchRow.Root.Bounds.Y - TrackRowLayout.Stride) > 1 ||
             firstSearchRow.Author.Bounds.Y >= firstSearchRow.Title.Bounds.Y ||
             !ReferenceEquals(likedRows[firstSearchRow.Root], firstSearchRow) ||
             searchLoadingView.Skeleton.CompactList || pageItems[searchList].Style != LoadingRowStyle.Waveform)
@@ -173,6 +186,11 @@ internal sealed partial class MainWindow
             await Task.Delay(150, lifetime.Token);
             var anchor = compactTrackRows.Where(row => row.Track?.Id is >= 73000 and < 73060 &&
                 row.Root.Bounds.Y >= groupedScroll.Bounds.Y && row.Root.Bounds.Y < groupedScroll.Bounds.Bottom).OrderBy(row => row.Root.Bounds.Y).First();
+            CheckCompactSearchClip(anchor);
+            anchor.Hovered = true; RefreshCompactTrackRow(anchor);
+            await WaitForLikedLayoutAsync(() => anchor.HoverFill.Strength > .999);
+            CaptureUiPreview("search-more-song-hover");
+            anchor.Hovered = false; RefreshCompactTrackRow(anchor);
             var anchorId = anchor.Track!.Id; var anchorY = anchor.Root.Bounds.Y;
             var newArtists = Enumerable.Range(71, 4).Select(id => (object)new { kind = "user", id, username = "New artist " + id });
             var newTracks = Enumerable.Range(73060, 10).Select(id => (object)new { kind = "track", id, title = "Next track " + id, duration = 120000 });

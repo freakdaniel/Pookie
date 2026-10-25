@@ -12,6 +12,11 @@ internal sealed partial class MainWindow
         {
             timer.Stop();
             await ShowWorkspaceAsync();
+            async Task ClickMenuAsync(Point point)
+            {
+                if(!Window.IsActive){Window.Activate();await WaitForLikedLayoutAsync(()=>Window.IsActive);}
+                RouteWaveformClick(point);
+            }
             Window.Activate();
             playerVisible.Value = true;
             var fixture = tracks.Concat(Enumerable.Range(4, 9).Select(id => new SoundCloudTrack
@@ -46,7 +51,7 @@ internal sealed partial class MainWindow
                     await Task.Delay(350, lifetime.Token);
                     if (state.Value || layer.IsVisible)
                         throw new InvalidOperationException(name + " menu opened on hover without a click.");
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => layer.Reveal > .999 && layer.Card.ActualWidth > 0);
                     if (!state.Value || layer.Card.BorderThickness != 0 ||
                         layer is FloatingMenuLayer && (layer.Card.Background != chatComposer.Background || layer.Card.CornerRadius != 14))
@@ -81,27 +86,27 @@ internal sealed partial class MainWindow
                     MoveActionPointer(new Point(2, 2));
                     await Task.Delay(400, lifetime.Token);
                     if (!state.Value) throw new InvalidOperationException(name + " menu closed merely because the pointer left.");
-                    RouteWaveformClick(new Point(layer.Card.Bounds.X + 20, layer.Card.Bounds.Y + 20));
+                    await ClickMenuAsync(new Point(layer.Card.Bounds.X + 20, layer.Card.Bounds.Y + 20));
                     await WaitForLikedLayoutAsync(() => state.Value && layer.IsFocusWithin);
                     samples = closing;
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => !layer.IsVisible);
                     if (state.Value || closing.Count(value => value > 0 && value < 1) < 3)
                         throw new InvalidOperationException(name + " menu did not fade out after clicking its trigger again.");
                     MoveActionPointer(Center(button));
                     await Task.Delay(350, lifetime.Token);
                     if (state.Value) throw new InvalidOperationException(name + " menu reopened on hover after being toggled off.");
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => state.Value && layer.Reveal > .999);
-                    RouteWaveformClick(new Point(2, 2));
+                    await ClickMenuAsync(new Point(2, 2));
                     await WaitForLikedLayoutAsync(() => !layer.IsVisible);
                     if (state.Value) throw new InvalidOperationException(name + " menu did not dismiss after an outside click.");
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => state.Value && layer.Reveal > .999);
                     settingsButton.Focus();
                     await WaitForLikedLayoutAsync(() => !layer.IsVisible);
                     if (state.Value) throw new InvalidOperationException(name + " menu retained focus after focus moved to another control.");
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => state.Value && layer.Reveal > .999);
                     // Crossing the small gap must not collapse the card.
                     var gapY = ReferenceEquals(state, queueOpen) ? button.Bounds.Y - 4 : button.Bounds.Bottom + 4;
@@ -131,14 +136,14 @@ internal sealed partial class MainWindow
                     if (!button.IsFocused) throw new InvalidOperationException(name + " menu did not return keyboard focus to its trigger.");
                     if (layer is PlayerQueueDrawer)
                     {
-                        RouteWaveformClick(Center(button));
+                        await ClickMenuAsync(Center(button));
                         await WaitForLikedLayoutAsync(() => layer.Reveal > .999);
                         var close = (Button)VisualTree.Find(layer.Card, element => element is Button { Content: Image })!;
-                        RouteWaveformClick(Center(close));
+                        await ClickMenuAsync(Center(close));
                         await WaitForLikedLayoutAsync(() => !layer.IsVisible);
                         if (state.Value) throw new InvalidOperationException("The queue drawer close button did not dismiss it.");
                     }
-                    RouteWaveformClick(Center(button));
+                    await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => state.Value && layer.Reveal > .999);
                     const System.Reflection.BindingFlags activationFlags = System.Reflection.BindingFlags.NonPublic |
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
@@ -166,9 +171,9 @@ internal sealed partial class MainWindow
                 }
             }
             MoveActionPointer(new Point(2, 2));
-            RouteWaveformClick(Center(profileButton));
+            await ClickMenuAsync(Center(profileButton));
             await WaitForLikedLayoutAsync(() => shellMenus.Single(menu => ReferenceEquals(menu.State, profileOpen)).Layer.Reveal > .999);
-            RouteWaveformClick(Center(queueButton));
+            await ClickMenuAsync(Center(queueButton));
             if (profileOpen.Value || !queueOpen.Value) throw new InvalidOperationException("Opening a shell menu left another menu open.");
             CloseShellMenus(true);
             if (shellMenus.Any(menu => menu.Layer.IsVisible || menu.Layer.IsOpen)) throw new InvalidOperationException("Immediate dismissal left an interactive menu behind.");

@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed class ChatMessageMotion : ContentControl
 {
-    private readonly AnimationClock clock = new(TimeSpan.FromMilliseconds(260), Easing.CubicBezier(.2, 0, 0, 1));
+    private readonly AnimationClock clock = new(TimeSpan.FromMilliseconds(220), Easing.CubicBezier(.2, 0, 0, 1));
     private double offset;
     internal ChatMessageMotion()
     {

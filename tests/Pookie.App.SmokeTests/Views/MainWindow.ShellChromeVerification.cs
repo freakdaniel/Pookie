@@ -38,6 +38,11 @@ internal sealed partial class MainWindow
             if (headerGlass.GlassAmount != 0 || HeaderSurface != Surface || contentSurface.CornerRadius != 0 ||
                 contentBottomFade.IsHitTestVisible || Math.Abs(contentBottomFade.Bounds.Bottom - playerChrome.Bounds.Y) > 1)
                 throw new InvalidOperationException("The resting chrome does not match the square content surface.");
+            if (Environment.GetEnvironmentVariable("POOKIE_SEARCH_ONLY") == "1")
+            {
+                await VerifySearchScrollingAsync();
+                return;
+            }
             CaptureUiPreview("shell-chrome-top");
             CheckShellScrollBarBounds();
             await VerifyShellScrollBarDragAsync();
@@ -95,8 +100,10 @@ internal sealed partial class MainWindow
                 homeScroll.Content = samplingProbe;
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) > 1000);
                 shellScroll.SetScrollOffsets(0, 500);
-                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Math.Abs(homeScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1);
+                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && samplingProbe.Bounds.Y < -300 &&
+                    Math.Abs(homeScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1);
                 VerifyHeaderSampling(samplingProbe);
+                VerifyHeaderBlurMotion(samplingProbe);
                 VerifyBottomFadePixels(Window.ClientSize.Width / 2);
                 CaptureUiPreview("shell-chrome-fade-home");
                 var fadeSamples = new List<double>();
@@ -172,11 +179,55 @@ internal sealed partial class MainWindow
     private sealed class HeaderSamplingProbe : Control
     {
         internal readonly List<double> Scales = [];
+        internal double StripeY = double.NaN;
+        internal bool MotionSampling;
         protected override void OnRender(IGraphicsContext context)
         {
             Scales.Add(context.DpiScale);
-            context.FillRectangle(Bounds, Color.FromRgb(220, 186, 140));
+            context.FillRectangle(Bounds, MotionSampling ? Color.Black : Color.FromRgb(220, 186, 140));
+            if (double.IsFinite(StripeY))
+                context.FillRectangle(new Rect(Bounds.X, StripeY, Bounds.Width, 12), Color.White);
         }
+    }
+
+    private void VerifyHeaderBlurMotion(HeaderSamplingProbe probe)
+    {
+        var bounds = headerGlass.Bounds; var scale = Window.DpiScale;
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
+        using var context = Window.GraphicsFactory.CreateContext(surface);
+        var centers = new List<double>();
+        byte[] ReadColumn()
+        {
+            context.BeginFrame(surface); context.Clear(Surface); context.Translate(-bounds.X, -bounds.Y);
+            headerGlass.Render(context); context.EndFrame();
+            var cpu = (ICpuPixelSurface)surface;
+            return Enumerable.Range(0, surface.PixelHeight).Select(y => cpu.GetReadOnlyPixelSpan()[y * cpu.StrideBytes + surface.PixelWidth / 2 * 4 + 1]).ToArray();
+        }
+        probe.MotionSampling = true;
+        var background = ReadColumn();
+        try
+        {
+            for (var step = 0; step <= 16; step++)
+            {
+                probe.StripeY = 20 + step / scale;
+                var pixels = ReadColumn();
+                double sum = 0, moment = 0;
+                for (var y = 0; y < surface.PixelHeight; y++)
+                {
+                    var weight = Math.Max(0, pixels[y] - background[y]);
+                    sum += weight; moment += (y + .5) * weight;
+                }
+                if (sum <= 0) throw new InvalidOperationException("Header motion probe did not reach the blurred backdrop.");
+                centers.Add(moment / sum);
+            }
+        }
+        finally { probe.StripeY = double.NaN; probe.MotionSampling = false; headerGlass.RefreshBackdrop(); }
+        var deltas = centers.Zip(centers.Skip(1), (a, b) => b - a).ToArray();
+        if (deltas.Any(delta => delta < .35 || delta > 1.65))
+            throw new InvalidOperationException($"Header backdrop moved in jumps instead of following one-pixel content motion: dpi={scale}, steps={string.Join(',', deltas.Select(v => v.ToString("F2")))}.");
+        Console.WriteLine($"HEADER_MOTION_OK: dpi={scale:F2}, blurred movement={deltas.Min():F2}..{deltas.Max():F2}px for each 1px input step, without frozen samples or coarse jumps");
     }
 
     private void VerifyHeaderSampling(HeaderSamplingProbe probe)

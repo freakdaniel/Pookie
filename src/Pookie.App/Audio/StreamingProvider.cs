@@ -237,7 +237,10 @@ internal sealed class StreamingProvider : ISoundDataProvider
             throw new InvalidOperationException("HLS audio format changed between segments.");
 
         var skip = (long)(skipSeconds * format.SampleRate) * format.Channels;
-        if (skip > 0 && skip <= int.MaxValue && decoder.Seek((int)skip)) skip = 0;
+        // The bundled FFmpeg Seek reports success at a packet boundary, without
+        // trimming to the requested sample or accounting for a segment's start PTS.
+        // Keep the PCM and the reported clock aligned by discarding decoded frames.
+        // For HLS this only decodes the selected segment's prefix.
         var buffer = new float[8192];
         while (true)
         {

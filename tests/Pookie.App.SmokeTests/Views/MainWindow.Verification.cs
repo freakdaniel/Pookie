@@ -372,9 +372,9 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == 1019 && row.Waveform.ActualWidth > 100));
         var filteredRow = likedRows.Values.Single(row => row.Track?.Id == 1019);
         var pixelTolerance = 1 / Window.DpiScale;
-        if (Math.Abs(filteredRow.Cover.ActualWidth - 160) > pixelTolerance || Math.Abs(filteredRow.Cover.ActualHeight - 160) > pixelTolerance ||
+        if (Math.Abs(filteredRow.Cover.ActualWidth - TrackRowLayout.CoverSize) > pixelTolerance || Math.Abs(filteredRow.Cover.ActualHeight - TrackRowLayout.CoverSize) > pixelTolerance ||
             filteredRow.Author.Bounds.Y >= filteredRow.Title.Bounds.Y || filteredRow.Waveform.Bounds.X <= filteredRow.Cover.Bounds.Right ||
-            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || Math.Abs(filteredRow.PlayButton.ActualHeight - 40) > pixelTolerance)
+            filteredRow.Root.Bounds.Right > likedList.Bounds.Right + 1 || Math.Abs(filteredRow.PlayButton.ActualHeight - TrackRowLayout.ActionSize) > pixelTolerance)
             throw new InvalidOperationException($"SoundCloud list layout clipped cover, title, waveform or playback controls: " +
                 $"cover={filteredRow.Cover.ActualWidth:F2}x{filteredRow.Cover.ActualHeight:F2}, " +
                 $"authorY={filteredRow.Author.Bounds.Y:F2}, titleY={filteredRow.Title.Bounds.Y:F2}, " +
@@ -403,7 +403,7 @@ internal sealed partial class MainWindow
         await VerifyLikedActionHoverAsync(firstListRow);
         await VerifyPlayerHoverAsync();
         CaptureUiPreview("list");
-        Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, 160px artwork, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
+        Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, padded 184px artwork rows, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
         likesAsList.Value = false;
         Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
         

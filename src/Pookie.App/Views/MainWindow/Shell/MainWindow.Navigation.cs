@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings }
+    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings, UserProfile }
     private readonly ObservableValue<Page> page = new(Page.Home);
     private readonly ObservableValue<string> eyebrow = new("ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ");
     private readonly ObservableValue<bool> profileOpen = new(false);
@@ -41,28 +41,13 @@ internal sealed partial class MainWindow
     {
         if (!CanUseWorkspace) return Task.CompletedTask;
         if (target == Page.Home) return NavigateHomeAsync();
+        if (target == Page.Feed) return OpenFeedAsync();
         if (target == Page.Chats) return OpenChatsAsync();
         if (target == Page.Settings) return ShowSettingsAsync(settingsSection.Value);
         if (target == Page.Library) return LikesAsync();
         if (target == Page.LibraryTracks) { ShowLibraryTracks(); return Task.CompletedTask; }
         if (IsCollectionPage(target)) return ShowLibrarySectionAsync(target);
-        return NavigateRouteAsync(new(target), async _ =>
-        {
-            eyebrow.Value = "ЛЕНТА / ТВОИ ПОДПИСКИ";
-            heading.Value = "Новое от тех, кого ты слушаешь";
-            if (demo) { status.Value = "Демо-режим: локальные тестовые звуки."; return; }
-            var token = BeginLoad();
-            ReplaceTracks(new([], null));
-            if (target == Page.Feed && me == null)
-            {
-                status.Value = "Войди через профиль справа сверху, чтобы увидеть треки и репосты своих подписок.";
-                return;
-            }
-            var result = await api.GetFeedAsync(token);
-            token.ThrowIfCancellationRequested();
-            ReplaceTracks(result);
-            status.Value = "Треки и репосты из твоей ленты SoundCloud.";
-        });
+        return Task.CompletedTask;
     }
 
     private void ToggleMute()

@@ -39,10 +39,11 @@ internal sealed partial class MainWindow
     private LikedTrackRow CreateLibraryTrackRow()
     {
         var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer);
+            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer, glass: true);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);
+        AttachUserLink(row.Author, () => row.Track?.User);
         return row;
     }
 
@@ -53,6 +54,7 @@ internal sealed partial class MainWindow
         likedArtworkTracks[row.Cover] = track.Id;
         Run(() => LoadLikedArtworkAsync(row.Cover, track));
         Run(() => LoadLikedWaveformAsync(row, track));
+        Run(() => LoadLikedTrackArtAsync(row, track));
         RefreshLikedRow(row);
     }
 

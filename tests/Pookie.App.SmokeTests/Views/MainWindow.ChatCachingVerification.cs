@@ -54,6 +54,8 @@ internal sealed partial class MainWindow
             if (chatRecipient?.Id != transport.Other.Id) return;
             var anchor = ChatRows.FirstOrDefault(r => r.Bound && r.Message?.Id == savedAnchorId);
             openingFrames.Add(anchor == null ? double.PositiveInfinity : anchor.Root.Bounds.Y - viewer.Bounds.Y);
+            if(anchor==null||Math.Abs(anchor.Root.Bounds.Y-viewer.Bounds.Y-savedAnchorY)>1)
+                Console.WriteLine($"CHAT_RESTORE_FRAME: restore={chatRestoreOffset}, id={chatRestoreAnchor}, passes={chatRestorePasses}, offset={viewer.VerticalOffset}, max={SmoothScroll.Maximum(viewer)}, y={anchor?.Root.Bounds.Y-viewer.Bounds.Y}, target={savedAnchorY}, bottom={chatScrollBottom}, wasBottom={chatWasAtBottom}, dirty={chatMessagesView.IsMeasureDirty}/{chatMessagesView.IsArrangeDirty}");
         }
         chatViewport.BeforePaint += PaintOpening;
         var returning = SelectChatAsync(transport.Other);

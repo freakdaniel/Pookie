@@ -18,6 +18,8 @@ internal sealed partial class MainWindow
         topSearchInput.ClipboardService = windowClipboard;
         likedFilter.ClipboardService = windowClipboard;
         trackDetailDescription.ClipboardService = windowClipboard;
+        userDescription.ClipboardService = windowClipboard;
+        userSidebarBiography.ClipboardService = windowClipboard;
         chatInput.ClipboardService = windowClipboard;
         chatSearch.ClipboardService = windowClipboard;
         chatGifSearch.ClipboardService = windowClipboard;

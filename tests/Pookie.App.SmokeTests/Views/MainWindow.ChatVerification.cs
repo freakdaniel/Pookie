@@ -43,6 +43,27 @@ internal sealed partial class MainWindow
             CaptureUiPreview("chats-thread-loading");
             transport.ThreadReady!.SetResult(); await selecting;
             await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message != null && r.Root.ActualHeight > 40) && chatInput.IsEnabled);
+            await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && chatIdentityCard.ActualWidth > 100);
+            if (Math.Abs(chatColumns.Bounds.Bottom - chatComposer.Bounds.Bottom - 16) > 1 ||
+                Math.Abs(chatIdentityCard.Bounds.Y + chatIdentityCard.ActualHeight / 2 - chatOptions.Bounds.Y - chatOptions.ActualHeight / 2) > 1 ||
+                !chatIdentityCard.Bounds.Contains(chatOptions.Bounds) || chatName.Bounds.Right > chatOptions.Bounds.X || !chatIdentityCard.Bounds.Contains(chatName.Bounds))
+                throw new InvalidOperationException("Unified chat header has overlapping controls or the composer has no bottom breathing room");
+            RouteWaveformClick(SettingsCenter(chatOptions));
+            if (chatOptionsMenu.PlacementTarget != chatOptions || chatOptionsMenu.Items.OfType<MenuItem>().Count() != 6)
+                throw new InvalidOperationException("Chat options did not open its six real actions");
+            CaptureUiPreview("chats-header-options", chatOptionsMenu);
+            RouteWaveformClick(SettingsCenter(chatName));
+            CloseChatDetails();
+            var hadPlayer = playerVisible.Value;
+            try
+            {
+                playerVisible.Value = true;
+                await WaitForLikedLayoutAsync(() => Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 && !chatComposerSurface.IsResizing &&
+                    Math.Abs(playerChrome.Bounds.Y - chatComposer.Bounds.Bottom - 16) < 1);
+                CaptureUiPreview("chats-glass-with-player");
+            }
+            finally { playerVisible.Value = hadPlayer; }
+            await WaitForLikedLayoutAsync(() => (hadPlayer ? Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 : !playerChrome.IsVisible) && !chatComposerSurface.IsResizing);
             var viewer = (ScrollViewer)chatMessagesView.FindVisualChild<ScrollViewer>()!;
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             if (chatMessages.Count != 30 || !chatOlder.IsVisible) throw new InvalidOperationException("Initial chat page or pagination was lost.");
@@ -59,6 +80,7 @@ internal sealed partial class MainWindow
             }
             if (OperatingSystem.IsLinux())
             {
+                Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
                 var display = XOpenDisplay(0);
                 if (display == 0) throw new InvalidOperationException("No display for chat input verification.");
                 try
@@ -89,7 +111,7 @@ internal sealed partial class MainWindow
             if (chatUnread.Badge(90) != "4") throw new InvalidOperationException($"Unread counter did not count four arrivals: {chatUnread.Badge(90)}");
             await Task.Delay(300); CaptureUiPreview("chats-unread-counter");
             await LoadOlderMessagesAsync();
-            if (chatMessages.Count != 39 || chatMessageCursor != null) throw new InvalidOperationException("Older history did not merge or exhausted cursor reappeared.");
+            if (chatMessages.Count != 39 || chatMessageCursor != null) throw new InvalidOperationException($"Older history did not merge or exhausted cursor reappeared: count={chatMessages.Count}, cursor={chatMessageCursor}.");
             RequestChatBottom();
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             chatInput.Text = "Тестовое сообщение";
@@ -272,8 +294,8 @@ internal sealed partial class MainWindow
                 r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null, ActualWidth: > 0 } && !r.Content.IsResizing));
             var photoOnlyRow = ChatRows.First(r => r.Message?.Body == photoOnlyCode);
             photoOnlyRow.UpdateMediaHover(false); await Task.Delay(240);
-            if (!photoOnlyRow.Content.PhotoOnly || photoOnlyRow.Footer.Opacity > .05 || photoOnlyRow.Bubble.Padding != new Thickness(0))
-                throw new InvalidOperationException("Image-only message has a normal footer or extra bubble padding.");
+            if (!photoOnlyRow.Content.PhotoOnly || photoOnlyRow.Footer.Opacity < .95 || photoOnlyRow.Bubble.Padding != new Thickness(0))
+                throw new InvalidOperationException("Image-only message lost its persistent time overlay or has extra bubble padding.");
             CaptureUiPreview("chats-photo-only");
             photoOnlyRow.UpdateMediaHover(true); await Task.Delay(240);
             var photoOnlyFrame = (ChatPhotoFrame)photoOnlyRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
@@ -414,7 +436,7 @@ internal sealed partial class MainWindow
         internal SoundCloudUser Third = new() { Id = 91, Username = "Длинное имя собеседника, которое должно аккуратно обрезаться" };
         private readonly List<object> messages = Enumerable.Range(1, 30).Select(i => Message(i % 3 == 0 ? 42 : 90,
             i == 29 ? "Нашла очень классный альбом. Кажется, тебе понравится — особенно последний трек!" : i % 3 == 0 ? "Да, звучит отлично 🎧" : "Привет! Есть что-нибудь интересное послушать?", DateTimeOffset.UtcNow.AddMinutes(i - 35))).ToList();
-        internal int Sends; internal bool DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList; internal TaskCompletionSource? SendReady, ThreadReady, ListReady;
+        internal int Sends; internal bool FailReads, DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList; internal TaskCompletionSource? SendReady, ThreadReady, ListReady;
         internal DateTimeOffset? NextSentAt;
         private static object Message(long sender, string body, DateTimeOffset date) => new { sender_urn = $"soundcloud:users:{sender}", content = body, sent_at = date.ToString("O") };
         private readonly HashSet<long> unreadPeers = [];
@@ -425,6 +447,7 @@ internal sealed partial class MainWindow
         public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {
             if (!request.IsValid()) throw new InvalidOperationException("Invalid fixture request.");
+            if(FailReads && request.Kind is "list" or "thread")throw new HttpRequestException("Fixture offline");
             object result;
             if (request.Kind == "list")
             {
@@ -479,6 +502,7 @@ internal sealed partial class MainWindow
     {
         private readonly Dictionary<string, byte[]> files = [];
         internal bool DelayDownload;
+        internal bool FailNextDownload;
         internal int Downloads;
         internal TaskCompletionSource? DownloadReady;
         internal string Add(ChatMediaPackage package, bool legacy = false)
@@ -501,6 +525,7 @@ internal sealed partial class MainWindow
             if (request.Method != HttpMethod.Get || request.RequestUri.Host != "pomf2.lain.la" || !files.TryGetValue(id, out var bytes))
                 throw new InvalidOperationException("Unexpected fixture media request; public hosts must never be called.");
             Downloads++;
+            if (FailNextDownload) { FailNextDownload = false; return new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable); }
             if (DelayDownload)
             {
                 DelayDownload = false; DownloadReady = new(TaskCreationOptions.RunContinuationsAsynchronously);

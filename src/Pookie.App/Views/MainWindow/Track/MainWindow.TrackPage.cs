@@ -23,6 +23,7 @@ internal sealed partial class MainWindow
     private TrackDetailState? trackDetailState;
     private ScrollViewer trackDetailScroll = null!;
     private Image trackDetailCover = null!, trackDetailBackdrop = null!, trackDetailAvatar = null!, trackDetailPlayIcon = null!, trackDetailHeart = null!;
+    private Border trackDetailScrim = null!;
     private TextBlock trackDetailTitle = null!, trackDetailAuthor = null!, trackDetailMeta = null!, trackDetailStats = null!;
     private MultiLineTextBox trackDetailDescription = null!;
     private DescriptionLinks trackDescriptionLinks = null!;
@@ -134,27 +135,29 @@ internal sealed partial class MainWindow
     private async Task LoadTrackDetailArtworkAsync(SoundCloudTrack track, long generation)
     {
         var sourceTask = GetLibraryArtworkAsync(track);
+        var backdropTask = LoadTrackDetailBackdropAsync(track, generation, sourceTask);
         var samplesTask = GetTrackWaveformAsync(track);
         var avatarTask = SharedArtworkAsync(track.User?.AvatarUrl);
-        var source = await sourceTask;
-        if (!IsTrackDetailCurrent(track.Id, generation)) return;
-        SetCardArtwork(trackDetailCover, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true);
-        var backdrop = source == null ? null : await Task.Run(() => ArtworkBackdrop.Create(source), lifetime.Token);
-        if (!IsTrackDetailCurrent(track.Id, generation)) return;
-        trackDetailBackdrop.Source = backdrop;
-        trackDetailGlass?.RefreshArtwork();
-        var samples = await samplesTask;
-        if (!IsTrackDetailCurrent(track.Id, generation)) return;
-        if (samples != null && !ReferenceEquals(renderedTrackDetailSamples, samples))
-        { renderedTrackDetailSamples = samples; trackDetailWaveform.SetSamples(samples); }
-        var avatar = await avatarTask;
-        if (IsTrackDetailCurrent(track.Id, generation)) trackDetailAvatar.Source = avatar != null ? avatar : Icons.Source("user");
+        try
+        {
+            var source = await sourceTask;
+            if (!IsTrackDetailArtworkCurrent(track, generation)) return;
+            SetCardArtwork(trackDetailCover, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true);
+            var samples = await samplesTask;
+            if (!IsTrackDetailArtworkCurrent(track, generation)) return;
+            if (samples != null && !ReferenceEquals(renderedTrackDetailSamples, samples))
+            { renderedTrackDetailSamples = samples; trackDetailWaveform.SetSamples(samples); }
+            var avatar = await avatarTask;
+            if (IsTrackDetailArtworkCurrent(track, generation)) trackDetailAvatar.Source = avatar != null ? avatar : Icons.Source("user");
+        }
+        finally { await backdropTask; }
     }
 
     private void RenderTrackDetail()
     {
         if (trackDetailState == null) return;
         renderedTrackDetailSamples = null; trackDetailWaveform.SetSamples([]); trackDetailBackdrop.Source = null;
+        trackDetailWaveform.OnArtwork = false;
         trackDetailGlass?.RefreshArtwork();
         var track = trackDetailState.Track;
         SetCardArtwork(trackDetailCover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);

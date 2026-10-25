@@ -48,6 +48,7 @@ internal sealed partial class MainWindow
         settingsSection.Value = section;
         settingsScroll.SetScrollOffsets(0, 0);
         RefreshSettingsControls(); RefreshSettingsData();
+        if(section==SettingsSection.Chats)Run(RefreshChatCacheStatisticsAsync);
         return Task.CompletedTask;
     });
 

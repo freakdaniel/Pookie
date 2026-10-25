@@ -8,7 +8,7 @@ namespace Pookie.App.Messages;
 
 internal sealed record ChatMediaThumbnail(int Width, int Height, int ThumbWidth, int ThumbHeight, byte[] Pixels);
 internal sealed record ChatMediaPreview(long SenderId, long RecipientId, string Caption, MediaFile[] Files,
-    ChatMediaThumbnail?[] Images, string? GifUrl, byte[] PayloadHash);
+    ChatMediaThumbnail?[] Images, string? GifUrl, byte[] PayloadHash, ChatReplyReference? Reply=null);
 
 internal static partial class ChatMediaCrypto
 {
@@ -23,8 +23,8 @@ internal static partial class ChatMediaCrypto
         try
         {
             var preview = new ChatMediaPreview(package.SenderId, package.RecipientId, package.Caption,
-                package.Attachments.Select(a => new MediaFile(a.Name, a.MediaType, a.Data.Length, a.AsFile, a.Video)).ToArray(),
-                package.Attachments.Select(Thumbnail).ToArray(), package.GifUrl, SHA256.HashData(payload));
+                package.Attachments.Select(a => new MediaFile(a.Name, a.MediaType, a.Data.Length, a.AsFile, a.Video, a.Voice)).ToArray(),
+                package.Attachments.Select(Thumbnail).ToArray(), package.GifUrl, SHA256.HashData(payload),package.Reply);
             plain = JsonSerializer.SerializeToUtf8Bytes(preview, ChatPreviewJson.Default.ChatMediaPreview);
             if (plain.Length > MaxPreviewBytes) throw new InvalidDataException("Слишком большое описание вложения.");
             var result = new byte[PreviewHeaderSize + plain.Length + payload.Length];
@@ -54,11 +54,12 @@ internal static partial class ChatMediaCrypto
             var preview = JsonSerializer.Deserialize(plain, ChatPreviewJson.Default.ChatMediaPreview) ?? throw new InvalidDataException("Нет описания вложения.");
             if (preview.SenderId != sender || preview.RecipientId != recipient || preview.Caption is not { Length: <= 20000 } ||
                 preview.Files is not { Length: <= MaxAttachments } || preview.Images == null || preview.Images.Length != preview.Files.Length ||
-                preview.PayloadHash is not { Length: 32 } || preview.Files.Any(f => f == null || f.Length is < 0 or > MaxFileBytes || f.Name is not { Length: <= 255 } || f.Type is not { Length: <= 128 } || f.Video != null && !f.Video.Valid) ||
+                preview.PayloadHash is not { Length: 32 } || preview.Files.Any(f => f == null || f.Length is < 0 or > MaxFileBytes || f.Name is not { Length: <= 255 } || f.Type is not { Length: <= 128 } || f.Video != null && !f.Video.Valid || f.Voice != null && (!f.Voice.Valid || !f.Type.StartsWith("audio/",StringComparison.Ordinal))) ||
                 preview.GifUrl != null && !KlipyClient.IsMediaUrl(preview.GifUrl) ||
                 preview.Images.Any(i => i != null && (i.Width is <= 0 or > 8192 || i.Height is <= 0 or > 8192 || (long)i.Width * i.Height > 16 * 1024 * 1024 ||
                     i.ThumbWidth is <= 0 or > 32 || i.ThumbHeight is <= 0 or > 32 || i.Pixels == null || i.Pixels.Length != i.ThumbWidth * i.ThumbHeight * 4)))
                 throw new InvalidDataException("Некорректное описание вложения.");
+            if(preview.Reply is {} reply && (reply.PeerId!=recipient || reply.MessageId is not {Length:>0 and <=512} || reply.Preview is not {Length:<=160}))throw new InvalidDataException("Некорректный связанный ответ.");
             return preview;
         }
         finally { CryptographicOperations.ZeroMemory(plain); }

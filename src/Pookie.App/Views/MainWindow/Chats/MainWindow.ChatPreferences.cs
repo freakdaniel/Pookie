@@ -55,10 +55,18 @@ internal sealed partial class MainWindow
         chatMessagesView.InvalidateMeasure();
     }
 
-    private void ClearChatDrafts()
+    private async Task ClearChatDraftsAsync()
     {
         EnsureChatAccount();
         chatDraftTimer.Stop(); chatDrafts.Clear();
+        var voices=chatWorkspace.Drafts?.Values.Select(d=>d.Voice).OfType<ChatVoiceDraft>().ToArray()??[];
+        await DeleteChatVoiceAsync();
+        foreach(var draft in voices)
+        {
+            var root=Path.Combine(dataPaths.Root,"Chats",chatAccountId.ToString(System.Globalization.CultureInfo.InvariantCulture),"VoiceDrafts")+Path.DirectorySeparatorChar;
+            if(Path.GetFullPath(draft.Path).StartsWith(root,StringComparison.Ordinal))TryDeleteChatVoice(draft.Path);
+        }
+        chatWorkspace=chatWorkspace with{Drafts=null};chatReply=null;RefreshChatReply();SaveChatWorkspace();
         chatRenderingDraft = true;
         try { chatInput.Text = ""; }
         finally { chatRenderingDraft = false; }

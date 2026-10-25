@@ -79,7 +79,7 @@ internal sealed partial class MainWindow
             detail: drafts ? "Текст и вложения черновиков этого аккаунта будут удалены; незавершённые отправки сохранятся" :
                 "Просмотренные диалоги и вложения будут убраны из памяти; черновики и незавершённые отправки сохранятся", owner: Window)) return "";
         if (me?.Id != account) return "Аккаунт изменился; повтори действие";
-        if (drafts) ClearChatDrafts(); else ClearChatMemoryCache();
+        if (drafts) await ClearChatDraftsAsync(); else ClearChatMemoryCache();
         return drafts ? "Черновики удалены" : "Временные данные чатов очищены";
     });
 

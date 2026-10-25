@@ -9,6 +9,7 @@ namespace Pookie.App.Messages;
 internal sealed class ChatMediaHosting : IDisposable
 {
     private readonly HttpClient http;
+    internal ChatMediaDiskCache? DiskCache {get;set;}
     internal ChatMediaHosting(HttpMessageHandler? handler = null)
     {
         if (handler == null)
@@ -127,6 +128,13 @@ internal sealed class ChatMediaHosting : IDisposable
     internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null)
     {
         if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
+        var cache=DiskCache;
+        if(cache!=null && await cache.ReadAsync(reference.Code,token) is {} cached)
+        {
+            try{return await Task.Run(()=>ChatMediaCrypto.Decrypt(cached,reference.Key,sender,recipient),token);}
+            catch(Exception error)when(error is CryptographicException or InvalidDataException){ /* Ignore corrupt cached bytes; authenticate the network copy. */ }
+            finally{CryptographicOperations.ZeroMemory(cached);}
+        }
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromMinutes(3));
         var requestToken = deadline.Token;
@@ -151,11 +159,14 @@ internal sealed class ChatMediaHosting : IDisposable
         byte[]? encrypted = null;
         try
         {
-            return await Task.Run(() =>
+            var package = await Task.Run(() =>
             {
                 encrypted = reference.Provider == 'q' ? ChatMediaArchive.Unwrap(bytes) : bytes;
                 return ChatMediaCrypto.Decrypt(encrypted, reference.Key, sender, recipient);
             }, token);
+            if(cache!=null && encrypted!=null)
+                try{await cache.PutAsync(reference.Code,encrypted,token);}catch(Exception error)when(error is IOException or UnauthorizedAccessException){}
+            return package;
         }
         catch (CryptographicException) { throw new InvalidOperationException("Вложение повреждено или ключ не подходит к этой переписке."); }
         finally { CryptographicOperations.ZeroMemory(bytes); if (encrypted != null && encrypted != bytes) CryptographicOperations.ZeroMemory(encrypted); }

@@ -10,6 +10,7 @@ internal sealed partial class MainWindow
         try
         {
             var transport = new ChatFixtureTransport();
+            chatMedia.Dispose();chatMedia=new(new ChatFixtureMediaHandler());
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
             await ShowWorkspaceAsync();
@@ -62,7 +63,10 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && chatComposer.ActualHeight > composerHeight + 10);
             await WaitForLoginFrameAsync();
             if (SmoothScroll.Maximum(viewer) - viewer.VerticalOffset > 2 / Window.DpiScale)
-                throw new InvalidOperationException("Growing the composer moved the latest message out of view.");
+                {
+                    CaptureUiPreview("chats-composer-anchor-failure");
+                    throw new InvalidOperationException($"Growing the composer moved the latest message out of view: offset={viewer.VerticalOffset}, max={SmoothScroll.Maximum(viewer)}, viewport={viewer.Bounds}, bottom={chatWasAtBottom}, following={chatScrollBottom}, restore={chatRestoreOffset}, width={chatViewportWidth}, height={chatViewportHeight}, composer={chatComposer.Bounds}.");
+                }
             chatInput.Text = "";
             await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && Math.Abs(chatComposer.ActualHeight - composerHeight) < 2 / Window.DpiScale);
 
@@ -73,6 +77,7 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync();
             if (chatRecipient?.Id != transport.Other.Id || chatMessages.Count != 30 || !chatInput.IsEnabled)
                 throw new InvalidOperationException("Reopening chats lost the selected conversation.");
+            await VerifyChatWorkspaceAsync(transport);
             Console.WriteLine($"UI_CHAT_NAVIGATION_OK: inbox, repeated navigation, resizing, history anchor, growing composer and bottom scroll; dpi={Window.Dpi}");
         }
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine(error); }

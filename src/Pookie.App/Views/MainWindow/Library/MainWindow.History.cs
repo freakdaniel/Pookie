@@ -7,13 +7,14 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     // A collection's identity and a search's query belong to the route, not just its page type.
-    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null, TrackSection TrackSection = TrackSection.Overview, SettingsSection SettingsSection = SettingsSection.General)
+    private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null, TrackSection TrackSection = TrackSection.Overview, SettingsSection SettingsSection = SettingsSection.General, UserSection UserSection = UserSection.Overview)
     {
-        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && TrackSection == other.TrackSection && SettingsSection == other.SettingsSection;
+        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && TrackSection == other.TrackSection && SettingsSection == other.SettingsSection && UserSection == other.UserSection;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
-        string Filter, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter);
+        string Filter, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter, UserProfileState? UserProfile,
+        FeedState? Feed, bool FeedReposts);
     private sealed class NavigationEntry(NavigationRoute route)
     {
         public NavigationRoute Route { get; } = route;
@@ -30,16 +31,18 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
-        likedFilterText, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilterText);
+        likedFilterText, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilterText, userProfileState, feedState, feedReposts.Value);
 
     private ScrollViewer? NavigationScroll() => page.Value == Page.Chats || !shellPageScroll.IsReady ? null : shellScroll;
 
     private ScrollViewer? PageContentScroll() => page.Value switch
     {
         Page.Home => homeScroll,
+        Page.Feed => feedList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.Library => overviewScroll,
         Page.Search => searchList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         Page.Track => trackDetailScroll,
+        Page.UserProfile => UserProfileScroll,
         Page.Chats => null,
         Page.Settings => settingsScroll,
         Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
@@ -62,6 +65,7 @@ internal sealed partial class MainWindow
         navigationHistory[navigationIndex].Pending = pending;
         RenewLoadToken();
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
+        feedLoading = false; feedSkeleton.SetActive(false); ResetUserLoading();
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         profileOpen.Value = false;
@@ -104,6 +108,7 @@ internal sealed partial class MainWindow
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();
         RenewLoadToken();
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
+        feedLoading = false; feedSkeleton.SetActive(false); ResetUserLoading();
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
         var generation = ++navigationGeneration;
         navigationIndex = index;
@@ -116,6 +121,7 @@ internal sealed partial class MainWindow
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
             if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection);
+            else if (entry.Route.Page == Page.UserProfile && entry.Route.Item?.User is { } profileUser) await OpenUserProfileAsync(profileUser, entry.Route.UserSection);
             else if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
             else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }
             else if (IsCollectionPage(entry.Route.Page)) await ShowLibrarySectionAsync(entry.Route.Page);
@@ -125,6 +131,11 @@ internal sealed partial class MainWindow
             return;
         }
         var state = entry.Snapshot;
+        feedLoading = false;
+        feedState = state.Feed; feedReposts.Value = state.FeedReposts; feedError = "";
+        if (entry.Route.Page == Page.Feed) RenderFeed();
+        userProfileState = state.UserProfile is { } userProfile ? userProfile with { Loading = [] } : null;
+        if (entry.Route.Page == Page.UserProfile) { userSection.Value = entry.Route.UserSection; failedUserCursor = null; RenderUserProfile(); }
         trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false, SectionLoading = false } : null;
         if (entry.Route.Page == Page.Track) { trackDetailSection.Value = entry.Route.TrackSection; failedTrackSectionCursor = null; RenderTrackDetail(); }
         heading.Value = state.Heading; eyebrow.Value = state.Eyebrow; status.Value = state.Status;
@@ -161,7 +172,7 @@ internal sealed partial class MainWindow
     private void ResetNavigationHistory()
     {
         loading?.Cancel(); ++navigationGeneration;
-        trackDetailState = null;
+        trackDetailState = null; userProfileState = null; feedState = null; feedLoading = false;
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false; searchResults = null; RefreshSearchViews();
         navigationHistory.Clear(); navigationHistory.Add(new(new(Page.Home))); navigationIndex = 0;
         page.Value = Page.Home;

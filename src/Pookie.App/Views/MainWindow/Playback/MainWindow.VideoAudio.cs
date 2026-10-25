@@ -36,7 +36,7 @@ internal sealed partial class MainWindow
         if (isPlaying.Value && (audioReady || audioPreparing)) videoMusicGeneration = playGeneration;
         return FadeVideoMusic(0, () =>
         {
-            if (!disposed && chatVideoOpen.Value && videoMusicGeneration == playGeneration && !paused)
+            if (!disposed && (chatVideoOpen.Value || chatVoiceAudioActive) && videoMusicGeneration == playGeneration && !paused)
             { videoMusicPaused = true; SetPlaybackPaused(true); }
         });
     }

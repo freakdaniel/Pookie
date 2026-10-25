@@ -18,6 +18,7 @@ internal static class ChatPresentation
     internal static string Preview(string body) => string.Join(' ', body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     internal static string MediaLabel(ChatMediaPackage package)
     {
+        if(package.Attachments.FirstOrDefault()?.Voice!=null)return "Голосовое сообщение";
         if (package.Attachments.Length > 1) return $"Файлы · {package.Attachments.Length}";
         if (package.GifUrl != null) return "GIF";
         if (package.Attachments.FirstOrDefault() is { AsFile: true } document) return document.Name;

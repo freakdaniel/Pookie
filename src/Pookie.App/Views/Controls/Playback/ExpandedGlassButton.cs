@@ -73,7 +73,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
             context.FillPath(shape, tint);
         }
         if (layer > 0) context.FillPath(shape, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));
-        if (paintSurface) sheen.Draw(context, Bounds, corners, .35 + layer / .12 * .65);
+        if (paintSurface) sheen.Draw(context, Bounds, corners, .35 + layer / .12 * .65, GetDpi() / 96d);
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
             context.DrawPath(GlassSheen.Shape(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4), corners), TrackButtons.OnSurface, 2);
     }
@@ -105,7 +105,7 @@ internal sealed class ExpandedGlassSurface : ContentControl
             Background.A > 0 ? GlassSheen.AdaptTint(Background, backdrop?.Brightness(Bounds) ?? 0) :
             GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
         context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, tint);
-        sheen.Draw(context, Bounds, corners, .35);
+        sheen.Draw(context, Bounds, corners, .35, GetDpi() / 96d);
     }
 
     protected override void RenderSubtree(IGraphicsContext context)

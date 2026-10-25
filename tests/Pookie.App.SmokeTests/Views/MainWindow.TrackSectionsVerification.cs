@@ -87,8 +87,8 @@ internal sealed partial class MainWindow
         await OpenTrackSectionAsync(TrackSection.Related);
         await WaitForLikedLayoutAsync(() => trackSectionRows.Count == 1 &&
             Math.Abs(trackSectionRows[0].Root.ActualHeight - TrackRowLayout.Height) < 1 / Window.DpiScale &&
-            Math.Abs(trackSectionRows[0].Waveform.ActualHeight - 68) < 1 / Window.DpiScale &&
-            Math.Abs(trackSectionRows[0].Cover.ActualWidth - 160) < 1 / Window.DpiScale);
+            Math.Abs(trackSectionRows[0].Waveform.ActualHeight - TrackRowLayout.WaveformHeight) < 1 / Window.DpiScale &&
+            Math.Abs(trackSectionRows[0].Cover.ActualWidth - TrackRowLayout.CoverSize) < 1 / Window.DpiScale);
         CaptureUiPreview("track-sections-related");
         await OpenTrackSectionAsync(TrackSection.Overview);
         await WaitForLikedLayoutAsync(() => trackDetailPlaylists.ActualHeight > 200 &&

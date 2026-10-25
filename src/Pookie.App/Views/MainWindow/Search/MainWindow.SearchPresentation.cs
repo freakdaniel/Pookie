@@ -65,7 +65,7 @@ internal sealed partial class MainWindow
         view.Heading.Text = block.Title;
         view.CardGrid.Items(block.Kind == SearchBlockKind.Cards ? block.Items ?? [] : [], item => item.Title);
         view.CardGrid.Height = likedArtworkSize + 90;
-        SetSearchHeroGeometry(view.Hero, searchList.ActualWidth - SearchShadowGutter);
+        SetSearchHeroGeometry(view.Hero, searchList.ActualWidth - SearchShadowGutter * 2);
     }, (_, _, _, context) =>
     {
         var view = searchViews[context.Get<StackPanel>("root")]; view.Block = null;
@@ -200,7 +200,7 @@ internal sealed partial class MainWindow
 
     private void UpdateSearchHeroGeometry(double width)
     {
-        foreach (var view in searchViews.Values) SetSearchHeroGeometry(view.Hero, width - SearchShadowGutter);
+        foreach (var view in searchViews.Values) SetSearchHeroGeometry(view.Hero, width - SearchShadowGutter * 2);
     }
 
     private static void SetSearchHeroGeometry(SearchHero hero, double width)

@@ -28,9 +28,9 @@ internal sealed class ChatUnreadTracker
         var messages = recent ?? [last];
         var anchor = previous == null ? -1 : Array.FindIndex(messages, m => m.Id == previous.LastId);
         var fresh = previous == null ? [] : anchor >= 0 ? messages.Skip(anchor + 1) : messages.Where(m => m.SentAt > previous.LastAt);
-        var count = (previous?.Count ?? 0) + fresh.Count(m => m.SenderId != account);
+        var count = (previous?.Count ?? 0) + fresh.Count(m => m.SenderId != account && !ChatProtocol.Project(m,account,peer).IsReaction);
         var uncertain = previous == null || previous.AtLeast || anchor < 0 && previous != null && messages.Length >= 30;
-        States[peer] = new(last.Id, last.SentAt, Math.Clamp(Math.Max(count, 1), 0, 9999), uncertain);
+        States[peer] = new(last.Id, last.SentAt, Math.Clamp(ChatProtocol.Project(last,account,peer).IsReaction ? count : Math.Max(count, 1), 0, 9999), uncertain);
         return true;
     }
     internal void Clear(long peer)

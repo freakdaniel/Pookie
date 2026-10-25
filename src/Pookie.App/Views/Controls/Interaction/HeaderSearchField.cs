@@ -14,14 +14,14 @@ internal sealed class HeaderSearchField : ContentControl
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
 
-    internal HeaderSearchField(TextBox input)
+    internal HeaderSearchField(TextBox input, bool compact = false)
     {
         this.input = input;
-        Height = 48; Padding = new Thickness(6, 4); BorderThickness = 0; Background = Color.Transparent;
-        input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(14).Foreground(TrackButtons.OnSurface);
+        Height = compact ? 40 : 48; Padding = compact ? new Thickness(0) : new Thickness(6, 4); BorderThickness = 0; Background = Color.Transparent;
+        input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(compact ? 13 : 14).Foreground(TrackButtons.OnSurface);
         surface = new GlassSurface().Height(40).CornerRadius(20).Padding(16, 0)
-            .Content(new Grid().Columns("24,*").Rows("*").Spacing(12).Children(
-                Icons.View("magnifying-glass", 22, TrackButtons.OnSurface).Center().Column(0), input.CenterVertical().Column(1)));
+            .Content(new Grid().Columns(compact ? "20,*" : "24,*").Rows("*").Spacing(compact ? 10 : 12).Children(
+                Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center().Column(0), input.CenterVertical().Column(1)));
         Content = surface;
         motion.TickCallback = value =>
         {
@@ -66,7 +66,7 @@ internal sealed class HeaderSearchField : ContentControl
         {
             if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
             context.FillRoundedRectangle(Bounds, 20, 20, Color.FromArgb((byte)(218 + Emphasis * 18), 49, 49, 55));
-            sheen.Draw(context, Bounds, new CornerRadius(20), Emphasis);
+            sheen.Draw(context, Bounds, new CornerRadius(20), Emphasis, GetDpi() / 96d);
         }
 
         protected override void OnDispose() { sheen.Dispose(); base.OnDispose(); }

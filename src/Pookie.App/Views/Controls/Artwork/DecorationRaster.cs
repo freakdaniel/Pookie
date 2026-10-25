@@ -54,24 +54,64 @@ internal sealed class DecorationRaster : IDisposable
 // its image between frames, so a global LRU must not dispose another view's ink.
 internal sealed class GlassSheenRaster : IDisposable
 {
-    private DecorationRaster? raster;
-    private (IGraphicsFactory Factory, Size Size, CornerRadius Corners, double Emphasis, double Scale)? key;
+    private WriteableBitmap? bitmap;
+    private IImage? image;
+    private IGraphicsFactory? factory;
+    private double paintedEmphasis = double.NaN;
 
-    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1)
+    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
-        if (!OperatingSystem.IsWindows()) { GlassSheen.Draw(context, bounds, corners, emphasis); return; }
         var graphics = Application.Current.GraphicsFactory;
-        var next = (graphics, bounds.Size, corners, emphasis, context.DpiScale);
-        if (key != next)
+        // A smaller header-blur capture can share the view's full-resolution
+        // raster instead of reallocating it between capture and window frames.
+        var scale = Math.Max(context.DpiScale, minimumScale);
+        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
+        var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
+        if (image == null || factory != graphics || image.PixelWidth != width || image.PixelHeight != height)
         {
-            raster?.Dispose(); raster = null; key = null;
-            raster = new DecorationRaster(graphics, bounds.Size, context.DpiScale,
-                (renderer, region) => GlassSheen.Draw(renderer, region, corners, emphasis));
-            key = next;
+            Dispose(); factory = graphics;
+            bitmap = new WriteableBitmap(width, height, clear: false);
+            image = ((IImageSource)bitmap).CreateImage(graphics);
         }
-        context.DrawImage(raster!.Image, bounds);
+        if (paintedEmphasis != emphasis)
+        {
+            using var write = bitmap!.LockForWrite();
+            FillPixels(write.PixelsBgra32, width, height, emphasis);
+            paintedEmphasis = emphasis;
+        }
+        // Quantize only at the final physical pixel size. Stretching a small
+        // dithered texture would average the noise away and restore the bands.
+        context.Save();
+        try
+        {
+            context.SetClipPath(GlassSheen.Shape(bounds, corners));
+            context.DrawImage(image!, bounds);
+        }
+        finally { context.Restore(); }
+        GlassSheen.DrawEdge(context, bounds, corners, emphasis);
     }
 
-    public void Dispose() { raster?.Dispose(); raster = null; key = null; }
+    internal static void FillPixels(Span<byte> pixels, int width, int height, double emphasis)
+    {
+        var denominator = (double)width * width + (double)height * height;
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var position = ((x + .5) * width + (y + .5) * height) / denominator;
+            var alpha = position < .45 ? (17 + emphasis * 6) * (1 - position / .45) + 5 * position / .45
+                : 5 - 4 * (position - .45) / .55;
+            var offset = (y * width + x) * 4;
+            pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
+            // A stable, neutral one-level dither preserves fractional alpha
+            // without visible grain, moving noise or changes to the glass tint.
+            pixels[offset + 3] = (byte)Math.Clamp(alpha + PlayerGradient.Noise(x, y), 0, 255);
+        }
+    }
+
+    public void Dispose()
+    {
+        image?.Dispose(); image = null; bitmap?.Dispose(); bitmap = null;
+        factory = null; paintedEmphasis = double.NaN;
+    }
 }

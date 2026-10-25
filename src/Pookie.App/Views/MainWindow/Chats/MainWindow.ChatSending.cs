@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
     {
         chatDocumentFiles.IntersectWith(chatSelectedFiles);
         PruneChatStaging();
-        chatAttachmentStrip.IsVisible = chatSelectedFiles.Length > 0 || chatSelectedGif != null;
+        chatAttachmentStrip.IsVisible = chatVoiceDraft == null && (chatSelectedFiles.Length > 0 || chatSelectedGif != null);
         chatAttachmentLabel.Text = chatSelectedGif != null ? "GIF" : string.Join(", ", chatSelectedFiles.Select(Path.GetFileName));
         chatAttachmentPreview.Source = null;
         chatAttachmentImageSize = null;
@@ -79,9 +79,16 @@ internal sealed partial class MainWindow
     private async Task SendChatAsync()
     {
         if (!chatSend.IsEnabled || chatSending || me == null || api.Session == null || chatRecipient == null || chatLocalStore == null) return;
+        if(chatInput.Text.Trim().Length==0 && chatSelectedFiles.Length==0 && chatSelectedGif==null)return;
         var user = me; var recipient = chatRecipient;
         var store = chatLocalStore;
-        var draft = chatInput.Text; var files = chatSelectedFiles; var gif = chatSelectedGif;
+        var draft = chatInput.Text; var files = chatSelectedFiles; var gif = chatSelectedGif;var reply=chatReply;var voiceDraft=chatVoiceDraft;
+        string? plainBody=null;
+        if(files.Length==0&&gif==null)
+        {
+            try{plainBody=reply==null?draft.Trim():ChatProtocol.Reply(user.Id,recipient.Id,reply.MessageId,reply.Preview,draft.Trim());}
+            catch(ArgumentException){chatThreadStatus.Value="Ответ слишком длинный. Сократи текст перед отправкой.";return;}
+        }
         var documents = chatDocumentFiles.ToHashSet(chatDocumentFiles.Comparer);
         var token = chatAccountLifetime?.Token ?? lifetime.Token;
         var outgoing = new ChatOutgoingItem(new("local:" + Guid.NewGuid().ToString("N"), user.Id, draft.Trim(), DateTimeOffset.UtcNow), draft, files, gif)
@@ -112,9 +119,9 @@ internal sealed partial class MainWindow
                         await input.ReadExactlyAsync(bytes, token);
                         if (input.ReadByte() != -1) throw new InvalidOperationException("Файл изменился во время чтения. Выбери его заново.");
                         var name = Path.GetFileName(path);
-                        attachments.Add(new(name, ChatMediaType(name), bytes, documents.Contains(path)));
+                        attachments.Add(new(name, ChatMediaType(name), bytes, documents.Contains(path), Voice: voiceDraft?.Path==path ? voiceDraft.Metadata : null));
                     }
-                    var package = new ChatMediaPackage(user.Id, recipient.Id, draft, attachments.ToArray(), gif?.Url);
+                    var package = new ChatMediaPackage(user.Id, recipient.Id, draft, attachments.ToArray(), gif?.Url,reply);
                     await PrepareOutgoingChatMediaAsync(outgoing, package, recipient.Id, token);
                     var reference = await chatMedia.UploadAsync(package, token);
                     body = reference.Code;
@@ -123,10 +130,10 @@ internal sealed partial class MainWindow
                 finally { foreach (var item in attachments) System.Security.Cryptography.CryptographicOperations.ZeroMemory(item.Data); }
                 if (body.Length > 36) throw new InvalidOperationException("Код вложения превышает 36 символов.");
             }
-            else body = draft.Trim();
+            else body = plainBody!;
             if (!ChatWriteCurrent(user.Id, token)) return;
             outgoing.Message = outgoing.Message with { Body = body }; RefreshChatTimeline();
-            var label = files.Length > 0 || gif != null ? "Медиа" : draft[..Math.Min(draft.Length, 255)];
+            var label = files.Length > 0 || gif != null ? "Медиа" : ChatProtocol.Clip(draft,255);
             var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray());
             chatPending[recipient.Id] = pending;
             // Commit before POST: a process crash must never cause an automatic replay.
@@ -139,7 +146,9 @@ internal sealed partial class MainWindow
                 if (chatRecipient?.Id == recipient.Id)
                 {
                     if (chatInput.Text == draft) { chatRenderingDraft = true; chatInput.Text = ""; chatRenderingDraft = false; }
-                    ClearChatAttachments();
+                    if(chatVoiceDraft is {} voice&&files.Contains(voice.Path)){TryDeleteChatVoice(voice.Path);chatVoiceDraft=null;RefreshChatVoice();}
+                    ClearChatAttachments(); chatReply=null; RefreshChatReply();
+                    chatWorkspace.Drafts?.Remove(recipient.Id); SaveChatWorkspace();
                 }
                 SaveChatState();
                 if (preferences.KlipyEnabled && gif != null)
@@ -201,11 +210,21 @@ internal sealed partial class MainWindow
         }
         RefreshChatTimeline();
     }
+    private async Task ConfirmCachedPendingChatAsync()
+    {
+        if(chatRecipient==null||chatHistory==null||!chatPending.TryGetValue(chatRecipient.Id,out var pending))return;
+        var peer=chatRecipient.Id;var revision=chatRevision;var store=chatHistory;
+        var proof=await store.FindConfirmationAsync(peer,chatAccountId,pending,ChatReadToken());
+        if(revision!=chatRevision||chatHistory!=store||proof==null||chatPending.GetValueOrDefault(peer)!=pending)return;
+        chatPending.Remove(peer);chatOutgoing.Remove(peer);chatDrafts.Remove(peer);chatWorkspace.Drafts?.Remove(peer);
+        chatRenderingDraft=true;chatInput.Text="";chatRenderingDraft=false;chatReply=null;RefreshChatReply();ClearChatAttachments();SaveChatWorkspace();SaveChatState();RefreshChatTimeline();RefreshChatComposer();
+    }
     private async Task CheckPendingChatAsync()
     {
         if (chatSending || chatRecipient == null || me == null || api.Session == null || !chatPending.TryGetValue(chatRecipient.Id, out var pending)) return;
         var recipient = chatRecipient; var session = api.Session; var account = me.Id;
         await RefreshChatThreadAsync();
+        await ConfirmCachedPendingChatAsync();
         if (disposed || api.Session != session || chatRecipient?.Id != recipient.Id || !chatPending.ContainsKey(recipient.Id)) return;
         if (!await MessageBox.AskYesNoAsync("Повторить отправку?", detail: "В загруженной переписке сообщение не найдено. Если SoundCloud уже принял его, повтор может создать дубль.", owner: Window)) return;
         if (api.Session != session || me?.Id != account || chatRecipient?.Id != recipient.Id) return;
@@ -234,7 +253,7 @@ internal sealed partial class MainWindow
     {
         ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".webp" => "image/webp", ".gif" => "image/gif",
         ".mp4" => "video/mp4", ".webm" => "video/webm", ".mov" => "video/quicktime", ".mkv" => "video/x-matroska", ".avi" => "video/x-msvideo",
-        ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", _ => "application/octet-stream"
+        ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", ".wav"=>"audio/wav", _ => "application/octet-stream"
     };
     private static string ChatActionError(Exception error) => error is InvalidDataException ? "Не удалось прочитать данные вложения." :
         error is IOException ? "Не удалось прочитать или сохранить файл." : FriendlyError(error);

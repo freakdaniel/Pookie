@@ -21,29 +21,31 @@ internal sealed partial class MainWindow
         public MenuItem? RepostMenu { get; set; }
         public Button PlaybackButton { get; set; } = null!;
     }
-    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false, Action? open = null)
+    private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false, Action? open = null, bool dense = false, bool miniature = false)
     {
-        var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
-        var play = Icons.View("play-solid", 18, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
+        var coverSize = miniature ? 20 : dense ? 32 : 44;
+        var cover = new Image().Width(coverSize).Height(coverSize).StretchMode(Stretch.UniformToFill);
+        var play = Icons.View("play-solid", miniature ? 10 : 18, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
         CompactTrackRow row = null!;
-        var playback = TrackButtons.Icon(play, () => { if (row.Track is { } track) (select ?? SelectLibraryTrack)(track); }, TrackButtons.Filled, 30).Center();
+        var playback = TrackButtons.Icon(play, () => { if (row.Track is { } track) (select ?? SelectLibraryTrack)(track); }, TrackButtons.Filled, miniature ? 18 : 30).Center();
         var overlay = new InkBorder().Background(Color.FromArgb(170, 0, 0, 0)).Content(playback);
         overlay.Strength = 0;
         overlay.Transitions = [Transition.Create(InkBorder.StrengthProperty, 150)];
-        var frame = new Border().Width(44).Height(44).CornerRadius(5).ClipToBounds()
+        var frame = new Border().Width(coverSize).Height(coverSize).CornerRadius(5).ClipToBounds()
             .Child(ArtworkLayer(cover).Children(overlay));
-        var title = new TextBlock().FontSize(14).SemiBold().Left().Height(21).TextTrimming(TextTrimming.CharacterEllipsis);
-        var author = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Height(19).TextTrimming(TextTrimming.CharacterEllipsis);
+        var title = new TextBlock().FontSize(dense ? 12 : 14).SemiBold().Left().Height(dense ? 18 : 21).TextTrimming(TextTrimming.CharacterEllipsis);
+        var author = new TextBlock().FontSize(dense ? 11 : 12).Foreground(secondary ?? Muted).Height(dense ? 16 : 19).TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(!miniature);
         var duration = new TextBlock().FontSize(12).Foreground(secondary ?? Muted).Right().CenterVertical();
         var heart = Icons.View("heart", 17, Muted).CenterHorizontal().CenterVertical();
-        var like = TrackButtons.Icon(heart, () => { }, TrackButtons.Text, 32).CenterVertical();
+        var like = TrackButtons.Icon(heart, () => { }, TrackButtons.Text, 32).CenterVertical().IsVisible(!miniature);
         var action = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .Content(new Grid().Columns("44,*").Rows("*").Spacing(12).Children(frame.Column(0).CenterVertical(),
+            .Content(new Grid().Columns($"{coverSize},*").Rows("*").Spacing(12).Children(frame.Column(0).CenterVertical(),
                 new StackPanel().Vertical().CenterVertical().Column(1).Children(title, author)));
         ((FrameworkElement)action.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
-        var root = new ViewportGrid().Columns(collectionRow ? "*,32,32,Auto" : "*,32,Auto").Rows("*").Spacing(8).Padding(8, 6).Height(64);
+        var root = new ViewportGrid().Columns(miniature ? "*,0,Auto" : collectionRow ? "*,32,32,Auto" : "*,32,Auto").Rows("*")
+            .Spacing(miniature ? 4 : 8).Padding(miniature ? 0 : 8, miniature ? 0 : 6).Height(miniature ? 24 : dense ? 48 : 64);
         var hoverFill = new InkBorder().CornerRadius(10).Background(Color.FromArgb(22, 255, 255, 255))
-            .BorderThickness(0).Padding(0).Margin(-8, -6).Column(0).ColumnSpan(collectionRow ? 4 : 3);
+            .BorderThickness(0).Padding(0).Margin(miniature ? 0 : -8, miniature ? 0 : -6).Column(0).ColumnSpan(collectionRow ? 4 : 3);
         hoverFill.Strength = 0;
         hoverFill.Transitions = [Transition.Create(InkBorder.StrengthProperty, 150)];
         hoverFill.IsHitTestVisible = false;
@@ -58,6 +60,7 @@ internal sealed partial class MainWindow
             row.More.Click += () => root.ContextMenu!.Show(row.More);
             root.Children(row.More);
         }
+        AttachUserLink(author, () => row.Track?.User);
         if (open == null) AttachTrackTitle(title, () => row.Track);
         else
         {

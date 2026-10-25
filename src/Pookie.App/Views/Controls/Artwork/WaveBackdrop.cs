@@ -3,6 +3,7 @@ using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 using Pookie.App.Home;
+using System.Numerics;
 
 namespace Pookie.App;
 
@@ -14,6 +15,7 @@ internal sealed class WaveBackdrop : Control
     private WriteableBitmap? bitmap;
     private IImage? image;
     private IGraphicsFactory? factory;
+    private readonly Vector3[] samples = new Vector3[160 * 64];
     private double phase, phaseFrom;
     private long frame;
     private bool dirty = true;
@@ -52,16 +54,18 @@ internal sealed class WaveBackdrop : Control
     protected override void OnRender(IGraphicsContext context)
     {
         var graphics = Application.IsRunning ? Application.Current.GraphicsFactory : Application.DefaultGraphicsFactory;
-        if (image == null || factory != graphics)
+        var scale = Math.Max(context.DpiScale, GetDpi() / 96d);
+        var width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
+        var height = Math.Max(1, (int)Math.Ceiling(Bounds.Height * scale));
+        if (image == null || factory != graphics || image.PixelWidth != width || image.PixelHeight != height)
         {
             image?.Dispose(); bitmap?.Dispose();
-            bitmap = new WriteableBitmap(160, 64, clear: false, hasAlpha: false);
+            bitmap = new WriteableBitmap(width, height, clear: false, hasAlpha: false);
             image = ((IImageSource)bitmap).CreateImage(graphics); factory = graphics; dirty = true;
         }
         if (dirty)
         {
             using var write = bitmap!.LockForWrite();
-            var pixels = write.PixelsBgra32;
             var palette = new[] { colors.Start, colors.Middle, colors.End };
             for (var y = 0; y < 64; y++)
             for (var x = 0; x < 160; x++)
@@ -76,14 +80,33 @@ internal sealed class WaveBackdrop : Control
                 }
                 // Keep the centre readable beneath the primary action.
                 var shade = 1 - .25 * Math.Exp(-Math.Pow((x / 160d - .5) * 5, 2));
-                var offset = (y * 160 + x) * 4;
-                pixels[offset] = (byte)Math.Min(255, b * shade);
-                pixels[offset + 1] = (byte)Math.Min(255, g * shade);
-                pixels[offset + 2] = (byte)Math.Min(255, r * shade); pixels[offset + 3] = 255;
+                samples[y * 160 + x] = new((float)(r * shade), (float)(g * shade), (float)(b * shade));
             }
+            // Keep the expensive glow calculation small, but interpolate its
+            // fractional channels before dithering at the final physical size.
+            FillPixels(write.PixelsBgra32, width, height, samples);
             dirty = false;
         }
-        context.FillRectangle(Bounds, new ImageBrush(image!, new Rect(0, 0, 160, 64), Bounds));
+        context.FillRectangle(Bounds, new ImageBrush(image!, new Rect(0, 0, width, height), Bounds));
+    }
+    internal static void FillPixels(Span<byte> pixels, int width, int height, ReadOnlySpan<Vector3> samples)
+    {
+        for (var y = 0; y < height; y++)
+        {
+            var sy = Math.Clamp((y + .5) * 64 / height - .5, 0, 63);
+            var top = (int)sy; var bottom = Math.Min(63, top + 1); var vertical = (float)(sy - top);
+            for (var x = 0; x < width; x++)
+            {
+                var sx = Math.Clamp((x + .5) * 160 / width - .5, 0, 159);
+                var left = (int)sx; var right = Math.Min(159, left + 1); var horizontal = (float)(sx - left);
+                var color = Vector3.Lerp(Vector3.Lerp(samples[top * 160 + left], samples[top * 160 + right], horizontal),
+                    Vector3.Lerp(samples[bottom * 160 + left], samples[bottom * 160 + right], horizontal), vertical);
+                var noise = PlayerGradient.Noise(x, y); var offset = (y * width + x) * 4;
+                pixels[offset] = (byte)Math.Clamp(color.Z + noise, 0, 255);
+                pixels[offset + 1] = (byte)Math.Clamp(color.Y + noise, 0, 255);
+                pixels[offset + 2] = (byte)Math.Clamp(color.X + noise, 0, 255); pixels[offset + 3] = 255;
+            }
+        }
     }
     protected override void OnDispose() { clock.Stop(); colorClock.Stop(); image?.Dispose(); bitmap?.Dispose(); base.OnDispose(); }
 }

@@ -10,6 +10,7 @@ internal sealed class ChatComposerSurface : Panel
     private double fromHeight, targetHeight = -1, resizeAmount = 1;
     private bool snapNext;
     internal bool IsResizing => resize.IsRunning;
+    internal Action? ResizeStarted;
     internal void SnapNextLayout() { snapNext = true; resize.Stop(); InvalidateMeasure(); }
     private readonly FrameworkElement content;
     private readonly Border hint;
@@ -45,6 +46,8 @@ internal sealed class ChatComposerSurface : Panel
         { resize.Stop(); targetHeight = nextHeight; resizeAmount = 1; snapNext = false; }
         else if (Math.Abs(targetHeight - nextHeight) > .5)
         {
+            var restarting = resize.IsRunning;
+            if (!restarting) ResizeStarted?.Invoke();
             fromHeight = resize.IsRunning ? fromHeight + (targetHeight - fromHeight) * resizeAmount : ActualHeight;
             resize.Stop(); targetHeight = nextHeight; resizeAmount = 0; resize.Start();
         }

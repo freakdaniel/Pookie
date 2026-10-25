@@ -105,6 +105,7 @@ internal sealed partial class MainWindow
             finally { Window.FrameRendered -= SampleGrid; }
 
             likesAsList.Value = true;
+            await WaitForLikedLayoutAsync(() => likedList.IsVisible && shellPageScroll.IsReady && !likedList.IsArrangeDirty);
             viewer.SetScrollOffsets(0, TrackRowLayout.Stride * 6);
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[8].Id));
             var scrolled = viewer.VerticalOffset;

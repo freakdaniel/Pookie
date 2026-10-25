@@ -102,6 +102,12 @@ internal sealed partial class MainWindow
                 () => preferences.KlipyEnabled, value => UpdatePreferences(p => p with { KlipyEnabled = value })),
             new TextBlock().Text("Файлы шифруются на устройстве и размещаются на Pomf / qu.ax; очистка локальных данных не удаляет отправленные файлы с внешнего хостинга")
                 .FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(0, 14)),
+        SettingsGroup("Расширения Pookie",
+            new TextBlock().Text("Связанные ответы, реакции и голосовые полноценно отображаются между клиентами Pookie. В других клиентах ответы и реакции могут выглядеть как служебный текст, голосовые — как аудиофайл.").FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap)),
+        SettingsGroup("Кеш чатов",
+            ChatCacheStatistics(),
+            SettingsAction("История и поиск", "Сообщения загрузятся из SoundCloud повторно; избранное, папки, позиции чтения и отправки сохранятся", "Очистить историю",()=>Run(()=>ClearChatDiskCacheAsync(false)),()=>me!=null&&!demo),
+            SettingsAction("Файлы вложений", "Зашифрованные копии на этом устройстве", "Очистить медиа",()=>Run(()=>ClearChatDiskCacheAsync(true)),()=>me!=null&&!demo)),
         SettingsGroup("Локальные данные",
             SettingsAction("Удалить черновики", "Очистить текст и вложения черновиков этого аккаунта; незавершённые отправки сохранятся", "Удалить черновики",
                 () => Run(() => ConfirmChatClearAsync(drafts: true)), () => me != null && !demo),

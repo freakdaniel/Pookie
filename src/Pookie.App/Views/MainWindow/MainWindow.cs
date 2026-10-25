@@ -130,8 +130,15 @@ internal sealed partial class MainWindow : IDisposable
             .Content(Layout())
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
+        Window.Closing += args =>
+        {
+            if(chatVoiceRecorder is not {Recording:true}&&!chatVoiceBusy)return;
+            var deferral=args.GetDeferral();
+            Run(async()=>{try{await FinishChatVoiceBeforeCloseAsync();}finally{deferral.Complete();}});
+        };
         Window.FrameRendered += RestoreNavigationScroll;
         Window.FrameRendered += ArrangeChatScroll;
+        Window.FrameRendered += QueueChatLibraryPreviews;
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
         Window.FrameRendered += DismissUnfocusedShellMenus;
@@ -143,6 +150,9 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (e.Key == Key.Escape && page.Value == Page.Chats && chatThreadSearchOpen) { e.Handled=true;CloseChatSearch();return; }
+            if (e.Key == Key.Escape && page.Value == Page.Chats && chatColumns.DetailsOpen) { e.Handled=true;CloseChatDetails();return; }
+            if (e.Key == Key.Escape && chatSelected.Count>0) { e.Handled=true;ClearChatSelection();return; }
             if (e.Key == Key.Escape && shellMenus.Any(menu => menu.Layer.IsOpen)) { e.Handled = true; CloseShellMenus(); return; }
             if (e.Key == Key.Escape && chatAttachMenu.IsOpen) { e.Handled = true; CloseChatAttachMenu(); return; }
             if (e.Key == Key.Escape && chatVideoOpen.Value) { e.Handled = true; if (chatVideoExpanded.Value) SetChatVideoExpanded(false); else CloseChatVideo(); return; }
@@ -692,6 +702,7 @@ internal sealed partial class MainWindow : IDisposable
                 status.Value = FriendlyError(error);
                 if (page.Value == Page.LibraryTracks) likedActionError.Value = status.Value;
                 else if (IsCollectionPage(page.Value)) librarySectionStatus.Value = status.Value;
+                else if (page.Value == Page.UserProfile) ShowUserProfileError(status.Value);
             }
         }
     }
@@ -709,8 +720,11 @@ internal sealed partial class MainWindow : IDisposable
         FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Shutdown); SaveWaveProfile(); waveSaveTimer.Dispose();
         disposed = true;
         ResetExpandedPlayer();
+        DisposeFeed();
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
-        trackDescriptionLinks.Dispose();
+        if (userHeaderGlass != null) { userHeader.BackgroundChanged -= userHeaderGlass.Invalidate; userHeaderGlass.Dispose(); }
+        foreach (var row in likedRows.Values) row.TrackArtGlass.Dispose();
+        trackDescriptionLinks.Dispose(); userDescriptionLinks.Dispose(); userBioLinks.Dispose();
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();

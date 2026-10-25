@@ -60,6 +60,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => audio.SeekCount > 0);
             if (Math.Abs(audio.State.Position - 15) > .001) throw new InvalidOperationException("Clicking a lyric did not seek to its timestamp.");
             RouteExpandedPointer(new Point(1, 1));
+            await VerifyLyricsProgressSeekingAsync(audio);
 
             // The real seven-second timer is reset by another wheel event.
             var wheelPoint = new Point(lyricsScroll.Bounds.X + 40, lyricsScroll.Bounds.Y + 80);
@@ -187,6 +188,29 @@ internal sealed partial class MainWindow
             if (element == expandedQueueContent) throw new InvalidOperationException("Hidden queue appeared as outgoing lyrics content.");
             return true;
         });
+    }
+
+    private async Task VerifyLyricsProgressSeekingAsync(BufferFixturePlayer audio)
+    {
+        foreach (var playing in new[] { true, false })
+        foreach (var target in new[] { 120.5, 21.5, 0, 15 })
+        {
+            audio.State = audio.State with { Playing = playing };
+            var seeks = audio.SeekCount;
+            BeginSeekDrag(); expandedProgress.Value = target; Poll();
+            if (audio.SeekCount != seeks || lyricsActiveLine != lyricsResult.Document!.ActiveLine(target))
+                throw new InvalidOperationException("Expanded slider lost the lyric preview or sought before release.");
+            EndSeekDrag(); await WaitForLikedLayoutAsync(() => !seeking);
+            Poll();
+            if (audio.SeekCount != seeks + 1 || Math.Abs(audio.State.Position - target) > .001 ||
+                lyricsActiveLine != lyricsResult.Document.ActiveLine(audio.State.Position))
+                throw new InvalidOperationException("Forward/backward expanded seeking lost the audio/lyric timestamp.");
+            audio.State = audio.State with { Position = target + 1 }; Poll();
+            if (lyricsActiveLine != lyricsResult.Document.ActiveLine(target + 1))
+                throw new InvalidOperationException("Lyrics retained a seek offset during subsequent playback.");
+        }
+        audio.State = audio.State with { Position = 15 }; Poll();
+        Console.WriteLine("LYRICS_SEEK_OK: forward/backward/zero slider drags while playing and paused, preview, one commit and subsequent lyric timing");
     }
 
     private async Task VerifyLyricsLoadingFadeAsync(string preview)

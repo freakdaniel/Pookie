@@ -59,4 +59,4 @@ public sealed record LyricsQuery(string Title, string Artist, string? Album, dou
 [JsonSerializable(typeof(LyricsCacheRecord))]
 internal partial class LyricsJson : JsonSerializerContext;
 
-internal sealed record LyricsCacheRecord(string Fingerprint, DateTimeOffset At, LyricsResult Result, bool Complete = true);
+internal sealed record LyricsCacheRecord(string Fingerprint, DateTimeOffset At, LyricsResult Result, bool Complete = true, int SelectionVersion = 0);

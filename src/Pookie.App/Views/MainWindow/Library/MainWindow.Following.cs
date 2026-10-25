@@ -19,10 +19,12 @@ internal sealed partial class MainWindow
         RefreshFollowingButtons();
     }
 
-    private Button ArtistFollowButton(Func<SoundCloudUser?> user, string inactive = TrackButtons.Tonal, double size = 40)
+    private Button ArtistFollowButton(Func<SoundCloudUser?> user, string inactive = TrackButtons.Tonal, double size = 40, bool withLabel = false)
     {
         var icon = Icons.View("user-plus", 20, TrackButtons.OnSurface);
-        var button = TrackButtons.Icon(icon, () => { if (user() is { } artist) Run(() => ToggleArtistFollowAsync(artist)); }, inactive, size);
+        Action action = () => { if (user() is { } artist) Run(() => ToggleArtistFollowAsync(artist)); };
+        var button = withLabel ? TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(icon.CenterVertical(),
+            new TextBlock().Text("Подписаться").FontSize(14).SemiBold().CenterVertical()), action, inactive, size) : TrackButtons.Icon(icon, action, inactive, size);
         artistFollowButtons.Add((button, icon, user, inactive));
         return button;
     }
@@ -56,6 +58,8 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(icon, following ? "user-check" : "user-plus", following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(button, !demo && user is { Id: > 0 } && me != null && api.Session != null && !pending, pending);
             button.ToolTip(following ? "Отписаться" : "Подписаться");
+            if (button.Content is StackPanel content && content.Children.OfType<TextBlock>().FirstOrDefault() is { } label)
+            { label.Text = following ? "Вы подписаны" : "Подписаться"; label.Foreground = following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface; }
         }
     }
 

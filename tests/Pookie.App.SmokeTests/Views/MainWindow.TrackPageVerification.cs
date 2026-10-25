@@ -21,10 +21,13 @@ internal sealed partial class MainWindow
                 Genre = "Electronic", CreatedAt = "2022-07-10T12:00:00Z", PlaybackCount = 1140000, LikesCount = 12190, CommentCount = 273,
                 RepostsCount = 28, License = "cc-by-nc-sa",
                 ArtworkUrl = "https://i1.sndcdn.com/track-page-fixture-t500x500.jpg",
+                Visuals = index == 0 ? new(true, [new("https://i1.sndcdn.com/track-art-fixture-original.jpg")]) : null,
                 WaveformUrl = "https://wave.sndcdn.com/track-page-fixture.json",
                 PermalinkUrl = "https://soundcloud.com/kar-tonw/dipins-etazhi-speed-up"
             }).ToArray();
             if (fixtures.Length != 2) throw new InvalidOperationException("Demo tracks unavailable.");
+            var trackArt = TrackArtFixture();
+            trackArtRequests[fixtures[0].TrackArtUrl!] = Task.FromResult<ImageSource?>(trackArt);
             await imageDiskCache.WriteAsync(fixtures[0].ArtworkUrl!, ArtworkFixtureBitmap(500), lifetime.Token);
             waveformRequests[fixtures[0].WaveformUrl!] = Task.FromResult<float[]?>(Enumerable.Range(0, 300)
                 .Select(i => (float)(.22 + .55 * Math.Abs(Math.Sin(i * .41)) * (.45 + .55 * Math.Abs(Math.Sin(i * .037))))).ToArray());
@@ -32,6 +35,7 @@ internal sealed partial class MainWindow
             api.Session = new("fixture", "fixture-token", "Test"); api.BrowserTransport = browser;
             libraryLikes = new(fixtures, null); ShowLibraryTracks(); likesAsList.Value = true;
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[0].Id && row.Title.ActualWidth > 100));
+            await VerifyTrackArtRowAsync(likedRows.Values.First(row => row.Track?.Id == fixtures[0].Id), fixtures[0], trackArt);
             var originalPlayback = current?.Id; var originalGeneration = playGeneration;
             if (OperatingSystem.IsWindows())
             {
@@ -41,14 +45,16 @@ internal sealed partial class MainWindow
             }
             else await OpenTrackPageAsync(fixtures[0]);
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState is { CommentsLoading: false, RelatedLoading: false, SidebarLoading: false } &&
-                !navigationHistory[navigationIndex].Pending && trackDetailWaveform.HasSamples && trackDetailCover.Source is ImageSource);
+                !navigationHistory[navigationIndex].Pending && trackDetailWaveform.HasSamples && trackDetailCover.Source is ImageSource &&
+                trackDetailWaveform.ActualWidth > 100 && trackDetailMarkerLayer.ActualHeight > 0 && !trackDetailScroll.IsArrangeDirty);
             if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROBE") == "1")
             { await ProbeDetailScrollingAsync(); return; }
             if (current?.Id != originalPlayback || playGeneration != originalGeneration)
                 throw new InvalidOperationException("Opening a title started playback.");
             var seekPoint = new Point(trackDetailWaveform.Bounds.X + 30, trackDetailWaveform.Bounds.Y + 30);
-            if (((UIElement)Window.Content!).HitTest(seekPoint) != trackDetailWaveform)
-                throw new InvalidOperationException("Comment avatars intercepted the waveform outside their buttons.");
+            var seekHit = ((UIElement)Window.Content!).HitTest(seekPoint);
+            if (seekHit != trackDetailWaveform)
+                throw new InvalidOperationException($"Comment avatars intercepted the waveform outside their buttons: hit={seekHit?.GetType().Name}, point={seekPoint}, waveform={trackDetailWaveform.Bounds}, markers={trackDetailMarkerLayer.Bounds}.");
             if (trackCommentMarkers.FirstOrDefault().Button is { } marker)
             {
                 var hit = ((UIElement)Window.Content!).HitTest(new Point(marker.Bounds.X + 12, marker.Bounds.Y + 12));
@@ -72,11 +78,13 @@ internal sealed partial class MainWindow
                 trackDetailCommentsTitle.ActualHeight > 0);
             await VerifyLongTrackHeroResizeAsync();
             VerifyCardGlassSource(trackDetailGlass!, trackDetailCover, trackDetailBackdrop, trackDetailPlay);
+            await VerifyTrackArtHeroAsync(trackArt);
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
             if (trackDetailTitle.Bounds.Y >= trackDetailAuthor.Bounds.Y || trackDetailPlay.Bounds.X >= trackDetailTitle.Bounds.X ||
                 trackDetailLike.Bounds.Bottom > trackDetailCover.Bounds.Bottom + 1 || trackDetailLike.Bounds.Y <= trackDetailWaveform.Bounds.Y)
                 throw new InvalidOperationException("Hero title, author, playback, waveform and actions do not follow the reference layout.");
             await VerifyTrackDescriptionAsync();
+            await VerifyCommentUserLinksAsync();
             await MoreTrackRepliesAsync(fixtures[0], trackDetailState.Comments.Comments[0]);
             if (trackDetailState.Comments.Comments[0].Replies.Length != 2 || trackDetailState.Comments.Comments[0].RepliesCursor != null)
                 throw new InvalidOperationException("Replies did not append or deduplicate correctly.");
@@ -139,13 +147,13 @@ internal sealed partial class MainWindow
             {
                 BindLibraryTrackRow(copyRow, fixtures[0] with { RepostsCount = count });
                 await WaitForLikedLayoutAsync(() => count is > 0
-                    ? rowCounter.IsVisible && rowCounter.Text == "28" && rowRepost.ActualWidth > 40
-                    : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && Math.Abs(rowRepost.ActualWidth - 40) < 1 / Window.DpiScale);
+                    ? rowCounter.IsVisible && rowCounter.Text == "28" && rowRepost.ActualWidth > TrackRowLayout.ActionSize
+                    : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && Math.Abs(rowRepost.ActualWidth - TrackRowLayout.ActionSize) < 1 / Window.DpiScale);
             }
             BindLibraryTrackRow(copyRow, fixtures[0] with { PermalinkUrl = null });
             var listActions = new List<Aprillz.MewUI.Controls.Button>();
             VisualTree.Visit(copyRow.Root, element => {
-                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName is TrackButtons.Tonal or TrackButtons.Reposted &&
+                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName is TrackButtons.Glass or TrackButtons.Reposted &&
                     button.Content is Aprillz.MewUI.Controls.Image) listActions.Add(button);
             });
             await VerifyTrackPlaylistButtonAsync(listActions[0], fixtures[0]);

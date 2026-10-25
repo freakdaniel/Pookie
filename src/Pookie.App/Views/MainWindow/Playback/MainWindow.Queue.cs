@@ -26,6 +26,13 @@ internal sealed partial class MainWindow
         queueLoader = new(playbackQueue, async (context, cursor, token) =>
         {
             if (context.Kind == PlaybackContextKind.Wave) return await GetWavePageAsync(token);
+            if (context.Kind == PlaybackContextKind.Feed)
+            {
+                var feed = await api.GetFeedActivitiesAsync(cursor, token);
+                var ids = playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).ToHashSet();
+                return new(feed.Entries.Where(entry => context.Key != "feed:originals" || !entry.IsRepost).Select(entry => entry.Item.Track)
+                    .OfType<SoundCloudTrack>().Where(track => ids.Add(track.Id)).ToArray(), feed.NextHref);
+            }
             if (context.LibraryCursor)
             {
                 var page = await api.GetLibraryNextAsync(cursor, token);
@@ -205,7 +212,7 @@ internal sealed partial class MainWindow
         repeatTrack.Value = playbackQueue.Repeat == RepeatMode.Track;
     }
     private FrameworkElement RepeatIcon(int size) => new Grid().Columns("*").Rows("*").Children(
-        Icons.View("repeat", size).Center(),
+        Icons.View("arrows-clockwise", size).Center(),
         new TextBlock().Text("1").FontSize(8).Bold().Center().BindIsVisible(repeatTrack));
 
     private void EnqueueTrack(SoundCloudTrack track, bool next)

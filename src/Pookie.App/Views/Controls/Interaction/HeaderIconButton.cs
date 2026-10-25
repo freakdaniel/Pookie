@@ -47,7 +47,7 @@ internal sealed class HeaderIconButton : Button
         var shape = GlassSheen.Shape(Bounds, corners);
         context.FillPath(shape, GlassSheen.Surface);
         if (layer > 0) context.FillPath(shape, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));
-        sheen.Draw(context, Bounds, corners, layer / .12);
+        sheen.Draw(context, Bounds, corners, layer / .12, GetDpi() / 96d);
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
             context.DrawPath(GlassSheen.Shape(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4),
                 start ? new CornerRadius(16, 4, 4, 16) : new CornerRadius(4, 16, 16, 4)), TrackButtons.OnSurface, 2);

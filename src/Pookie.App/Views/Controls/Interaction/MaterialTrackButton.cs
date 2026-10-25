@@ -10,6 +10,15 @@ namespace Pookie.App;
 internal sealed class MaterialTrackButton : Button
 {
     private Color? target;
+    private bool passive;
+    private bool suppressStateLayer;
+    internal void SuppressStateLayer() { suppressStateLayer = true; RefreshSurface(true); }
+    internal void SetPassive(bool value)
+    {
+        passive = value; IsHitTestVisible = !value; RefreshSurface(true);
+    }
+    protected override void OnClick() { if (!passive) base.OnClick(); }
+
     private (Color Surface, Color Foreground)? palette;
     private bool pending, pendingHot, snapNext;
     private Color surfaceFrom;
@@ -20,11 +29,13 @@ internal sealed class MaterialTrackButton : Button
     private readonly GlassSheenRaster sheen = new();
     private CoverGlassBackdrop? glassBackdrop;
     internal void UseGlassFinish() => glassFinish = true;
-    internal void AttachGlassBackdrop(CoverGlassBackdrop backdrop)
+    internal void AttachGlassBackdrop(CoverGlassBackdrop? backdrop)
     {
         if (!glassFinish) return;
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
-        glassBackdrop = backdrop; backdrop.Changed += InvalidateVisual; InvalidateVisual();
+        glassBackdrop = backdrop;
+        if (backdrop != null) backdrop.Changed += InvalidateVisual;
+        InvalidateVisual();
     }
     private double innerCorner = 8, shapeFrom, shapeTarget = 8;
     private readonly AnimationClock shapeClock = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
@@ -112,10 +123,10 @@ internal sealed class MaterialTrackButton : Button
         if (variant == null) return;
         var surface = palette?.Surface ?? TrackButtons.Surface(variant);
         var foreground = palette?.Foreground ?? TrackButtons.Foreground(variant);
-        var hot = pending ? pendingHot : IsEnabled && IsMouseOver;
+        var hot = !suppressStateLayer && !passive && (pending ? pendingHot : IsEnabled && IsMouseOver);
         // Connected toggles animate directly between selection states. A separate
         // pressed colour/shape would introduce a detour during that transition.
-        var next = !connected && !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
+        var next = !suppressStateLayer && !passive && !connected && !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
             hot ? TrackButtons.HoverColor(surface, foreground) : surface;
         if (target == next && !snap) return;
         var first = target == null;
@@ -153,7 +164,7 @@ internal sealed class MaterialTrackButton : Button
                 DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
             else base.OnRender(context);
             if (glassFinish) sheen.Draw(context, GetSnappedBorderBounds(Bounds),
-                connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35);
+                connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35, GetDpi() / 96d);
         }
         finally { context.Restore(); }
     }

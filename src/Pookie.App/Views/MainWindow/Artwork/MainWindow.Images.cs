@@ -12,7 +12,7 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? avatarLoading;
     private long avatarGeneration;
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ImageSource, Task<PlayerPalette>> playerPalettes = new();
-    private CoverGlassBackdrop? trackDetailGlass, collectionGlass;
+    private CoverGlassBackdrop? trackDetailGlass, collectionGlass, userHeaderGlass;
     private Storage.FaviconLoader? descriptionFavicons;
 
     private static CoverGlassBackdrop AttachCardGlass(TrackPageColumns card)
@@ -30,7 +30,9 @@ internal sealed partial class MainWindow
     {
         if (expandedHost.IsVisible) expandedGlassBackdrop.Prepare();
         if (!workspace.IsVisible) return;
+        foreach (var row in likedRows.Values) row.PrepareTrackArtGlass(contentFrame.Bounds);
         if (page.Value == Page.Track) { trackDetailGlass?.RefreshArtwork(); trackDetailGlass?.Prepare(); }
+        if (page.Value == Page.UserProfile) userHeaderGlass?.Prepare();
         if (page.Value == Page.LibraryCollection) { collectionGlass?.RefreshArtwork(); collectionGlass?.Prepare(); }
     }
 

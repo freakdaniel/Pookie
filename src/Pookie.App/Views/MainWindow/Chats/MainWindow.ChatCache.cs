@@ -6,9 +6,9 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    // Account-scoped and bounded. No received messages or decoded media are written to disk.
+    // Account-scoped bounded hot windows. Full history lives in the SQLite worker.
     private sealed record ChatThreadSnapshot(ChatMessage[] Messages, Dictionary<string, DateTimeOffset> Order,
-        string? Cursor, string? LatestCursor, double Offset, bool AtBottom, string? AnchorId, double AnchorY);
+        string? Cursor, string? LatestCursor, double Offset, bool AtBottom, string? AnchorId, double AnchorY, Dictionary<string,Dictionary<long,string>>? Reactions=null, bool HasNewer=false);
     private readonly Dictionary<long, ChatThreadSnapshot> chatThreadCache = [];
     private readonly LinkedList<long> chatThreadRecency = [];
     private bool chatThreadLoaded;
@@ -22,15 +22,25 @@ internal sealed partial class MainWindow
     {
         if (chatRecipient == null || !chatThreadLoaded) return;
         var viewer = chatMessagesView.FindVisualChild<ScrollViewer>() as ScrollViewer;
-        var trimmed = chatMessages.Count > 300;
-        var messages = chatMessages.TakeLast(trimmed ? 30 : 300).ToArray();
+        var trimmed = chatMessages.Count > 200;
+        var messages = chatMessages.TakeLast(trimmed ? 30 : 200).ToArray();
         var anchor = viewer == null ? null : ChatRows.Where(r => r.Bound && r.Message != null && r.Root.Bounds.Bottom > viewer.Bounds.Y + 1 && r.Root.Bounds.Y < viewer.Bounds.Bottom)
             .OrderBy(r => r.Root.Bounds.Y).FirstOrDefault();
         chatThreadCache[chatRecipient.Id] = new(messages,
             chatMessageOrder.Where(p => messages.Any(m => m.Id == p.Key)).ToDictionary(), trimmed ? chatLatestCursor : chatMessageCursor, chatLatestCursor,
-            trimmed ? 0 : chatRestoreOffset ?? viewer?.VerticalOffset ?? 0, trimmed || ChatIsAtBottom(), trimmed ? null : anchor?.Message?.Id, anchor == null || viewer == null ? 0 : anchor.Root.Bounds.Y - viewer.Bounds.Y);
+            trimmed ? 0 : chatRestoreOffset ?? viewer?.VerticalOffset ?? 0, trimmed || ChatIsAtBottom(), trimmed ? null : anchor?.Message?.Id, anchor == null || viewer == null ? 0 : anchor.Root.Bounds.Y - viewer.Bounds.Y, chatReactions.Where(p=>messages.Any(m=>m.Id==p.Key)).ToDictionary(p=>p.Key,p=>new Dictionary<long,string>(p.Value)),chatWindowHasNewer);
+        chatWorkspace.Positions[chatRecipient.Id] = new(anchor?.Message?.Id, anchor == null || viewer == null ? 0 : anchor.Root.Bounds.Y - viewer.Bounds.Y, ChatIsAtBottom());
+        SaveChatWorkspace();
+        foreach(var peer in chatThreadCache.Keys.Where(p=>p!=chatRecipient.Id).ToArray())
+        {
+            var other=chatThreadCache[peer];
+            if(other.Messages.Length<=100)continue;
+            var start=other.AnchorId==null?Math.Max(0,other.Messages.Length-100):Math.Max(0,Array.FindIndex(other.Messages,m=>m.Id==other.AnchorId)-8);
+            var small=other.Messages.Skip(start).Take(100).ToArray();
+            chatThreadCache[peer]=other with {Messages=small,Order=other.Order.Where(p=>small.Any(m=>m.Id==p.Key)).ToDictionary()};
+        }
         chatThreadRecency.Remove(chatRecipient.Id); chatThreadRecency.AddLast(chatRecipient.Id);
-        while (chatThreadRecency.Count > 8 || chatThreadCache.Values.Sum(t => t.Messages.Sum(m => (long)m.Body.Length * 2 + 256)) > 8 * 1024 * 1024)
+        while (chatThreadRecency.Count > 3 || chatThreadCache.Values.Sum(t => t.Messages.Sum(m => (long)m.Body.Length * 2 + 256)) > 8 * 1024 * 1024)
         { var oldest = chatThreadRecency.First!.Value; chatThreadRecency.RemoveFirst(); chatThreadCache.Remove(oldest); }
     }
 

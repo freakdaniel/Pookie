@@ -13,6 +13,7 @@ internal sealed partial class MainWindow
         // One title line plus the metadata line always occupies the play button's 64px header.
         trackDetailTitle = new TextBlock().FontSize(28).Bold().Height(36).TextWrapping(TextWrapping.NoWrap).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailAuthor = new TextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        AttachUserLink(trackDetailAuthor, () => trackDetailState?.Track.User);
         trackDetailMeta = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnSurface).Center();
         trackDetailPlay = TrackButtons.Icon(trackDetailPlayIcon,
@@ -50,7 +51,7 @@ internal sealed partial class MainWindow
         var coverFrame = new Border().Width(320).Height(320).CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
         var heroColumns = new TrackPageColumns(
             new ViewportGrid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
-            coverFrame, true, trackDetailBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen()).Initialize();
+            coverFrame, true, trackDetailBackdrop, trackDetailScrim = new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen()).Initialize();
         var hero = new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(heroColumns);
         trackDetailGlass = AttachCardGlass(heroColumns);
         var heroShadow = new CardShadow(hero).Margin(-12, -8, -12, -16);

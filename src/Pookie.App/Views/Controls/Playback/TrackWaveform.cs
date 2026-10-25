@@ -18,6 +18,12 @@ internal sealed class TrackWaveform : Control
     private double progress;
     private double? hoverPosition;
     private bool playing;
+    private bool onArtwork;
+    internal bool OnArtwork
+    {
+        get => onArtwork;
+        set { if (onArtwork == value) return; onArtwork = value; rasterDirty = true; InvalidateVisual(); }
+    }
     private long colorTimestamp;
     private WriteableBitmap? raster;
     private IImage? image;
@@ -191,7 +197,7 @@ internal sealed class TrackWaveform : Control
         }
     }
 
-    private Color BarColor(int index) => IdleColor.Lerp(PlayedColor, emphasis[index]);
+    private Color BarColor(int index) => (onArtwork ? Color.FromRgb(188, 188, 188) : IdleColor).Lerp(PlayedColor, emphasis[index]);
 
     private static void FillBar(Span<byte> pixels, int width, int height, double left, double top, double right, double bottom, Color color)
     {

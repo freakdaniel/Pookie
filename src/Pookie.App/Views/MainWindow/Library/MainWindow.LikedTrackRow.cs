@@ -11,22 +11,25 @@ internal sealed partial class MainWindow
     {
         public SoundCloudTrack? Track { get; private set; }
         public Grid Root { get; }
-        public Image Cover { get; } = new Image().Width(160).Height(160).StretchMode(Stretch.UniformToFill);
-        public TextBlock Title { get; } = new TextBlock().FontSize(15).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
-        public TextBlock Author { get; } = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
-        public TrackWaveform Waveform { get; } = new TrackWaveform().Height(68);
+        public Image Cover { get; } = new Image().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).StretchMode(Stretch.UniformToFill);
+        public TextBlock Title { get; } = new TextBlock().FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
+        public TextBlock Author { get; } = new TextBlock().FontSize(11.5).SemiBold().Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        public TrackWaveform Waveform { get; } = new TrackWaveform().Height(TrackRowLayout.WaveformHeight);
+        public Image TrackArt { get; } = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
+        private readonly Border trackArtFrame;
+        public CoverGlassBackdrop TrackArtGlass { get; }
         public Button PlayButton { get; }
-        private readonly Image play = Icons.View("play-solid", 22, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
-        private readonly Image pause = Icons.View("pause-solid", 22, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical().IsVisible(false);
-        private readonly Image heart = Icons.View("heart", 18, TrackButtons.OnSurface);
-        private readonly TextBlock likeCount = new TextBlock().FontSize(14).Bold().CenterVertical();
+        private readonly Image play = Icons.View("play-solid", 20, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
+        private readonly Image pause = Icons.View("pause-solid", 20, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical().IsVisible(false);
+        private readonly Image heart = Icons.View("heart", 17, TrackButtons.OnSurface);
+        private readonly TextBlock likeCount = new TextBlock().FontSize(13).Bold().CenterVertical();
         private readonly TextBlock playsCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
         private readonly TextBlock commentsCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
         private readonly StackPanel playsStat;
         private readonly StackPanel commentsStat;
         private readonly Border genreBadge;
-        private readonly TextBlock posted = new TextBlock().FontSize(11).Foreground(Muted).Right();
-        private readonly TextBlock genre = new TextBlock().FontSize(11).Foreground(Muted).Right().TextTrimming(TextTrimming.CharacterEllipsis).MaxWidth(160);
+        private readonly TextBlock posted = new TextBlock().FontSize(10.5).Foreground(Muted).Right();
+        private readonly TextBlock genre = new TextBlock().FontSize(10.5).Foreground(Muted).Right().TextTrimming(TextTrimming.CharacterEllipsis).MaxWidth(160);
         private readonly TextBlock position = new TextBlock().FontSize(10);
         private readonly TextBlock duration = new TextBlock().FontSize(10);
         private readonly Border positionLabel;
@@ -39,28 +42,31 @@ internal sealed partial class MainWindow
         private readonly StackPanel actionButtons;
         private readonly Grid actions;
         private readonly Grid details;
+        private readonly Grid heading, wave;
         private readonly string actionVariant;
+        private readonly bool publication;
         private double footerReserve;
         private readonly TextBlock collectionTrack = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical().IsVisible(false);
-        private readonly Image repostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
-        private readonly TextBlock repostCount = new TextBlock().FontSize(14).Bold().CenterVertical();
+        private readonly Image repostIcon = Icons.View("repeat", 18, TrackButtons.OnSurface);
+        private readonly TextBlock repostCount = new TextBlock().FontSize(13).Bold().CenterVertical();
         private bool snapActionColors = true, embedded;
         public bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
         public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Action<SoundCloudTrack> like,
-            Action<SoundCloudTrack> copy, Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false)
+            Action<SoundCloudTrack> copy, Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false, bool publication = false, Func<TextBlock, FrameworkElement>? byline = null)
         {
+            this.publication = publication;
             actionVariant = glass ? TrackButtons.Glass : TrackButtons.Tonal;
             PlayButton = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(play, pause),
-                () => { if (Track is { } track) select(track); }, TrackButtons.Filled);
-            likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(heart.CenterVertical(), likeCount),
-                () => { if (Track is { } track) like(track); }, actionVariant);
-            copyButton = TrackButtons.Icon(Icons.View("copy", 20, TrackButtons.OnSurface),
-                () => { if (Track is { } track) copy(track); }, actionVariant).ToolTip("Скопировать ссылку");
-            repostButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(repostIcon.CenterVertical(), repostCount),
-                () => { if (Track is { } track) repost(track); }, actionVariant).ToolTip("Сделать репост");
-            var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 20, TrackButtons.OnSurface),
-                () => { if (Track is { } track) playlist(track); }, actionVariant).ToolTip("Добавить в плейлист");
+                () => { if (Track is { } track) select(track); }, TrackButtons.Filled, TrackRowLayout.ActionSize);
+            likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(heart.CenterVertical(), likeCount),
+                () => { if (Track is { } track) like(track); }, actionVariant, TrackRowLayout.ActionSize);
+            copyButton = TrackButtons.Icon(Icons.View("copy", 18, TrackButtons.OnSurface),
+                () => { if (Track is { } track) copy(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Скопировать ссылку");
+            repostButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(repostIcon.CenterVertical(), repostCount),
+                () => { if (Track is { } track) repost(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Сделать репост");
+            var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 18, TrackButtons.OnSurface),
+                () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Добавить в плейлист");
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                 Icons.View("play-solid", 12, Muted).CenterVertical(), playsCount);
             commentsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
@@ -69,27 +75,37 @@ internal sealed partial class MainWindow
             positionLabel = new Border().Background(Surface).Padding(3, 1).Left().Bottom().Child(position).IsVisible(false);
             durationLabel = new Border().Background(Surface).Padding(3, 1).Right().Bottom().Child(duration);
             Waveform.SeekRequested += fraction => { if (Track is { } track) seek(track, fraction); };
-            artworkFrame = new Border().CornerRadius(6).ClipToBounds().Width(160).Height(160).Child(artworkLayer(Cover));
+            artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).Child(artworkLayer(Cover));
             metadata = new StackPanel().Vertical().Spacing(3).Right().CenterVertical().Children(posted, genreBadge);
             actionButtons = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton), playlistButton, copyButton);
             actions = new Grid().Columns("Auto,*").Rows("*").Children(
                 actionButtons.Column(0),
                 new StackPanel().Horizontal().Spacing(12).Right().CenterVertical().Column(1).Children(playsStat, commentsStat));
-            details = new Grid().Columns("*").Rows("40,68,40").Spacing(12);
-            Root = new ViewportGrid().Columns("160,*").Rows("*").Spacing(20).Height(TrackRowLayout.Height).Children(
-                new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
-                    .Content(artworkFrame)
-                    .OnClick(() => { if (Track is { } track) open(track); }),
-                details.Column(1).Children(
-                    new Grid().Columns("40,*,Auto").Rows("*").Spacing(10).Row(0).Children(
-                        PlayButton.CenterVertical().Column(0),
-                        new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(Author, Title),
-                        metadata.Column(2)),
-                    new Grid().Columns("*").Rows("*").Row(1).Children(
-                        Waveform,
-                        positionLabel,
-                        durationLabel),
-                    new Grid().Columns("*").Rows("*").Row(2).Children(actions, collectionTrack)));
+            details = new Grid().Columns("*").Rows("36,56,36").Spacing(16).Padding(TrackRowLayout.ContentInset, TrackRowLayout.VerticalInset);
+            trackArtFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds()
+                .IsHitTestVisible(false).IsVisible(false).Child(
+                    new Grid().Columns("*").Rows("*").Children(TrackArt,
+                        new Border().Background(ArtworkBackdrop.TrackArtScrim).IsHitTestVisible(false)));
+            var artworkButton = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
+                .Content(artworkFrame).OnClick(() => { if (Track is { } track) open(track); });
+            heading = new Grid().Columns("36,*,Auto").Rows("*").Spacing(10).Children(
+                PlayButton.CenterVertical().Column(0),
+                new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(byline?.Invoke(Author) ?? Author, Title), metadata.Column(2));
+            wave = new Grid().Columns("*").Rows("*")
+                .Children(Waveform, positionLabel, durationLabel);
+            if (publication) metadata.IsVisible = false;
+            Root = new ViewportGrid().Columns($"{TrackRowLayout.CoverSize},*").Rows("*").Spacing(TrackRowLayout.ColumnGap).Height(TrackRowLayout.Height).Children(
+                artworkButton, new Grid().Columns("*").Rows("*").Column(1).Children(trackArtFrame,
+                    details.Children(heading.Row(0), wave.Row(1), new Grid().Columns("*").Rows("*").Row(2).Children(actions, collectionTrack))));
+            if (publication) Root.SizeChanged += _ =>
+            {
+                FitPublicationActions();
+                // Visibility/width changes during arrange need a fresh measure
+                // after that pass, otherwise counters retain their compact bounds.
+                Application.Current.Dispatcher?.BeginInvoke(() => Root.InvalidateMeasure());
+            };
+            TrackArtGlass = new(TrackArt, background: trackArtFrame);
+            ReserveFooter(0);
         }
 
         // Embedded rows keep the library's waveform and controls, while allowing
@@ -98,7 +114,20 @@ internal sealed partial class MainWindow
         {
             embedded = true; positionLabel.Background = durationLabel.Background = Color.Transparent;
             Root.Height = TrackRowLayout.EmbeddedHeight; Waveform.Height = 56;
+            if (!details.RowDefinitions[0].Height.Equals(new GridLength(40))) details.RowDefinitions[0].Height = new GridLength(40);
             if (!details.RowDefinitions[1].Height.Equals(new GridLength(56))) details.RowDefinitions[1].Height = new GridLength(56);
+            if (!details.RowDefinitions[2].Height.Equals(new GridLength(40))) details.RowDefinitions[2].Height = new GridLength(40);
+            details.Spacing = 12; details.Padding = new Thickness(0);
+            heading.ColumnDefinitions[0].Width = new GridLength(40);
+            Title.FontSize = 15; Author.FontSize = 12;
+            PlayButton.Width = PlayButton.Height = 40; PlayButton.CornerRadius = 20;
+            VisualTree.Visit(actionButtons, element =>
+            {
+                if (element is not Button button) return;
+                if (button.Width == button.Height) button.Width = 40;
+                button.Height = 40; button.CornerRadius = 20;
+            });
+            ReserveFooter(footerReserve);
             var size = Math.Clamp(width - 360, 72, 160);
             if (Cover.Width != size)
             {
@@ -116,6 +145,23 @@ internal sealed partial class MainWindow
             actionButtons.Spacing = compact ? 6 : TrackButtons.ActionSpacing;
         }
 
+        private void FitPublicationActions()
+        {
+            if (!publication) return;
+            var width = Math.Max(0, Root.ActualWidth - TrackRowLayout.CoverSize - TrackRowLayout.ColumnGap - 2 * TrackRowLayout.ContentInset);
+            var compact = width < 360;
+            likeCount.IsVisible = !compact;
+            likeButton.Width = compact ? TrackRowLayout.ActionSize : double.NaN;
+            likeButton.Padding = new Thickness(compact ? 0 : 16, 0);
+            TrackButtons.SetCounter(repostButton, repostCount, compact ? "" : Track?.RepostsCount is > 0 ? ShortCount(Track.RepostsCount.Value) : "");
+            playsStat.IsVisible = width >= 480 && Track?.PlaybackCount != null;
+            commentsStat.IsVisible = width >= 480 && Track?.CommentCount != null;
+        }
+
+        public void AddQueueAction(Action<SoundCloudTrack> enqueue) => actionButtons.Add(
+            TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface), () => { if (Track is { } track) enqueue(track); }, actionVariant,
+                embedded ? 40 : TrackRowLayout.ActionSize).ToolTip("Добавить в очередь"));
+
         public void ReserveFooter(double width)
         {
             footerReserve = width;
@@ -127,6 +173,7 @@ internal sealed partial class MainWindow
 
         public void Bind(SoundCloudTrack track)
         {
+            SetTrackArt(null);
             if (Track?.Id != track.Id)
             {
                 ClearActionFocus(); snapActionColors = true;
@@ -149,6 +196,7 @@ internal sealed partial class MainWindow
             Waveform.SetSamples([]);
             Waveform.IsPlaying = false;
             Waveform.Progress = 0;
+            FitPublicationActions();
         }
 
         public void Refresh(bool selected, bool playing, bool liked, bool canLike, double seconds, bool pending = false)
@@ -187,7 +235,27 @@ internal sealed partial class MainWindow
             repostButton.ToolTip(reposted ? "Убрать репост" : "Сделать репост");
         }
 
-        public void Reset() { ClearActionFocus(); Track = null; Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }
+        public void SetTrackArt(ImageSource? source)
+        {
+            TrackArt.Source = source; trackArtFrame.IsVisible = source != null;
+            Waveform.OnArtwork = source != null;
+            if (source == null) TrackArtGlass.Reset();
+            else TrackArtGlass.RefreshArtwork();
+            VisualTree.Visit(actionButtons, element =>
+            {
+                if (element is MaterialTrackButton button) button.AttachGlassBackdrop(source == null ? null : TrackArtGlass);
+            });
+        }
+
+        public void PrepareTrackArtGlass(Rect viewport)
+        {
+            if (TrackArt.Source == null || !Root.Bounds.IntersectsWith(viewport) || Root.FindVisualRoot() is not Aprillz.MewUI.Window) return;
+            for (Element? element = Root; element != null; element = element.Parent)
+                if (element is UIElement { IsVisible: false }) return;
+            TrackArtGlass.RefreshArtwork(); TrackArtGlass.Prepare();
+        }
+
+        public void Reset() { ClearActionFocus(); Track = null; SetTrackArt(null); Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }
 
         private static string ShortCount(long value) => value switch {
             >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.InvariantCulture) + "M",

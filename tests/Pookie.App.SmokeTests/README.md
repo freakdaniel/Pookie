@@ -21,6 +21,25 @@ Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated 
 directory when the production app is open: MewUI's extracted font files otherwise
 share the same cache and another process can remove them when it exits.
 
+`--user-profile-ui-smoke-test --no-audio` checks hydrated profile headers,
+responsive banner/avatar layout, all 257 offline country flags, independent verification
+and Artist Pro badges, long names at narrow/wide widths, independent delayed activity/sidebar skeletons,
+avatar-derived fallback gradients, cached banner crossfades and stale-image isolation,
+pixel-verified header action blur (including confirmed follow), foreground exclusion,
+cached stable snapshots and blur updates during gradient transitions,
+content reaching the shared bottom fade, seven sections, followers/following navigation,
+linked selectable biography, library-sized artwork and right-column action rows,
+activity waveforms, playlist previews and confirmed playlist likes/reposts/queue actions,
+likes/followers/following and recent comments sidebar, height-based biography overflow,
+zero-track metric hiding, complete user comment pagination, shared header/body scrolling, activity append/dedup
+and playback for listeners with no own tracks, virtualized track pagination, retry,
+history/scroll restoration, artist playback context, confirmed follow writes and
+late-response/account isolation. All writes use a fixture account.
+`--user-profile-network-probe` reads the saved account's real public profile,
+external links and all music/social sections (including activity and next pages), without writes.
+Set `POOKIE_PROFILE_PROBE_PATH` to a dedicated temporary directory to run it while
+the normal app is open; it creates a separate browser profile without copying cookies.
+
 On Windows, `POOKIE_RENDER_PROBE=1` with `--expanded-glass-ui-smoke-test --no-audio`
 runs an isolated rendering diagnostic. It records player opening time, lyric frame
 times with the underlying page visible/hidden, and scrolling frame times. For the
@@ -55,6 +74,10 @@ the framework profiler for attribution and adds measurement overhead.
 `--comments-ui-smoke-test` also compares the cached paragraph renderer against
 standard TextBlock pixels across fractional widths, Unicode and emoji.
 The chrome check verifies native-DPI page sampling before header downsampling,
+and pixel-readback motion of a contrast edge through the blur: each one-device-pixel
+step must remain continuous instead of freezing and jumping across the reduced grid.
+Header reduction uses cached, aligned half-size stages to average fine text/artwork
+before the blur, including on HiDPI screens. The check also covers
 shared SVG visibility across independent render targets,
 and that first/repeated GPU blur passes preserve independent read/draw framebuffer
 bindings, viewport, program, VAO and texture bindings. Expanded-player checks
@@ -64,6 +87,9 @@ require spring overshoot in both directions, retained layout and no panel overla
 `xdg-open` fixture: exact argument passing, stdout/stderr isolation including
 browser descendants, independent browser lifetime and nonzero opener exit codes.
 It does not launch a real browser or change desktop associations.
+
+`POOKIE_SEARCH_ONLY=1` with `--chrome-ui-smoke-test` runs the existing search layout,
+virtualization and scrolling checks independently of the header interaction checks
 
 `--chrome-ui-smoke-test --no-audio` verifies the shared page/top-bar surface,
 the real blurred scroll-under header, square scroll viewports, the player-edge fade,
@@ -93,6 +119,16 @@ It also verifies fullscreen opening/closing, cover hover and repeated paused ree
 Transport controls must share a vertical center, and rendered glass buttons keep
 at least 4.5:1 foreground contrast on both white and nearly black artwork fixtures.
 Use `POOKIE_UI_PREVIEW` for the cover controls and selected feedback screenshots.
+
+`--feed-ui-smoke-test --no-audio` checks the feed with an isolated metadata
+fixture: virtualized track/playlist rows, event actors and dates, original/repost
+filtering, custom Track Art, nonzero counter layout, 184px publication geometry,
+responsive sidebar, shared hover-arrow history heading and cover alignment,
+deduplicated pagination, filtered playback-queue pagination,
+history/scroll restoration, retained content on refresh failure and stale replies.
+Set `POOKIE_UI_PREVIEW` to capture wide/narrow layouts and playlist previews.
+`--feed-network-probe` reads two pages using the saved account, reports event
+counts/shape without identities or credentials, and makes no account writes.
 
 `--settings-ui-smoke-test --no-audio` checks the settings gear through native
 clicks, all seven library-style tabs at 1000×680, back/forward section and scroll
@@ -491,6 +527,10 @@ Library, virtualized inbox/thread, responsive two-pane/single-pane layout, stabl
 polling while reading history, older-message pagination, per-conversation drafts,
 duplicate-submit prevention, durable unknown sends and reconciliation. Uses only a
 local fake SoundCloud transport. `POOKIE_UI_PREVIEW` saves synthetic UI previews.
+Checks the glass search/composer and separate recipient/options header cards,
+opens the three-action dialog menu, and verifies the composer's 16 DIP bottom gap
+with and without the player. Composer growth must keep the latest message anchored
+throughout the height animation.
 Also checks the loading skeleton, local sending spinner and failure state, persisted
 pre-send IDs (an older identical message cannot confirm a failed send), media
 thumbnails in inbox/composer/bubbles, date-only sticky separators, time-only message
@@ -616,3 +656,46 @@ seeking, disposal, and decoder ownership after the caller's input buffer is clea
 It plays silently and sends/uploads nothing. Linux requires LibVLC 3 and codec
 plugins; Windows builds carry the native package, and macOS uses installed VLC.
 The current native playback validation was run on Linux only.
+
+`--chat-navigation-ui-smoke-test --no-audio` also checks chat folders and membership,
+local pins/favorites, ordered multiple selection, linked replies, idempotent reactions,
+FTS search, docked/overlay details with Escape, 96/110/144/192 DPI layout passes,
+and voice drafts using synthetic PCM. It never captures a microphone or sends real messages.
+
+Chat history uses account-scoped SQLite/FTS5 under `Cache/Chats`, with a sequential
+worker and a 256 MiB budget. Encrypted media has a separate 512 MiB LRU cache.
+`Chats/<account>/workspace.json` and the existing `drafts.json` retain folders,
+pins, favorites, positions, drafts and uncertain sends independently of cache cleanup.
+Favorited ciphertext is retained under `Chats/<account>/FavoriteMedia`.
+Plain text and `p1` media remain compatible; `p2:` Base64URL envelopes carry replies
+and reaction events between Pookie clients. Unknown envelopes remain visible text.
+Voice uses mono Opus when available, otherwise 16 kHz/16-bit PCM WAV, up to five
+minutes/16 MiB. The unit suite exercises encoding/restoring voice without capture devices.
+
+Chat visual regressions include a neutral conversation background, standalone local
+saved messages, inline thread search, sidebar message search, intermediate panel-width
+animation frames, readable information panels, and scrim boundaries,
+idle loading controls, and centered microphone/send glyphs at every tested DPI.
+Preview captures use fixture conversations only.
+
+Chat search opens from the left header without a separate page title. The suite
+checks intermediate sidebar-opacity and connected-result-height frames, passive
+active tabs, cached avatars resolving before attachment, automatic indexing of
+older server pages, cancellation on obsolete queries, and the recording surface
+inside the composer. Synthetic tone envelopes supply the recording/voice previews.
+Search and attachment discovery fill missing history ranges automatically; there
+is no separate “search older messages” action.
+
+Voice recording checks use the production PCM meter with synthetic quiet/loud
+segments. Meter windows are 40 ms with a bounded rolling history; callback chunk
+boundaries, silence after a loud segment, clearing, and nonfinite samples are
+covered without opening an audio device. Native checks sample both directions
+of the 150 ms composer cross-fade, verify newly captured peaks reach the scrolling
+waveform, keep the timer separate, and confirm pause freezes the live history.
+
+Opus integration now requires a real OGG result and decodes it again to check
+duration and a quiet signal. Capture stays at 16 kHz; a bounded polyphase conversion
+feeds the bundled 48 kHz encoder. Tests also verify conversion across block
+boundaries, a monotonic waveform cursor under packet arrival jitter, and visible
+paused-waveform geometry after actual encoding. Wave edges fade through alpha,
+so previews keep their translucent parent surface.

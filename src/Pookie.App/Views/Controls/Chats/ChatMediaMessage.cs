@@ -48,7 +48,8 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
     protected override void OnDispose() { StopResize(); base.OnDispose(); }
     private Size photoSize = new(240, 180);
     private bool inlineFooter, videoMode;
-    private bool fileOnly, musicMode, musicOnly;
+    private bool fileOnly, musicMode, musicOnly, voiceOnly;
+    private ChatVoiceCard? voice;
     private Color captionBackground;
     internal Color CaptionBackground { get => captionBackground; set { captionBackground = value; InvalidateVisual(); } }
     internal bool PhotoMode { get; private set; }
@@ -76,6 +77,9 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         var file = attachments is StackPanel { Children.Count: 1 } ? attachments.FindVisualChild<ChatFileCard>() as ChatFileCard : null;
         fileOnly = !PhotoMode && !caption.IsVisible && !open.IsVisible && file != null;
         file?.ReserveFooter(fileOnly ? footer.DesiredSize.Width + 8 : 0);
+        voice = attachments is StackPanel { Children.Count: 1 } ? attachments.FindVisualChild<ChatVoiceCard>() as ChatVoiceCard : null;
+        voiceOnly = !PhotoMode && !caption.IsVisible && !open.IsVisible && voice != null;
+        voice?.ReserveFooter(voiceOnly ? footer.DesiredSize.Width + 8 : 0);
         musicOnly = musicMode && !caption.IsVisible && !open.IsVisible;
         if (attachments is StackPanel music)
             foreach (var child in music.Children.OfType<IChatMusicFooter>())
@@ -98,7 +102,7 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         if (!PhotoMode && !inlineFooter) width = Math.Min(width, Math.Max(attachments.DesiredSize.Width,
             Math.Max(caption.DesiredSize.Width, Math.Max(open.DesiredSize.Width, footer.DesiredSize.Width))));
         var height = attachments.IsVisible ? attachments.DesiredSize.Height : 0;
-        if (fileOnly || musicOnly) return AnimateSize(new(width, height));
+        if (fileOnly || musicOnly || voiceOnly) return AnimateSize(new(width, height));
         if (inlineFooter) return AnimateSize(new(width, height + Math.Max(caption.DesiredSize.Height, footer.DesiredSize.Height) + (PhotoMode ? 16 : musicMode ? 6 : 0)));
         if (caption.IsVisible) height += caption.DesiredSize.Height + (PhotoMode ? 12 : height > 0 ? 6 : 0);
         if (open.IsVisible) height += open.DesiredSize.Height + 6;
@@ -118,7 +122,7 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
             y += caption.DesiredSize.Height;
         }
         if (open.IsVisible) { y += 6; open.Arrange(new Rect(x, y, width, open.DesiredSize.Height)); y += open.DesiredSize.Height; }
-        var footerY = musicOnly ? attachments.Bounds.Bottom - 20 - footer.DesiredSize.Height / 2 : fileOnly ? attachments.Bounds.Bottom - 7 - footer.DesiredSize.Height : PhotoOnly ? Bounds.Bottom - footer.DesiredSize.Height - 5 : inlineFooter ?
+        var footerY = voiceOnly && voice != null ? voice.DurationLabel.Bounds.Bottom-footer.DesiredSize.Height : musicOnly ? attachments.Bounds.Bottom - 20 - footer.DesiredSize.Height / 2 : fileOnly ? attachments.Bounds.Bottom - 7 - footer.DesiredSize.Height : PhotoOnly ? Bounds.Bottom - footer.DesiredSize.Height - 5 : inlineFooter ?
             y - footer.DesiredSize.Height + 1 : y + 6;
         footer.Arrange(new Rect(x + width - footer.DesiredSize.Width - (PhotoMode ? 7 : 0), footerY,
             footer.DesiredSize.Width, footer.DesiredSize.Height));

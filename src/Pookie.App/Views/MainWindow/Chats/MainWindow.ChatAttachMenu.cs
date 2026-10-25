@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
         chatAttachMenuPanel = FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Children(
                 Choice("music-notes", "Трек или плейлист", () => Run(OpenChatMusicPickerAsync)),
                 Choice("file", "Документ", () => Run(() => PickChatFilesAsync(documents: true))),
-                Choice("image", "Фото или видео", () => Run(() => PickChatFilesAsync(mediaOnly: true)))), 238);
+                Choice("image", "Фото или видео", () => Run(() => PickChatFilesAsync(mediaOnly: true)))), 238).Background(ChatGlassSurface);
         chatAttachMenu = new FloatingMenuLayer(chatComposer, chatAttachMenuPanel, gap: 11).Initialize();
         chatAttachInteraction = new FloatingMenuHover(chatAttach, chatAttachMenuPanel, ShowChatAttachMenu, () => CloseChatAttachMenu());
         chatAttach.OnKeyDown(e => { if (e.Key is Key.Up or Key.Down) { e.Handled = true; ShowChatAttachMenu(); } });

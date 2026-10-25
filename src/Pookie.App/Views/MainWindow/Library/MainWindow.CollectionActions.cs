@@ -37,6 +37,7 @@ internal sealed partial class MainWindow
 
     private void RefreshCollectionActions()
     {
+        RefreshUserPlaylistActions();
         if (collectionLike == null) return;
         var playlist = displayedCollection?.Playlist;
         var available = !demo && me != null && api.Session != null && playlist?.Id > 0 && collectionActionsReady && collectionActionsSession == api.Session;
@@ -54,9 +55,11 @@ internal sealed partial class MainWindow
         TrackButtons.SetAvailability(collectionRepost, available && playlist?.User?.Id != me?.Id && !repostPending, repostPending);
     }
 
-    private Task LoadCollectionActionsAsync()
+    private Task LoadCollectionActionsAsync() => EnsureCollectionActionsAsync(displayedCollection?.Playlist?.Id is > 0);
+    private Task LoadUserPlaylistActionsAsync() => EnsureCollectionActionsAsync(userPublications.Any(entry => entry.Item.Playlist?.Id is > 0));
+    private Task EnsureCollectionActionsAsync(bool hasPlaylist)
     {
-        if (demo || me == null || api.Session is not { } session || displayedCollection?.Playlist?.Id is not > 0) return Task.CompletedTask;
+        if (demo || me == null || api.Session is not { } session || !hasPlaylist) return Task.CompletedTask;
         if (collectionActionsSession != session)
         {
             likedPlaylistIds.Clear(); repostedPlaylistIds.Clear(); collectionActionsReady = false;
@@ -87,9 +90,12 @@ internal sealed partial class MainWindow
         finally { if (!disposed && collectionActionsSession == session) RefreshCollectionActions(); }
     }
 
-    private async Task ToggleCollectionActionAsync(bool repost)
+    private Task ToggleCollectionActionAsync(bool repost) => displayedCollection?.Playlist is { } playlist
+        ? TogglePlaylistActionAsync(playlist, repost) : Task.CompletedTask;
+
+    private async Task TogglePlaylistActionAsync(SoundCloudPlaylist playlist, bool repost)
     {
-        if (displayedCollection?.Playlist is not { Id: > 0 } playlist || api.Session is not { } session || me is not { } user ||
+        if (playlist.Id <= 0 || api.Session is not { } session || me is not { } user ||
             demo || !collectionActionsReady || collectionActionsSession != session || repost && playlist.User?.Id == user.Id || !pendingCollectionActions.Add((session, playlist.Id, repost))) return;
         RefreshCollectionActions();
         var ids = repost ? repostedPlaylistIds : likedPlaylistIds;

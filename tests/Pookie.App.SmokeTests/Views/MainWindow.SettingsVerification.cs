@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
             me = new() { Id = 42, Username = "Settings fixture" };
             profile.Value = me.Username; signedIn.Value = true; likedIdsReady = true;
             EnsureWaveTaste(); await ShowWorkspaceAsync();
-            VerifySettingsDraftCleanupBeforeOpeningChats();
+            await VerifySettingsDraftCleanupBeforeOpeningChatsAsync();
             if (settingsButton.ToolTip != null || settingsToggles.Values.Any(control => control.ToolTip != null) ||
                 settingsChoices.Values.Any(control => control.ToolTip != null))
                 throw new InvalidOperationException("Settings gear, switches or selects retained tooltips.");
@@ -231,7 +231,7 @@ internal sealed partial class MainWindow
         Console.WriteLine("UI_SETTINGS_WAVE_MAINTENANCE_OK: pending source refill survives learning reset; durable JSON has no prior listening statistics.");
     }
 
-    private void VerifySettingsDraftCleanupBeforeOpeningChats()
+    private async Task VerifySettingsDraftCleanupBeforeOpeningChatsAsync()
     {
         SaveConfiguration();
         if (page.Value == Page.Chats || chatAccountId != 0 || configuration.Load().ChatBackgroundRefresh)
@@ -243,7 +243,7 @@ internal sealed partial class MainWindow
         var state = new ChatLocalState(new() { [90] = "Persisted draft before opening Chats" }, [pending], new() { [92] = unread });
 
         store.Save(state);
-        ClearChatDrafts();
+        await ClearChatDraftsAsync();
         AssertPreserved("Clear drafts");
         ResetChats(); // Recreate the uninitialized-account condition for the switch.
         store.Save(state);
@@ -292,6 +292,7 @@ internal sealed partial class MainWindow
 
     private async Task SetSettingsChoiceAsync(string key, int value)
     {
+        Window.Activate();await WaitForSettingsLayoutAsync(()=>Window.IsActive);
         var control = settingsChoices[key];
         await RevealSettingsControlAsync(control);
         RouteWaveformClick(SettingsCenter(control));

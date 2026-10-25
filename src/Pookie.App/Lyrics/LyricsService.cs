@@ -8,6 +8,7 @@ namespace Pookie.Lyrics;
 // Automatic resolution is independent of the audio player and UI dispatcher.
 public sealed class LyricsService : IDisposable
 {
+    private const int SelectionVersion = 1;
     private readonly ILyricsProvider provider;
     private readonly string cache;
     private readonly TimeProvider time;
@@ -45,6 +46,7 @@ public sealed class LyricsService : IDisposable
         var path = CachePath(identity);
         var cached = await ReadAsync(path, LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
         if (!force && cached is { Complete: true } found && found.Fingerprint == identity.Fingerprint &&
+            (found.SelectionVersion == SelectionVersion || found.Result.Status is LyricsStatus.Synced or LyricsStatus.Instrumental) &&
             time.GetUtcNow() - found.At < (found.Result.Status == LyricsStatus.NotFound ? TimeSpan.FromHours(24) : TimeSpan.FromDays(30)))
             return Prepare(found.Result, identity);
 
@@ -104,6 +106,27 @@ public sealed class LyricsService : IDisposable
                     return document.Status == LyricsStatus.Synced;
                 }
             }
+            if (chosen == null || result.Status == LyricsStatus.Plain)
+            {
+                // Some uploads store artist/title in opposite fields. Only look
+                // there after normal resolution; the matcher requires both fields
+                // to match reciprocally before correcting their orientation.
+                var reversed = identity.Queries().Concat(identity.Queries(stripParentheses: true)).Distinct()
+                    .Select(query => (Title: query.Artist, Artist: query.Title))
+                    .Where(query => !string.IsNullOrWhiteSpace(query.Title) && !string.IsNullOrWhiteSpace(query.Artist))
+                    .Where(query => searched.Add(query)).Take(4);
+                foreach (var query in reversed)
+                {
+                    try { candidates.AddRange(await RetryAsync(() => provider.SearchAsync(query.Title, query.Artist, token), token).ConfigureAwait(false)); }
+                    catch (Exception error) when (IsProviderFailure(error, token)) { failed = true; }
+                    if (LyricsMatcher.Choose(identity, candidates) is { } match)
+                    {
+                        chosen = match;
+                        var document = match.ToDocument(); result = new(document.Status, document);
+                        if (result.Status != LyricsStatus.Plain) break;
+                    }
+                }
+            }
             token.ThrowIfCancellationRequested();
             if (chosen == null) result = failed ? new(LyricsStatus.Unavailable) : new(LyricsStatus.NotFound);
             if (failed && cached is { Result.Document: not null } && cached.Fingerprint == identity.Fingerprint &&
@@ -115,7 +138,7 @@ public sealed class LyricsService : IDisposable
             {
                 try
                 {
-                    await WriteAsync(path, new LyricsCacheRecord(identity.Fingerprint, time.GetUtcNow(), result, !failed), LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
+                    await WriteAsync(path, new LyricsCacheRecord(identity.Fingerprint, time.GetUtcNow(), result, !failed, SelectionVersion), LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
                     Prune();
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }

@@ -6,6 +6,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyPlayerColorsAsync()
     {
+        VerifySmoothBackgroundGradients();
         var grayGradient = new PlayerPalette(Color.FromRgb(25, 25, 25), Color.FromRgb(45, 45, 45), Color.FromRgb(30, 30, 30));
         var raster = PlayerBackdrop.CreateRaster(grayGradient, 1024);
         if (!raster.SequenceEqual(PlayerBackdrop.CreateRaster(grayGradient, 1024)))

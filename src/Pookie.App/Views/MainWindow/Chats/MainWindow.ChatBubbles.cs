@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Animation;
 using Pookie.App.Messages;
 using Pookie.SoundCloud;
 
@@ -9,7 +10,7 @@ internal sealed partial class MainWindow
 {
     private static readonly Color ChatAccent = Color.FromRgb(128, 196, 249);
     private static readonly Color ChatOutgoingColor = Color.FromRgb(37, 75, 108);
-    private static readonly Color ChatIncomingColor = Color.FromRgb(43, 45, 49);
+    private static readonly Color ChatIncomingColor = Color.FromRgb(41, 41, 46);
 
     private sealed class ChatBubbleRow
     {
@@ -29,6 +30,10 @@ internal sealed partial class MainWindow
         internal readonly Button Error;
         internal readonly Button Open;
         private readonly Grid deliveryIcon;
+        private readonly Button quote;
+        private readonly ChatMessageFrame frame;
+        private readonly TextBlock quoteText = new TextBlock().FontSize(12).Foreground(ChatAccent).TextTrimming(TextTrimming.CharacterEllipsis);
+        private readonly StackPanel reactions = new StackPanel().Horizontal().Spacing(3);
         internal readonly StackPanel Attachments = new StackPanel().Vertical().Spacing(8);
         internal Image MusicBackdrop = null!;
         private Border? musicContent;
@@ -38,9 +43,12 @@ internal sealed partial class MainWindow
         internal int MediaGeneration;
         internal bool Bound;
         private readonly MainWindow owner;
+        private readonly AnimationClock highlight=new(TimeSpan.FromMilliseconds(900),Easing.Linear);
         internal ChatBubbleRow(MainWindow owner)
         {
             this.owner = owner;
+            Body.Copy = owner.CopyText;
+            Body.SelectionClick=()=>{if(owner.chatSelected.Count==0||Message==null)return false;owner.ToggleChatSelection(Message);return true;};
             Body.OpenMusic = url => owner.Run(() => owner.OpenChatMusicUrlAsync(url));
             Error = TrackButtons.Action(new TextBlock().Text("!").FontSize(12).Bold().Foreground(Color.FromRgb(255, 132, 132)),
                 () => owner.Run(owner.RetryChatOutgoingAsync), TrackButtons.Text, 20).Padding(4, 0).IsVisible(false);
@@ -51,13 +59,17 @@ internal sealed partial class MainWindow
             Footer = new Border().BorderThickness(0).Child(footer).IsHitTestVisible(false);
             Content = new ChatBubbleContent(Attachments, Body, Open, Footer).Initialize();
             Content.ResizeTick = () => { if (Bound && FollowMediaResize && owner.page.Value == Page.Chats) owner.RequestChatBottom(); };
-            Bubble = new Border().BorderThickness(0).CornerRadius(17).Padding(12, 8).Child(Content).MaxWidth(520).Left();
+            Bubble = new Border().BorderThickness(0).CornerRadius(18).Padding(10, 6).Child(Content).MaxWidth(520).Left();
             Footer.Transitions = [Transition.Create(UIElement.OpacityProperty, 140)];
             Bubble.MouseEnter += () => UpdateMediaHover(true);
             Bubble.MouseLeave += () => UpdateMediaHover(false);
             DateBadge = new Border().Background(Color.FromRgb(48, 53, 59)).CornerRadius(14).Padding(12, 5)
                 .Margin(0, 8, 0, 12).Child(date).CenterHorizontal();
-            Motion.Content = new StackPanel().Vertical().Children(DateBadge, Bubble);
+            quote=TrackButtons.Action(new Grid().Columns("3,*").Rows("*").Spacing(8).Children(new Border().Background(ChatAccent).BorderThickness(0).CornerRadius(1).Margin(0,6).Column(0), quoteText.Column(1).CenterVertical()),()=>
+            {if(ReplyReference() is {} reply)owner.Run(()=>owner.JumpChatMessageAsync(reply.PeerId,reply.MessageId));},TrackButtons.Tonal,32).Padding(10,0).CornerRadius(8).MaxWidth(520).IsVisible(false);
+            ((FrameworkElement)quote.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
+            frame = new ChatMessageFrame(quote, Bubble).Initialize();
+            Motion.Content = new StackPanel().Vertical().Children(DateBadge,frame,reactions);
             Root = new Border().Background(Color.Transparent).Padding(0).Child(Motion);
             var copy = new Command("pookie.chat.copy", "Скопировать текст");
             var retry = new Command("pookie.chat.retry", "Повторить отправку");
@@ -68,11 +80,21 @@ internal sealed partial class MainWindow
             Root.Commands.Register(remove, owner.DiscardPendingChat, () => owner.ChatOutgoing(Message) != null && !owner.chatSending);
             Root.Commands.Register(save, () => { if (Message != null) owner.Run(() => owner.SaveChatAttachmentAsync(Message.Id, 0)); },
                 () => Message != null && (owner.CachedChatMedia(Message)?.Attachments.Length > 0 || owner.ChatMediaSummaryFor(Message, owner.chatRecipient?.Id ?? 0)?.Files?.Length > 0));
+            var reply=new Command("pookie.chat.reply","Ответить");
+            var favorite=new Command("pookie.chat.favorite","В избранное / убрать");
+            var select=new Command("pookie.chat.select","Выделить");
+            Root.Commands.Register(reply,()=>{if(Message!=null)owner.ReplyToChat(Message);},()=>Message!=null&&owner.ChatOutgoing(Message)==null);
+            Root.Commands.Register(favorite,()=>{if(Message!=null)owner.ChatFavoriteMessage(Message);},()=>Message!=null&&owner.ChatOutgoing(Message)==null);
+            Root.Commands.Register(select,()=>{if(Message!=null)owner.ToggleChatSelection(Message);});
+            ReplyCommand=reply;FavoriteCommand=favorite;SelectCommand=select;
+            foreach(var emoji in ChatProtocol.Reactions)
+            {var command=new Command("chat.react."+emoji,emoji); Root.Commands.Register(command,()=>{if(Message!=null)owner.Run(()=>owner.ReactToChatAsync(Message,emoji));},()=>!owner.chatSending);ReactionCommands.Add(command);}
             CopyCommand = copy; RetryCommand = retry; RemoveCommand = remove; SaveCommand = save;
         }
-        private readonly Command CopyCommand, RetryCommand, RemoveCommand, SaveCommand;
-        private string? CopyContent() => Message == null ? null : ChatMediaReference.Parse(Message.Body) == null ? Message.Body :
-            owner.CachedChatMedia(Message)?.Caption;
+        private readonly Command CopyCommand, RetryCommand, RemoveCommand, SaveCommand,ReplyCommand,FavoriteCommand,SelectCommand;
+        private readonly List<Command> ReactionCommands=[];
+        private string? CopyContent() => Body.SelectedText ?? (Message == null ? null : ChatMediaReference.Parse(Message.Body) == null ? ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0).Text :
+            owner.CachedChatMedia(Message)?.Caption);
         internal void Bind(ChatMessage message)
         {
             Bound = true;
@@ -80,7 +102,7 @@ internal sealed partial class MainWindow
                 Message.Id == message.Id && owner.ChatOutgoing(message)?.HasMedia == true))
             {
                 Message = message; Time.Text = ChatPresentation.Time(message.SentAt);
-                RefreshDate(); RefreshDelivery(); UpdateMenu(); return;
+                RefreshDate(); RefreshDelivery(); RefreshExtensions(); UpdateMenu(); return;
             }
             Clear(); Message = message;
             Bound = true;
@@ -91,20 +113,54 @@ internal sealed partial class MainWindow
             Time.Foreground = own ? Color.FromRgb(174, 199, 219) : Muted;
             var local = owner.ChatOutgoing(message);
             var media = ChatMediaReference.Parse(message.Body) != null || local?.HasMedia == true;
-            Body.IsVisible = !media && message.Body.Length > 0; Body.Text = media ? "" : message.Body;
+            var projection=ChatProtocol.Project(message,owner.chatAccountId,owner.chatRecipient?.Id??0);
+            Body.IsVisible = !media && projection.Text.Length > 0; Body.Text = media ? "" : projection.Text;
             Open.IsVisible = false;
             if (media) owner.BindChatMediaPreview(this);
             else owner.BindChatMusic(this);
-            RefreshDate(); RefreshDelivery();
+            RefreshDate(); RefreshDelivery(); RefreshExtensions();
             UpdateMenu();
             if (owner.chatMessageEntrances.Remove(message.Id)) Motion.Reveal();
         }
         private void UpdateMenu()
         {
-            var menu = new ContextMenu().Item(CopyCommand);
+            var menu = new ContextMenu().Item(ReplyCommand).Item(CopyCommand).Item(FavoriteCommand).Item(SelectCommand);
+            foreach(var command in ReactionCommands)menu.Item(command);
             if (owner.ChatOutgoing(Message) != null) menu.Item(RetryCommand).Item(RemoveCommand);
             if (Message != null && (owner.ChatOutgoing(Message)?.HasMedia == true || ChatMediaReference.Parse(Message.Body) != null)) menu.Item(SaveCommand);
             Root.ContextMenu = menu;
+        }
+        internal void Highlight()
+        {
+            highlight.Stop();
+            highlight.TickCallback=t=>{if(Bound)Root.Background=Color.FromArgb((byte)(75*(1-t)),128,196,249);};
+            highlight.CompletedCallback=()=>Root.Background=owner.chatSelected.Contains(Message?.Id??"")?Color.FromArgb(35,128,196,249):Color.Transparent;
+            highlight.Start();
+        }
+        private ChatReplyReference? ReplyReference()
+        {
+            if(Message==null)return null;
+            var reply=ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0).Reply??owner.ChatMediaSummaryFor(Message,owner.chatRecipient?.Id??0)?.Reply;
+            return reply==null?null:reply with{PeerId=owner.chatRecipient?.Id??reply.PeerId};
+        }
+        internal void RefreshExtensions()
+        {
+            if(Message==null)return;
+            var projection=ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0);
+            var reply=ReplyReference();quote.IsVisible=reply!=null;
+            quoteText.Text = reply?.Preview ?? "";
+            var own=Message.SenderId==owner.chatAccountId;
+            frame.HorizontalAlignment=reactions.HorizontalAlignment=own?HorizontalAlignment.Right:HorizontalAlignment.Left;
+            reactions.Clear();
+            if(owner.chatReactions.TryGetValue(Message.Id,out var authors))
+                foreach(var group in authors.GroupBy(p=>p.Value))
+                {var emoji=group.Key;reactions.Add(TrackButtons.Action(new TextBlock().Text(emoji+" "+group.Count()).FontSize(12),()=>owner.Run(()=>owner.ReactToChatAsync(Message,emoji)),group.Any(p=>p.Key==owner.chatAccountId)?TrackButtons.Tonal:TrackButtons.Text,26).Padding(7,0));}
+            reactions.IsVisible=reactions.Children.Count>0;
+            ((MaterialTrackButton)quote).Palette(own ? ChatOutgoingColor : ChatIncomingColor, ChatAccent);
+            var connected=owner.ChatMessageGroup(Message);
+            Root.Margin=new Thickness(0,connected.Previous?2:8,0,0);
+            Bubble.NonUniformCornerRadius=own?new CornerRadius(18,connected.Previous?6:18,connected.Next?6:18,18):new CornerRadius(connected.Previous?6:18,18,18,connected.Next?6:18);
+            Root.Background=owner.chatSelected.Contains(Message.Id)?Color.FromArgb(35,128,196,249):Color.Transparent;
         }
         internal void RefreshDate()
         {
@@ -158,7 +214,7 @@ internal sealed partial class MainWindow
         internal void UpdateMediaHover(bool hovered)
         {
             Footer.IsVisible = !MediaLoading || Spinner.IsVisible || Error.IsVisible;
-            Footer.Opacity = Content.PhotoOnly && !hovered && !Spinner.IsVisible && !Error.IsVisible ? 0 : 1;
+            Footer.Opacity = 1;
         }
         internal void ResetMediaLayout()
         {
@@ -167,13 +223,13 @@ internal sealed partial class MainWindow
                 musicContent.Child = null; Bubble.Child = null; Bubble.Child = Content; musicContent = null;
                 MusicBackdrop.Source = null;
             }
-            Content.Reset(); MediaLoading = false; Footer.IsVisible = true; Bubble.MaxWidth = 520; Bubble.Padding = new Thickness(12, 8); Bubble.ClipToBounds = false;
+            Content.Reset(); MediaLoading = false; Footer.IsVisible = true; Bubble.MaxWidth = 520; Bubble.Padding = new Thickness(10, 6); Bubble.ClipToBounds = false;
             Bubble.Background = Message?.SenderId == owner.me?.Id ? ChatOutgoingColor : ChatIncomingColor;
             Footer.Background = Color.Transparent; Footer.Padding = new Thickness(0); Footer.Opacity = 1;
         }
         internal void Clear()
         {
-            Bound = false; DateBadge.Opacity = 1; Content.StopResize();
+            highlight.Stop(); Bound = false; DateBadge.Opacity = 1; Content.StopResize();
             ItemKey = null; MediaKey = null; MediaResolved = FollowMediaResize = false; ++MediaGeneration;
             Load?.Cancel(); Load?.Dispose(); Load = null;
             Motion.Finish(); Spinner.IsActive = false;

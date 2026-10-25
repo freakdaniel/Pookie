@@ -7,6 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private static readonly Color ChatGlassSurface = Color.FromRgb(30, 30, 34);
     private readonly ObservableValue<string> chatsStatus = new(""), chatThreadStatus = new("");
     private ItemsControl chatInbox = null!, chatMessagesView = null!;
     private ChatViewport chatViewport = null!;
@@ -14,12 +15,16 @@ internal sealed partial class MainWindow
     private TextBlock chatName = null!, chatAttachmentLabel = null!, chatFloatingDateText = null!;
     private Border chatFloatingDate = null!;
     private ChatDateLayer chatDateLayer = null!;
-    private Image chatAttachmentPreview = null!;
+    private Image chatAttachmentPreview = null!, chatHeaderAvatar = null!;
     private ChatLoadingView chatInboxLoading = null!, chatThreadLoading = null!;
     private MultiLineTextBox chatInput = null!;
     private TextBox chatSearch = null!;
     private Button chatSend = null!, chatAttach = null!, chatGif = null!, chatOlder = null!, chatMore = null!, chatBack = null!, chatNewMessages = null!;
-    private Border chatComposer = null!;
+    private GlassCard chatComposer = null!, chatIdentityCard = null!;
+    private readonly ChatComposerGlyph chatSendGlyph = new();
+    private Button chatOptions = null!;
+    private ContextMenu chatSidebarMenu = null!;
+    private ContextMenu chatOptionsMenu = null!;
     private ChatColumns chatColumns = null!;
     private DispatcherTimer chatTimer = null!, chatSearchTimer = null!, chatDraftTimer = null!;
     private ChatMediaHosting chatMedia = new();
@@ -33,7 +38,7 @@ internal sealed partial class MainWindow
     private string? chatListCursor, chatMessageCursor;
     private long chatAccountId, chatRevision, chatSearchRevision;
     private bool chatsBusy, chatThreadBusy, chatSending, chatRenderingDraft, chatSearchMode;
-    private bool chatScrollBottom;
+    private bool chatScrollBottom, chatFollowLayout;
     private string[] chatSelectedFiles = [];
     private KlipyGif? chatSelectedGif;
     private CancellationTokenSource? chatReadCancellation;
@@ -47,27 +52,47 @@ internal sealed partial class MainWindow
         chatInbox.ItemTemplate = ChatConversationTemplate();
         chatInbox.ItemsSource = ItemsView.Create(chatInboxItems, c => c.Recipient.Username, c => c.Id);
         chatInboxLoading = new(chatInbox, inbox: true);
-        chatSearch = new TextBox().Placeholder("Найти человека").Background(Color.Transparent).BorderThickness(0).FontSize(13).OnTextChanged(_ =>
+        chatSearch = new TextBox().Placeholder("Поиск").Background(Color.Transparent).BorderThickness(0).FontSize(13).OnTextChanged(_ =>
         {
-            ++chatSearchRevision;
+            chatHistorySearch?.Cancel(); chatScanKey = null; ++chatSearchRevision;
+            if (chatGlobalSearchModes != null) RefreshChatGlobalSearchSurface();
             chatSearchTimer.Stop(); chatSearchTimer.Start();
         });
         chatSearchTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(450));
         chatSearchTimer.Tick += () => { chatSearchTimer.Stop(); Run(SearchChatsAsync); };
         chatMore = TrackButtons.Action(new TextBlock().Text("Ещё диалоги").FontSize(12), () => Run(LoadMoreChatsAsync), TrackButtons.Text, 34).IsVisible(false);
-        var inbox = new Grid().Columns("*").Rows("Auto,Auto,Auto,*,Auto").Spacing(16).Children(
-            new TextBlock().Text("Чаты").FontSize(28).Bold().Row(0),
-            MaterialSearchField.Create(chatSearch).Row(1),
-            new TextBlock().BindText(chatsStatus).BindIsVisible(chatsStatus, text => text.Length > 0).FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Row(2),
-            chatInboxLoading.Root.Row(3), chatMore.Row(4));
+        var searchModes = ChatGlobalSearchModes();
+        chatSidebarNormal = new DockPanel().LastChildFill().Spacing(10).Children(ChatFolderView().DockTop(), chatInboxLoading.Root);
+        var people = new ItemsControl().ItemHeight(82).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0,0,8,6));
+        people.ItemTemplate = ChatConversationTemplate(); people.ItemsSource = ItemsView.Create(chatInboxItems, c => c.Recipient.Username, c => c.Id);
+        chatPeopleSearch = people; chatSearchLanding = new Border().BorderThickness(0).Background(Color.Transparent).IsVisible(false);
+        chatSidebarSearch = new DockPanel().LastChildFill().Spacing(10).Children(searchModes.DockTop(),
+            new Grid().Columns("*").Rows("*").Children(people, chatGlobalSearchFrame, chatSearchLanding));
+        chatSidebarTransition = new ChatPanelTransition(); chatSidebarTransition.Show(chatSidebarNormal);
+        chatSidebarBack = TrackButtons.Icon(Icons.View("list",22,Muted), () =>
+        {
+            if (chatSidebarSearching) CloseChatGlobalSearch(); else chatSidebarMenu.Show(chatSidebarBack);
+        }, TrackButtons.Text,40).ToolTip("Меню / вернуться к диалогам");
+        chatSidebarMenu = new ContextMenu { Placement = MenuPlacement.Below };
+        var savedCommand = new Command("chat.sidebar.saved", "Избранное");
+        var folderCommand = new Command("chat.sidebar.folder", "Создать папку");
+        chatSidebarBack.Commands.Register(savedCommand, OpenChatFavorites); chatSidebarBack.Commands.Register(folderCommand, () => OpenChatFolderEditor(null));
+        chatSidebarMenu.Item(savedCommand).Item(folderCommand);
+        var inbox = new DockPanel().LastChildFill().Spacing(12).Children(
+            new Grid().Columns("40,*,40").Rows("40").Spacing(6).Children(chatSidebarBack.Column(0), ChatGlobalSearchField().Column(1),
+                TrackButtons.Icon(Icons.View("bookmark-simple",21,Muted), OpenChatFavorites, TrackButtons.Text,40).ToolTip("Избранное").Column(2)).DockTop(),
+            new TextBlock().BindText(chatsStatus).BindIsVisible(chatsStatus, text => text.Length > 0).FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).DockTop(),
+            chatMore.DockBottom(), chatSidebarTransition);
 
-        chatName = new TextBlock().Text("Твои сообщения").FontSize(22).Bold().TextTrimming(TextTrimming.CharacterEllipsis);
+        chatName = new TextBlock().Text("Твои сообщения").FontSize(16).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         chatBack = TrackButtons.Icon(Icons.View("arrow-left", 20), () => { SaveChatDraft(); chatColumns.Selected = false; }, TrackButtons.Text, 36).IsVisible(false);
-        chatOlder = TrackButtons.Action(new TextBlock().Text("Предыдущие сообщения").FontSize(12), () => Run(LoadOlderMessagesAsync), TrackButtons.Text, 30).IsVisible(false).CenterHorizontal();
-        chatNewMessages = TrackButtons.Action(new TextBlock().Text("Новые сообщения ↓").FontSize(12), RequestChatBottom, TrackButtons.Tonal, 32).IsVisible(false).CenterHorizontal();
+        chatOlder = TrackButtons.Action(new TextBlock().Text("Ранее ↑").FontSize(12), () => Run(LoadOlderMessagesAsync), TrackButtons.Tonal, 30).IsVisible(false).Right().ToolTip("Загрузить предыдущие сообщения");
+        chatOlder.Opacity = 0; chatOlder.IsHitTestVisible = false;
+        chatOlder.Transitions = [Transition.Create(UIElement.OpacityProperty, 160)];
+        chatNewMessages = TrackButtons.Action(new TextBlock().Text("Новые сообщения ↓").FontSize(12), ()=>Run(ShowLatestChatAsync), TrackButtons.Tonal, 32).IsVisible(false).CenterHorizontal();
         chatMessagesView = new ItemsControl().Items(Array.Empty<ChatMessageItem>(), m => m.Key).ItemHeight(84).VariableHeightPresenter()
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 4, 12, 6));
-        chatMessagesView.MouseWheel += _ => { chatScrollBottom = chatWasAtBottom = false; foreach (var row in ChatRows) row.FollowMediaResize = false; };
+            .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 0));
+        chatMessagesView.MouseWheel += _ => { chatScrollBottom = chatWasAtBottom = chatFollowLayout = false; foreach (var row in ChatRows) row.FollowMediaResize = false; };
         chatMessagesView.ItemTemplate = ChatMessageTemplate();
         chatMessagesView.ItemsSource = ItemsView.Create(chatMessageItems, m => m.Body, m => m.Key);
         chatFloatingDateText = new TextBlock().FontSize(12).SemiBold();
@@ -75,17 +100,19 @@ internal sealed partial class MainWindow
             .Child(chatFloatingDateText).CenterHorizontal().IsVisible(false);
         chatFloatingDate.VerticalAlignment = VerticalAlignment.Top; chatFloatingDate.IsHitTestVisible = false;
         chatDateLayer = new(chatFloatingDate);
-        chatViewport = new ChatViewport(chatMessagesView).Initialize();
-        chatViewport.BeforePaint = () =>
-        {
-            if (SynchronizeChatScroll()) chatViewport.InvalidateArrange();
-        };
-        chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer), inbox: false);
+        chatViewport = new ChatViewport(chatMessagesView, Surface).Initialize();
+        chatViewport.SynchronizeScroll = SynchronizeChatScroll;
+        chatViewport.Restoring=()=>chatRestoreOffset!=null;
+        chatViewport.ComposerResizing = () => chatComposerSurface is { IsResizing: true };
+        chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer, chatOlder.Top().Margin(0, 4, 4, 0)), inbox: false);
+        chatConversationView = chatThreadLoading.Root;
+        var historyArea = new Grid().Columns("*").Rows("*").Children(chatConversationView, ChatSavedView());
+        chatMessagesView.MouseDown += _ => { if (chatThreadSearchOpen) chatThreadSearchPopup.Expanded = false; };
         chatInput = new MultiLineTextBox().Placeholder("Сообщение").Wrap(true).MaxLength(ChatRequest.MaxBodyLength).Background(Color.Transparent).BorderThickness(0).Padding(10, 4, 8, 4).FontSize(14);
         chatInput.OnTextChanged(text =>
         {
             if (chatRenderingDraft) return;
-            if (preferences.ChatSaveDrafts && chatRecipient != null) chatDrafts[chatRecipient.Id] = text.Length <= ChatRequest.MaxBodyLength ? text : text[..ChatRequest.MaxBodyLength];
+            if (chatRecipient != null) chatDrafts[chatRecipient.Id] = text.Length <= ChatRequest.MaxBodyLength ? text : text[..ChatRequest.MaxBodyLength];
             chatDraftTimer.Stop(); if (preferences.ChatSaveDrafts) chatDraftTimer.Start(); RefreshChatComposer();
         });
         chatInput.OnKeyDown(e =>
@@ -98,7 +125,8 @@ internal sealed partial class MainWindow
         InitializeChatMusicEditor();
         chatAttach = TrackButtons.Icon(Icons.View("paperclip", 22), () => Run(() => PickChatFilesAsync()), TrackButtons.Text, 40);
         chatGif = TrackButtons.Action(new TextBlock().Text("GIF").FontSize(12).Bold(), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40).Padding(8, 0);
-        chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(SendChatAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");
+        chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");
+        chatSend.Content = chatSendGlyph;
         chatAttachmentLabel = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         var clearAttachments = TrackButtons.Icon(Icons.View("x", 16), ClearChatAttachments, TrackButtons.Text, 28);
         chatAttachmentPreview = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
@@ -107,17 +135,52 @@ internal sealed partial class MainWindow
             chatAttachmentLabel.Column(1).CenterVertical(), clearAttachments.Column(2).CenterVertical());
         attached.IsVisible = false;
         chatAttachmentStrip = attached;
-        chatComposerLayout = new(chatInput, attached, chatAttach, chatGif, chatSend,
+        chatComposerLayout = new(chatInput, attached, chatAttach, chatGif, chatSend, ChatVoiceView(),
             () => chatColumns.ActualHeight * .4 - 16, () => chatComposer.Background);
         chatComposerSurface = new(chatComposerLayout);
-        chatComposer = new Border().Background(Color.FromRgb(51, 51, 51)).BorderThickness(0).CornerRadius(22).Padding(8).Child(chatComposerSurface);
+        chatComposerSurface.ResizeStarted = () => chatFollowLayout = chatFollowLayout || chatWasAtBottom || chatScrollBottom || ChatIsAtBottom();
+        chatComposer = new GlassCard().Background(ChatGlassSurface).CornerRadius(24).Padding(4).Margin(0, 0, 0, 16).MaxWidth(696).CenterHorizontal().Child(chatComposerSurface);
+        chatInput.GotFocus += () => RefreshChatComposerSurface();
+        chatInput.LostFocus += () => RefreshChatComposerSurface();
+        chatHeaderAvatar = new Image().Width(38).Height(38).StretchMode(Stretch.UniformToFill);
+        chatHeaderAvatar.Source = Icons.Source("user", Muted);
+        var identity = TrackButtons.Action(new Grid().Columns("38,*").Rows("*").Spacing(10).Children(
+            new Border().Width(38).Height(38).CornerRadius(19).ClipToBounds().Child(chatHeaderAvatar).Column(0).CenterVertical(),
+            chatName.Column(1).Left().CenterVertical()), () => { if (chatFavoritesOpen) OpenChatSavedInfo(); else OpenChatInfo(); }, TrackButtons.Text, 46).Padding(0);
+        ((FrameworkElement)identity.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
+        ((MaterialTrackButton)identity).SuppressStateLayer();
+        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, Muted), OpenChatThreadSearch, TrackButtons.Text, 36).ToolTip("Поиск в переписке");
+        chatNormalIdentity = new Grid().Columns("Auto,*,36,36").Rows("*").Spacing(8).Children(chatBack.Column(0).CenterVertical(), identity.Column(1).CenterVertical(), find.Column(2).CenterVertical());
+        chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(696).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
+        chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
+            .CornerRadius(18).ToolTip("Действия с диалогом");
+        ((Grid)chatNormalIdentity).Add(chatOptions.Column(3).CenterVertical());
+        chatOptionsMenu = new ContextMenu { Placement = MenuPlacement.Below, PlacementOffset = new Point(0, 6) };
+        var profileCommand = new Command("pookie.chat.profile", "Профиль собеседника");
+        var refreshCommand = new Command("pookie.chat.refresh", "Обновить переписку");
+        var settingsCommand = new Command("pookie.chat.settings", "Настройки чатов");
+        chatOptions.Commands.Register(profileCommand, () => { if (chatRecipient is { } recipient) Run(() => OpenUserProfileAsync(recipient)); }, () => chatRecipient is { Id: > 0 });
+        chatOptions.Commands.Register(refreshCommand, () => Run(RefreshChatsAsync), () => !demo && chatRecipient != null && me != null && api.Session != null && !chatsBusy && !chatThreadBusy);
+        chatOptions.Commands.Register(settingsCommand, () => Run(() => ShowSettingsAsync(SettingsSection.Chats)));
+        var searchCommand = new Command("pookie.chat.find", "Поиск в переписке");
+        var mediaCommand = new Command("pookie.chat.media", "Информация и вложения");
+        chatOptions.Commands.Register(searchCommand, OpenChatThreadSearch);
+        chatOptions.Commands.Register(mediaCommand, OpenChatInfo);
+        var pendingCommand=new Command("pookie.chat.pending","Проверить незавершённую отправку");
+        chatOptions.Commands.Register(pendingCommand,()=>Run(CheckPendingChatAsync),()=>chatRecipient!=null&&chatPending.ContainsKey(chatRecipient.Id)&&!chatSending);
+        chatOptionsMenu.Item(searchCommand).Item(mediaCommand).Item(profileCommand).Item(refreshCommand).Item(pendingCommand).Item(settingsCommand);
+        chatOptions.ContextMenu = chatOptionsMenu;
+        FrameworkElement ReadingChrome(FrameworkElement content) => new ChatMessageColumn(content, () => chatColumns.ScrollGutter).Initialize()
+            .Bind(UIElement.IsVisibleProperty,content,UIElement.IsVisibleProperty);
+        var threadStatus = new TextBlock().BindText(chatThreadStatus).BindIsVisible(chatThreadStatus, value => value.Length > 0)
+            .FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         var thread = new DockPanel().LastChildFill().Spacing(12).Children(
-            new Grid().Columns("Auto,*").Rows("Auto").Spacing(8).DockTop().Children(chatBack.Column(0).CenterVertical(),
-                chatName.Column(1)),
-            new TextBlock().BindText(chatThreadStatus).BindIsVisible(chatThreadStatus, value => value.Length > 0)
-                .FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).DockTop(),
-            chatOlder.DockTop(), chatComposer.DockBottom(), chatNewMessages.DockBottom(), chatThreadLoading.Root);
-        chatColumns = new ChatColumns(inbox, thread, compact => chatBack.IsVisible = compact).Initialize();
+            ReadingChrome(chatIdentityCard).DockTop(),
+            ReadingChrome(threadStatus).DockTop(),
+            ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(ChatReplyView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), ReadingChrome(chatNewMessages).DockBottom(), historyArea);
+        var threadSurface = new ChatStage(new Grid().Columns("*").Rows("*").Children(thread, new ChatStage(ChatThreadSearchResults(), rightInset: () => chatColumns.ScrollGutter).Initialize()), centerReadingColumn: false).Initialize();
+        chatColumns = new ChatColumns(new GlassCard(Surface).Background(ChatGlassSurface).CornerRadius(24).Padding(12).Margin(0, 0, 0, 16).Child(inbox), threadSurface, compact => chatBack.IsVisible = compact).Initialize();
+        chatColumns.SetDetails(CreateChatDetails()); chatColumns.CloseDetails=CloseChatDetails;
         chatColumns.SizeChanged += _ => chatComposerLayout.InvalidateMeasure();
         chatTimer = new DispatcherTimer(TimeSpan.FromSeconds(1));
         chatTimer.Tick += () =>
@@ -134,6 +197,7 @@ internal sealed partial class MainWindow
             if (page.Value == Page.Chats) { chatNextPoll = default; chatTimer.Start(); }
             else
             {
+                Run(StopChatVoiceAsync); Run(StopChatVoicePlaybackAsync);
                 if (!preferences.ChatBackgroundRefresh) CancelChatPolling();
                 chatSearchTimer.Stop(); chatInboxLoading.Pause(); chatThreadLoading.Pause(); CloseChatGifs(); CancelChatReads(); SaveChatDraft();
                 SetChatDragging(false);
@@ -167,13 +231,16 @@ internal sealed partial class MainWindow
                     new Grid().Columns("Auto,Auto,*").Rows("28").Children(thumbnailFrame.Column(0), previewIcon.Column(1), preview.Column(2).CenterVertical()).Column(0), unread.Column(1)))),
             () => { if (chatInboxBindings.TryGetValue(button!, out var conversation)) Run(() => SelectChatAsync(conversation.Recipient)); }, TrackButtons.Text, 76).Padding(10, 0).CornerRadius(18);
         ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
+        var pin=new Command("chat.pin","Закрепить / открепить");
+        button.Commands.Register(pin,()=>{if(chatInboxBindings.TryGetValue(button,out var dialog))ToggleChatPin(dialog.Recipient.Id);});
+        button.ContextMenu=new ContextMenu().Item(pin);
         context.Register("button", button); context.Register("avatar", avatar); context.Register("name", name); context.Register("preview", preview); context.Register("unread", unread);
         chatInboxVisuals.Add(button, new(time, checks, thumbnail, thumbnailFrame, previewIcon, preview, unread, unreadText));
         return button;
     }, (_, conversation, _, context) =>
     {
         var button = context.Get<Button>("button"); chatInboxBindings[button] = conversation;
-        context.Get<TextBlock>("name").Text = conversation.Recipient.Username;
+        context.Get<TextBlock>("name").Text = (chatWorkspace.Pins.Contains(conversation.Recipient.Id) ? "• " : "") + conversation.Recipient.Username;
         RefreshChatInboxPreview(button, conversation);
         TrackButtons.SetVariant(button, chatRecipient?.Id == conversation.Recipient.Id ? TrackButtons.Tonal : TrackButtons.Text);
         var avatar = context.Get<Image>("avatar");
@@ -193,7 +260,7 @@ internal sealed partial class MainWindow
 
     private IDataTemplate ChatMessageTemplate() => new DelegateTemplate<ChatMessageItem>(context =>
     {
-        var row = new ChatBubbleRow(this); chatRows.Add(row.Root, row); context.Register("row", row.Root); return row.Root;
+        var row = new ChatBubbleRow(this); chatRows.Add(row.Root, row); context.Register("row", row.Root); return new ChatMessageColumn(row.Root, () => chatColumns.ScrollGutter).Initialize();
     }, (_, message, _, context) => { var row = ChatRow(context); row.Bind(message.Message); row.ItemKey = message.Key; },
        (_, _, _, context) => ChatRow(context).Bound = false);
 

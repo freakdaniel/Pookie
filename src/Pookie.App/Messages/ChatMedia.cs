@@ -6,8 +6,8 @@ using System.Text.Json.Serialization;
 
 namespace Pookie.App.Messages;
 
-internal sealed record ChatAttachment(string Name, string MediaType, byte[] Data, bool AsFile = false, ChatVideoInfo? Video = null);
-internal sealed record ChatMediaPackage(long SenderId, long RecipientId, string Caption, ChatAttachment[] Attachments, string? GifUrl = null)
+internal sealed record ChatAttachment(string Name, string MediaType, byte[] Data, bool AsFile = false, ChatVideoInfo? Video = null, ChatVoiceMetadata? Voice = null);
+internal sealed record ChatMediaPackage(long SenderId, long RecipientId, string Caption, ChatAttachment[] Attachments, string? GifUrl = null, ChatReplyReference? Reply=null)
 {
     public override string ToString() => "Chat media package (content redacted)";
 }
@@ -57,7 +57,7 @@ internal static partial class ChatMediaCrypto
     {
         Validate(package);
         var metadata = JsonSerializer.SerializeToUtf8Bytes(new MediaHeader(package.SenderId, package.RecipientId, package.Caption,
-            package.Attachments.Select(a => new MediaFile(a.Name, a.MediaType, a.Data.Length, a.AsFile, a.Video)).ToArray(), package.GifUrl), ChatMediaJson.Default.MediaHeader);
+            package.Attachments.Select(a => new MediaFile(a.Name, a.MediaType, a.Data.Length, a.AsFile, a.Video, a.Voice)).ToArray(), package.GifUrl,package.Reply), ChatMediaJson.Default.MediaHeader);
         var length = checked(4 + metadata.Length + package.Attachments.Sum(a => a.Data.Length));
         if (metadata.Length > 32768 || length > MaxPayloadBytes) throw new InvalidOperationException("Вложения слишком большие: максимум 32 МБ на сообщение.");
         var plain = new byte[length];
@@ -94,8 +94,8 @@ internal static partial class ChatMediaCrypto
                 metadata.Files.Any(f => f == null || f.Length is < 0 or > MaxFileBytes) || metadata.Files.Sum(f => (long)f.Length) != plain.Length - 4 - metadataLength)
                 throw new InvalidDataException("Вложение не соответствует переписке.");
             var offset = 4 + metadataLength;
-            var files = metadata.Files.Select(f => { var bytes = plain.AsSpan(offset, f.Length).ToArray(); offset += f.Length; return new ChatAttachment(f.Name, f.Type, bytes, f.AsFile, f.Video); }).ToArray();
-            var package = new ChatMediaPackage(senderId, recipientId, metadata.Caption, files, metadata.GifUrl);
+            var files = metadata.Files.Select(f => { var bytes = plain.AsSpan(offset, f.Length).ToArray(); offset += f.Length; return new ChatAttachment(f.Name, f.Type, bytes, f.AsFile, f.Video, f.Voice); }).ToArray();
+            var package = new ChatMediaPackage(senderId, recipientId, metadata.Caption, files, metadata.GifUrl,metadata.Reply);
             Validate(package);
             return package;
         }
@@ -111,15 +111,16 @@ internal static partial class ChatMediaCrypto
     private static byte[] Context(long sender, long recipient) => Encoding.UTF8.GetBytes($"pookie.media.v1:{sender}:{recipient}");
     private static void Validate(ChatMediaPackage package)
     {
+        if(package.Reply is {} reply && (reply.PeerId!=package.RecipientId || reply.MessageId is not {Length:>0 and <=512} || reply.Preview is not {Length:<=160}))throw new InvalidDataException("Некорректный связанный ответ.");
         if (package.SenderId <= 0 || package.RecipientId <= 0 || package.SenderId == package.RecipientId || package.Caption == null ||
             package.Caption.Length > 20000 || package.Attachments is not { Length: <= MaxAttachments } || package.Attachments.Length == 0 && package.GifUrl == null ||
             package.Attachments.Any(a => a == null || string.IsNullOrWhiteSpace(a.Name) || a.Name.Length > 255 || a.Name.Any(char.IsControl) || a.Name.IndexOfAny(['/', '\\']) >= 0 ||
-                a.MediaType == null || a.MediaType.Length > 128 || a.Data.Length > MaxFileBytes || a.Video != null && !a.Video.Valid) || package.GifUrl != null && !KlipyClient.IsMediaUrl(package.GifUrl))
+                a.MediaType == null || a.MediaType.Length > 128 || a.Data.Length > MaxFileBytes || a.Video != null && !a.Video.Valid || a.Voice != null && (!a.Voice.Valid || !a.MediaType.StartsWith("audio/",StringComparison.Ordinal))) || package.GifUrl != null && !KlipyClient.IsMediaUrl(package.GifUrl))
             throw new InvalidDataException("Некорректные данные сообщения с медиа.");
     }
 }
 
-internal sealed record MediaFile(string Name, string Type, int Length, bool AsFile = false, ChatVideoInfo? Video = null);
+internal sealed record MediaFile(string Name, string Type, int Length, bool AsFile = false, ChatVideoInfo? Video = null, ChatVoiceMetadata? Voice = null);
 internal sealed record ChatVideoInfo(int Width, int Height, long DurationMs, int ThumbWidth, int ThumbHeight, byte[] Pixels)
 {
     [JsonIgnore] public bool Valid => Width is > 0 and <= 8192 && Height is > 0 and <= 8192 &&
@@ -127,6 +128,6 @@ internal sealed record ChatVideoInfo(int Width, int Height, long DurationMs, int
         Pixels != null && Pixels.Length == ThumbWidth * ThumbHeight * 4;
     internal ChatMediaThumbnail Thumbnail() => new(Width, Height, ThumbWidth, ThumbHeight, Pixels.ToArray());
 }
-internal sealed record MediaHeader(long SenderId, long RecipientId, string Caption, MediaFile[] Files, string? GifUrl);
+internal sealed record MediaHeader(long SenderId, long RecipientId, string Caption, MediaFile[] Files, string? GifUrl, ChatReplyReference? Reply=null);
 [JsonSerializable(typeof(MediaHeader))]
 internal partial class ChatMediaJson : JsonSerializerContext;

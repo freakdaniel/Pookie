@@ -30,17 +30,17 @@ internal sealed partial class MainWindow
     {
         searchList = new ItemsControl().Items(Array.Empty<SearchBlock>(), block => block.Title)
             .ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0)
-            .ItemPadding(new Thickness(SearchShadowGutter, 0, 0, 0));
+            .ItemPadding(new Thickness(SearchShadowGutter, 0, SearchShadowGutter, 0));
         searchList.ItemTemplate = SearchResultTemplate();
         searchList.SizeChanged += e =>
         {
-            UpdateLikedGridSize(e.NewSize.Width - SearchShadowGutter);
+            UpdateLikedGridSize(e.NewSize.Width - SearchShadowGutter * 2);
             searchLayoutPending = true;
         };
         searchLoadingView = CreateLibraryLoadingView(new ScrollLayoutHost(RestoreSearchAnchor)
-            // Extend the scroll viewport into the page gutter so it doesn't clip the card's shadow.
-            // ItemPadding restores the original content alignment inside that wider viewport.
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).Margin(-SearchShadowGutter, 0, 0, 0).Content(searchList));
+            // Both sides need room for card shadows and the compact rows' hover outlines.
+            // ItemPadding preserves the original content width and heading alignment.
+            .Background(Color.Transparent).BorderThickness(0).Padding(0).Margin(-SearchShadowGutter, 0, -SearchShadowGutter, 0).Content(searchList));
         searchLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, false);
         searchLoadingView.Skeleton.CompactList = false;
         searchLoading.Changed += () =>

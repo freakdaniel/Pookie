@@ -53,7 +53,8 @@ internal sealed partial class MainWindow
     private void RefreshChatComposerSurface()
     {
         if (chatComposerSurface == null) return;
-        chatComposer.Background = chatComposerSurface.Dragging ? Color.FromRgb(66, 66, 66) : Color.FromRgb(51, 51, 51);
+        chatComposer.Background = chatComposerSurface.Dragging ? Color.FromRgb(42, 42, 47) : ChatGlassSurface;
+        chatComposer.SetEmphasized(chatComposerSurface.Dragging || chatInput.IsFocused);
     }
     private void PruneChatStaging() => chatAttachmentStaging.Keep(chatSelectedFiles.Concat(chatOutgoing.Values
         .Where(o => o.State != ChatDelivery.Sent).SelectMany(o => o.Files)));

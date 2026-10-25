@@ -199,8 +199,8 @@
       const url = new URL(value);
       // Check the real API address before remapping local smoke-test fixtures.
       if (url.origin !== 'https://api-v2.soundcloud.com' || url.username || url.password || url.hash ||
-        !(/^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(mixed-selections|me|me\/track_likes\/ids|me\/track_reposts\/ids|me\/playlist_likes\/ids|me\/playlist_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
-          /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*\/(likes|followings|followings\/ids|tracks|playlists))$/.test(url.pathname))) return null;
+        !(/^\/users\/soundcloud(%3[Aa]|:)users(%3[Aa]|:)[1-9][0-9]*\/web-profiles$/.test(url.pathname) || /^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(mixed-selections|me|me\/track_likes\/ids|me\/track_reposts\/ids|me\/playlist_likes\/ids|me\/playlist_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
+          /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*(\/(likes|followings|followings\/ids|followers|tracks|playlists|playlists_without_albums|albums|comments))?|stream\/users\/[1-9][0-9]*(\/reposts)?)$/.test(url.pathname))) return null;
       return new URL(url.pathname + url.search, apiOrigin);
     } catch { return null; }
   }

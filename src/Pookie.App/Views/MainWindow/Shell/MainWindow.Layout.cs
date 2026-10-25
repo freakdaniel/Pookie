@@ -275,27 +275,20 @@ internal sealed partial class MainWindow
 
     private FrameworkElement Library()
     {
-        var pageHeading = new Grid().Columns("*,Auto").Rows("Auto").Children(
-            new StackPanel().Vertical().Spacing(5).Column(0).Children(
-                new TextBlock().BindText(eyebrow).FontSize(11).Foreground(Muted),
-                new TextBlock().BindText(heading).FontSize(30).Bold()),
-            new Border().Background(Raised).CornerRadius(18).Padding(16, 10).CenterVertical().Column(1)
-                .Child(new StackPanel().Horizontal().Spacing(8).Children(Icons.View("headphones", 18),
-                    new TextBlock().Text("Твоя музыка. Твой ритм.").Foreground(Muted).FontSize(12).CenterVertical())))
-            .BindIsVisible(page, value => value == Page.Feed);
         var listBody = new Grid().Columns("*").Rows("*").Children(
             HomePageView().BindIsVisible(page, value => value == Page.Home),
-            CreateHomeLoadingView().BindIsVisible(page, value => value == Page.Feed),
+            CreateHomeLoadingView().IsVisible(false),
+            FeedPageView().BindIsVisible(page, value => value == Page.Feed),
             SearchPage().BindIsVisible(page, value => value == Page.Search),
             ChatsPage().BindIsVisible(page, value => value == Page.Chats),
             TrackDetailPageView().BindIsVisible(page, value => value == Page.Track),
+            UserProfilePageView().BindIsVisible(page, value => value == Page.UserProfile),
             LibraryOverview().BindIsVisible(page, value => value == Page.Library),
             LikedTracksPage().BindIsVisible(page, value => value == Page.LibraryTracks),
             CollectionPage().BindIsVisible(page, IsCollectionPage),
             SettingsPageView().BindIsVisible(page, value => value == Page.Settings));
         return new DockPanel().LastChildFill().Spacing(18).Children(
-            new StackPanel().Vertical().Spacing(18).DockTop().Children(LibraryTabs(), pageHeading)
-                .BindIsVisible(page, value => value == Page.Feed || IsLibrary(value)),
+            LibraryTabs().DockTop().BindIsVisible(page, IsLibrary),
             listBody);
     }
 
@@ -367,6 +360,7 @@ internal sealed partial class MainWindow
                 new TextBlock().BindText(profile).TextWrapping(TextWrapping.Wrap).FontSize(14),
                 new TextBlock().BindText(signedIn, value => value ? "SoundCloud подключён" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
                     .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap)),
+            MenuChoice("user-circle", "Мой профиль", () => { profileOpen.Value = false; if (me != null) Run(() => OpenUserProfileAsync(me)); }).BindIsVisible(signedIn),
             MenuChoice("user-circle", "Войти в SoundCloud", () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
             MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
         profileOpen, FloatingMenuPlacement.BelowRight);

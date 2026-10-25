@@ -60,8 +60,8 @@ internal sealed partial class MainWindow
                 Math.Abs(hintChildren[0].Bounds.Y + hintChildren[0].ActualHeight / 2 - hintChildren[1].Bounds.Y - hintChildren[1].ActualHeight / 2) > 1)
                 throw new InvalidOperationException("Compact drop hint clipped its icon/text instead of arranging them side by side.");
             if (hint.Background.A != 0 || hint.BorderThickness != 0 || chatComposer.BorderThickness != 0 ||
-                chatComposer.Background.R != chatComposer.Background.G || chatComposer.Background.G != chatComposer.Background.B)
-                throw new InvalidOperationException("Drop feedback added a tinted surface or nested outline.");
+                chatComposer.Background != Color.FromRgb(42,42,47))
+                throw new InvalidOperationException("Drop feedback lost its dark glass surface or added a nested outline.");
             CaptureUiPreview("chats-composer-drag");
             router.GetMethod("OnExternalDragLeave")!.Invoke(null, [Window, new DragEventArgs(data, point, point)]);
             if (chatComposerSurface.Dragging) throw new InvalidOperationException("Leaving the composer retained drag feedback.");

@@ -15,17 +15,54 @@ internal sealed class ChatMessageText : TextBlock
     private uint layoutDpi;
     private TextRunStyle layoutStyle;
     internal Action<string>? OpenMusic;
+    internal Action<string>? Copy;
+    internal Func<bool>? SelectionClick;
+    private int selectionAnchor,selectionEnd;
+    private bool selecting;
+    internal string? SelectedText=>selectionAnchor==selectionEnd?null:Text[Math.Min(selectionAnchor,selectionEnd)..Math.Max(selectionAnchor,selectionEnd)];
     internal int MusicCount => links.Count;
     internal Rect[] MusicBounds => links.Select(link => link.Inline.Bounds).ToArray();
 
     internal ChatMessageText()
     {
+        Focusable=true;
         MouseMove += args => Cursor = Hit(args) != null ? CursorType.Hand : CursorType.Arrow;
         MouseLeave += () => Cursor = CursorType.Arrow;
         MouseDown += args =>
         {
+            if(args.Button==MouseButton.Left && SelectionClick?.Invoke()==true){args.Handled=true;return;}
             if (args.Button != MouseButton.Left || Hit(args) is not { } link) return;
-            args.Handled = true; OpenMusic?.Invoke(link.Link.Url);
+            args.Handled = true; selecting=false; selectionAnchor=selectionEnd=0; OpenMusic?.Invoke(link.Link.Url);
+        };
+        MouseDown+=args=>
+        {
+            if(args.Handled||args.Button!=MouseButton.Left)return;
+            Focus();selecting=true;
+            var hit=Layout(Bounds.Width).HitTestPoint(args.GetPosition(this));
+            var offset=Math.Clamp(hit.FirstCharacterIndex+hit.TrailingLength,0,Text.Length);
+            if(!args.Modifiers.HasFlag(ModifierKeys.Shift))selectionAnchor=offset;
+            selectionEnd=offset;
+            if(FindVisualRoot() is Window window)window.CaptureMouse(this);
+            args.Handled=true;InvalidateVisual();
+        };
+        MouseMove+=args=>
+        {
+            if(!selecting||!args.LeftButton)return;
+            var hit=Layout(Bounds.Width).HitTestPoint(args.GetPosition(this));
+            selectionEnd=Math.Clamp(hit.FirstCharacterIndex+hit.TrailingLength,0,Text.Length);args.Handled=true;InvalidateVisual();
+        };
+        MouseUp+=args=>{if(!selecting||args.Button!=MouseButton.Left)return;selecting=false;if(FindVisualRoot() is Window window)window.ReleaseMouseCapture();args.Handled=true;};
+        KeyDown+=args=>
+        {
+            if(args.Modifiers.HasFlag(ModifierKeys.Control)&&args.Key==Key.A){selectionAnchor=0;selectionEnd=Text.Length;args.Handled=true;InvalidateVisual();}
+            else if(args.Modifiers.HasFlag(ModifierKeys.Control)&&args.Key==Key.C&&SelectedText is {} text){Copy?.Invoke(text);args.Handled=true;}
+            else if(args.Key is Key.Left or Key.Right)
+            {
+                var hit=Layout(Bounds.Width).GetNextLogicalCaret(new(selectionEnd,0),args.Key==Key.Left?LogicalDirection.Backward:LogicalDirection.Forward,CaretMode.TextElement);
+                selectionEnd=hit.FirstCharacterIndex+hit.TrailingLength;
+                if(!args.Modifiers.HasFlag(ModifierKeys.Shift))selectionAnchor=selectionEnd;
+                args.Handled=true;InvalidateVisual();
+            }
         };
     }
     private ChatMusicInline? Hit(MouseEventArgs args)
@@ -50,7 +87,7 @@ internal sealed class ChatMessageText : TextBlock
         links.Clear(); layout = null; layoutWidth = -1; Cursor = CursorType.Arrow;
         InvalidateMeasure(); InvalidateVisual();
     }
-    protected override void OnTextChanged() { ClearMusic(); base.OnTextChanged(); }
+    protected override void OnTextChanged() { if(selecting&&IsMouseCaptured&&FindVisualRoot() is Window window)window.ReleaseMouseCapture(); selectionAnchor=selectionEnd=0;selecting=false;ClearMusic(); base.OnTextChanged(); }
     private ITextLayout Layout(double width)
     {
         var dpi = (uint)Math.Round(96 * (FindVisualRoot() is Window window ? window.DpiScale : 1));
@@ -73,6 +110,12 @@ internal sealed class ChatMessageText : TextBlock
     }
     protected override void OnRender(IGraphicsContext context)
     {
+        if(selectionAnchor!=selectionEnd)
+        {
+            var rectangles=new List<Rect>();
+            Layout(Bounds.Width).GetRangeBounds(Math.Min(selectionAnchor,selectionEnd),Math.Abs(selectionEnd-selectionAnchor),rectangles);
+            foreach(var rect in rectangles)context.FillRectangle(new Rect(Bounds.X+rect.X,Bounds.Y+rect.Y,rect.Width,rect.Height),Color.FromArgb(100,100,175,230));
+        }
         if (links.Count == 0) { base.OnRender(context); return; }
         context.Save();
         try

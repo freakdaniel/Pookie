@@ -19,7 +19,7 @@ internal abstract class MenuLayer : Panel
 // Only the card receives input; the shadow and empty space remain transparent.
 internal sealed class FloatingMenuLayer : MenuLayer
 {
-    internal static readonly Color Surface = Color.FromRgb(51, 51, 51);
+    internal static readonly Color Surface = GlassSheen.Surface;
     private readonly FrameworkElement anchor;
     private readonly ShadowDecorator menu;
     private readonly FloatingMenuPlacement placement;

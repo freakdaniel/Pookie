@@ -16,6 +16,45 @@ namespace Pookie.Audio.Tests;
 
 public sealed class PlaybackTests
 {
+    [Theory]
+    [InlineData(AudioTransport.Progressive, false)]
+    [InlineData(AudioTransport.Progressive, true)]
+    [InlineData(AudioTransport.Hls, false)]
+    [InlineData(AudioTransport.Hls, true)]
+    public async Task SeekedPcmMatchesTheRequestedTimeRatherThanOnlyReportingIt(AudioTransport transport, bool compressed)
+    {
+        await using var server = await MediaServer.StartAsync(2, 48000);
+        using var http = new HttpClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var media = transport == AudioTransport.Hls ? compressed ? "/timeline-segment.mp3" : "/timeline-segment.wav"
+            : compressed ? "/timeline.mp3" : "/timeline.wav";
+        using var stream = new MemoryStream(await http.GetByteArrayAsync(server.Url + media, timeout.Token));
+        using var decoder = new FFmpegCodecFactory().TryCreateDecoder(stream, out var format, AudioFormat.DvdHq)!;
+        var reference = new List<float>();
+        var buffer = new float[8192];
+        int count;
+        while ((count = decoder.Decode(buffer)) > 0) reference.AddRange(buffer.AsSpan(0, count).ToArray());
+        foreach (var target in new[] { 4.637, 1.371, 0 })
+        {
+            using var provider = new StreamingProvider(http,
+                new(server.Url + (transport == AudioTransport.Hls ? compressed ? "/timeline-mp3.m3u8" : "/timeline.m3u8" : media), transport),
+                target, uri => uri.IsLoopback, timeout.Token);
+            await provider.Ready.WaitAsync(timeout.Token);
+            Assert.True(await provider.WaitForDataAsync(timeout.Token));
+            var actual = new float[1024];
+            provider.ReadBytes(actual);
+            var localTime = transport == AudioTransport.Hls ? target % 2 : target;
+            var skip = (int)(localTime * format.SampleRate) * format.Channels;
+            var expected = reference.Skip(skip).Take(actual.Length).ToArray();
+            Assert.Equal(actual.Length, expected.Length);
+            var difference = actual.Zip(expected, (a, b) => Math.Abs(a - b)).Max();
+            Assert.True(difference < .00001, $"At {target}s the decoded sound differed from the requested PCM by {difference}");
+            Assert.InRange(provider.Seconds, target + actual.Length / (double)(format.SampleRate * format.Channels) - .0001,
+                target + actual.Length / (double)(format.SampleRate * format.Channels) + .0001);
+            provider.Dispose(); await provider.Completion;
+        }
+    }
+
     [Fact]
     public async Task DisablingAnalysisDuringDecodeDropsPcmCaptureAndKeepsAudioFlowing()
     {
@@ -303,6 +342,16 @@ public sealed class PlaybackTests
             var track = Wav(channels, rate, 12);
             var mp3 = new Lazy<byte[]>(() => Mp3(60));
             var segment = Wav(channels, rate, 2);
+            var timeline = Wav(channels, rate, 12, timeCoded: true);
+            var timelineSegment = Wav(channels, rate, 2, timeCoded: true);
+            var timelineMp3 = new Lazy<byte[]>(() => Mp3(12, timeCoded: true));
+            var timelineSegmentMp3 = new Lazy<byte[]>(() => Mp3(2, timeCoded: true));
+            app.MapGet("/timeline.wav", () => Results.File(timeline, "audio/wav", enableRangeProcessing: true));
+            app.MapGet("/timeline.mp3", () => Results.File(timelineMp3.Value, "audio/mpeg", enableRangeProcessing: true));
+            app.MapGet("/timeline-segment.wav", () => Results.File(timelineSegment, "audio/wav"));
+            app.MapGet("/timeline-segment.mp3", () => Results.File(timelineSegmentMp3.Value, "audio/mpeg"));
+            app.MapGet("/timeline.m3u8", () => Results.Text("#EXTM3U\n#EXTINF:2,\ntimeline-segment.wav\n#EXTINF:2,\ntimeline-segment.wav\n#EXTINF:2,\ntimeline-segment.wav\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
+            app.MapGet("/timeline-mp3.m3u8", () => Results.Text("#EXTM3U\n#EXTINF:2,\ntimeline-segment.mp3\n#EXTINF:2,\ntimeline-segment.mp3\n#EXTINF:2,\ntimeline-segment.mp3\n#EXT-X-ENDLIST", "application/vnd.apple.mpegurl"));
             app.MapGet("/track.wav", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(track, "audio/wav", enableRangeProcessing: true); });
             app.MapGet("/track.mp3", (HttpContext context) => { ranges.Add(context.Request.Headers.Range); return Results.File(mp3.Value, "audio/mpeg", enableRangeProcessing: true); });
             app.MapGet("/segment.wav", () => { segments.Add("segment"); return Results.File(segment, "audio/wav"); });
@@ -325,7 +374,7 @@ public sealed class PlaybackTests
         public async ValueTask DisposeAsync() { await app.StopAsync(); await app.DisposeAsync(); }
     }
 
-    private static byte[] Mp3(int seconds)
+    private static byte[] Mp3(int seconds, bool timeCoded = false)
     {
         var format = AudioFormat.Dvd with { Format = SampleFormat.F32 };
         using var stream = new MemoryStream();
@@ -337,14 +386,18 @@ public sealed class PlaybackTests
             for (var offset = 0; offset < total; offset += samples.Length)
             {
                 var count = Math.Min(samples.Length, total - offset);
-                for (var i = 0; i < count; i++) samples[i] = (float)(Math.Sin(2 * Math.PI * 440 * ((offset + i) / format.Channels) / format.SampleRate) * .04);
+                for (var i = 0; i < count; i++)
+                {
+                    var time = ((offset + i) / format.Channels) / (double)format.SampleRate;
+                    samples[i] = (float)(Math.Sin(2 * Math.PI * (440 * time + (timeCoded ? 17 * time * time : 0))) * .04);
+                }
                 encoder.Encode(samples.AsSpan(0, count));
             }
         }
         return stream.ToArray();
     }
 
-    private static byte[] Wav(int channels, int rate, int seconds)
+    private static byte[] Wav(int channels, int rate, int seconds, bool timeCoded = false)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
@@ -356,7 +409,10 @@ public sealed class PlaybackTests
         writer.Write("data"u8); writer.Write(length);
         for (var i = 0; i < frames; i++)
             for (var channel = 0; channel < channels; channel++)
-                writer.Write((short)(Math.Sin(2 * Math.PI * (440 + channel * 110) * i / rate) * 1000));
+            {
+                var time = i / (double)rate;
+                writer.Write((short)(Math.Sin(2 * Math.PI * ((440 + channel * 110) * time + (timeCoded ? 17 * time * time : 0))) * 1000));
+            }
         return stream.ToArray();
     }
 }

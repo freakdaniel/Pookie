@@ -43,14 +43,14 @@ internal sealed partial class MainWindow
         Page.LibraryPlaylists or Page.LibraryAlbums => "collections", Page.LibraryStations => "stations",
         Page.LibraryFollowing => "following", Page.LibraryHistory => "history", _ => "recent" };
 
-    private Button SectionHeader(string title, Action click)
+    private Button SectionHeader(string title, Action click, double fontSize = 22)
     {
         var hover = new ObservableValue<bool>(false);
-        var arrow = Icons.View("arrow-right", 26).Bind(UIElement.OpacityProperty, hover, value => value ? 1d : 0d);
+        var arrow = Icons.View("arrow-right", fontSize + 4).Bind(UIElement.OpacityProperty, hover, value => value ? 1d : 0d);
         arrow.Transitions = [Transition.Create(UIElement.OpacityProperty, 160)];
-        return new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Height(34).Left()
+        return new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Height(fontSize + 12).Left()
             .Content(new StackPanel().Horizontal().Spacing(8).Children(
-                new TextBlock().Text(title).FontSize(22).Bold().CenterVertical(), arrow.CenterVertical()))
+                new TextBlock().Text(title).FontSize(fontSize).Bold().CenterVertical(), arrow.CenterVertical()))
             .OnMouseEnter(() => hover.Value = true).OnMouseLeave(() => hover.Value = false).OnClick(click);
     }
 
@@ -295,8 +295,10 @@ internal sealed partial class MainWindow
 
     private async Task OpenLibraryItemAsync(LibraryItem item, int? selectedIndex = null)
     {
+        if (item.User is { } profileUser) { await OpenUserProfileAsync(profileUser); return; }
         if (item.Track is { } track)
         {
+            if (page.Value == Page.UserProfile) { await PlayUserTrackAsync(track); return; }
             if (current?.Id == track.Id) { await ToggleAsync(); return; }
             if (page.Value is Page.Search or Page.LibraryCollection) { SetQueue(track, selectedIndex); await PlayAsync(track); return; }
             CaptureQueueOrigin(recent: page.Value == Page.Library);
@@ -334,6 +336,8 @@ internal sealed partial class MainWindow
         ClearWaveData();
         ++overviewRefreshGeneration;
         collectionDetails.Clear(); ResetCollectionActions();
+        userProfileState = null; userArtworkKey = default; userArtworkReady = false;
+        if (userOverviewBody != null) { ClearUserOverview(); ClearUserSidebar(); ClearUserComments(); }
         libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); collectionCardPositions.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
         overviewPending.Clear(); overviewReady.Clear(); SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         ClearHome();

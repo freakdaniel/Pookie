@@ -165,8 +165,8 @@ internal sealed partial class MainWindow
 
     private bool BindChatMusic(ChatBubbleRow bubble)
     {
-        var message = bubble.Message!; var urls = ChatMusicLink.Find(message.Body); if (urls.Length == 0) return false;
-        bubble.Attachments.IsVisible = true; bubble.Body.Text = ChatMusicLink.Caption(message.Body, urls); bubble.Body.IsVisible = bubble.Body.Text.Length > 0;
+        var message = bubble.Message!; var body = Pookie.App.Messages.ChatProtocol.Project(message,chatAccountId,chatRecipient?.Id??0).Text; var urls = ChatMusicLink.Find(body); if (urls.Length == 0) return false;
+        bubble.Attachments.IsVisible = true; bubble.Body.Text = ChatMusicLink.Caption(body, urls); bubble.Body.IsVisible = bubble.Body.Text.Length > 0;
         var group = new ChatMusicGroup(urls, $"chat:{chatAccountId}:{chatRecipient?.Id}:message:{message.Id}", chatRecipient?.Username);
         UpdateChatMusicMentions(bubble, urls);
         if (urls.Length > 1) { BindChatCompactMusic(bubble, group); return true; }

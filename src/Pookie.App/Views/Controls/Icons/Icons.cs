@@ -30,6 +30,20 @@ internal static class Icons
         return svg;
     }
 
+    internal static IVectorImageSource? CountryFlag(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return null;
+        var country = code.Trim().ToLowerInvariant();
+        country = country switch { "uk" => "gb", "el" => "gr", _ => country };
+        if (country.Length != 2 || !country.All(char.IsAsciiLetter)) return null;
+        var key = ("flag:" + country, 0u);
+        if (sources.TryGetValue(key, out var cached)) return cached;
+        using var stream = typeof(Icons).Assembly.GetManifestResourceStream($"Pookie.App.Assets.Flags.{country}.svg");
+        if (stream == null) return null;
+        using var reader = new StreamReader(stream);
+        return sources[key] = new ImmutableIconSource(SimpleSvgSource.FromString(reader.ReadToEnd()));
+    }
+
     internal static Image View(string name, double size = 22, bool dark = false) =>
         new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Source(Source(name, dark)).Width(size).Height(size).StretchMode(Stretch.Uniform);
 

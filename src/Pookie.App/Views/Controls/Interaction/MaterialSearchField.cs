@@ -5,6 +5,8 @@ namespace Pookie.App;
 
 internal static class MaterialSearchField
 {
+    internal static FrameworkElement CreateGlass(TextBox input) => new HeaderSearchField(input, compact: true).CenterVertical();
+
     internal static Border Create(TextBox input)
     {
         input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(13)

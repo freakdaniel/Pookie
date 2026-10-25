@@ -62,6 +62,8 @@ internal sealed class LibrarySkeleton : Control
     public bool ListView { get; set; }
     public bool CompactList { get; set; }
     public bool ArtworkOnly { get; set; }
+    public bool AvatarStrip { get; set; }
+    public bool TextOnly { get; set; }
     private LoadingRowStyle? loadingRowStyle;
     private double artworkSize = 176;
     private int columns = 6;
@@ -129,6 +131,21 @@ internal sealed class LibrarySkeleton : Control
             var rect = new Rect(bounds.X + left, bounds.Y + top, Math.Max(0, width), Math.Min(height, bounds.Height - top));
             if (rect.Width > 0 && rect.Height > 0) context.FillRoundedRectangle(rect, radius, radius, brush);
         }
+        if (AvatarStrip)
+        {
+            for (var xOffset = 0d; xOffset + 38 <= bounds.Width; xOffset += 42) Block(xOffset, 2, 38, 38, 19);
+            return;
+        }
+        if (TextOnly)
+        {
+            for (var y = 0d; y < bounds.Height; y += 88)
+            {
+                Block(0, y + 3, bounds.Width * .72, 12);
+                Block(0, y + 26, bounds.Width * .96, 10);
+                Block(0, y + 44, bounds.Width * .6, 10);
+            }
+            return;
+        }
         if (loadingRowStyle == LoadingRowStyle.Compact || CompactList && ListView)
         {
             for (var y = 0d; y < bounds.Height; y += 64)
@@ -146,10 +163,12 @@ internal sealed class LibrarySkeleton : Control
             var y = row * rowHeight;
             if (ListView)
             {
-                Block(0, y + 6, 160, 160, 6); Block(180, y, 40, 40, 20);
-                Block(230, y + 3, 130, 10); Block(230, y + 24, Math.Min(280, bounds.Width - 248), 14);
-                Block(180, y + 56, bounds.Width - 198, 52);
-                Block(180, y + 132, 88, 40, 20); Block(276, y + 132, 40, 40, 20);
+                var content = TrackRowLayout.CoverSize + TrackRowLayout.ColumnGap + TrackRowLayout.ContentInset;
+                Block(0, y, TrackRowLayout.CoverSize, TrackRowLayout.CoverSize, TrackRowLayout.CornerRadius);
+                Block(content, y + TrackRowLayout.VerticalInset, TrackRowLayout.ActionSize, TrackRowLayout.ActionSize, 18);
+                Block(content + 46, y + 14, 130, 10); Block(content + 46, y + 33, Math.Min(280, bounds.Width - content - 64), 13);
+                Block(content, y + 64, bounds.Width - content - TrackRowLayout.ContentInset, TrackRowLayout.WaveformHeight);
+                Block(content, y + 136, 84, TrackRowLayout.ActionSize, 18); Block(content + 96, y + 136, TrackRowLayout.ActionSize, TrackRowLayout.ActionSize, 18);
             }
             else for (var column = 0; column < columns; column++)
             {

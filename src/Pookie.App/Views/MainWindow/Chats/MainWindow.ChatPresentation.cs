@@ -46,8 +46,8 @@ internal sealed partial class MainWindow
     }
     private void RefreshChatTimeline()
     {
-        var rows = chatMessages.OrderBy(ChatOrder).ToList();
-        if (chatRecipient != null && chatOutgoing.TryGetValue(chatRecipient.Id, out var outgoing)) rows.Add(outgoing.Message);
+        var rows = chatMessages.Where(m=>!ChatProtocol.Project(m,chatAccountId,chatRecipient?.Id??0).IsReaction).OrderBy(ChatOrder).DistinctBy(m=>(m.SenderId,ChatProtocol.Project(m,chatAccountId,chatRecipient?.Id??0).EventId??m.Id)).ToList();
+        if (chatRecipient != null && chatOutgoing.TryGetValue(chatRecipient.Id, out var outgoing)&&!ChatProtocol.Project(outgoing.Message,chatAccountId,chatRecipient.Id).IsReaction) rows.Add(outgoing.Message);
         var current = chatMessageItems.ToDictionary(item => item.Id);
         var desired = rows.Select(message =>
         {
@@ -87,6 +87,10 @@ internal sealed partial class MainWindow
         view.Thumbnail.Source = null; view.ThumbnailFrame.IsVisible = false;
         view.PreviewIcon.IsVisible = false; view.PreviewIcon.Source = null; view.PreviewGlyph = null;
         view.Preview.Foreground = Muted;
+        if (chatDrafts.GetValueOrDefault(conversation.Recipient.Id) is {Length:>0} draft && local==null)
+        {view.Preview.Text="Черновик: "+ChatPreview(draft);view.Preview.Foreground=ChatAccent;return;}
+        if (last != null && ChatProtocol.Project(last,chatAccountId,conversation.Recipient.Id) is {EventId:not null} projection)
+        {view.Preview.Text=ChatPreview(projection.Text);return;}
         if (last == null) { view.Preview.Text = "Начать переписку"; return; }
         if (ChatMediaReference.Parse(last.Body) != null || local?.HasMedia == true)
         {

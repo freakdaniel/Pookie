@@ -78,6 +78,71 @@ public sealed class LyricsTests : IDisposable
         Assert.Equal(LyricsStatus.Synced, result.Status); Assert.Equal(2, result.Document!.ProviderId); Assert.Equal(2, provider.Calls);
     }
 
+    [Fact] public void SwappedProviderMetadataCanWinOnlyWhenBothFieldsAndDurationMatch()
+    {
+        var identity = new LyricsIdentity(1041847174, "Не помню", "T-Fest", 260.415, "Не помню");
+        var plain = Candidate(6559965) with { TrackName = identity.Title, ArtistName = identity.Artist, Duration = 260, SyncedLyrics = null };
+        var swapped = plain with { Id = 14129935, TrackName = identity.Artist, ArtistName = identity.Title, SyncedLyrics = "[00:20.34]Тестовая строка" };
+        var selected = LyricsMatcher.Choose(identity, [plain, swapped])!;
+        Assert.Equal(swapped.Id, selected.Id); Assert.True(LyricsMatcher.IsExact(identity, swapped));
+        Assert.Equal(identity.Title, selected.ToDocument().Title); Assert.Equal(identity.Artist, selected.ToDocument().Artist);
+        Assert.False(LyricsMatcher.Matches(identity, swapped with { Duration = 283 }));
+        Assert.False(LyricsMatcher.Matches(identity, swapped with { TrackName = "Другой исполнитель" }));
+        Assert.False(LyricsMatcher.Matches(identity, swapped with { ArtistName = "Другая песня" }));
+        Assert.False(LyricsMatcher.Matches(identity, swapped with { ArtistName = "Не помню (remix)" }));
+    }
+
+    [Theory]
+    [InlineData(LyricsStatus.Plain)]
+    [InlineData(LyricsStatus.NotFound)]
+    public async Task SwappedSearchUpgradesOlderFallbackCacheAndThenKeepsTheSyncedResult(LyricsStatus status)
+    {
+        var identity = new LyricsIdentity(1041847174, "Не помню", "T-Fest", 260.415, "Не помню");
+        var plain = Candidate(6559965) with { TrackName = identity.Title, ArtistName = identity.Artist, Duration = 260, SyncedLyrics = null };
+        var swapped = plain with { Id = 14129935, TrackName = identity.Artist, ArtistName = identity.Title, SyncedLyrics = "[00:20.34]Тестовая строка" };
+        var provider = new Provider { Exact = plain, SearchResult = (title, artist) =>
+            title == identity.Artist && artist == identity.Title ? [swapped] : [plain] };
+        using var service = Service(provider);
+        var old = System.Text.Json.JsonSerializer.Serialize(new { fingerprint = identity.Fingerprint, at = DateTimeOffset.UtcNow,
+            result = new LyricsResult(status, status == LyricsStatus.Plain ? plain.ToDocument() : null), complete = true },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        await File.WriteAllTextAsync(Path.Combine(root, "Cache", $"{identity.TrackId}-{identity.Fingerprint}.json"), old);
+        var result = await service.ResolveAsync(identity, default);
+        Assert.Equal(LyricsStatus.Synced, result.Status); Assert.Equal(swapped.Id, result.Document!.ProviderId);
+        Assert.Equal(20.34, Assert.Single(result.Document.Lines).Start);
+        Assert.Equal(new[] { (identity.Title, identity.Artist), (identity.Artist, identity.Title) }, provider.Searches);
+        var calls = provider.Calls;
+        Assert.Equal(result.Document.Lines, (await service.ResolveAsync(identity, default)).Document!.Lines);
+        Assert.Equal(calls, provider.Calls);
+    }
+
+    [Fact] public async Task OlderSyncedCacheRemainsUsableWithoutAProviderRequest()
+    {
+        var provider = new Provider { Fail = true }; using var service = Service(provider);
+        var old = System.Text.Json.JsonSerializer.Serialize(new { fingerprint = track.Fingerprint, at = DateTimeOffset.UtcNow,
+            result = new LyricsResult(LyricsStatus.Synced, Candidate().ToDocument()), complete = true },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        await File.WriteAllTextAsync(Path.Combine(root, "Cache", $"{track.TrackId}-{track.Fingerprint}.json"), old);
+        Assert.Equal(LyricsStatus.Synced, (await service.ResolveAsync(track, default)).Status);
+        Assert.Equal(0, provider.Calls);
+    }
+
+    [Fact] public async Task OlderPlainCacheSurvivesAnOfflineRefreshAndCanBeUpgradedLater()
+    {
+        var plain = Candidate() with { SyncedLyrics = null };
+        var provider = new Provider { Fail = true, Error = new HttpRequestException("offline", null, HttpStatusCode.Forbidden) };
+        using var service = Service(provider);
+        var path = Path.Combine(root, "Cache", $"{track.TrackId}-{track.Fingerprint}.json");
+        var old = System.Text.Json.JsonSerializer.Serialize(new { fingerprint = track.Fingerprint, at = DateTimeOffset.UtcNow,
+            result = new LyricsResult(LyricsStatus.Plain, plain.ToDocument()), complete = true },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        await File.WriteAllTextAsync(path, old);
+        Assert.Equal(LyricsStatus.Plain, (await service.ResolveAsync(track, default)).Status);
+        Assert.Equal(old, await File.ReadAllTextAsync(path));
+        provider.Fail = false; provider.Exact = Candidate(2);
+        Assert.Equal(LyricsStatus.Synced, (await service.ResolveAsync(track, default)).Status);
+    }
+
     [Fact] public async Task PlainOnlyRecordIsDisplayedWhenTimedSearchFindsNothing()
     {
         using var service = Service(new Provider { Exact = Candidate() with { SyncedLyrics = null } });
@@ -97,10 +162,11 @@ public sealed class LyricsTests : IDisposable
         Assert.Equal(LyricsStatus.Plain, result.Status); Assert.Equal(record.Id, result.Document!.ProviderId);
         Assert.Empty(result.Document.Lines); Assert.Equal(record.PlainLyrics, result.Document.PlainText);
         Assert.Equal("White Buttowski (tg: whitek3d)", Assert.Single(provider.Gets).Title);
-        Assert.Equal(new[] { "White Buttowski (tg: whitek3d)", identity.Title, "White Buttowski", "whitek3d — White Buttowski" },
-            provider.Searches.Select(query => query.Title));
-        Assert.Equal(5, provider.Calls);
-        await service.ResolveAsync(identity, default); Assert.Equal(5, provider.Calls);
+        var normal = new[] { ("White Buttowski (tg: whitek3d)", "whitek3d"), (identity.Title, "whitek3d"),
+            ("White Buttowski", "whitek3d"), ("whitek3d — White Buttowski", "whitek3d") };
+        Assert.Equal(normal.Concat(normal.Select(query => (query.Item2, query.Item1))), provider.Searches);
+        Assert.Equal(9, provider.Calls);
+        await service.ResolveAsync(identity, default); Assert.Equal(9, provider.Calls);
     }
 
     [Fact] public async Task CleanTitleCanUpgradePlainResultToSyncedWithoutDiscardingPlainFallback()
@@ -145,7 +211,7 @@ public sealed class LyricsTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(root, "Cache", $"{identity.TrackId}-{oldFingerprint}.json"), payload);
         Assert.NotEqual(oldFingerprint, identity.Fingerprint);
         Assert.Equal(LyricsStatus.Plain, (await service.ResolveAsync(identity, default)).Status);
-        Assert.Equal(3, provider.Calls);
+        Assert.Equal(5, provider.Calls);
     }
 
     [Fact] public async Task PartialPlainResultDoesNotCacheAwayAFailedTimedLookup()
@@ -155,7 +221,7 @@ public sealed class LyricsTests : IDisposable
         Assert.Equal(LyricsStatus.Plain, (await service.ResolveAsync(track, default)).Status);
         provider.SearchError = null; provider.Search = [Candidate(2)];
         Assert.Equal(LyricsStatus.Synced, (await service.ResolveAsync(track, default)).Status);
-        Assert.Equal(4, provider.Calls);
+        Assert.Equal(5, provider.Calls);
     }
 
     [Theory]
@@ -412,7 +478,7 @@ public sealed class LyricsTests : IDisposable
         var result = await service.ResolveAsync(track with { Title = "Песня #speedup", Duration = 150 }, default);
         Assert.Equal(LyricsStatus.Plain, result.Status); Assert.Empty(result.Document!.Lines);
         Assert.Equal("Первая\nВторая", result.Document.PlainText);
-        Assert.Equal(new[] { "Песня #speedup", "Песня" }, provider.Searches.Select(query => query.Title));
+        Assert.Equal(new[] { ("Песня #speedup", "Артист"), ("Песня", "Артист"), ("Артист", "Песня #speedup") }, provider.Searches);
     }
 
     [Fact] public async Task NativeSpedUpTimestampsRemainUnscaledAndAvoidOriginalSearch()
@@ -500,7 +566,7 @@ public sealed class LyricsTests : IDisposable
         var provider = new Provider { Exact = Candidate() }; using var service = Service(provider);
         await service.ResolveAsync(track, default); provider.Exact = null;
         Assert.Equal(LyricsStatus.NotFound, (await service.ResolveAsync(track with { Duration = 145 }, default)).Status);
-        Assert.Equal(3, provider.Calls);
+        Assert.Equal(4, provider.Calls);
     }
 
     [Fact] public async Task PreviewGetsPlainTextEvenWhenSyncedRecordExists()
@@ -550,7 +616,7 @@ public sealed class LyricsTests : IDisposable
     {
         var provider = new Provider(); using var service = Service(provider);
         Assert.Equal(LyricsStatus.NotFound, (await service.ResolveAsync(track, default)).Status);
-        await service.ResolveAsync(track, default); Assert.Equal(2, provider.Calls);
+        await service.ResolveAsync(track, default); Assert.Equal(3, provider.Calls);
         provider.Exact = Candidate(); Assert.Equal(LyricsStatus.Synced, (await service.ResolveAsync(track, default, true)).Status);
     }
 

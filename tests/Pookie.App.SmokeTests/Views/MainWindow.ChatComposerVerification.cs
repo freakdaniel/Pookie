@@ -37,7 +37,7 @@ internal sealed partial class MainWindow
         if (!samples.Any(height => height > compact + 1 && height < expanded - 1) ||
             Math.Abs(chatComposer.Bounds.Bottom - bottom) > 1 || insets.Count == 0 || insets.Max() - insets.Min() > 1 ||
             textInsets.Any(inset => Math.Abs(inset - textInset) > .5))
-            throw new InvalidOperationException("Wrapped input did not grow smoothly upwards while keeping the thread anchored.");
+            throw new InvalidOperationException($"Wrapped input did not grow smoothly upwards while keeping the thread anchored: compact={compact}, expanded={expanded}, bottom={bottom}->{chatComposer.Bounds.Bottom}, samples={string.Join(',', samples.Select(value => Math.Round(value, 1)))}, insets={string.Join(',', insets.Select(value => Math.Round(value, 1)))}, text={textInset}:{string.Join(',', textInsets)}");
         if (Math.Abs(chatAttach.Bounds.Bottom - chatSend.Bounds.Bottom) > 1 || Math.Abs(chatGif.Bounds.Bottom - chatSend.Bounds.Bottom) > 1)
             throw new InvalidOperationException("Composer action buttons left the bottom row.");
         CaptureUiPreview("chats-composer-wrapped");
@@ -67,6 +67,9 @@ internal sealed partial class MainWindow
             chatInput.Text = singleLine; chatInput.CaretPosition = singleLine.Length;
             await WaitForLoginFrameAsync();
             await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing);
+            if (chatSend.Content is not FrameworkElement glyph || Math.Abs(glyph.Bounds.X + glyph.ActualWidth / 2 - chatSend.Bounds.X - chatSend.ActualWidth / 2) > .6 ||
+                Math.Abs(glyph.Bounds.Y + glyph.ActualHeight / 2 - chatSend.Bounds.Y - chatSend.ActualHeight / 2) > .6)
+                throw new InvalidOperationException("Send/microphone icon is not centered after switching composer state.");
             chatInput.ReplaceSelection("\n");
             await WaitForLikedLayoutAsync(() => chatComposerSurface.IsResizing && chatComposer.ActualHeight > compact + 2);
             samples.Clear(); textInsets.Clear(); textOrigins.Clear(); chatViewport.BeforePaint += Paint;
