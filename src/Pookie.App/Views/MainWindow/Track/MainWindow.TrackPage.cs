@@ -25,13 +25,14 @@ internal sealed partial class MainWindow
     private Image trackDetailCover = null!, trackDetailBackdrop = null!, trackDetailAvatar = null!, trackDetailPlayIcon = null!, trackDetailHeart = null!;
     private Border trackDetailScrim = null!;
     private TextBlock trackDetailTitle = null!, trackDetailAuthor = null!, trackDetailMeta = null!, trackDetailStats = null!;
-    private MultiLineTextBox trackDetailDescription = null!;
+    private DescriptionTextBlock trackDetailDescription = null!;
     private DescriptionLinks trackDescriptionLinks = null!;
     private TextBlock trackDetailAuthorName = null!, trackDetailAuthorStats = null!, trackDetailCommentsTitle = null!, trackDetailCommentsStatus = null!, trackDetailRelatedStatus = null!;
     private TextBlock trackDetailLikeCount = null!, trackDetailPosition = null!, trackDetailDuration = null!, trackDetailError = null!, trackDetailLicense = null!;
     private TrackWaveform trackDetailWaveform = null!;
     private float[]? renderedTrackDetailSamples;
     private StackPanel trackDetailComments = null!;
+    private LibraryLoadingView trackCommentsLoadingView = null!;
     private Button trackDetailPlay = null!, trackDetailLike = null!, trackDetailMoreComments = null!;
     private readonly List<CompactTrackRow> trackDetailRelatedRows = [];
     private long renderedCommentsTrack;
@@ -39,25 +40,30 @@ internal sealed partial class MainWindow
     private long renderedCommentsViewer;
     private SoundCloudComment[] renderedComments = [];
 
-    private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview) => NavigateRouteAsync(new(Page.Track, Track: track, TrackSection: section), async generation =>
+    private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview, bool reload = false)
     {
-        var token = loading!.Token;
-        trackDetailSection.Value = section; failedTrackSectionCursor = null;
-        trackDetailState = new(track, new([], null), new([], null)) { CommentSort = preferences.CommentSort };
-        RenderTrackDetail();
-        if (demo && api.Session == null)
+        if (!reload && page.Value == Page.Track && trackDetailState?.Track.Id == track.Id)
+            return OpenTrackSectionAsync(section);
+        return NavigateRouteAsync(new(Page.Track, Track: track, TrackSection: section), async generation =>
         {
-            trackDetailState = trackDetailState with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false };
-            RenderTrackDetail(); return;
-        }
-        Run(LoadFollowingAsync);
-        // These sections are independent: a slow comments response must not hold
-        // the title, cover or waveform behind a loading screen.
-        await Task.WhenAll(LoadTrackDetailMetadataAsync(track.Id, generation, token),
-            LoadTrackDetailCommentsAsync(track.Id, generation, token), LoadTrackDetailRelatedAsync(track.Id, generation, token),
-            LoadTrackDetailSidebarAsync(track.Id, generation, token),
-            section == TrackSection.Overview ? Task.CompletedTask : LoadTrackSectionAsync(section, generation, token));
-    });
+            var token = loading!.Token;
+            trackDetailSection.Value = section; failedTrackSectionCursor = null;
+            trackDetailState = new(track, new([], null), new([], null)) { CommentSort = preferences.CommentSort };
+            RenderTrackDetail();
+            if (demo && api.Session == null)
+            {
+                trackDetailState = trackDetailState with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false };
+                RenderTrackDetail(); return;
+            }
+            Run(LoadFollowingAsync);
+            // These sections are independent: a slow comments response must not hold
+            // the title, cover or waveform behind a loading screen.
+            await Task.WhenAll(LoadTrackDetailMetadataAsync(track.Id, generation, token),
+                LoadTrackDetailCommentsAsync(track.Id, generation, token), LoadTrackDetailRelatedAsync(track.Id, generation, token),
+                LoadTrackDetailSidebarAsync(track.Id, generation, token),
+                section == TrackSection.Overview ? Task.CompletedTask : LoadTrackSectionAsync(section, generation, token));
+        });
+    }
 
     private bool IsTrackDetailCurrent(long id, long generation) => !disposed && page.Value == Page.Track &&
         generation == navigationGeneration && trackDetailState?.Track.Id == id;
@@ -214,6 +220,7 @@ internal sealed partial class MainWindow
         var selected = state.Track.Id == current?.Id;
         trackDetailWaveform.Progress = selected && state.Track.DurationSeconds > 0 ? likedPlaybackPosition / state.Track.DurationSeconds : 0;
         trackDetailPosition.Text = FormatTime(selected ? likedPlaybackPosition : 0);
+        AdvanceTrackCommentPreview(selected ? likedPlaybackPosition : 0, selected && isPlaying.Value && !expandedOpen && Window.IsActive && Window.WindowState != WindowState.Minimized);
     }
 
     private void RenderTrackDetailRelated()
@@ -234,7 +241,7 @@ internal sealed partial class MainWindow
         if (trackDetailState is not { } state) return;
         trackCommentSortLabel.Text = CommentSortLabel(state.CommentSort);
         trackDetailCommentsTitle.Text = CommentHeading(state.Track.CommentCount ?? state.Comments.Comments.Length);
-        trackDetailCommentsStatus.Text = state.CommentsLoading ? "Загружаем комментарии…" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? "К этому треку ещё нет комментариев." : "";
+        trackDetailCommentsStatus.Text = state.CommentsLoading ? "" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? "К этому треку ещё нет комментариев." : "";
         trackDetailCommentsStatus.IsVisible = trackDetailCommentsStatus.Text.Length > 0;
         var comments = state.Comments.Comments;
         var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || !comments.SequenceEqual(renderedComments);
@@ -248,6 +255,7 @@ internal sealed partial class MainWindow
         // Keep existing rows and their decoded avatars when another page arrives.
         foreach (var comment in comments.Skip(renderedComments.Length)) trackDetailComments.Add(TrackCommentView(comment, state.Track));
         renderedComments = comments;
+        trackCommentsLoadingView.SetLoading(state.CommentsLoading && comments.Length == 0);
         if (changed) RenderTrackCommentMarkers();
         trackDetailMoreComments.IsVisible = !state.CommentsLoading && (state.Comments.NextHref != null || state.CommentsError.Length > 0);
         ((TextBlock)trackDetailMoreComments.Content!).Text = state.CommentsError.Length > 0 ? "Повторить загрузку" : "Ещё комментарии";
@@ -280,13 +288,7 @@ internal sealed partial class MainWindow
     private void AttachTrackTitle(TextBlock title, Func<SoundCloudTrack?> track)
     {
         title.Cursor = CursorType.Hand;
-        Color resting = title.Foreground;
-        title.MouseEnter += () =>
-        {
-            resting = title.Foreground;
-            title.Foreground = Color.FromArgb((byte)Math.Round(resting.A * .72), resting.R, resting.G, resting.B);
-        };
-        title.MouseLeave += () => title.Foreground = resting;
+        AttachTextLinkHover(title, normal => Color.FromArgb((byte)Math.Round(normal.A * .72), normal.R, normal.G, normal.B));
         title.MouseDown += args =>
         {
             if (args.Button != MouseButton.Left || track() is not { } item) return;

@@ -49,7 +49,7 @@ internal sealed partial class MainWindow
         {
             this.owner = owner;
             Reactions = new(emoji => { if (Message is { } message) owner.Run(() => owner.ReactToChatAsync(message, emoji)); });
-            Body.Copy = owner.CopyText;
+            Body.CopyText = owner.CopyText;
             Body.SelectionClick=()=>{if(owner.chatSelected.Count==0||Message==null)return false;owner.ToggleChatSelection(Message);return true;};
             Body.OpenMusic = url => owner.Run(() => owner.OpenChatMusicUrlAsync(url));
             Error = TrackButtons.Action(new TextBlock().Text("!").FontSize(12).Bold().Foreground(Color.FromRgb(255, 132, 132)),

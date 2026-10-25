@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Input;
+using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
@@ -43,13 +44,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDescriptionLinks.Icons.Count == 2 && trackDescriptionLinks.Icons.Any(icon => icon.HasSource));
             if (iconRequests.Count != 2 || trackDescriptionLinks.Icons.Count(icon => !icon.HasSource) != 1)
                 throw new InvalidOperationException("Description favicons did not load or retain the offline fallback.");
-            var geometry = new List<Aprillz.MewUI.Text.GeometryStyleRun>();
-            var inlines = new List<Aprillz.MewUI.Text.InlineRun>();
-            var logical = trackDetailDescription.VisibleTextLines.First(line => line.LogicalLine.Offset > 0).LogicalLine;
-            var transform = new Aprillz.MewUI.Text.TextLineTransformContext(logical, fixture.AsMemory(logical.Offset, logical.Length),
-                new(trackDetailDescription.FontFamily, 14, FontWeight.Normal), Aprillz.MewUI.Text.IdentityTextOffsetMap.Instance);
-            trackDescriptionLinks.Transform(in transform, geometry, inlines);
-            if (geometry.Count != 0 || inlines.Count != 1)
+            if (trackDescriptionLinks.Inlines.Length != 2 || trackDescriptionLinks.PaintSpans.Any(span => span.Decoration != default))
                 throw new InvalidOperationException("Description links retained underlines or omitted their inline favicon.");
             var link = trackDescriptionLinks.Links[0];
             var rects = trackDescriptionLinks.BoundsFor(link);
@@ -79,12 +74,12 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Dragging through a description link opened it or failed to select text.");
             CaptureUiPreview("track-description-selected");
 
-            trackDetailDescription.SelectAll(); trackDetailDescription.Copy();
+            RouteSelectableTextKey(Key.A, ModifierKeys.Control);
+            RouteSelectableTextKey(Key.C, ModifierKeys.Control);
             if (!fixtureClipboard.TryGetText(out var copied) || copied != fixture)
                 throw new InvalidOperationException("Copying the selected description lost Unicode, line breaks or source URLs.");
-            ((ITextInputClient)trackDetailDescription).HandleTextInput(new("случайный ввод"));
-            trackDetailDescription.Cut(); trackDetailDescription.Paste();
-            if (trackDetailDescription.Text != fixture) throw new InvalidOperationException("The read-only description allowed editing.");
+            if (typeof(ITextInputClient).IsAssignableFrom(trackDetailDescription.GetType()))
+                throw new InvalidOperationException("The description is still an input control.");
             RouteWaveformPointer(new Point(2, 2));
             await WaitForLikedLayoutAsync(() => trackDescriptionLinks.ColorFor(link) == normal);
             if (trackDescriptionLinks.HoveredUri != null) throw new InvalidOperationException("Description link hover did not clear.");
@@ -93,7 +88,8 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Description links or selection survived changing the track text.");
             await VerifyTelegramDescriptionAsync(fixtureClipboard, opened);
             await VerifyDescriptionReplacementAsync();
-            Console.WriteLine("TRACK_DESCRIPTION_OK: wrapped HTTP/WWW links, trimmed punctuation, animated hover without underline, circular favicon/fallback, native click, drag selection without activation, Unicode/line-break copying, read-only editing and text replacement reset");
+            await VerifyDescriptionCaretAsync();
+            Console.WriteLine("TRACK_DESCRIPTION_OK: wrapped HTTP/WWW links, trimmed punctuation, animated hover without underline, circular favicon/fallback, link click, drag selection without activation, Unicode/line-break copying, noneditable text and text replacement reset");
         }
         finally
         {
@@ -105,17 +101,65 @@ internal sealed partial class MainWindow
         }
     }
 
+    private async Task VerifyDescriptionCaretAsync()
+    {
+        var description = trackDetailDescription;
+        if (typeof(TextBase).IsAssignableFrom(description.GetType()) || typeof(ITextInputClient).IsAssignableFrom(description.GetType()))
+            throw new InvalidOperationException("Selectable description retained an editor or text input client.");
+        byte[] Pixels()
+        {
+            var bounds = description.Bounds;
+            using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+                (int)Math.Ceiling((bounds.Width + 2) * Window.DpiScale),
+                (int)Math.Ceiling((bounds.Height + 2) * Window.DpiScale), Window.DpiScale));
+            using var context = Window.GraphicsFactory.CreateContext(surface);
+            context.BeginFrame(surface);
+            try { context.Clear(Color.Transparent); context.Translate(-bounds.X, -bounds.Y); description.Render(context); }
+            finally { context.EndFrame(); }
+            return ((ICpuPixelSurface)surface).CopyPixels();
+        }
+
+        description.Text = "Описание 👨‍👩‍👧‍👦";
+        await WaitForLoginFrameAsync();
+        description.Focus();
+        RouteSelectableTextKey(Key.End);
+        RouteSelectableTextKey(Key.Left, ModifierKeys.Shift);
+        if (description.SelectedText != "👨‍👩‍👧‍👦")
+            throw new InvalidOperationException("Description keyboard selection split a displayed emoji sequence.");
+        Window.FocusManager.ClearFocus();
+        description.Text = "Описание трека 🎧\n\n";
+        await WaitForLikedLayoutAsync(() => !description.IsArrangeDirty && description.ActualHeight > 30);
+        await WaitForLoginFrameAsync();
+        var unfocused = Pixels();
+        description.Focus();
+        await WaitForLoginFrameAsync();
+        if (!description.IsFocused || !Pixels().SequenceEqual(unfocused))
+            throw new InvalidOperationException("Focusing a selectable description painted an insertion caret.");
+        await Task.Delay(600);
+        await WaitForLoginFrameAsync();
+        if (!Pixels().SequenceEqual(unfocused))
+            throw new InvalidOperationException("A focused description changed pixels during the former caret blink interval.");
+        CaptureUiPreview("track-description-no-caret");
+
+        Console.WriteLine("DESCRIPTION_CARET_OK: selectable TextBlock shares message selection without any editor, input client or caret pixels across a blink interval");
+    }
+
+    private void RouteSelectableTextKey(Key key, ModifierKeys modifiers = 0) =>
+        typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", true)!
+            .GetMethod("KeyDown", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, [Window, new KeyEventArgs(key, 0, modifiers)]);
+
     private async Task VerifyDescriptionReplacementAsync()
     {
         foreach (var replacement in new[] { "🎧 Новый трек", "e\u0301 Описание с диакритикой", "\r\nНовое описание", "" })
         {
             trackDetailDescription.Text = "https://example.com/previous-track";
-            await WaitForLikedLayoutAsync(() => trackDetailDescription.VisibleTextLines.Count > 0 && !trackDetailDescription.IsArrangeDirty);
+            await WaitForLikedLayoutAsync(() => trackDetailDescription.GetTextLayout(trackDetailDescription.ActualWidth).Lines.Count > 0 && !trackDetailDescription.IsArrangeDirty);
             var link = trackDescriptionLinks.Links.Single();
             var rect = trackDescriptionLinks.BoundsFor(link).First();
             RouteWaveformPointer(new(rect.X + 8, rect.Y + rect.Height / 2));
-            // MewUI lays out the new document before notifying presentation
-            // extensions. Previous icon offsets must never decorate new text.
+            // Previous link/icon ranges must never decorate replacement text.
             trackDetailDescription.Text = replacement;
             await WaitForLikedLayoutAsync(() => !trackDetailDescription.IsArrangeDirty);
             if (trackDescriptionLinks.Links.Count != 0 || trackDescriptionLinks.Icons.Count != 0 || trackDescriptionLinks.HoveredUri != null)

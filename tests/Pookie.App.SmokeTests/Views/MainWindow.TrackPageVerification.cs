@@ -51,11 +51,12 @@ internal sealed partial class MainWindow
             { await ProbeDetailScrollingAsync(); return; }
             if (current?.Id != originalPlayback || playGeneration != originalGeneration)
                 throw new InvalidOperationException("Opening a title started playback.");
+            await VerifyPlayerLinksAndWaveCommentsAsync(fixtures[0]);
             var seekPoint = new Point(trackDetailWaveform.Bounds.X + 30, trackDetailWaveform.Bounds.Y + 30);
             var seekHit = ((UIElement)Window.Content!).HitTest(seekPoint);
             if (seekHit != trackDetailWaveform)
                 throw new InvalidOperationException($"Comment avatars intercepted the waveform outside their buttons: hit={seekHit?.GetType().Name}, point={seekPoint}, waveform={trackDetailWaveform.Bounds}, markers={trackDetailMarkerLayer.Bounds}.");
-            if (trackCommentMarkers.FirstOrDefault().Button is { } marker)
+            if (trackCommentMarkers.FirstOrDefault()?.Button is { } marker)
             {
                 var hit = ((UIElement)Window.Content!).HitTest(new Point(marker.Bounds.X + 12, marker.Bounds.Y + 12));
                 var belongs = false;
@@ -107,6 +108,7 @@ internal sealed partial class MainWindow
             await MoveNavigationAsync(1);
             if (page.Value != Page.Track || trackDetailState?.Comments.Comments.Length != 2 || trackDetailState.Sidebar?.Playlists.Length != 4)
                 throw new InvalidOperationException("Forward lost loaded track comments.");
+            await OpenTrackPageAsync(fixtures[1]);
             browser.DelayTrack = fixtures[0].Id;
             var late = OpenTrackPageAsync(fixtures[0]);
             await OpenTrackPageAsync(fixtures[1]);

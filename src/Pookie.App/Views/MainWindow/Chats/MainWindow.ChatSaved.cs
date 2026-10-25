@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
             var projection = ChatProtocol.Project(favorite.Message, chatAccountId, favorite.PeerId);
             var summary = ChatMediaSummaryFor(favorite.Message, favorite.PeerId);
             var text = ChatMediaReference.Parse(favorite.Message.Body) != null ? summary?.Caption ?? "Вложение" : projection.Text;
-            var body = new ChatMessageText { Text = text, FontSize = 14, TextWrapping = TextWrapping.Wrap, Copy = CopyText };
+            var body = new ChatMessageText { Text = text, FontSize = 14, TextWrapping = TextWrapping.Wrap, CopyText = CopyText };
             body.OpenMusic = url => Run(() => OpenChatMusicUrlAsync(url));
             var title = TrackButtons.Action(new TextBlock().Text(peer?.Username ?? "Переписка").FontSize(12).SemiBold().Foreground(ChatAccent).TextTrimming(TextTrimming.CharacterEllipsis),
                 () => Run(() => JumpChatMessageAsync(favorite.PeerId, favorite.Message.Id)), TrackButtons.Text, 26).Padding(0);

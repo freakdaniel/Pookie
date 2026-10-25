@@ -106,11 +106,16 @@ internal sealed partial class MainWindow
             if (trackDetailState.CommentSort != "TIMESTAMP" || trackDetailState.Comments.Comments[0].Id != 2 ||
                 trackCommentSortLabel.Text != "По времени в треке") throw new InvalidOperationException("Late sort response replaced the current order.");
             await ChangeTrackCommentSortAsync("NEWEST");
+            await WaitForLikedLayoutAsync(() => !trackCommentsLoadingView.Skeleton.IsVisible && trackDetailComments.Opacity == 1);
             var timeButtons = new List<Button>();
             VisualTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
             await WaitForLikedLayoutAsync(() => trackDetailComments.ActualWidth > 0 && shellPageScroll.IsReady);
             shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + trackDetailComments.Bounds.Y - shellScroll.Bounds.Y - 160));
-            await WaitForLikedLayoutAsync(() => timeButtons[0].ActualWidth > 0 && timeButtons[0].Bounds.Y > trackDetailScroll.Bounds.Y &&
+            // Scrolling is reconciled at the frame boundary. Linux must also
+            // hit the final row position, rather than its pre-scroll bounds.
+            await WaitForLoginFrameAsync();
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !trackDetailComments.IsArrangeDirty &&
+                timeButtons[0].ActualWidth > 0 && timeButtons[0].Bounds.Y > trackDetailScroll.Bounds.Y &&
                 timeButtons[0].Bounds.Y < trackDetailScroll.Bounds.Bottom - 40);
             if (OperatingSystem.IsWindows())
             {
@@ -121,7 +126,12 @@ internal sealed partial class MainWindow
             }
             var time = timeButtons[0]; MoveActionPointer(new(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12));
             try { await WaitForLikedLayoutAsync(() => time.IsMouseOver && time.Background == TrackButtons.HoverColor(TrackButtons.CommentTimeSurface, TrackButtons.OnCommentTime)); }
-            catch (InvalidOperationException error) { throw new InvalidOperationException($"Timestamp hover failed: bounds={time.Bounds} enabled={time.IsEffectivelyEnabled} over={time.IsMouseOver} active={Window.IsActive} viewport={shellScroll.Bounds} offset={shellScroll.VerticalOffset} colour={time.Background}.", error); }
+            catch (InvalidOperationException error)
+            {
+                var hit = ((UIElement)Window.Content!).HitTest(new(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12));
+                CaptureUiPreview("comments-hover-failure");
+                throw new InvalidOperationException($"Timestamp hover failed: bounds={time.Bounds} enabled={time.IsEffectivelyEnabled} over={time.IsMouseOver} active={Window.IsActive} viewport={shellScroll.Bounds} offset={shellScroll.VerticalOffset} colour={time.Background}, hit={hit?.GetType().Name}:{(hit as TextBlock)?.Text}, belongs={hit != null && time.IsAncestorOf(hit)}, commentsHit={trackDetailComments.IsHitTestVisible}.", error);
+            }
             MoveActionPointer(new(1, 1));
             await WaitForLikedLayoutAsync(() => !time.IsMouseOver && time.Background == TrackButtons.CommentTimeSurface);
             await DeleteTrackCommentAsync(track, other);

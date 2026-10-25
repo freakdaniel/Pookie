@@ -215,6 +215,7 @@ internal sealed partial class MainWindow
         SetLyricsPanelActive(open && expandedPanelMode == PlayerPanel.Lyrics);
         if (open)
         {
+            ResetTrackCommentPreview();
             waveSettingsOpen.Value = false;
             if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)

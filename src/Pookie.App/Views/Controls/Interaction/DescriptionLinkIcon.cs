@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 // Only replaces the first displayed character, leaving URLs wrappable and the
 // document/clipboard untouched. Uses the composer's circular miniature treatment.
-internal sealed class DescriptionLinkIcon(MultiLineTextBox owner,
+internal sealed class DescriptionLinkIcon(DescriptionTextBlock owner,
     string character, Func<Color> foreground) : IInlineTextObject, IDisposable
 {
     private ITextLayout? label;

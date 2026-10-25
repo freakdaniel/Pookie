@@ -24,7 +24,10 @@ internal sealed partial class MainWindow
         trackDetailDuration = new TextBlock().FontSize(11).Right();
         trackDetailMarkerLayer = new CommentMarkerLayer();
         trackDetailMarkerLayer.Columns("*").Rows("*").Height(146);
-        trackDetailWaveformLayer = new ViewportGrid().Columns("*").Rows("*").Height(146).Children(trackDetailWaveform, trackDetailMarkerLayer);
+        trackWaveCommentPreview = new WaveCommentPreview();
+        trackCommentPreviewTimer = new DispatcherTimer(TimeSpan.FromSeconds(4));
+        trackCommentPreviewTimer.Tick += () => { trackCommentPreviewTimer.Stop(); trackAutoComment = null; RefreshTrackCommentPreview(); };
+        trackDetailWaveformLayer = new ViewportGrid().Columns("*").Rows("*").Height(146).Children(trackDetailWaveform, trackDetailMarkerLayer, trackWaveCommentPreview);
         trackDetailWaveformLayer.SizeChanged += _ => PositionTrackCommentMarkers();
         var waveform = new Grid().Columns("*,42").Rows("Auto").Spacing(8).Children(trackDetailWaveformLayer.Column(0),
             new StackPanel().Vertical().Spacing(12).Margin(0, 91, 0, 0).Column(1).Children(trackDetailPosition, trackDetailDuration));
@@ -56,20 +59,28 @@ internal sealed partial class MainWindow
         trackDetailGlass = AttachCardGlass(heroColumns);
         var heroShadow = new CardShadow(hero).Margin(-12, -8, -12, -16);
         trackDetailError = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
-        trackDetailDescription = new MultiLineTextBox { IsReadOnly = true, Wrap = true, SizeToDocument = true }
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(14).FontWeight(FontWeight.Normal).Foreground(Muted);
+        trackDetailDescription = new DescriptionTextBlock { FontSize = 14, FontWeight = FontWeight.Normal, Foreground = Muted };
         trackDescriptionLinks = new DescriptionLinks(trackDetailDescription, uri => OpenSettingsUrl(uri.AbsoluteUri))
         { LoadIcon = demo ? null : (uri, token) => (descriptionFavicons ??= new(imageDiskCache)).LoadAsync(uri, token) };
         trackDetailLicense = new TextBlock().FontSize(12).Foreground(Muted);
         trackDetailCommentsTitle = new TextBlock().FontSize(21).Bold();
         trackDetailCommentsStatus = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         trackDetailComments = new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds }.Vertical().Spacing(26);
+        trackCommentsLoadingView = new LibraryLoadingView(trackDetailComments, preview: true);
+        trackCommentsLoadingView.Skeleton.CommentRows = true;
+        trackCommentsLoadingView.Skeleton.PreviewItems = 3;
+        trackCommentsLoadingView.Skeleton.SetGeometry(0, 1, false);
+        page.Changed += () =>
+        {
+            trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
+            if (page.Value != Page.Track) ResetTrackCommentPreview();
+        };
         trackDetailMoreComments = TrackButtons.Action(new TextBlock().Text("Ещё комментарии").FontSize(14).SemiBold()
             .Foreground(TrackButtons.OnSurface), () => Run(MoreTrackCommentsAsync), TrackButtons.Text).Left();
         var content = new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(24).Column(0).Children(trackDetailDescription, trackDetailLicense,
             new Border().Height(1).Background(Raised),
             new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(trackDetailCommentsTitle.Column(0).CenterVertical(), TrackCommentSortView().Column(1)),
-            trackDetailCommentsStatus, trackDetailComments, trackDetailMoreComments);
+            trackDetailCommentsStatus, trackCommentsLoadingView.Root, trackDetailMoreComments);
         var body = new TrackPageColumns(content, TrackDetailSidebarView()).Initialize().Margin(0, 8, 0, 0);
         trackDetailOverview = body;
         var sections = TrackDetailSectionsView();

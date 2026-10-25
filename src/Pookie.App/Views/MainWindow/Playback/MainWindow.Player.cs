@@ -9,6 +9,7 @@ internal sealed partial class MainWindow
     private const double PlayerBarHeight = 72;
     private const int PlayerControlsWidth = 380;
     private StackPanel playerTrackInfo = null!;
+    private TextBlock playerTrackTitle = null!, playerTrackArtist = null!;
     private Grid playerTimeline = null!;
     private static readonly Color LikedHeart = Color.FromRgb(184, 51, 78);
     private static readonly Color PlayerSecondaryText = Color.FromArgb(153, 255, 255, 255);
@@ -79,11 +80,14 @@ internal sealed partial class MainWindow
             .OnLostFocus(() => playerArtworkOverlay.Opacity = 0)
             .OnClick(() => SetExpandedPlayer(true));
 
-        playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical().Children(
-            new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Left()
-                .Content(new TextBlock().BindText(title).FontSize(13).Bold().TextTrimming(TextTrimming.CharacterEllipsis))
-                .OnClick(() => { if (current is { } track) Run(() => OpenTrackPageAsync(track)); }),
-            new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText).TextTrimming(TextTrimming.CharacterEllipsis));
+        playerTrackTitle = new TextBlock().BindText(title).FontSize(13).Bold().Foreground(TrackButtons.OnSurface)
+            .Height(18).TextTrimming(TextTrimming.CharacterEllipsis);
+        playerTrackArtist = new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText)
+            .Height(16).TextTrimming(TextTrimming.CharacterEllipsis);
+        AttachTrackTitle(playerTrackTitle, () => current);
+        AttachUserLink(playerTrackArtist, () => current?.User);
+        playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical()
+            .Children(playerTrackTitle, playerTrackArtist);
         positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(0, 0, 4, 2).CenterVertical().Right().Column(0);
         durationLabel = new TextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)

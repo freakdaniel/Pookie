@@ -1,4 +1,5 @@
 using Aprillz.MewUI;
+using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
@@ -8,7 +9,14 @@ internal sealed partial class MainWindow
 {
     private Grid trackDetailWaveformLayer = null!;
     private CommentMarkerLayer trackDetailMarkerLayer = null!;
-    private readonly List<(Button Button, double Fraction)> trackCommentMarkers = [];
+    private sealed record TrackCommentMarker(Button Button, Image Avatar, double Fraction, SoundCloudComment Comment)
+    { internal long AvatarGeneration = -1; }
+    private readonly List<TrackCommentMarker> trackCommentMarkers = [];
+    private long trackCommentMarkerTrack;
+    private WaveCommentPreview trackWaveCommentPreview = null!;
+    private DispatcherTimer trackCommentPreviewTimer = null!;
+    private TrackCommentMarker? trackHoveredComment, trackFocusedComment, trackAutoComment;
+    private double? previousTrackCommentPosition;
     private readonly HashSet<(long Track, long Comment, long Generation)> pendingTrackReplies = [];
 
     private FrameworkElement TrackCommentView(SoundCloudComment comment, SoundCloudTrack track, bool reply = false)
@@ -24,7 +32,7 @@ internal sealed partial class MainWindow
         {
             top.Add(new CommentTextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
             var time = TrackButtons.Action(new CommentTextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
-                .Foreground(TrackButtons.OnCommentTime), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
+                .Foreground(TrackButtons.OnCommentTime).IsHitTestVisible(false), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
                 TrackButtons.CommentTime, 24).Padding(6, 0);
             top.Add(time);
         }
@@ -101,47 +109,114 @@ internal sealed partial class MainWindow
     private static double? ValidCommentTime(SoundCloudComment comment, SoundCloudTrack track) =>
         comment.Timestamp is { } time && double.IsFinite(time) && time >= 0 && time < track.Duration ? time : null;
 
-    private void LoadTrackDetailAvatar(Image image, string? url, long trackId)
+    private void LoadTrackDetailAvatar(Image image, string? url, long trackId, bool marker = false)
     {
         var generation = navigationGeneration;
         Run(async () =>
         {
             var source = await SharedArtworkAsync(url);
-            if (source != null && IsTrackDetailCurrent(trackId, generation))
-            { image.Source = source; trackDetailMarkerLayer.RefreshSnapshot(); }
+            if (!IsTrackDetailCurrent(trackId, generation)) return;
+            if (source != null) image.Source = source;
+            if (marker) { image.Opacity = 1; trackDetailMarkerLayer.Interact(); }
+            trackDetailMarkerLayer.RefreshSnapshot();
         });
     }
 
     private void RenderTrackCommentMarkers()
     {
-        trackDetailMarkerLayer.Clear(); trackDetailMarkerLayer.RefreshSnapshot();
-        trackCommentMarkers.Clear();
-        if (!preferences.ShowCommentMarkers || trackDetailState is not { } state) return;
-        foreach (var comment in state.Comments.Comments.Where(c => ValidCommentTime(c, state.Track) != null).Take(50))
+        if (trackDetailState is not { } state) return;
+        if (trackCommentMarkerTrack != state.Track.Id || !preferences.ShowCommentMarkers)
         {
+            ResetTrackCommentPreview(); trackDetailMarkerLayer.ResetReveal();
+            trackDetailMarkerLayer.Clear(); trackCommentMarkers.Clear(); trackCommentMarkerTrack = state.Track.Id;
+        }
+        if (!preferences.ShowCommentMarkers) return;
+        var timed = state.Comments.Comments.Where(c => ValidCommentTime(c, state.Track) != null).Take(50).ToArray();
+        foreach (var old in trackCommentMarkers.Where(m => !timed.Any(c => c.Id == m.Comment.Id && c.Timestamp == m.Comment.Timestamp &&
+            c.Body == m.Comment.Body && c.User == m.Comment.User && c.Timestamp / state.Track.Duration == m.Fraction)).ToArray())
+        { trackDetailMarkerLayer.Remove(old.Button); old.Avatar.Source = null; trackCommentMarkers.Remove(old); }
+        foreach (var comment in timed)
+        {
+            if (trackCommentMarkers.FirstOrDefault(m => m.Comment.Id == comment.Id) is { } existing)
+            { LoadTrackCommentMarkerAvatar(existing, state.Track.Id); continue; }
             var fraction = comment.Timestamp!.Value / state.Track.Duration;
-            var image = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(24).Height(24).StretchMode(Stretch.UniformToFill);
+            var image = new Image { VectorCacheMode = ImageVectorCacheMode.Direct, Opacity = 0 }.Width(24).Height(24).StretchMode(Stretch.UniformToFill);
+            image.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
             image.Source = Icons.Source("user", Muted);
-            var marker = TrackButtons.Icon(new Border().CornerRadius(12).ClipToBounds().Child(image),
-                () => Run(() => SeekLikedTrackAsync(state.Track, fraction)), TrackButtons.Text, 24).Left().Top()
-                .ToolTip($"{comment.User?.Username}: {comment.Body}");
+            var marker = TrackButtons.Icon(new Border().Background(Color.FromRgb(51, 53, 59)).CornerRadius(12).ClipToBounds().Child(image),
+                () => Run(() => SeekLikedTrackAsync(state.Track, fraction)), TrackButtons.Text, 24).Left().Top();
+            var slot = new TrackCommentMarker(marker, image, fraction, comment);
             // The cached strip must include complete avatars even when it is
             // captured while their screen positions are partly above the window.
             VisualTree.Visit(marker, element => { if (element is UIElement visual) visual.SkipViewportCull = true; });
-            marker.MouseEnter += trackDetailMarkerLayer.Interact;
-            marker.MouseLeave += trackDetailMarkerLayer.Interact;
-            trackCommentMarkers.Add((marker, fraction)); trackDetailMarkerLayer.Add(marker);
-            LoadTrackDetailAvatar(image, comment.User?.AvatarUrl, state.Track.Id);
+            marker.MouseEnter += () => { trackDetailMarkerLayer.Interact(); trackHoveredComment = slot; RefreshTrackCommentPreview(); };
+            marker.MouseLeave += () => { trackDetailMarkerLayer.Interact(); if (trackHoveredComment == slot) trackHoveredComment = null; RefreshTrackCommentPreview(); };
+            marker.GotFocus += () => { trackFocusedComment = slot; RefreshTrackCommentPreview(); };
+            marker.LostFocus += () => { if (trackFocusedComment == slot) trackFocusedComment = null; RefreshTrackCommentPreview(); };
+            trackCommentMarkers.Add(slot); trackDetailMarkerLayer.Add(marker);
+            LoadTrackCommentMarkerAvatar(slot, state.Track.Id);
         }
+        if (trackCommentMarkers.Count > 0) trackDetailMarkerLayer.RevealMarkers(); else trackDetailMarkerLayer.ResetReveal();
+        RefreshTrackCommentPreview();
         PositionTrackCommentMarkers();
+    }
+
+    private void LoadTrackCommentMarkerAvatar(TrackCommentMarker marker, long trackId)
+    {
+        if (marker.Avatar.Opacity > .999 || marker.AvatarGeneration == navigationGeneration) return;
+        marker.AvatarGeneration = navigationGeneration;
+        LoadTrackDetailAvatar(marker.Avatar, marker.Comment.User?.AvatarUrl, trackId, marker: true);
     }
 
     private void PositionTrackCommentMarkers()
     {
         var width = trackDetailWaveformLayer.ActualWidth;
-        foreach (var (button, fraction) in trackCommentMarkers)
-            button.Margin = new Thickness(Math.Clamp(fraction * width - 12, 0, Math.Max(0, width - 24)), 103, 0, 0);
+        foreach (var marker in trackCommentMarkers)
+            marker.Button.Margin = new Thickness(Math.Clamp(marker.Fraction * width - 12, 0, Math.Max(0, width - 24)), 103, 0, 0);
         trackDetailMarkerLayer.RefreshSnapshot();
+    }
+
+    private void RefreshTrackCommentPreview()
+    {
+        if (trackHoveredComment != null && !trackCommentMarkers.Contains(trackHoveredComment)) trackHoveredComment = null;
+        if (trackFocusedComment != null && !trackCommentMarkers.Contains(trackFocusedComment)) trackFocusedComment = null;
+        if (trackAutoComment != null && !trackCommentMarkers.Contains(trackAutoComment)) trackAutoComment = null;
+        var marker = trackHoveredComment ?? trackFocusedComment ?? trackAutoComment;
+        trackWaveCommentPreview.Show(marker?.Comment, marker?.Fraction ?? 0);
+    }
+
+    private void AdvanceTrackCommentPreview(double seconds, bool playing)
+    {
+        if (!preferences.ShowCommentMarkers || current?.Id != trackDetailState?.Track.Id ||
+            trackDetailWaveform.Bounds.Bottom <= trackDetailScroll.Bounds.Y || trackDetailWaveform.Bounds.Y >= trackDetailScroll.Bounds.Bottom)
+        {
+            previousTrackCommentPosition = null; trackAutoComment = null; trackCommentPreviewTimer.Stop(); RefreshTrackCommentPreview(); return;
+        }
+        if (!playing) { previousTrackCommentPosition = null; return; }
+        // Ordinary ticks cross a small interval. A seek/resume only considers
+        // the destination, never bursts through every comment it skipped.
+        var continuous = previousTrackCommentPosition is { } previous && seconds >= previous && seconds - previous <= 1.5;
+        var start = continuous ? previousTrackCommentPosition!.Value : Math.Max(-.001, seconds - .45);
+        previousTrackCommentPosition = seconds;
+        if (!continuous) { trackAutoComment = null; trackCommentPreviewTimer.Stop(); }
+        TrackCommentMarker? crossed = null;
+        foreach (var marker in trackCommentMarkers)
+        {
+            var at = marker.Comment.Timestamp!.Value / 1000;
+            if (at > start && at <= seconds && (crossed == null || at > crossed.Comment.Timestamp!.Value / 1000)) crossed = marker;
+        }
+        // Keep one readable automatic card for its display interval. Comments
+        // crossed meanwhile are skipped, not queued; hover remains unrestricted.
+        if (crossed == null || continuous && trackAutoComment != null)
+        { if (!continuous) RefreshTrackCommentPreview(); return; }
+        trackAutoComment = crossed; trackCommentPreviewTimer.Stop(); trackCommentPreviewTimer.Start(); RefreshTrackCommentPreview();
+    }
+
+    private void ResetTrackCommentPreview()
+    {
+        trackCommentPreviewTimer?.Stop(); previousTrackCommentPosition = null;
+        trackHoveredComment = trackFocusedComment = trackAutoComment = null;
+        trackWaveCommentPreview?.Reset();
     }
 
     private void OpenSoundCloudPage(string? value)

@@ -252,6 +252,9 @@ is untouched; that flag refreshes only vectors, never listening rewards or likes
 Console output contains public track identity and scores, no session/stream tokens.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
+centred player metadata and animated title/artist links, artist navigation and
+idempotent title clicks, comment skeletons and avatar fades, waveform preview
+appearance/resizing/dismissal, timed comment cues with dense-comment skipping and hover priority,
 responsive reference hero, stable single-line title/artist/metadata geometry across
 repeated narrow/wide resizes with long text, metadata/artwork/waveform, threaded comments and replies,
 sidebar fans and 2x2 playlist previews, shared library profile/playlist cards and
@@ -260,12 +263,14 @@ continuous resize in both directions, nonpersistent action focus, track subsecti
 (reposts/albums/playlists/related), infinite loading and deduplicated pagination,
 back/forward restoration, cancellation and stale replies, and the shared player's
 queue and seek. Description checks cover wrapped links, hover and click, drag
-selection without navigation, Unicode copying and read-only editing, smooth link
+selection without navigation, Unicode copying and noneditable text, smooth link
 colour transitions, circular favicon/fallback rendering, PNG/ICO decoding and favicon
 memory/disk caching. Telegram shorthand checks cover TG/TGK/ТГ/ТГК labels,
 click/hover, source-text copying and exclusion of nested or invalid matches. Description
 replacement during hover checks Unicode boundaries with emoji, combining marks,
-CRLF and empty text. On Linux it
+CRLF and empty text. Focused descriptions are pixel-checked for an absent insertion
+caret across a blink interval; descriptions share message-body selection and
+are TextBlock controls without an editor or text input client. On Linux it
 clicks the hero and list copy buttons, resolves a missing
 permalink and reads the new URL from a separate process using a private X selection;
 the user's clipboard is untouched. The writer and search inputs also work with

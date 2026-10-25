@@ -170,12 +170,17 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
-        Window.Deactivated += () => { CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); };
+        Window.Deactivated += () => { CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
         chatTimer.Start();
-        Window.Activated += () => { chatNextPoll = default; if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync); };
+        Window.Activated += () =>
+        {
+            chatNextPoll = default;
+            trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
+            if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync);
+        };
         Window.WindowStateChanged += state =>
         {
-            if (state == WindowState.Minimized) progressAnimation.Stop();
+            if (state == WindowState.Minimized) { progressAnimation.Stop(); ResetTrackCommentPreview(); }
             RefreshWaveMotion();
             if (Window.Content is UIElement content) content.InvalidateVisual();
         };
@@ -746,6 +751,7 @@ internal sealed partial class MainWindow : IDisposable
         ResetExpandedPlayer();
         DisposeFeed();
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
+        ResetTrackCommentPreview(); trackCommentPreviewTimer.Dispose(); trackCommentsLoadingView.Dispose();
         if (userHeaderGlass != null) { userHeader.BackgroundChanged -= userHeaderGlass.Invalidate; userHeaderGlass.Dispose(); }
         foreach (var row in likedRows.Values) row.TrackArtGlass.Dispose();
         trackDescriptionLinks.Dispose(); userDescriptionLinks.Dispose(); userBioLinks.Dispose();

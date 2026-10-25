@@ -209,6 +209,23 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync();
             if (ChatEmojiArtwork.TextureCount is < 1 or > 192)
                 throw new InvalidOperationException("Inline Apple emoji were not rendered or exceeded the GPU texture bound.");
+            var messageBody = ChatRows.First(r => r.Body.Text == unicode).Body;
+            var copyMessage = messageBody.CopyText;
+            try
+            {
+                string? copiedMessage = null;
+                messageBody.CopyText = value => copiedMessage = value;
+                messageBody.Focus();
+                RouteSelectableTextKey(Key.A, ModifierKeys.Control);
+                RouteSelectableTextKey(Key.C, ModifierKeys.Control);
+                if (messageBody.SelectedText != unicode || copiedMessage != unicode)
+                    throw new InvalidOperationException("Shared message selection or Unicode keyboard copying regressed.");
+                RouteSelectableTextKey(Key.End);
+                RouteSelectableTextKey(Key.Left, ModifierKeys.Shift);
+                if (messageBody.SelectedText != "語")
+                    throw new InvalidOperationException("Message keyboard selection no longer follows text elements.");
+            }
+            finally { messageBody.CopyText = copyMessage; }
             chatInput.SelectAll();
             if (chatInput.SelectedText != unicode) throw new InvalidOperationException("Emoji presentation changed the selected Unicode text.");
             CaptureUiPreview("chat-apple-emoji-inline");

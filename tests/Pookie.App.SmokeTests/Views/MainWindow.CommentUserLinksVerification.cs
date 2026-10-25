@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
                 void CheckFrames()
                 {
                     if (frames.Count(color => color != resting && color != hovered) < 3 || frames.Contains(Color.Black))
-                        throw new InvalidOperationException("Comment author colour did not animate smoothly between its theme and hover colours.");
+                        throw new InvalidOperationException($"Comment author colour did not animate smoothly: normal={resting}, hover={hovered}, frames={string.Join(',', frames)}.");
                 }
             }
             Console.WriteLine("COMMENT_USER_LINKS_OK: themed comment/reply names, hover/leave colour frames and interrupted transitions restore the original colour");

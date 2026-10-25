@@ -120,7 +120,7 @@ internal sealed partial class MainWindow
         if (entry.Pending || entry.Snapshot == null)
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
-            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection);
+            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection, reload: true);
             else if (entry.Route.Page == Page.UserProfile && entry.Route.Item?.User is { } profileUser) await OpenUserProfileAsync(profileUser, entry.Route.UserSection);
             else if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
             else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }

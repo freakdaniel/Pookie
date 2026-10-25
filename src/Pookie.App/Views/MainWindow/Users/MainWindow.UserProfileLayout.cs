@@ -21,7 +21,7 @@ internal sealed partial class MainWindow
     private ItemsControl userTrackList = null!, userCardGrid = null!;
     private ScrollViewer userOverviewScroll = null!, userAboutScroll = null!;
     private StackPanel userOverviewBody = null!, userAboutLinks = null!, userSidebarLinks = null!;
-    private MultiLineTextBox userDescription = null!;
+    private DescriptionTextBlock userDescription = null!;
     private DescriptionLinks userDescriptionLinks = null!;
     private LibraryLoadingView userOverviewLoading = null!, userSectionLoading = null!;
     private LibraryLoadingView userLikesLoading = null!, userFollowersLoading = null!, userFollowingLoading = null!, userCommentsLoading = null!;
@@ -106,8 +106,7 @@ internal sealed partial class MainWindow
         userOverviewLoading.Skeleton.Preview = false;
         var activity = new StackPanel().Vertical().Spacing(36).Children(
             new TextBlock().Text("Последняя активность").FontSize(21).Bold(), userOverviewLoading.Root);
-        var biography = new MultiLineTextBox { IsReadOnly = true, Wrap = true, SizeToDocument = true }
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(13).Foreground(Muted).MaxHeight(180);
+        var biography = new DescriptionTextBlock { FontSize = 13, Foreground = Muted, MaxHeight = 180 };
         userBioLinks = new(biography, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError("Не удалось открыть ссылку")))
         { LoadIcon = demo ? null : (uri, token) => (descriptionFavicons ??= new(imageDiskCache)).LoadAsync(uri, token) };
         userSidebarBiography = biography;
@@ -137,8 +136,7 @@ internal sealed partial class MainWindow
             userLikesSection, userFollowersSection, userFollowingSection, userCommentsSection);
         userOverview = new TrackPageColumns(activity, sidebar).Initialize();
         userOverviewScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Margin(-12, 0, -12, 0).Content(userOverview);
-        userDescription = new MultiLineTextBox { IsReadOnly = true, Wrap = true, SizeToDocument = true }
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(14).FontWeight(FontWeight.Normal).Foreground(Muted);
+        userDescription = new DescriptionTextBlock { FontSize = 14, FontWeight = FontWeight.Normal, Foreground = Muted };
         userDescriptionLinks = new(userDescription, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError("Не удалось открыть ссылку")))
         { LoadIcon = demo ? null : (uri, token) => (descriptionFavicons ??= new(imageDiskCache)).LoadAsync(uri, token) };
         userAboutDetails = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
@@ -151,7 +149,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*").Rows("*").Children(userOverviewScroll, userAboutScroll, userSectionLoading.Root, userEmpty.Top()));
     }
 
-    private MultiLineTextBox userSidebarBiography = null!;
+    private DescriptionTextBlock userSidebarBiography = null!;
     private FrameworkElement UserSidebarSection(string title, FrameworkElement content, UserSection section) =>
         new StackPanel().Vertical().Spacing(12).Children(SectionHeader(title, () => Run(() => OpenUserSectionAsync(section))), content);
 

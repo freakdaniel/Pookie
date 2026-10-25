@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Aprillz.MewUI;
+using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 
@@ -16,13 +17,24 @@ internal sealed class CommentMarkerLayer : Grid
     private nint contextIdentity;
     private bool dirty = true;
     private long interaction;
+    private readonly AnimationClock entrance = new(TimeSpan.FromMilliseconds(280), Easing.CubicBezier(.2, 0, 0, 1));
+    private double reveal;
+    internal double Reveal => reveal;
+
+    internal void RevealMarkers()
+    {
+        if (reveal > 0 || entrance.IsRunning) return;
+        entrance.TickCallback = t => { reveal = t; InvalidateVisual(); };
+        entrance.Start();
+    }
+    internal void ResetReveal() { entrance.Stop(); reveal = 0; InvalidateVisual(); }
 
     internal void RefreshSnapshot() { dirty = true; InvalidateVisual(); }
     internal void Interact() { interaction = Stopwatch.GetTimestamp(); InvalidateVisual(); }
 
     protected override UIElement? OnHitTest(Point point)
     {
-        if (!IsVisible || !IsHitTestVisible || !IsEffectivelyEnabled || !Bounds.Contains(point)) return null;
+        if (reveal < .1 || !IsVisible || !IsHitTestVisible || !IsEffectivelyEnabled || !Bounds.Contains(point)) return null;
         for (var i = Children.Count - 1; i >= 0; i--)
             if (Children[i] is UIElement child && child.HitTest(point) is { } hit) return hit;
         // Empty parts of the avatar layer belong to the waveform underneath.
@@ -30,6 +42,14 @@ internal sealed class CommentMarkerLayer : Grid
     }
 
     protected override void RenderSubtree(IGraphicsContext context)
+    {
+        if (reveal <= 0) return;
+        context.Save();
+        try { context.GlobalAlpha *= (float)reveal; RenderMarkers(context); }
+        finally { context.Restore(); }
+    }
+
+    private void RenderMarkers(IGraphicsContext context)
     {
         if (Children.Count == 0 || Bounds.Width <= 0 || Bounds.Height <= 0) return;
         if (IsMouseOver || IsFocusWithin || Stopwatch.GetElapsedTime(interaction).TotalMilliseconds < 350)
@@ -70,6 +90,6 @@ internal sealed class CommentMarkerLayer : Grid
     }
 
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
-    { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) ClearRaster(); }
-    protected override void OnDispose() { ClearRaster(); base.OnDispose(); }
+    { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) { ResetReveal(); ClearRaster(); } }
+    protected override void OnDispose() { entrance.Stop(); ClearRaster(); base.OnDispose(); }
 }

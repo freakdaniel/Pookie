@@ -64,6 +64,7 @@ internal sealed class LibrarySkeleton : Control
     public bool ArtworkOnly { get; set; }
     public bool AvatarStrip { get; set; }
     public bool TextOnly { get; set; }
+    public bool CommentRows { get; set; }
     private LoadingRowStyle? loadingRowStyle;
     private double artworkSize = 176;
     private int columns = 6;
@@ -134,6 +135,17 @@ internal sealed class LibrarySkeleton : Control
         if (AvatarStrip)
         {
             for (var xOffset = 0d; xOffset + 38 <= bounds.Width; xOffset += 42) Block(xOffset, 2, 38, 38, 19);
+            return;
+        }
+        if (CommentRows)
+        {
+            for (var y = 0d; y + 44 <= bounds.Height; y += 90)
+            {
+                Block(0, y, 44, 44, 22);
+                Block(60, y + 3, Math.Min(140, bounds.Width * .25), 12);
+                Block(60, y + 27, Math.Max(0, bounds.Width - 80), 10);
+                Block(60, y + 47, Math.Max(0, bounds.Width * .55 - 60), 10);
+            }
             return;
         }
         if (TextOnly)
