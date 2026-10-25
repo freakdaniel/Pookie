@@ -73,7 +73,6 @@ internal sealed class ChatReactionStrip : Panel
             slot.Avatars.Width = value.Authors.Length > 1 ? 32 : 18;
             ((UIElement)slot.Avatars.Children[1]).IsVisible = value.Authors.Length > 1;
             ((MaterialTrackButton)slot.Button).Palette(value.Own ? Color.FromRgb(58, 111, 151) : Color.FromArgb(42, 145, 169, 189), TrackButtons.OnSurface);
-            slot.Button.ToolTip = new TextBlock().Text(value.Own ? "Твоя реакция · нажми, чтобы убрать" : "Нажми, чтобы отреагировать");
         }
         if (!changed && sameMessage) return;
         motion.Stop(); showing = values.Count > 0; IsHitTestVisible = showing;

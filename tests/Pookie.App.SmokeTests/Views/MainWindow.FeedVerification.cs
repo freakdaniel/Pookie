@@ -42,12 +42,20 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync(); CaptureUiPreview("feed-wide");
             if (first.Cover.ActualWidth != TrackRowLayout.CoverSize || first.Root.ActualHeight != TrackRowLayout.Height || first.TrackArt.Source != art)
                 throw new InvalidOperationException("Feed did not reuse the shared artwork/waveform geometry or custom track art.");
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) > 800);
             shellScroll.SetScrollOffsets(0, 800);
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && feedViews.Values.Any(view => view.Entry.Item.Playlist != null && view.Preview.Count == 3));
+            await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset > 799 && shellPageScroll.IsReady && feedViews.Values.Any(view => view.Entry.Item.Playlist != null && view.Preview.Count == 3));
             var playlistView = feedViews.Values.First(view => view.Entry.Item.Playlist != null);
             if (playlistView.Preview.Any(row => row.Root.Height != 24) || playlistView.Covers[0].ActualHeight != TrackRowLayout.CoverSize)
                 throw new InvalidOperationException("Playlist preview did not fit the shared 184px publication geometry.");
-            await WaitForLoginFrameAsync(); CaptureUiPreview("feed-playlist");
+            await WaitForLoginFrameAsync();
+            var pinnedTop = shellScroll.Bounds.Y + ShellChromeGlass.HeaderHeight + 16;
+            try { await WaitForLikedLayoutAsync(() => Math.Abs(feedSidebar.Bounds.Y - pinnedTop) <= 1); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"Feed sidebar did not pin below the chrome: side={feedSidebar.Bounds}, headerBottom={pinnedTop}, columns={feedColumns.Bounds}, shell={shellPageScroll.Bounds}, content={contentFrame.Bounds}, inner={PageContentScroll()?.Bounds}, scroll={shellScroll.VerticalOffset}/{SmoothScroll.Maximum(shellScroll)}.", error);
+            }
+            CaptureUiPreview("feed-playlist");
             shellScroll.SetScrollOffsets(0, 0);
             SetFeedReposts(false);
             await WaitForLikedLayoutAsync(() => feedViews.Count > 0 && feedViews.Values.All(view => !view.Entry.IsRepost));

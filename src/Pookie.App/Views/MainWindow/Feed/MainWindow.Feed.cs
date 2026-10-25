@@ -44,7 +44,7 @@ internal sealed partial class MainWindow
             SectionTab("Без репостов", feedReposts, false, () => SetFeedReposts(false)));
         var main = new Grid().Columns("*").Rows("*").Children(feedList, feedSkeleton.Top(),
             new StackPanel().Vertical().Spacing(16).Top().Children(feedEmpty, feedMore));
-        feedColumns = new FeedColumns(main, feedSidebar).Initialize();
+        feedColumns = new FeedColumns(main, feedSidebar, () => shellScroll.Bounds.Y + ShellChromeGlass.HeaderHeight + 16).Initialize();
         return new DockPanel().LastChildFill().Spacing(24).Children(feedFilters.DockTop(),
             new StackPanel().Vertical().Spacing(10).Children(feedNotice, feedRetry).DockTop(), feedColumns);
     }

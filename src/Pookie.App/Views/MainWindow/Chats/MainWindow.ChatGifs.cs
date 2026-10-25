@@ -25,7 +25,8 @@ internal sealed partial class MainWindow
     private ChatEmojiResultsFade chatEmojiResultsFade = null!;
     private FrameworkElement chatGifBody = null!, chatEmojiBody = null!;
     private StackPanel chatEmojiCategories = null!;
-    private ChatTabs chatEmojiModes = null!;
+    private ChatEmojiModeBar chatEmojiModes = null!;
+    private Button chatGifRetry = null!;
     private DispatcherTimer chatEmojiSearchTimer = null!;
     private bool chatEmojiLoading, chatEmojiUpdating, chatEmojiGifMode;
     private string? chatEmojiGroup;
@@ -43,36 +44,35 @@ internal sealed partial class MainWindow
         chatGifSearch.OnTextChanged(_ =>
         {
             if (chatEmojiUpdating) return;
+            UpdateChatEmojiSearchMode();
             chatEmojiSearchTimer.Stop(); chatEmojiSearchTimer.Start();
         });
-        chatGifSearch.GotFocus += () => chatEmojiLayout.SearchMode(true);
         chatGifSearch.OnKeyDown(e => { if (e.Key == Key.Enter && chatEmojiGifMode) { e.Handled = true; Run(SearchChatGifsAsync); } });
         chatEmojiSearchTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(220));
         chatEmojiSearchTimer.Tick += () => { chatEmojiSearchTimer.Stop(); if (chatEmojiGifMode) Run(SearchChatGifsAsync); else RefreshChatEmojiResults(); };
-        chatGifStatus = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(12, 8);
+        chatGifStatus = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxWidth(280).CenterHorizontal();
+        chatGifRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), () => Run(SearchChatGifsAsync), TrackButtons.Text, 32).CenterHorizontal().IsVisible(false);
         chatGifResults = new TrackCollectionGrid(3, 94, 3);
         chatGifScroll = new ScrollViewer().Content(chatGifResults).Background(Color.Transparent).BorderThickness(0).Padding(6, 0, 6, 6);
         chatGifScroll.ScrollChanged += QueueVisibleChatGifPreviews;
-        chatGifBody = new DockPanel().LastChildFill().Children(chatGifStatus.DockTop(), chatGifScroll);
+        chatGifBody = new Grid().Columns("*").Rows("*").Children(chatGifScroll,
+            new StackPanel().Vertical().Spacing(8).Center().Children(chatGifStatus, chatGifRetry));
         chatEmojiResults = new ItemsControl().Items(Array.Empty<EmojiRow>(), r => r.Key).ItemHeight(40).VariableHeightPresenter()
             .Background(Color.Transparent).BorderThickness(0).Padding(8, 0).ItemPadding(new Thickness(0));
         chatEmojiResults.ItemTemplate = ChatEmojiRowTemplate();
         chatEmojiBody = chatEmojiResultsFade = new ChatEmojiResultsFade(chatEmojiResults).Initialize();
         chatEmojiTransition = new ChatPanelTransition(); chatEmojiTransition.Show(chatEmojiBody);
         chatEmojiCategories = new StackPanel().Horizontal().Spacing(0);
-        void Category(string? group, string title, string icon)
+        void Category(string? group, string icon)
         {
-            var button = TrackButtons.Icon(Icons.View(icon, 19, Muted), () => SelectChatEmojiCategory(group), TrackButtons.Text, 34).Width(34).Padding(6, 0).ToolTip(title);
+            var button = TrackButtons.Icon(Icons.View(icon, 19, Muted), () => SelectChatEmojiCategory(group), TrackButtons.Text, 34).Width(34).Padding(6, 0);
             chatEmojiCategoryButtons.Add((button, group)); chatEmojiCategories.Add(button);
         }
-        Category(null, "Недавние и все эмодзи", "clock");
-        foreach (var group in ChatEmojiCatalog.Groups) Category(group.Group, group.Title, group.Icon);
+        Category(null, "clock");
+        foreach (var group in ChatEmojiCatalog.Groups) Category(group.Group, group.Icon);
         var categories = new ScrollViewer().HorizontalScroll(ScrollMode.Auto).VerticalScroll(ScrollMode.Disabled).Content(chatEmojiCategories).Padding(0).BorderThickness(0).Background(Color.Transparent);
-        chatEmojiModes = new ChatTabs();
-        chatEmojiModes.AddTab("Эмодзи", () => SetChatEmojiMode(false));
-        chatEmojiModes.AddTab("GIF", () => SetChatEmojiMode(true));
-        var modes = new Border().Background(Color.Transparent).BorderThickness(0).Padding(8, 0).Child(chatEmojiModes.CenterHorizontal());
-        chatEmojiLayout = new ChatEmojiPanelLayout(categories, MaterialSearchField.Create(chatGifSearch), chatEmojiTransition, modes).Initialize();
+        chatEmojiModes = new ChatEmojiModeBar(SetChatEmojiMode);
+        chatEmojiLayout = new ChatEmojiPanelLayout(categories, MaterialSearchField.Create(chatGifSearch), chatEmojiTransition, chatEmojiModes).Initialize();
         chatEmojiCard = new GlassCard(Surface) { HoverEnabled = false, Focusable = true }.Background(ChatGlassSurface).CornerRadius(20).Padding(0).Child(chatEmojiLayout);
         chatEmojiPopup = new ChatPopupLayer(chatEmojiCard, () => chatEmojiAnchor ?? chatGif.Bounds, () => chatColumns.Bounds).Initialize();
         chatEmojiPopup.Closed = () => { chatEmojiTarget = null; chatEmojiAnchor = null; ClearChatGifResults(); };
@@ -104,7 +104,6 @@ internal sealed partial class MainWindow
             var button = context.Get<Button>("button" + i); var emoji = row.Values.ElementAtOrDefault(i);
             button.IsVisible = emoji != null; chatEmojiSlots.GetValue(button, _ => new()).Value = emoji?.Value;
             context.Get<Image>("image" + i).Source = emoji == null ? null : ChatEmojiArtwork.Source(emoji.Value);
-            button.ToolTip = emoji == null ? null : new TextBlock().Text(emoji.Name);
         }
     }, (_, _, _, context) => { for (var i = 0; i < 8; i++) context.Get<Image>("image" + i).Source = null; });
 
@@ -132,24 +131,26 @@ internal sealed partial class MainWindow
     {
         if (gif && (!chatEmojiPopup.IsOpen || !preferences.KlipyEnabled || chatEmojiTarget != null)) return;
         var changed = chatEmojiGifMode != gif; chatEmojiGifMode = gif;
-        chatEmojiModes.Select(gif ? 1 : 0);
-        chatEmojiModes.SetTabVisible(1, preferences.KlipyEnabled && chatEmojiTarget == null);
+        chatEmojiModes.SetMode(gif, preferences.KlipyEnabled && chatEmojiTarget == null);
         chatGifsOpen.Value = gif && chatEmojiPopup.IsOpen;
         chatEmojiUpdating = true; if (changed) chatGifSearch.Text = ""; chatEmojiUpdating = false;
         chatGifSearch.Placeholder = gif ? "Поиск GIF" : "Поиск эмодзи";
         chatEmojiCategories.IsVisible = !gif;
+        UpdateChatEmojiSearchMode();
         chatEmojiTransition.Show(gif ? chatGifBody : chatEmojiBody, gif ? 1 : -1);
         if (gif)
         {
-            chatGifsOpen.Value = true; chatEmojiLayout.SearchMode(true);
+            chatGifsOpen.Value = true;
             chatGifStatus.IsVisible = !klipy.Available;
-            chatGifStatus.Text = klipy.Available ? "" : "Поиск GIF недоступен. Можно прикрепить свой GIF скрепкой.";
+            chatGifStatus.Text = klipy.Available ? "" : "GIF сейчас недоступны";
+            chatGifRetry.IsVisible = false;
             if (klipy.Available) Run(SearchChatGifsAsync);
         }
         else { ClearChatGifResults(); if (!chatEmojiLoading) RefreshChatEmojiResults(); }
     }
+    private void UpdateChatEmojiSearchMode() => chatEmojiLayout.SearchMode(chatEmojiGifMode || chatGifSearch.Text.Trim().Length > 0);
     private void SelectChatEmojiCategory(string? group)
-    { chatEmojiGroup = group; chatEmojiUpdating = true; chatGifSearch.Text = ""; chatEmojiUpdating = false; chatEmojiLayout.SearchMode(false); RefreshChatEmojiResults(); chatEmojiCard.Focus(); }
+    { chatEmojiGroup = group; chatEmojiUpdating = true; chatGifSearch.Text = ""; chatEmojiUpdating = false; UpdateChatEmojiSearchMode(); RefreshChatEmojiResults(); chatEmojiCard.Focus(); }
     private void RefreshChatEmojiResults()
     {
         if (chatEmojiLoading || chatEmojiGifMode) return;
@@ -194,13 +195,13 @@ internal sealed partial class MainWindow
         chatEmojiResultsFade?.Stop();
         chatGifLoading?.Cancel(); chatGifLoading?.Dispose(); chatGifLoading = null;
         chatGifPreviewQueue.Clear(); chatEmojiPopup?.Close();
-        if (chatGifResults != null) StopChatAnimations(chatGifResults);
+        if (chatGifResults != null) { StopChatAnimations(chatGifResults); StopChatGifSkeletons(); }
     }
     private void ClearChatGifResults()
     {
         chatGifsOpen.Value = false; chatGifLoading?.Cancel(); chatGifLoading?.Dispose(); chatGifLoading = null;
         chatGifPreviewQueue.Clear();
-        if (chatGifResults != null) { StopChatAnimations(chatGifResults); chatGifResults.Clear(); }
+        if (chatGifResults != null) { StopChatAnimations(chatGifResults); StopChatGifSkeletons(); chatGifResults.Clear(); }
     }
     private readonly List<(Button Button, Image Image, KlipyGif Gif, long Generation)> chatGifPreviewQueue = [];
     private async Task SearchChatGifsAsync()
@@ -209,12 +210,20 @@ internal sealed partial class MainWindow
         ClearChatGifResults(); chatGifsOpen.Value = true;
         chatGifLoading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = chatGifLoading.Token; var generation = ++chatGifGeneration; var recipient = chatRecipient.Id; var account = me?.Id;
-        chatGifStatus.Text = "Ищем GIF…"; chatGifStatus.IsVisible = true;
+        chatGifStatus.IsVisible = chatGifRetry.IsVisible = false;
+        // Reserve the real grid while metadata is in flight; no status row pushes
+        // the results down or flashes between the search field and the artwork.
+        for (var index = 0; index < 9; index++)
+        {
+            var skeleton = new ChatMediaSkeleton(() => chatGifsOpen.Value && Window.IsActive).Height(104);
+            skeleton.SetActive(true); chatGifResults.Add(skeleton);
+        }
         try
         {
             var gifs = await klipy.SearchAsync(chatGifSearch.Text, token);
             if (!preferences.KlipyEnabled || !chatEmojiPopup.IsOpen || disposed || token.IsCancellationRequested || generation != chatGifGeneration || chatRecipient?.Id != recipient || me?.Id != account) return;
-            chatGifStatus.Text = gifs.Length == 0 ? "Ничего не найдено" : ""; chatGifStatus.IsVisible = gifs.Length == 0;
+            StopChatGifSkeletons(); chatGifResults.Clear();
+            chatGifStatus.Text = gifs.Length == 0 ? "GIF не найдены" : ""; chatGifStatus.IsVisible = gifs.Length == 0;
             foreach (var gif in gifs)
             {
                 var image = new Image { Opacity = 0 }.Height(104).StretchMode(Stretch.UniformToFill);
@@ -230,8 +239,17 @@ internal sealed partial class MainWindow
             chatGifResults.InvalidateMeasure();
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { if (!disposed && generation == chatGifGeneration) { chatGifStatus.IsVisible = true; chatGifStatus.Text = "Не удалось загрузить GIF. Нажми Enter, чтобы повторить."; } }
+        catch (Exception)
+        {
+            if (!disposed && generation == chatGifGeneration && !token.IsCancellationRequested)
+            {
+                StopChatGifSkeletons(); chatGifResults.Clear();
+                chatGifStatus.IsVisible = chatGifRetry.IsVisible = true; chatGifStatus.Text = "Не удалось загрузить GIF";
+            }
+        }
     }
+    private void StopChatGifSkeletons() => VisualTree.Visit(chatGifResults,
+        element => { if (element is ChatMediaSkeleton skeleton) skeleton.SetActive(false); });
     private void QueueVisibleChatGifPreviews()
     {
         if (!chatGifsOpen.Value || chatGifLoading == null || !chatEmojiPopup.IsOpen) return;

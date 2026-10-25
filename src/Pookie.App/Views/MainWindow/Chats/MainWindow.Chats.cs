@@ -125,7 +125,7 @@ internal sealed partial class MainWindow
         InitializeChatMusicEditor();
         chatEmojiEditor = new(chatInput);
         chatAttach = TrackButtons.Icon(Icons.View("paperclip", 22), () => Run(() => PickChatFilesAsync()), TrackButtons.Text, 40);
-        chatGif = TrackButtons.Icon(Icons.View("smiley", 23), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40).ToolTip("Эмодзи и GIF");
+        chatGif = TrackButtons.Icon(Icons.View("smiley", 23), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40);
         chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");
         chatSend.Content = chatSendGlyph;
         chatAttachmentLabel = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);

@@ -13,13 +13,6 @@ SPDX-License-Identifier = "LicenseRef-Apple-Color-Emoji"
 SPDX-FileComment = "Apple Color Emoji artwork rasterized at 72px from samuelngs/apple-emoji-ttf release macos-26-20260722-484daf4e. Composite sequences shaped with HarfBuzz; CBDT glyphs composited at 96px, resized with Lanczos and centered on transparent 72px canvases. The converter's MIT license does not cover Apple's artwork. Exact source checksum, provenance and upstream licensing statement: licenses/LicenseRef-Apple-Color-Emoji.txt."
 
 [[annotations]]
-path = "src/Pookie.App/Assets/Emoji/catalog.json"
-precedence = "override"
-SPDX-FileCopyrightText = "1991-2026 Unicode, Inc."
-SPDX-License-Identifier = "Unicode-3.0"
-SPDX-FileComment = "Generated from Unicode Emoji 17.0 emoji-test.txt (https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt) and CLDR release-48 Russian annotations (https://github.com/unicode-org/cldr/tree/release-48/common/annotations). Empty asset fields mark the three standalone symbols absent from the Apple font; Unicode compatibility is retained. Complete data license: licenses/Unicode-3.0.txt."
-
-[[annotations]]
 path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
   "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**", "tools/**",
@@ -30,6 +23,14 @@ precedence = "closest"
 SPDX-FileCopyrightText = ["2023 Richard Habitzreuter", "2026 Daniel Freak"]
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie is distributed under BSD-3-Clause; the original MIT attribution and permission notice are retained in licenses/MIT.txt."
+
+# REUSE applies matching annotations in order; keep this after the JSON defaults.
+[[annotations]]
+path = "src/Pookie.App/Assets/Emoji/catalog.json"
+precedence = "override"
+SPDX-FileCopyrightText = "1991-2026 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-3.0"
+SPDX-FileComment = "Generated from Unicode Emoji 17.0 emoji-test.txt (https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt) and CLDR release-48 Russian annotations (https://github.com/unicode-org/cldr/tree/release-48/common/annotations). Empty asset fields mark the three standalone symbols absent from the Apple font; Unicode compatibility is retained. Complete data license: licenses/Unicode-3.0.txt."
 
 [[annotations]]
 path = "src/Pookie.App/Browser/Filtering/blacklist.json"
@@ -70,7 +71,7 @@ Embedded SVGs from https://github.com/phosphor-icons/core at commit
 Most icons are upstream duotone assets, including squares-four, list-bullets, copy,
 chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
 Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
-clock-counter-clockwise, thumbs-down, paperclip, list and trash use assets/regular/ variants;
+clock-counter-clockwise, thumbs-down, paperclip, list, trash and gif use assets/regular/ variants;
 the filled dislike variant is assets/fill/thumbs-down-fill.svg.
 Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
 Profile badges also use upstream fill assets seal-fill.svg and crown-simple-fill.svg.

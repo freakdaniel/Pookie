@@ -13,8 +13,8 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? chatAttachmentPreviewLoad;
     private async Task PickChatFilesAsync(bool documents = false, bool mediaOnly = false)
     {
-        if (chatSending || chatRecipient == null || chatFilePickerOpen) return;
-        var recipient = chatRecipient.Id; var account = me?.Id; var generation = chatAttachmentGeneration;
+        if (chatRecipient is not { } target || !CanAttachChat() || chatFilePickerOpen) return;
+        var recipient = target.Id; var account = me?.Id; var generation = chatAttachmentGeneration;
         CloseChatAttachMenu(true); chatFilePickerOpen = true;
         string[]? files;
         try { files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = mediaOnly ? "Фото или видео" : "Прикрепить файлы", Multiselect = true,

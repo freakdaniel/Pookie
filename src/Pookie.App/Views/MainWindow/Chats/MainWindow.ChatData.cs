@@ -577,7 +577,6 @@ internal sealed partial class MainWindow
         chatInput.IsEnabled = available && !pending && !recording && !chatVoiceBusy;
         chatAttach.IsEnabled = chatGif.IsEnabled = available && !pending && !chatImporting && !recording && !chatVoiceBusy;
         if (!chatGif.IsVisible) { chatGif.IsVisible = true; chatComposerLayout.InvalidateMeasure(); }
-        chatGif.ToolTip = new TextBlock().Text(preferences.KlipyEnabled ? "Эмодзи и GIF" : "Эмодзи");
         chatSend.ToolTip = new TextBlock().Text(preferences.ChatSendOnEnter ? "Отправить · Enter (Shift+Enter — новая строка)" : "Отправить · Ctrl+Enter");
         if(recording)chatSend.ToolTip=new TextBlock().Text("Завершить запись");
         else if(empty)chatSend.ToolTip=new TextBlock().Text("Записать голосовое · до 5 минут");

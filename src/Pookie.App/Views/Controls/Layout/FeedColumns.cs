@@ -3,7 +3,7 @@ using Aprillz.MewUI.Controls;
 
 namespace Pookie.App;
 
-internal sealed class FeedColumns(FrameworkElement main, FrameworkElement side) : Panel
+internal sealed class FeedColumns(FrameworkElement main, FrameworkElement side, Func<double> stickyTop) : Panel
 {
     private double sidebar;
     internal FeedColumns Initialize() { Add(main); Add(side); return this; }
@@ -18,7 +18,11 @@ internal sealed class FeedColumns(FrameworkElement main, FrameworkElement side) 
     protected override Size ArrangeOverride(Size finalSize)
     {
         main.Arrange(new Rect(Bounds.X, Bounds.Y, Math.Max(0, finalSize.Width - (sidebar > 0 ? sidebar + 32 : 0)), finalSize.Height));
-        if (sidebar > 0) side.Arrange(new Rect(Bounds.Right - sidebar, Bounds.Y, sidebar, finalSize.Height));
+        if (sidebar > 0)
+        {
+            var top = Math.Max(Bounds.Y, stickyTop());
+            side.Arrange(new Rect(Bounds.Right - sidebar, top, sidebar, Math.Max(0, Bounds.Bottom - top)));
+        }
         return finalSize;
     }
 }

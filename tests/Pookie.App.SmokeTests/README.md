@@ -41,9 +41,12 @@ Set `POOKIE_PROFILE_PROBE_PATH` to a dedicated temporary directory to run it whi
 the normal app is open; it creates a separate browser profile without copying cookies.
 
 `--chat-emoji-ui-smoke-test --no-audio` checks the anchored Emoji/GIF panel,
-native caret/selection/undo, Russian search and its header transition, virtualized
+native caret/selection/undo and atomic keyboard backspace, a centred two-mode icon
+footer with passive selection, clipboard probing without dimming the composer buttons, Russian search
+and its header transition (categories return after clearing, interrupted animation,
+and switching back from GIFs without reopening the panel), virtualized
 offline artwork and its bounded cache, GIF skeletons/previews with a local HTTP
-handler, animation cleanup, quick and expanded message reactions, 36-character
+handler (separate delayed metadata/thumbnail skeletons), animation cleanup, quick and expanded message reactions, 36-character
 transport references, reaction/timestamp geometry, narrow/wide windows, Escape,
 conversation changes, and 10,000 menu rebinds. It never sends real messages or
 opens the microphone. GIFs remain available through the existing KLIPY setting.
@@ -158,7 +161,8 @@ Use `POOKIE_UI_PREVIEW` for the cover controls and selected feedback screenshots
 `--feed-ui-smoke-test --no-audio` checks the feed with an isolated metadata
 fixture: virtualized track/playlist rows, event actors and dates, original/repost
 filtering, custom Track Art, nonzero counter layout, 184px publication geometry,
-responsive sidebar, shared hover-arrow history heading and cover alignment,
+responsive sidebar pinned below the shared chrome after scrolling, shared hover-arrow
+history heading and cover alignment,
 deduplicated pagination, filtered playback-queue pagination,
 history/scroll restoration, retained content on refresh failure and stale replies.
 Set `POOKIE_UI_PREVIEW` to capture wide/narrow layouts and playlist previews.

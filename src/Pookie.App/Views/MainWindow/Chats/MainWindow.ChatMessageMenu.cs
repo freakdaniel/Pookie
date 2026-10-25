@@ -21,9 +21,9 @@ internal sealed partial class MainWindow
         foreach (var emoji in ChatProtocol.Reactions)
         {
             var button = TrackButtons.Action(ChatEmojiArtwork.View(emoji, 26), () => ExecuteChatMenuReaction(emoji), TrackButtons.Text, 38).Width(38).Padding(5).CornerRadius(19);
-            button.ToolTip = new TextBlock().Text("Реакция " + emoji); quick.Add(button); chatQuickReactions.Add((button, emoji));
+            quick.Add(button); chatQuickReactions.Add((button, emoji));
         }
-        chatQuickMore = TrackButtons.Icon(Icons.View("caret-down", 20), () => Run(OpenChatMenuEmojiAsync), TrackButtons.Text, 38).Width(38).Padding(7).ToolTip("Все реакции"); quick.Add(chatQuickMore);
+        chatQuickMore = TrackButtons.Icon(Icons.View("caret-down", 20), () => Run(OpenChatMenuEmojiAsync), TrackButtons.Text, 38).Width(38).Padding(7); quick.Add(chatQuickMore);
         var reactionCard = new GlassCard(Surface) { HoverEnabled = false }.Background(ChatGlassSurface).CornerRadius(22).Padding(4, 3).Child(quick);
         chatMessageMenuBody = new StackPanel().Vertical().Spacing(0);
         void Action(string id, string icon, string label)

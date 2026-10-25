@@ -37,6 +37,9 @@ internal sealed partial class MainWindow
             if (chatEmojiPopup.SurfaceBounds.Width > 383 || chatEmojiPopup.SurfaceBounds.Height > 421 ||
                 chatEmojiPopup.HitTest(new Point(2, 2)) != null || chatEmojiCard.Background != chatComposer.Background)
                 throw new InvalidOperationException("Emoji panel lost its compact glass geometry or blocks the workspace.");
+            if (chatEmojiModes.Emoji.IsHitTestVisible || chatEmojiModes.Emoji.Focusable || chatEmojiModes.Children.Count != 2 ||
+                Math.Abs((chatEmojiModes.Emoji.Bounds.X + chatEmojiModes.Gif.Bounds.Right) / 2 - (chatEmojiModes.Bounds.X + chatEmojiModes.ActualWidth / 2)) > 1)
+                throw new InvalidOperationException("Emoji footer lost its centred icon modes or passive selection.");
             CaptureUiPreview("chat-emoji-panel");
             PickChatEmoji("👨‍👩‍👧‍👦");
             if (chatInput.Text != "До 👨‍👩‍👧‍👦после" || !chatInput.IsFocused || !chatEmojiPopup.IsOpen || transport.Sends != 0)
@@ -60,10 +63,30 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => chatEmojiSlots.Any(pair => pair.Value.Value == "❤️" && pair.Key.IsVisible));
             if (!searchFrames.Any(a => a is > .01 and < .99)) throw new InvalidOperationException("Emoji search snapped instead of sliding its header.");
             CaptureUiPreview("chat-emoji-search");
+            bool CategoriesShown() => chatEmojiLayout.SearchReveal < .001 && chatEmojiCategories.IsVisible &&
+                chatEmojiCategories.ActualHeight > 0 && chatEmojiLayout.Children[0] is FrameworkElement { Opacity: > .999, IsHitTestVisible: true };
+            searchFrames.Clear(); Window.FrameRendered += SearchSample;
+            chatGifSearch.Text = "";
+            await WaitForLikedLayoutAsync(CategoriesShown);
+            Window.FrameRendered -= SearchSample;
+            if (!chatGifSearch.IsFocused || !searchFrames.Any(a => a is > .01 and < .99))
+                throw new InvalidOperationException("Clearing emoji search did not smoothly restore interactive categories while retaining focus.");
+            chatEmojiCard.Focus(); chatGifSearch.Focus(); await WaitForLoginFrameAsync();
+            if (!CategoriesShown()) throw new InvalidOperationException("Focusing an empty emoji search hid its categories again.");
+            chatGifSearch.Text = "сердце";
+            await WaitForLikedLayoutAsync(() => chatEmojiLayout.SearchReveal is > .01 and < .99);
+            chatGifSearch.Text = "   ";
+            await WaitForLikedLayoutAsync(CategoriesShown);
+            chatGifSearch.Text = "";
+            CaptureUiPreview("chat-emoji-search-cleared");
             foreach (var group in ChatEmojiCatalog.Groups) { SelectChatEmojiCategory(group.Group); await WaitForLoginFrameAsync(); }
             if (ChatEmojiArtwork.CachedCount > 192) throw new InvalidOperationException("Emoji artwork cache exceeded its bound.");
             var gifTransport = new EmojiGifFixture(); klipy.Dispose(); klipy = new(gifTransport) { ApiKey = "local-fixture" };
             SetChatEmojiMode(true);
+            await WaitForLikedLayoutAsync(() => gifTransport.SearchStarted.Task.IsCompleted && chatGifResults.Children.OfType<ChatMediaSkeleton>().Count() == 9 && !chatEmojiTransition.Animating && chatEmojiLayout.SearchReveal > .999);
+            if (chatGifStatus.IsVisible || chatGifRetry.IsVisible || chatEmojiModes.Gif.IsHitTestVisible || chatEmojiModes.Children.Count != 2)
+                throw new InvalidOperationException("GIF metadata loading exposed a text placeholder or the wrong footer actions.");
+            CaptureUiPreview("chat-gif-query-skeletons"); gifTransport.SearchReady.SetResult();
             try { await WaitForLikedLayoutAsync(() => gifTransport.Active > 0 && chatGifResults.Children.Count == 12); }
             catch { throw new InvalidOperationException($"GIF opening failed: active={Window.IsActive}, open={chatEmojiPopup.IsOpen}, mode={chatEmojiGifMode}, gifs={chatGifsOpen.Value}, results={chatGifResults.Children.Count}, queued={chatGifPreviewQueue.Count}, activeRequests={gifTransport.Active}, focus={chatEmojiCard.IsFocusWithin}, attach={chatAttach.IsMouseOver}/{chatAttachMenu.IsOpen}, status={chatGifStatus.Text}."); }
             if (gifTransport.MaximumActive > 2) throw new InvalidOperationException("GIF preview loading exceeded its concurrency bound.");
@@ -71,6 +94,22 @@ internal sealed partial class MainWindow
             gifTransport.Ready.TrySetResult();
             await WaitForLikedLayoutAsync(() => chatGifResults.Children.OfType<Button>().Count(b => b.FindVisualChild<Image>() is Image { Source: not null, Opacity: > .99 }) >= 6);
             CaptureUiPreview("chat-gif-panel");
+            RouteWaveformClick(SettingsCenter(chatEmojiModes.Emoji));
+            await WaitForLikedLayoutAsync(() => CategoriesShown() && !chatEmojiTransition.Animating);
+            if (!chatEmojiPopup.IsOpen || chatEmojiGifMode || chatGifSearch.Text.Length != 0 || !chatEmojiResults.IsVisible)
+                throw new InvalidOperationException("Returning from GIFs did not restore the emoji category header in the open panel.");
+            CaptureUiPreview("chat-emoji-return-from-gifs");
+            RouteWaveformClick(SettingsCenter(chatEmojiModes.Gif));
+            await WaitForLikedLayoutAsync(() => chatEmojiGifMode && chatEmojiLayout.SearchReveal > .999 && !chatEmojiTransition.Animating &&
+                chatGifResults.Children.OfType<Button>().Count(b => b.FindVisualChild<Image>() is Image { Source: not null, Opacity: > .99 }) >= 6);
+            gifTransport.FailSearch = true; await SearchChatGifsAsync();
+            if (!chatGifRetry.IsVisible || !chatGifStatus.IsVisible || chatGifResults.Children.Count != 0)
+                throw new InvalidOperationException("GIF failure retained loading tiles or hid the retry action.");
+            gifTransport.FailSearch = false; gifTransport.EmptySearch = true; await SearchChatGifsAsync();
+            if (chatGifRetry.IsVisible || chatGifStatus.Text != "GIF не найдены")
+                throw new InvalidOperationException("Empty GIF search retained an error or loading state.");
+            gifTransport.EmptySearch = false; await SearchChatGifsAsync();
+            await WaitForLikedLayoutAsync(() => chatGifResults.Children.OfType<Button>().Count(b => b.FindVisualChild<Image>() is Image { Source: not null, Opacity: > .99 }) >= 6);
             var gifButton = chatGifResults.Children.OfType<Button>().First(); RouteWaveformClick(SettingsCenter(gifButton));
             await WaitForLikedLayoutAsync(() => !chatEmojiPopup.IsVisible && chatSelectedGif != null);
             if (transport.Sends != 0 || chatAnimations.Keys.Any(image => chatGifResults.IsAncestorOf(image)))
@@ -103,7 +142,7 @@ internal sealed partial class MainWindow
             CaptureUiPreview("chat-message-menu");
             await OpenChatMenuEmojiAsync();
             await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);
-            if (chatEmojiTarget?.Id != target.Id || chatEmojiModes.Children.OfType<Button>().Last().IsVisible)
+            if (chatEmojiTarget?.Id != target.Id || chatEmojiModes.Gif.IsVisible)
                 throw new InvalidOperationException("Extended reactions exposed GIFs or lost the target message.");
             var widths = new List<double>(); void SampleWidth() => widths.Add(row.Bubble.ActualWidth);
             Window.FrameRendered += SampleWidth;
@@ -184,6 +223,7 @@ internal sealed partial class MainWindow
             await SendChatAsync();
             if (!chatMessages.Any(m => m.SenderId == 42 && m.Body == unicode))
                 throw new InvalidOperationException("Inline Apple artwork changed the actual message body.");
+            await VerifyChatPastePresentationAsync();
             await VerifyGlobalEmojiTextAsync(transport);
             await VerifyGifRestorationAsync(transport, mediaFixture);
             Console.WriteLine("APPLE_EMOJI_INLINE_OK: same artwork in composer and messages; Unicode selection, whole-sequence backspace, undo and transport preserved; bounded GPU textures");
@@ -288,13 +328,18 @@ internal sealed partial class MainWindow
     private sealed class EmojiGifFixture : HttpMessageHandler
     {
         internal readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource SearchStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource SearchReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal int Active, MaximumActive, Downloads;
+        internal bool FailSearch, EmptySearch;
         private static readonly byte[] gif = Convert.FromBase64String("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACAAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCAABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7");
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.Host == "api.klipy.com")
             {
-                var items = Enumerable.Range(0, 12).Select(i => new { slug = "local-" + i, file = new { md = new { gif = new { url = "https://static.klipy.com/" + i + ".gif" } }, xs = new { gif = new { url = "https://static.klipy.com/preview-" + i + ".gif" } } } });
+                SearchStarted.TrySetResult(); await SearchReady.Task.WaitAsync(cancellationToken);
+                if (FailSearch) return new(System.Net.HttpStatusCode.ServiceUnavailable);
+                var items = Enumerable.Range(0, EmptySearch ? 0 : 12).Select(i => new { slug = "local-" + i, file = new { md = new { gif = new { url = "https://static.klipy.com/" + i + ".gif" } }, xs = new { gif = new { url = "https://static.klipy.com/preview-" + i + ".gif" } } } });
                 return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new { data = new { data = items } })) };
             }
             Interlocked.Increment(ref Downloads);

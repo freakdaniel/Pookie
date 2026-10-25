@@ -10,10 +10,10 @@ internal sealed partial class MainWindow
 {
     private readonly ChatAttachmentStaging chatAttachmentStaging = new();
     private ChatComposerSurface chatComposerSurface = null!;
-    private bool chatImporting;
+    private bool chatImporting, chatClipboardReading;
     private readonly HashSet<string> chatDocumentFiles = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private Func<CancellationToken, Task<ChatClipboardData?>> chatClipboardRead = token => ChatClipboard.ReadAsync(token);
-    private bool CanAttachChat() => !disposed && !chatImporting && chatInput.IsEnabled && !chatSending && chatRecipient != null && !chatPending.ContainsKey(chatRecipient.Id);
+    private bool CanAttachChat() => !disposed && !chatImporting && !chatClipboardReading && chatInput.IsEnabled && !chatSending && chatRecipient != null && !chatPending.ContainsKey(chatRecipient.Id);
     private void InitializeChatComposer()
     {
         Window.Deactivated += () =>
@@ -63,7 +63,9 @@ internal sealed partial class MainWindow
     {
         if (!CanAttachChat()) return;
         var account = me?.Id; var recipient = chatRecipient?.Id; var revision = chatRevision; var generation = chatAttachmentGeneration;
-        chatImporting = true; RefreshChatComposer();
+        // Probing a clipboard is not a file import. Keep the composer controls
+        // visually stable until actual files have been found.
+        chatClipboardReading = true;
         try
         {
             var data = await chatClipboardRead(ChatReadToken());
@@ -79,6 +81,7 @@ internal sealed partial class MainWindow
                     ReferenceEquals(Window.FocusManager.FocusedElement,focused) && chatInput.Text == before && chatInput.SelectionStart == start && chatInput.SelectionLength == length && text != null) chatMusicEditor?.PasteText(text);
                 return;
             }
+            chatImporting = true; RefreshChatComposer();
             var files = data.Files;
             if (data.Image != null) files = [chatAttachmentStaging.AddImage(data.Image, data.Extension)];
             await AddChatFilesCoreAsync(files, revision, generation);
@@ -86,7 +89,7 @@ internal sealed partial class MainWindow
         catch (OperationCanceledException) { }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         { if (!disposed && chatRecipient?.Id == recipient && revision == chatRevision) chatThreadStatus.Value = error.Message; }
-        finally { chatImporting = false; PruneChatStaging(); if (!disposed) RefreshChatComposer(); }
+        finally { chatClipboardReading = chatImporting = false; PruneChatStaging(); if (!disposed) RefreshChatComposer(); }
     }
     private async Task AddChatFilesAsync(string[] files, bool asDocuments = false)
     {

@@ -89,4 +89,39 @@ internal sealed partial class MainWindow
         chatInput.Text = draft;
         await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing);
     }
+    private async Task VerifyChatPastePresentationAsync()
+    {
+        var previousRead = chatClipboardRead; var previousClipboard = chatInput.ClipboardService;
+        var draft = chatInput.Text;
+        try
+        {
+            chatInput.Text = "До вставки "; chatInput.CaretPosition = chatInput.Text.Length; chatInput.Focus();
+            chatInput.ClipboardService = new MusicComposerClipboard("текст 👨‍👩‍👧‍👦");
+            var ready = new TaskCompletionSource<Platform.ChatClipboardData?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            chatClipboardRead = token => ready.Task.WaitAsync(token);
+            var disabled = false; var frames = 0;
+            void Sample()
+            {
+                frames++; disabled |= !chatAttach.IsEnabled || !chatGif.IsEnabled || !chatSend.IsEnabled ||
+                    !chatAttach.IsVisible || !chatGif.IsVisible || chatAttach.Opacity < .999 || chatGif.Opacity < .999;
+            }
+            Window.FrameRendered += Sample;
+            try
+            {
+                var pending = PasteChatAsync();
+                await WaitForLoginFrameAsync(); await WaitForLoginFrameAsync();
+                if (!chatClipboardReading || chatImporting || !chatAttach.IsEnabled || !chatGif.IsEnabled || !chatSend.IsEnabled)
+                    throw new InvalidOperationException("Clipboard probing dimmed composer buttons before finding any files.");
+                ready.SetResult(null); await pending; await WaitForLoginFrameAsync();
+                if (disabled || frames == 0 || chatInput.Text != "До вставки текст 👨‍👩‍👧‍👦")
+                    throw new InvalidOperationException("Text paste flashed composer controls or changed Unicode content.");
+                chatInput.Undo();
+                if (chatInput.Text != "До вставки ") throw new InvalidOperationException("Text paste bypassed native undo.");
+            }
+            finally { Window.FrameRendered -= Sample; ready.TrySetResult(null); }
+            Console.WriteLine("CHAT_PASTE_PRESENTATION_OK: delayed clipboard probe keeps all composer controls enabled and opaque; native Unicode paste and undo preserved");
+        }
+        finally { chatClipboardRead = previousRead; chatInput.ClipboardService = previousClipboard; chatInput.Text = draft; }
+    }
+
 }
