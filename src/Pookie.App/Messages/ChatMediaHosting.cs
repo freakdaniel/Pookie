@@ -30,17 +30,22 @@ internal sealed class ChatMediaHosting : IDisposable
         catch { CryptographicOperations.ZeroMemory(key); throw; }
         try
         {
-            try { return await UploadToAsync('p', encrypted, key, token); }
+            ChatMediaReference reference;
+            try { reference = await UploadToAsync('p', encrypted, key, token); }
             catch (Exception error) when (IsHostFailure(error, token))
             {
                 LogUploadFailure('p', error);
-                try { return await UploadToAsync('q', encrypted, key, token); }
+                try { reference = await UploadToAsync('q', encrypted, key, token); }
                 catch (Exception fallback) when (IsHostFailure(fallback, token))
                 {
                     LogUploadFailure('q', fallback);
                     throw new InvalidOperationException($"Не удалось загрузить вложение. {DescribeFailure('p', error)}; {DescribeFailure('q', fallback)}. Файл не отправлен в чат.");
                 }
             }
+            if (DiskCache is { } cache)
+                try { await cache.PutAsync(reference.Code, encrypted, token); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            return reference;
         }
         finally { CryptographicOperations.ZeroMemory(encrypted); CryptographicOperations.ZeroMemory(key); }
     }

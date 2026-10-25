@@ -2,6 +2,7 @@ MIT License
 
 Copyright (c) 2023 Richard Habitzreuter
 Copyright (c) 2026 Aprillz
+Copyright (c) Microsoft Corporation. All rights reserved.
 Copyright (c) 2023 Phosphor Icons
 Copyright (c) 2013 Panayiotis Lipiridis (flag-icons)
 Copyright (c) 2026 Abhinav Pandey (LibSMTC)

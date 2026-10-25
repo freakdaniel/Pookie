@@ -10,6 +10,9 @@ namespace Pookie.App;
 internal sealed class ChatMessageText : TextBlock
 {
     private readonly List<(int Start, ChatMusicInline Inline)> links = [];
+    private string? emojiText;
+    private (int Start, int Length, ChatEmojiInline Inline)[] emoji = [];
+    internal int EmojiCount { get { EnsureEmoji(); return emoji.Length; } }
     private ITextLayout? layout;
     private double layoutWidth = -1;
     private uint layoutDpi;
@@ -95,6 +98,7 @@ internal sealed class ChatMessageText : TextBlock
     protected override void OnTextChanged() { if(selecting&&IsMouseCaptured&&FindVisualRoot() is Window window)window.ReleaseMouseCapture(); selectionAnchor=selectionEnd=0;selecting=false;ClearMusic(); base.OnTextChanged(); }
     private ITextLayout Layout(double width)
     {
+        EnsureEmoji();
         var dpi = (uint)Math.Round(96 * (FindVisualRoot() is Window window ? window.DpiScale : 1));
         var style = new TextRunStyle(FontFamily, FontSize, FontWeight,FontStyle == FontStyle.Italic);
         if (layout != null && layoutWidth.Equals(width) && layoutDpi == dpi && layoutStyle == style) return layout;
@@ -103,14 +107,16 @@ internal sealed class ChatMessageText : TextBlock
         return layout = Application.Current.GraphicsFactory.TextEngine.CreateLayout(new TextLayoutRequest
         {
             Text = Text.AsMemory(), Dpi = dpi, DefaultStyle = style,
-            Inlines = links.Select(link => new InlineRun(link.Start, link.Inline.Link.Url.Length, link.Inline, true)).ToArray(),
+            Inlines = links.Select(link => new InlineRun(link.Start, link.Inline.Link.Url.Length, link.Inline, true))
+                .Concat(emoji.Where(span => !links.Any(link => span.Start < link.Start + link.Inline.Link.Url.Length && span.Start + span.Length > link.Start))
+                    .Select(span => new InlineRun(span.Start, span.Length, span.Inline, true))).OrderBy(span => span.Position).ToArray(),
             Paragraph = new() { MaxWidth = width, Wrapping = TextWrapping.Wrap, LineSpacing = LineSpacing,
                 Alignment = TextAlignment,LineBoxTrim = LineBoxTrim,Culture = System.Globalization.CultureInfo.CurrentUICulture }
         });
     }
     protected override Size MeasureContent(Size availableSize)
     {
-        if (links.Count == 0) return base.MeasureContent(availableSize);
+        if (links.Count == 0 && EmojiCount == 0) return base.MeasureContent(availableSize);
         var measured = Layout(availableSize.Width).MeasuredSize;
         return new(Math.Min(availableSize.Width, measured.Width + 1), measured.Height);
     }
@@ -122,7 +128,7 @@ internal sealed class ChatMessageText : TextBlock
             Layout(Bounds.Width).GetRangeBounds(Math.Min(selectionAnchor,selectionEnd),Math.Abs(selectionEnd-selectionAnchor),rectangles);
             foreach(var rect in rectangles)context.FillRectangle(new Rect(Bounds.X+rect.X,Bounds.Y+rect.Y,rect.Width,rect.Height),Color.FromArgb(100,100,175,230));
         }
-        if (links.Count == 0) { base.OnRender(context); return; }
+        if (links.Count == 0 && EmojiCount == 0) { base.OnRender(context); return; }
         context.Save();
         try
         {
@@ -132,4 +138,11 @@ internal sealed class ChatMessageText : TextBlock
         finally { context.Restore(); }
     }
     protected override void OnDispose() { ClearMusic(); base.OnDispose(); }
+    private void EnsureEmoji()
+    {
+        if (emojiText == Text) return;
+        emojiText = Text;
+        emoji = ChatEmojiCatalog.Spans(Text).Select(span => (span.Start, span.Length, new ChatEmojiInline(this, span.Value))).ToArray();
+        layout = null; layoutWidth = -1;
+    }
 }

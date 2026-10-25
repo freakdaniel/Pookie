@@ -11,7 +11,8 @@ internal sealed partial class MainWindow
         try
         {
             var transport = new ChatFixtureTransport();
-            chatMedia.Dispose(); chatMedia = new(new ChatFixtureMediaHandler());
+            var mediaFixture = new ChatFixtureMediaHandler();
+            chatMedia.Dispose(); chatMedia = new(mediaFixture);
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
             await ShowWorkspaceAsync(); Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
@@ -135,7 +136,7 @@ internal sealed partial class MainWindow
                 Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 760, minHeight: 600);
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && !chatColumns.Animating);
                 await OpenChatGifsAsync(); await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);
-                if (!chatColumns.Bounds.Contains(chatEmojiPopup.SurfaceBounds)) throw new InvalidOperationException("Emoji panel escaped a resized chat workspace.");
+                if (!chatColumns.Bounds.Contains(chatEmojiPopup.SurfaceBounds)) throw new InvalidOperationException($"Emoji panel escaped a resized chat workspace: requested={width}, window={Window.ClientSize}, workspace={chatColumns.Bounds}, popup={chatEmojiPopup.SurfaceBounds}.");
                 CloseChatGifs(); await WaitForLikedLayoutAsync(() => !chatEmojiPopup.IsVisible);
             }
             Window.WindowSize = WindowSize.Resizable(1000, 900, minWidth: 760, minHeight: 600);
@@ -158,11 +159,110 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatEmojiPopup.IsVisible);
             if (chatEmojiTarget != null || chatGifPreviewQueue.Count != 0) throw new InvalidOperationException("Switching conversation retained picker work or reaction context.");
             VerifyChatMenuOwnership();
+            await SelectChatAsync(transport.Other); chatTimer.Stop();
+            const string unicode = "Текст 😀 ❤ 👋🏽 👨‍👩‍👧‍👦 🇨🇦 1️⃣ 日本語";
+            transport.AddIncoming(unicode); await RefreshChatThreadAsync(); RequestChatBottom();
+            chatInput.Text = unicode;
+            await WaitForLikedLayoutAsync(() => chatEmojiEditor?.Count == 6 && ChatRows.Any(r => r.Body.Text == unicode && r.Body.EmojiCount == 6));
+            RequestChatBottom();
+            await WaitForLikedLayoutAsync(() => !chatScrollBottom && !chatComposerSurface.IsResizing &&
+                ChatRows.Any(r => r.Body.Text == unicode && r.Body.Bounds.Y >= viewer.Bounds.Y && r.Body.Bounds.Bottom <= viewer.Bounds.Bottom));
+            await WaitForLoginFrameAsync();
+            if (ChatEmojiArtwork.TextureCount is < 1 or > 192)
+                throw new InvalidOperationException("Inline Apple emoji were not rendered or exceeded the GPU texture bound.");
+            chatInput.SelectAll();
+            if (chatInput.SelectedText != unicode) throw new InvalidOperationException("Emoji presentation changed the selected Unicode text.");
+            CaptureUiPreview("chat-apple-emoji-inline");
+            chatInput.Text = "a👨‍👩‍👧‍👦b"; chatInput.CaretPosition = chatInput.Text.Length - 1; chatInput.Focus();
+            typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", true)!
+                .GetMethod("KeyDown", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
+                .Invoke(null, [Window, new KeyEventArgs(Key.Backspace, 0)]);
+            if (chatInput.Text != "ab") throw new InvalidOperationException("Backspace split a displayed emoji sequence.");
+            chatInput.Undo();
+            if (chatInput.Text != "a👨‍👩‍👧‍👦b") throw new InvalidOperationException("Undo did not restore the complete Unicode emoji.");
+            chatInput.Text = unicode;
+            await SendChatAsync();
+            if (!chatMessages.Any(m => m.SenderId == 42 && m.Body == unicode))
+                throw new InvalidOperationException("Inline Apple artwork changed the actual message body.");
+            await VerifyGlobalEmojiTextAsync(transport);
+            await VerifyGifRestorationAsync(transport, mediaFixture);
+            Console.WriteLine("APPLE_EMOJI_INLINE_OK: same artwork in composer and messages; Unicode selection, whole-sequence backspace, undo and transport preserved; bounded GPU textures");
             Console.WriteLine("UI_CHAT_EMOJI_OK: native caret/undo, Russian search, bounded offline artwork, animated non-modal picker, quick/extended reactions, compact sends, embedded chips, narrow/wide layout and ownership");
         }
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine(error); }
         finally { Window.Close(); }
     }
+    private async Task VerifyGlobalEmojiTextAsync(ChatFixtureTransport transport)
+    {
+        // Ordinary framework controls must use the same presentation as the chat
+        // composer, without an editor extension or a custom message control.
+        foreach (var box in new[] { chatSearch, chatMessageSearch })
+        {
+            box.Text = "👨‍👩‍👧‍👦";
+            box.Measure(new Size(320, 48)); box.Arrange(new Rect(0, 0, 320, 48));
+            var advance = box.GetCharRectInWindow(box.Text.Length).X - box.GetCharRectInWindow(0).X;
+            if (Math.Abs(advance - box.FontSize * 1.3) > 1)
+                throw new InvalidOperationException($"Standard search control missed emoji layout: {advance}.");
+            box.SelectAll();
+            if (box.SelectedText != "👨‍👩‍👧‍👦") throw new InvalidOperationException("Search presentation changed Unicode selection.");
+            box.Text = "";
+        }
+        var label = new TextBlock().Text("😀").FontSize(20);
+        label.Measure(new Size(300, 100));
+        if (Math.Abs(label.DesiredSize.Width - 26) > 1)
+            throw new InvalidOperationException($"A standard username/comment label bypassed emoji layout: {label.DesiredSize}.");
+        transport.Other = new() { Id = 90, Username = "Друг 😀 👋🏽" };
+        chatRecipient = transport.Other;
+        await RefreshChatsAsync();
+        var message = chatMessages.Last(m => m.Body.Contains("😀", StringComparison.Ordinal));
+        ReplyToChat(message); chatSearch.Text = "Друг";
+        await SearchChatsAsync(); OpenChatThreadSearch(); chatMessageSearch.Text = "Текст";
+        chatMessageSearchTimer.Stop(); await SearchChatMessagesAsync();
+        await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && chatSearchHits.Length > 0);
+        await WaitForLoginFrameAsync(); CaptureUiPreview("application-apple-emoji-search-reply");
+        CloseChatSearch(); chatSearch.Text = ""; chatReply = null; RefreshChatReply();
+        await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing);
+        Console.WriteLine("GLOBAL_APPLE_EMOJI_OK: ordinary labels and both native search editors share whole-sequence artwork; Unicode selection retained");
+    }
+
+    private async Task VerifyGifRestorationAsync(ChatFixtureTransport transport, ChatFixtureMediaHandler media)
+    {
+        var gifFixture = new EmojiGifFixture(); klipy.Dispose(); klipy = new(gifFixture) { ApiKey = "local-fixture" };
+        var code = media.Add(new(42, 90, "", [], "https://static.klipy.com/restored.gif"));
+        transport.AddOwn(code); await RefreshChatsAsync(); RequestChatBottom();
+        var viewer = (ScrollViewer)chatMessagesView.FindVisualChild<ScrollViewer>()!;
+        await WaitForLikedLayoutAsync(() => gifFixture.Active > 0 && !chatScrollBottom &&
+            ChatRows.Any(r => r.Message?.Body == code && r.Attachments.FindVisualChild<ChatPhotoFrame>() != null));
+        await SelectChatAsync(transport.Third);
+        var positions = new List<double>();
+        void BeforePaint()
+        {
+            if (chatRecipient?.Id == 90 && ChatRows.FirstOrDefault(r => r.Bound && r.Message?.Body == code) is { } row)
+                positions.Add(viewer.Bounds.Bottom - row.Root.Bounds.Bottom);
+        }
+        chatViewport.BeforePaint += BeforePaint;
+        await SelectChatAsync(transport.Other);
+        await WaitForLikedLayoutAsync(() => gifFixture.Active > 0 && !chatScrollBottom && chatRestoreOffset == null);
+        await WaitForLoginFrameAsync(); chatViewport.BeforePaint -= BeforePaint;
+        if (positions.Count == 0 || positions.Any(gap => gap > 24 || gap < -2))
+            throw new InvalidOperationException($"GIF restore painted a blank gap before scrolling: {string.Join(',', positions)}.");
+        gifFixture.Ready.TrySetResult();
+        await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == code && !r.Content.IsResizing &&
+            r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }) &&
+            !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 1);
+        var downloads = gifFixture.Downloads;
+        await SelectChatAsync(transport.Third);
+        chatDecodedPhotos.Clear(); chatDecodedRecency.Clear(); chatDecodedBytes = 0;
+        chatGifMedia = null; // Simulate a fresh service and empty decoded cache.
+        await SelectChatAsync(transport.Other);
+        await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == code &&
+            r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
+        if (gifFixture.Downloads != downloads)
+            throw new InvalidOperationException("Recreated GIF service redownloaded encrypted cached media.");
+        CaptureUiPreview("chat-gif-restored-bottom");
+        Console.WriteLine("GIF_RESTORE_OK: first painted position stable while download waits; intrinsic resize follows bottom; fresh service uses encrypted disk cache");
+    }
+
     private async Task VerifyEmojiPhotoCornersAsync(ChatBubbleRow row)
     {
         var pixels = new byte[180 * 120 * 4];
@@ -188,7 +288,7 @@ internal sealed partial class MainWindow
     private sealed class EmojiGifFixture : HttpMessageHandler
     {
         internal readonly TaskCompletionSource Ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal int Active, MaximumActive;
+        internal int Active, MaximumActive, Downloads;
         private static readonly byte[] gif = Convert.FromBase64String("R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACAAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCAABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7");
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -197,6 +297,7 @@ internal sealed partial class MainWindow
                 var items = Enumerable.Range(0, 12).Select(i => new { slug = "local-" + i, file = new { md = new { gif = new { url = "https://static.klipy.com/" + i + ".gif" } }, xs = new { gif = new { url = "https://static.klipy.com/preview-" + i + ".gif" } } } });
                 return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new { data = new { data = items } })) };
             }
+            Interlocked.Increment(ref Downloads);
             var active = Interlocked.Increment(ref Active); MaximumActive = Math.Max(MaximumActive, active);
             try { await Ready.Task.WaitAsync(cancellationToken); return new(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(gif) }; }
             finally { Interlocked.Decrement(ref Active); }

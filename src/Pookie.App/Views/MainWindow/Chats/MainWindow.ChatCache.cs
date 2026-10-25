@@ -89,12 +89,14 @@ internal sealed partial class MainWindow
         var oldKey = ChatMediaCacheId(outgoing.Message, peer);
         var newKey = ChatMediaCacheId(outgoing.Message with { Body = code }, peer);
         if (chatMediaSummaries.TryGetValue(oldKey, out var summary)) AddChatMediaSummary(newKey, summary);
-        for (var index = 0; index < package.Attachments.Length; index++)
+        for (var index = 0; index < Math.Max(package.Attachments.Length, package.GifUrl != null ? 1 : 0); index++)
             if (ChatDecoded(oldKey, index) is { } photo)
             {
                 var oldPhotoKey = ChatPhotoKey(oldKey, index);
                 chatDecodedPhotos.Remove(oldPhotoKey); chatDecodedRecency.Remove(oldPhotoKey); chatDecodedBytes -= photo.Bytes;
                 CacheChatDecoded(newKey, index, photo);
+                if (package.GifUrl is { } gif && photo.Gif is { } bytes && Messages.ChatMediaReference.Parse(code) is { } reference)
+                    Run(() => GifMedia.StoreAsync(reference, gif, package.SenderId, package.RecipientId, bytes, chatAccountLifetime?.Token ?? lifetime.Token));
             }
         // The upload's original buffers are zeroed by its caller. Cache independent
         // originals for Save, and retain the already displayed decoded pixels.

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 
 namespace Pookie.App.Messages;
 
@@ -7,9 +8,25 @@ internal sealed record KlipyGif(string Slug, string Url, string PreviewUrl);
 internal sealed class KlipyClient : IDisposable
 {
     private readonly HttpClient http;
-    internal string? ApiKey { get; set; } = Environment.GetEnvironmentVariable("POOKIE_KLIPY_API_KEY");
+    private static string? developmentApiKey;
+    internal string? ApiKey { get; set; } = developmentApiKey;
     private readonly string customer = Guid.NewGuid().ToString("N");
     internal bool Available => !string.IsNullOrWhiteSpace(ApiKey);
+    // Read local development configuration before constructing the UI. Disable
+    // file watching and dispose providers; credentials never become app resources.
+    internal static void LoadDevelopmentApiKey()
+    {
+        try
+        {
+            using var configuration = new ConfigurationManager();
+            configuration.AddUserSecrets(typeof(KlipyClient).Assembly, optional: true, reloadOnChange: false);
+            developmentApiKey = configuration["Klipy:ApiKey"];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or FormatException)
+        {
+            developmentApiKey = null;
+        }
+    }
     internal KlipyClient(HttpMessageHandler? handler = null)
     {
         if (handler == null)
@@ -23,7 +40,7 @@ internal sealed class KlipyClient : IDisposable
     }
     internal async Task<KlipyGif[]> SearchAsync(string query, CancellationToken token)
     {
-        if (!Available) throw new InvalidOperationException("Для поиска GIF нужен ключ приложения KLIPY (POOKIE_KLIPY_API_KEY).");
+        if (!Available) throw new InvalidOperationException("Для поиска GIF нужен ключ KLIPY в .NET User Secrets (Klipy:ApiKey).");
         var endpoint = string.IsNullOrWhiteSpace(query) ? "trending" : "search";
         var url = $"https://api.klipy.com/api/v1/{Uri.EscapeDataString(ApiKey!)}/gifs/{endpoint}?page=1&per_page=12&customer_id={customer}&locale=ru_RU&q={Uri.EscapeDataString(query)}";
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);

@@ -18,7 +18,9 @@ public sealed class ChatEmojiTests
         Assert.Empty(ChatEmojiCatalog.Search("несуществующийпоисковыйзапрос"));
         foreach (var group in ChatEmojiCatalog.Groups)
             Assert.All(ChatEmojiCatalog.Search("", group.Group), e => Assert.Equal(group.Group, e.Group));
-        foreach (var emoji in ChatEmojiCatalog.All)
+        Assert.Equal(new[] { "♀️", "♂️", "⚕️" }, ChatEmojiCatalog.All.Where(e => e.Asset.Length == 0).Select(e => e.Value));
+        Assert.Equal(3941, ChatEmojiCatalog.Search("").Length);
+        foreach (var emoji in ChatEmojiCatalog.All.Where(e => e.Asset.Length > 0))
         {
             using var image = typeof(ChatEmojiCatalog).Assembly.GetManifestResourceStream($"Pookie.App.Assets.Emoji.{emoji.Asset}.png");
             Assert.NotNull(image); var header = new byte[24]; image.ReadExactly(header);
@@ -28,6 +30,20 @@ public sealed class ChatEmojiTests
             var decoded = StbImageSharp.ImageResult.FromMemory(bytes.ToArray(), StbImageSharp.ColorComponents.RedGreenBlueAlpha);
             Assert.Equal(72 * 72 * 4, decoded.Data.Length);
         }
+    }
+
+    [Fact]
+    public void InlineArtworkRetainsExactUnicodeRangesAndWholeSequences()
+    {
+        const string text = "Текст 😀 ❤ 👋🏽 👨‍👩‍👧‍👦 🇨🇦 1️⃣ 日本語";
+        var spans = ChatEmojiCatalog.Spans(text);
+        Assert.Equal(new[] { "😀", "❤", "👋🏽", "👨‍👩‍👧‍👦", "🇨🇦", "1️⃣" }, spans.Select(s => text.Substring(s.Start, s.Length)));
+        Assert.All(spans, span => Assert.NotEmpty(ChatEmojiCatalog.Find(span.Value)!.Asset));
+        Assert.Empty(ChatEmojiCatalog.Spans("abc 123 日本語 обычный текст"));
+        // The font lacks these three standalone glyphs; they remain valid Unicode,
+        // rather than being replaced by another vendor's artwork or dropped.
+        Assert.True(ChatEmojiCatalog.IsEmoji("♀️"));
+        Assert.Empty(ChatEmojiCatalog.Spans("♀️"));
     }
 
     [Fact]

@@ -7,6 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private ChatEmojiEditor? chatEmojiEditor;
     // Existing animation ownership uses this flag only for the GIF tab.
     private readonly ObservableValue<bool> chatGifsOpen = new(false);
     private TextBox chatGifSearch = null!;

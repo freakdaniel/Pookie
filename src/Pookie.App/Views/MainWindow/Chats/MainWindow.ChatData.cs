@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
         ++chatAvatarGeneration;
         if(chatHeaderAvatar!=null)chatHeaderAvatar.Source=Icons.Source("user",Muted);
         chatPersistenceClosing = FlushChatPersistenceAsync();
-        chatMedia.DiskCache=null; chatWorkspaceStore = null; chatWorkspace = ChatWorkspaceStore.Empty; chatReactions.Clear();
+        chatMedia.DiskCache=null; chatGifMedia = null; chatWorkspaceStore = null; chatWorkspace = ChatWorkspaceStore.Empty; chatReactions.Clear();
         chatAccountReady = false;
         chatAccountId = 0; chatLocalStore = null; chatRecipient = null;
         chatDrafts.Clear(); chatPending.Clear(); chatOutgoing.Clear(); chatMessageEntrances.Clear(); chatMessageOrder.Clear(); chatConversations.Clear(); chatMessages.Clear();
@@ -590,6 +590,7 @@ internal sealed partial class MainWindow
 
     private void DisposeChats()
     {
+        chatEmojiEditor?.Dispose();
         chatEmojiSearchTimer?.Stop(); CloseChatMessageMenu(true); chatEmojiPopup?.Close(true); ChatEmojiArtwork.Clear();
         SaveChatDraft(); CleanupChatVoiceFiles(); RememberChatThread(); if(chatHistory!=null){_=chatHistory.DisposeAsync();chatHistory=null;} chatHistorySearch?.Cancel(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatMessageSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
         chatMusicRecognizeTimer.Dispose(); chatMusicEditor?.Dispose();

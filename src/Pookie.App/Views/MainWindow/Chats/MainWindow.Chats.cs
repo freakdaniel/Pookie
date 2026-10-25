@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
         chatDateLayer = new(chatFloatingDate);
         chatViewport = new ChatViewport(chatMessagesView, Surface).Initialize();
         chatViewport.SynchronizeScroll = SynchronizeChatScroll;
-        chatViewport.Restoring=()=>chatRestoreOffset!=null;
+        chatViewport.Restoring=()=>chatRestoreOffset!=null || chatScrollBottom || chatFollowLayout;
         chatViewport.ComposerResizing = () => chatComposerSurface is { IsResizing: true };
         chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer, chatOlder.Top().Margin(0, 4, 4, 0)), inbox: false);
         chatConversationView = chatThreadLoading.Root;
@@ -123,6 +123,7 @@ internal sealed partial class MainWindow
             if (e.Key == Key.Escape) { e.Handled = true; Window.FocusManager.ClearFocus(); }
         });
         InitializeChatMusicEditor();
+        chatEmojiEditor = new(chatInput);
         chatAttach = TrackButtons.Icon(Icons.View("paperclip", 22), () => Run(() => PickChatFilesAsync()), TrackButtons.Text, 40);
         chatGif = TrackButtons.Icon(Icons.View("smiley", 23), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40).ToolTip("Эмодзи и GIF");
         chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");

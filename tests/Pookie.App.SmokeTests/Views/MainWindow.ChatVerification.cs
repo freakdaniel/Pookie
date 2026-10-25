@@ -204,12 +204,17 @@ internal sealed partial class MainWindow
                 chatInput.Text = "А вот моя картинка";
                 transport.DelaySend = true; transport.SendReady = null;
                 var mediaSending = SendChatAsync();
+                if (chatSelectedFiles.Length != 0 || chatSelectedGif != null || chatAttachmentStrip.IsVisible ||
+                    !chatOutgoing[90].Files.Contains(attachmentFile) || !File.Exists(attachmentFile))
+                    throw new InvalidOperationException("Sending media remained attached to the composer or lost its outgoing file before upload.");
                 await WaitForLikedLayoutAsync(() => transport.SendReady != null && ChatRows.Any(r => r.Message?.SenderId == 42 && r.Body.Text == "А вот моя картинка" &&
                     !r.Content.IsResizing && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));
                 var sendingMediaRow = ChatRows.First(r => r.Message?.SenderId == 42 && r.Body.Text == "А вот моя картинка");
                 var sendingMediaFrame = (ChatPhotoFrame)sendingMediaRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
                 var sendingMediaSize = sendingMediaRow.Root.Bounds.Size;
                 var mediaDownloadsBeforeAck = mediaTransport.Downloads;
+                if (chatAttachmentStrip.IsVisible || chatSelectedFiles.Length != 0)
+                    throw new InvalidOperationException("Composer attachments reappeared while waiting for delivery confirmation.");
                 Window.PerformLayout();
                 var stableItem = chatMessageItems.Last();
                 var bottomInset = viewer.Bounds.Bottom - sendingMediaRow.Root.Bounds.Bottom;
@@ -400,6 +405,27 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Unread synchronization stopped outside Chats.");
             page.Value = Page.Chats; chatTimer.Stop();
             chatColumns.Selected = true;
+            // A clipboard file belongs to the outbox while uploading, including
+            // a failed upload and an explicit retry as a document.
+            var staged = chatAttachmentStaging.AddImage(photo, ".png");
+            chatSelectedFiles = [staged]; chatDocumentFiles.Add(staged); UpdateChatAttachments();
+            chatInput.Text = "Повтор вложения из буфера";
+            mediaTransport.FailUploads = true;
+            try { await SendChatAsync(); }
+            finally { mediaTransport.FailUploads = false; }
+            if (chatOutgoing[90].State != ChatDelivery.Failed || chatPending.ContainsKey(90) ||
+                chatSelectedFiles.Length != 0 || chatAttachmentStrip.IsVisible || !File.Exists(staged))
+                throw new InvalidOperationException("Failed upload lost the outgoing clipboard attachment or restored its composer strip.");
+            transport.DelaySend = true; transport.SendReady = null;
+            var retryAttachment = RetryChatOutgoingAsync();
+            if (chatSelectedFiles.Length != 0 || chatAttachmentStrip.IsVisible || !chatOutgoing[90].Documents.Contains(staged))
+                throw new InvalidOperationException("Attachment retry lost the send-as-document mode or left files in the composer.");
+            await WaitForLikedLayoutAsync(() => transport.SendReady != null);
+            if (!File.Exists(staged)) throw new InvalidOperationException("Clipboard attachment was pruned before delivery.");
+            transport.SendReady!.SetResult(); await retryAttachment;
+            if (File.Exists(staged)) throw new InvalidOperationException("Delivered clipboard attachment was not released.");
+            Console.WriteLine("CHAT_ATTACHMENT_HANDOFF_OK: composer clears before upload; failed outbox retains files and document mode for explicit retry");
+
             transport.AddOwn("Повторяющийся текст"); await RefreshChatThreadAsync();
             chatInput.Text = "Повторяющийся текст"; transport.RejectBeforeSend = true;
             await SendChatAsync(); await RefreshChatThreadAsync();
@@ -510,6 +536,7 @@ internal sealed partial class MainWindow
     {
         private readonly Dictionary<string, byte[]> files = [];
         internal bool DelayDownload;
+        internal bool FailUploads;
         internal bool FailNextDownload;
         internal int Downloads;
         internal TaskCompletionSource? DownloadReady;
@@ -521,6 +548,8 @@ internal sealed partial class MainWindow
         }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (FailUploads && request.Method == HttpMethod.Post && request.RequestUri!.Host is "pomf.lain.la" or "qu.ax")
+                return new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable);
             if (request.Method == HttpMethod.Post && request.RequestUri!.Host == "pomf.lain.la")
             {
                 var form = (MultipartFormDataContent)request.Content!;

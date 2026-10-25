@@ -100,7 +100,10 @@ internal sealed partial class MainWindow
         chatOutgoing[recipient.Id] = outgoing; chatMessageEntrances.Add(outgoing.Message.Id);
         if (!chatConversations.Any(c => c.Recipient.Id == recipient.Id))
             chatConversations.Insert(0, new($"{Math.Min(user.Id, recipient.Id)}:{Math.Max(user.Id, recipient.Id)}", recipient, null, true));
-        chatSending = true; RefreshChatComposer();
+        chatSending = true;
+        // The outgoing item owns these files now, including clipboard staging.
+        // Detach the composer before upload/POST rather than waiting for delivery.
+        ClearChatAttachments(); RefreshChatComposer();
         chatThreadStatus.Value = ""; RefreshChatTimeline(); RenderChatInbox(); RequestChatBottom();
         try
         {

@@ -3,6 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Pookie.App</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UserSecretsId>Pookie-development</UserSecretsId>
   </PropertyGroup>
   <Import Project="Pookie.App.Platform.props" />
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
@@ -31,6 +32,7 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/Bungee-Regular.ttf" LogicalName="Pookie.App.Assets.Fonts.Bungee-Regular.ttf" />
 
     <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.5" Condition="'$(MSBuildProjectName)' == 'Pookie.App'" />
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />
     <PackageReference Include="SoundFlow.Codecs.FFMpeg" Version="1.4.0" GeneratePathProperty="true" />
@@ -48,5 +50,12 @@
 
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.Recommendations/Pookie.Recommendations.csproj" />
+  </ItemGroup>
+  <!-- The smoke host obtains UserSecrets from its ASP.NET framework reference,
+       so it needs the assembly attribute without a redundant NuGet reference. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
+    <AssemblyAttribute Include="Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute">
+      <_Parameter1>$(UserSecretsId)</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 </Project>

@@ -28,10 +28,11 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
         // The composer changes the viewport every animation frame. Position the
         // realized rows at the corrected offset before painting that resize.
         // Normal virtualized extent refinement keeps its next-frame layout.
+        var restoring = Restoring?.Invoke() == true;
         var changed=SynchronizeScroll?.Invoke()==true;
         // ScrollIntoView realizes a cached anchor lazily. Complete its bounded
         // arrange/offset refinements before this first restored frame is painted.
-        if(Restoring?.Invoke()==true)
+        if(restoring)
             for(var pass=0;pass<8 && changed;pass++)
             {
                 // Restoring recycled variable-height rows can dirty measurement

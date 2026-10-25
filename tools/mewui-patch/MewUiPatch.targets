@@ -2,23 +2,25 @@
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)MewUiPatch.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" OutputItemType="PookieMewUiPatcher" />
   </ItemGroup>
-  <Target Name="PatchPookieMewUiX11" AfterTargets="ResolveReferences"
+  <Target Name="PatchPookieMewUi" AfterTargets="ResolveReferences"
           Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll'" />
+      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
     </ItemGroup>
-    <PropertyGroup>
-      <PookieMewUiPatched>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)patched/Aprillz.MewUI.Backend.MewVG.X11.dll</PookieMewUiPatched>
-    </PropertyGroup>
+    <ItemGroup>
+      <PookieMewUiOriginal Update="@(PookieMewUiOriginal)">
+        <Patched>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)patched/%(Filename)%(Extension)</Patched>
+      </PookieMewUiOriginal>
+    </ItemGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)mewui-patch-references.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
-    <Exec Condition="'@(PookieMewUiOriginal)' != ''" Command="dotnet &quot;@(PookieMewUiPatcher->'%(FullPath)')&quot; &quot;@(PookieMewUiOriginal)&quot; &quot;$(PookieMewUiPatched)&quot; &quot;$(IntermediateOutputPath)mewui-patch-references.txt&quot;" />
+    <Exec Condition="'@(PookieMewUiOriginal)' != ''" Command="dotnet &quot;@(PookieMewUiPatcher->'%(FullPath)')&quot; &quot;%(PookieMewUiOriginal.FullPath)&quot; &quot;%(PookieMewUiOriginal.Patched)&quot; &quot;$(IntermediateOutputPath)mewui-patch-references.txt&quot;" />
     <ItemGroup Condition="'@(PookieMewUiOriginal)' != ''">
-      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll'" />
-      <ReferencePath Include="$(PookieMewUiPatched)" />
-      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll'" />
-      <ReferencePathWithRefAssemblies Include="$(PookieMewUiPatched)" />
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePath Include="@(PookieMewUiOriginal->'%(Patched)')" />
+      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePathWithRefAssemblies Include="@(PookieMewUiOriginal->'%(Patched)')" />
       <ReferenceCopyLocalPaths Remove="@(PookieMewUiOriginal)" />
-      <ReferenceCopyLocalPaths Include="$(PookieMewUiPatched)" />
+      <ReferenceCopyLocalPaths Include="@(PookieMewUiOriginal->'%(Patched)')" />
     </ItemGroup>
   </Target>
 </Project>

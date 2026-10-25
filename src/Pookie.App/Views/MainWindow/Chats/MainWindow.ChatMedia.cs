@@ -8,6 +8,8 @@ internal sealed partial class MainWindow
 {
     private readonly SemaphoreSlim chatMediaGate = new(2, 2);
     private readonly Dictionary<Image, ChatGifAnimation> chatAnimations = [];
+    private ChatGifMediaCache? chatGifMedia;
+    private ChatGifMediaCache GifMedia => chatGifMedia ??= new(chatMedia.DiskCache, (url, token) => klipy.DownloadAsync(url, token), chatAccountLifetime?.Token ?? lifetime.Token);
     private readonly Dictionary<string, ChatMediaPackage> chatMediaCache = [];
     private readonly LinkedList<string> chatMediaOrder = [];
     private long chatMediaBytes, chatMediaCacheGeneration;
@@ -114,18 +116,8 @@ internal sealed partial class MainWindow
             downloaded = package;
             if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) { ClearMediaPackage(package); return false; }
             var summary = await PrepareChatMediaSummaryAsync(package, token);
-            if (preferences.KlipyEnabled && package.Attachments.Length == 0 && package.GifUrl is { } gif)
-            {
-                try
-                {
-                    using var gifRead = CancellationTokenSource.CreateLinkedTokenSource(token, KlipyReadToken());
-                    var bytes = await klipy.DownloadAsync(gif, gifRead.Token);
-                    var decoded = await Task.Run(() => ((IImageSource?)PrepareChatImage(bytes, 72, 72), ChatImagePreview.ReadSize(bytes)), token);
-                    summary = summary with { Thumbnail = decoded.Item1, ImageSize = decoded.Item2 };
-                }
-                catch (OperationCanceledException) { throw; }
-                catch { }
-            }
+            // Visible GIF rows load the animation once. Do not block rendering
+            // here on another complete download just for a small preview.
             if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) return false;
             var key = ChatMediaCacheId(message, peer);
             AddChatMediaSummary(key, summary);
@@ -454,26 +446,40 @@ internal sealed partial class MainWindow
         var mediaKey = row.MediaKey ?? ChatMediaCacheId(message!, chatRecipient?.Id ?? 0);
         if (ChatDecoded(mediaKey, 0) is { } cached)
         {
+            frame.IntrinsicSize = cached.Gif == null ? new(cached.Source.PixelWidth, cached.Source.PixelHeight) : ChatImagePreview.ReadSize(cached.Gif) ?? frame.IntrinsicSize;
+            if (row.Content.PhotoMode) row.SetPhotoLayout(frame.IntrinsicSize);
             frame.ShowImmediate(cached.Source, cached.Backdrop);
             if (cached.Gif != null) StartChatAnimation(frame.Picture, cached.Gif);
             return;
         }
         try
         {
-            var bytes = await klipy.DownloadAsync(url, token);
-            var (source, backdrop, size) = await Task.Run(() =>
+            var peer = chatRecipient?.Id ?? 0;
+            var target = message.SenderId == chatAccountId ? peer : chatAccountId;
+            var reference = ChatMediaReference.Parse(message.Body);
+            var loader = GifMedia;
+            var bytes = reference == null ? await klipy.DownloadAsync(url, token) :
+                await loader.GetAsync(reference, url, message.SenderId, target, KlipyReadToken(), token);
+            var (source, backdrop, size, thumbnail) = await Task.Run(() =>
             {
                 var decoded = PrepareChatImage(bytes);
-                return (decoded, decoded == null ? null : ArtworkBackdrop.Create(decoded, .6), ChatImagePreview.ReadSize(bytes));
+                return (decoded, decoded == null ? null : ArtworkBackdrop.Create(decoded, .6), ChatImagePreview.ReadSize(bytes), PrepareChatImage(bytes, 72, 72));
             }, token);
             if (!disposed && !token.IsCancellationRequested && row.MediaGeneration == generation && chatRevision == revision && row.Attachments.IsAncestorOf(frame))
             {
                 if (source == null) throw new InvalidDataException("GIF could not be decoded.");
+                row.FollowMediaResize = chatScrollBottom || chatWasAtBottom || ChatIsAtBottom();
+                row.Content.AnimateMediaChange();
                 frame.IntrinsicSize = size ?? new(source.PixelWidth, source.PixelHeight);
                 if (row.Content.PhotoMode) row.SetPhotoLayout(frame.IntrinsicSize);
                 CacheChatDecoded(row.MediaKey ?? mediaKey, 0, new(source, backdrop, ChatGifAnimation.CanAnimate(bytes) ? bytes.ToArray() : null));
+                var key = row.MediaKey ?? mediaKey;
+                if (chatMediaSummaries.TryGetValue(key, out var summary)) AddChatMediaSummary(key, summary with { Thumbnail = thumbnail, ImageSize = frame.IntrinsicSize });
                 frame.Show(source, backdrop); StartChatAnimation(frame.Picture, bytes);
                 row.Root.InvalidateMeasure(); chatMessagesView.InvalidateMeasure();
+                if (row.FollowMediaResize) RequestChatBottom();
+                if (reference == null && ChatMediaReference.Parse(row.Message!.Body) is { } confirmed)
+                    await loader.StoreAsync(confirmed, url, message.SenderId, target, bytes, token);
             }
         }
         catch (OperationCanceledException) { }

@@ -1,4 +1,5 @@
 using Pookie.App.Diagnostics;
+using Pookie.App.Messages;
 using Aprillz.MewUI;
 using Pookie.Logging;
 
@@ -9,6 +10,7 @@ internal static class AppHost
     internal static async Task RunAsync(AppRunOptions options, Action<MainWindow>? configureWindow = null)
     {
         StartupLog.Event("app.host-start");
+        KlipyClient.LoadDevelopmentApiKey();
         // Intel's Windows OpenGL presentation can stop updating after a driver
         // reset while input/audio remain alive. Use the native Windows backend;
         // app-owned bounded blur does not depend on its image-filter pipeline.
@@ -24,6 +26,7 @@ internal static class AppHost
         else if (OperatingSystem.IsMacOS()) { MacOSPlatform.Register(); MewVGMacOSBackend.Register(); }
         else throw new PlatformNotSupportedException("Unsupported desktop platform.");
 #endif
+        ApplicationEmojiText.Install();
 
         Application.DispatcherUnhandledException += eventArgs =>
         {

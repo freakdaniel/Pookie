@@ -8,16 +8,16 @@ version = 1
 [[annotations]]
 path = "src/Pookie.App/Assets/Emoji/*.png"
 precedence = "closest"
-SPDX-FileCopyrightText = ["2020 Twitter, Inc. and other contributors", "Twemoji contributors"]
-SPDX-License-Identifier = "CC-BY-4.0"
-SPDX-FileComment = "Unmodified Twemoji 17.0.3 PNG artwork, https://github.com/jdecked/twemoji/tree/v17.0.3. Embedded offline; imported by tools/import-chat-emoji.py. Attribution also appears in application Settings / About. Full graphics license: licenses/CC-BY-4.0.txt."
+SPDX-FileCopyrightText = "Apple Inc."
+SPDX-License-Identifier = "LicenseRef-Apple-Color-Emoji"
+SPDX-FileComment = "Apple Color Emoji artwork rasterized at 72px from samuelngs/apple-emoji-ttf release macos-26-20260722-484daf4e. Composite sequences shaped with HarfBuzz; CBDT glyphs composited at 96px, resized with Lanczos and centered on transparent 72px canvases. The converter's MIT license does not cover Apple's artwork. Exact source checksum, provenance and upstream licensing statement: licenses/LicenseRef-Apple-Color-Emoji.txt."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Emoji/catalog.json"
 precedence = "override"
 SPDX-FileCopyrightText = "1991-2026 Unicode, Inc."
 SPDX-License-Identifier = "Unicode-3.0"
-SPDX-FileComment = "Generated from Unicode Emoji 17.0 emoji-test.txt and CLDR release-48 Russian annotations. Sources and generation: tools/import-chat-emoji.py. Complete license: licenses/Unicode-3.0.txt."
+SPDX-FileComment = "Generated from Unicode Emoji 17.0 emoji-test.txt (https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt) and CLDR release-48 Russian annotations (https://github.com/unicode-org/cldr/tree/release-48/common/annotations). Empty asset fields mark the three standalone symbols absent from the Apple font; Unicode compatibility is retained. Complete data license: licenses/Unicode-3.0.txt."
 
 [[annotations]]
 path = [

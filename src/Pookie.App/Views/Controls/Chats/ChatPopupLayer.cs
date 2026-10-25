@@ -12,6 +12,7 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(200), Easing.CubicBezier(.4, 0, .2, 1));
     private double amount, from;
     private Point origin;
+    private Rect arrangedArea, arrangedTrigger;
     internal bool IsOpen { get; private set; }
     internal double Reveal => amount;
     internal Rect SurfaceBounds => content.Bounds;
@@ -44,7 +45,13 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
-        var area = viewport(); var trigger = anchor(); var size = content.DesiredSize;
+        ArrangePopup(viewport(), anchor());
+        return finalSize;
+    }
+    private void ArrangePopup(Rect area, Rect trigger)
+    {
+        arrangedArea = area; arrangedTrigger = trigger;
+        var size = content.DesiredSize;
         var width = Math.Min(size.Width, Math.Max(0, area.Width - 16));
         var height = Math.Min(size.Height, Math.Max(0, area.Height - 16));
         var x = atPointer ? trigger.X : trigger.Right - width;
@@ -54,10 +61,18 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
         y = Math.Clamp(y, area.Y + 8, Math.Max(area.Y + 8, area.Bottom - height - 8));
         content.Arrange(new Rect(x, y, width, height));
         origin = atPointer ? new(Math.Clamp(trigger.X, x, x + width), Math.Clamp(trigger.Y, y, y + height)) : new(x + width, y + height);
-        return finalSize;
     }
     protected override void RenderSubtree(IGraphicsContext context)
     {
+        // The overlay can be arranged before its sibling chat columns during a
+        // resize. Reconcile the live anchor/viewport before the first paint, so
+        // an open picker/menu never retains the previous window's coordinates.
+        var area = viewport(); var trigger = anchor();
+        if (area != arrangedArea || trigger != arrangedTrigger)
+        {
+            if (area != arrangedArea) MeasureContent(new Size(ActualWidth, ActualHeight));
+            ArrangePopup(area, trigger);
+        }
         var scale = .94 + .06 * amount;
         context.Save();
         try { context.Translate(origin.X, origin.Y); context.Scale(scale, scale); context.Translate(-origin.X, -origin.Y); base.RenderSubtree(context); }

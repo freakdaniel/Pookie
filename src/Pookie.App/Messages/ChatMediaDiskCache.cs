@@ -15,8 +15,13 @@ internal sealed class ChatMediaDiskCache
     private readonly SemaphoreSlim io = new(1, 1);
     internal ChatMediaDiskCache(AppDataPaths paths, long account, long budget = DefaultBudget)
     { if (account <= 0) throw new ArgumentOutOfRangeException(nameof(account)); directory = Path.Combine(paths.Cache, "Chats", account.ToString(System.Globalization.CultureInfo.InvariantCulture), "Media"); favorites = Path.Combine(paths.Root, "Chats", account.ToString(System.Globalization.CultureInfo.InvariantCulture), "FavoriteMedia"); this.budget = Math.Max(0, budget); }
-    private static string NameFor(string code) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code))) + ".bin";
-    private string PathFor(string code) => Path.Combine(pinned.Contains(NameFor(code)) ? favorites : directory, NameFor(code));
+    private static string NameFor(string code)
+    {
+        var gif = code.EndsWith(":gif", StringComparison.Ordinal);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gif ? code[..^4] : code))) + (gif ? ".gif.bin" : ".bin");
+    }
+    private static bool IsPinned(string name, HashSet<string> names) => names.Contains(name) || name.EndsWith(".gif.bin", StringComparison.Ordinal) && names.Contains(name[..^8] + ".bin");
+    private string PathFor(string code) => Path.Combine(IsPinned(NameFor(code), pinned) ? favorites : directory, NameFor(code));
     internal async Task<byte[]?> ReadAsync(string code, CancellationToken token, int maximumBytes = int.MaxValue)
     {
         await io.WaitAsync(token).ConfigureAwait(false);
@@ -32,7 +37,7 @@ internal sealed class ChatMediaDiskCache
     }
     internal async Task PutAsync(string code, byte[] encrypted, CancellationToken token)
     {
-        if (encrypted.Length > budget && !pinned.Contains(NameFor(code))) return;
+        if (encrypted.Length > budget && !IsPinned(NameFor(code), pinned)) return;
         await io.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -60,10 +65,10 @@ internal sealed class ChatMediaDiskCache
                 if (revision != Volatile.Read(ref pinRevision)) return;
                 AppDataPaths.CreatePrivateDirectory(favorites); AppDataPaths.CreatePrivateDirectory(directory);
                 foreach (var temporary in Directory.EnumerateFiles(directory, "*.tmp").Concat(Directory.EnumerateFiles(favorites, "*.tmp"))) File.Delete(temporary);
-                foreach (var name in names)
-                { var source = Path.Combine(directory, name); if (File.Exists(source)) File.Move(source, Path.Combine(favorites, name), true); }
+                foreach (var source in Directory.EnumerateFiles(directory, "*.bin"))
+                    if (IsPinned(Path.GetFileName(source), names)) File.Move(source, Path.Combine(favorites, Path.GetFileName(source)), true);
                 foreach (var file in Directory.EnumerateFiles(favorites, "*.bin"))
-                    if (!names.Contains(Path.GetFileName(file))) File.Move(file, Path.Combine(directory, Path.GetFileName(file)), true);
+                    if (!IsPinned(Path.GetFileName(file), names)) File.Move(file, Path.Combine(directory, Path.GetFileName(file)), true);
                 pinned = names; Trim();
             }
             finally { io.Release(); }

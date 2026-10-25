@@ -161,7 +161,8 @@ internal sealed partial class MainWindow
         if (chatPending.ContainsKey(chatRecipient.Id)) { await CheckPendingChatAsync(); return; }
         chatRenderingDraft = true; chatInput.Text = outgoing.Draft; chatRenderingDraft = false;
         if (preferences.ChatSaveDrafts) chatDrafts[chatRecipient.Id] = outgoing.Draft;
-        chatSelectedFiles = outgoing.Files; chatSelectedGif = outgoing.Gif; UpdateChatAttachments();
+        chatSelectedFiles = outgoing.Files; chatSelectedGif = outgoing.Gif;
+        chatDocumentFiles.Clear(); chatDocumentFiles.UnionWith(outgoing.Documents); UpdateChatAttachments();
         RefreshChatComposer(); await SendChatAsync();
     }
 }

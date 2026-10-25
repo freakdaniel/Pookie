@@ -11,7 +11,7 @@ internal sealed record ChatReactionChip(string Emoji, long[] Authors, bool Own);
 // ordinary polling must neither recreate buttons nor replay their entrance.
 internal sealed class ChatReactionStrip : Panel
 {
-    private sealed record Slot(Button Button, Image Emoji, Image First, Image Second, Grid Avatars)
+    private sealed record Slot(Button Button, Image Emoji, TextBlock Fallback, Image First, Image Second, Grid Avatars)
     { internal string Value = ""; }
     private readonly List<Slot> slots = [];
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(200), Easing.CubicBezier(.4, 0, .2, 1));
@@ -29,15 +29,17 @@ internal sealed class ChatReactionStrip : Panel
         for (var i = 0; i < 2; i++)
         {
             var emoji = new Image().Width(22).Height(22).StretchMode(Stretch.Uniform);
+            var fallback = new TextBlock().FontSize(20).Foreground(TrackButtons.OnSurface).Center().IsVisible(false);
+            var artwork = new Grid().Width(22).Height(22).Children(emoji, fallback);
             var first = new Image().Width(18).Height(18).StretchMode(Stretch.UniformToFill);
             var second = new Image().Width(18).Height(18).StretchMode(Stretch.UniformToFill);
             var avatars = new Grid().Columns("14,18").Rows("18").Children(
                 new Border().Width(18).Height(18).CornerRadius(9).ClipToBounds().Child(first).Column(0),
                 new Border().Width(18).Height(18).CornerRadius(9).ClipToBounds().Child(second).Column(1));
             Slot? slot = null;
-            var button = TrackButtons.Action(new StackPanel().Horizontal().Spacing(5).Children(emoji.CenterVertical(), avatars.CenterVertical()),
+            var button = TrackButtons.Action(new StackPanel().Horizontal().Spacing(5).Children(artwork.CenterVertical(), avatars.CenterVertical()),
                 () => { if (slot?.Value.Length > 0) activate(slot.Value); }, TrackButtons.Text, 30).Padding(7, 0).CornerRadius(15).IsVisible(false);
-            slot = new(button, emoji, first, second, avatars); slots.Add(slot); Add(button);
+            slot = new(button, emoji, fallback, first, second, avatars); slots.Add(slot); Add(button);
         }
     }
     internal void Set(string id, IReadOnlyList<ChatReactionChip> values, Func<long, IImageSource?> avatar, bool animate)
@@ -62,8 +64,10 @@ internal sealed class ChatReactionStrip : Panel
         {
             var slot = slots[i]; var value = values.ElementAtOrDefault(i);
             slot.Button.IsVisible = value != null;
-            if (value == null) { slot.Value = ""; slot.Emoji.Source = slot.First.Source = slot.Second.Source = null; continue; }
+            if (value == null) { slot.Value = ""; slot.Fallback.Text = ""; slot.Fallback.IsVisible = false; slot.Emoji.Source = slot.First.Source = slot.Second.Source = null; continue; }
             slot.Value = value.Emoji; slot.Emoji.Source = ChatEmojiArtwork.Source(value.Emoji);
+            slot.Fallback.Text = slot.Emoji.Source == null ? value.Emoji : "";
+            slot.Fallback.IsVisible = slot.Emoji.Source == null;
             slot.First.Source = avatar(value.Authors[0]) ?? Icons.Source("user");
             slot.Second.Source = value.Authors.Length > 1 ? avatar(value.Authors[1]) ?? Icons.Source("user") : null;
             slot.Avatars.Width = value.Authors.Length > 1 ? 32 : 18;
@@ -84,7 +88,7 @@ internal sealed class ChatReactionStrip : Panel
     internal void Reset()
     { motion.Stop(); messageId = null; signature = ""; amount = 0; showing = false; ClearSlots(); InvalidateMeasure(); }
     private void ClearSlots()
-    { foreach (var slot in slots) { slot.Value = ""; slot.Button.IsVisible = false; slot.Emoji.Source = slot.First.Source = slot.Second.Source = null; } }
+    { foreach (var slot in slots) { slot.Value = ""; slot.Button.IsVisible = false; slot.Fallback.Text = ""; slot.Fallback.IsVisible = false; slot.Emoji.Source = slot.First.Source = slot.Second.Source = null; } }
     protected override Size MeasureContent(Size availableSize)
     {
         var width = 0d;

@@ -1,0 +1,24 @@
+Apple Color Emoji artwork
+Copyright Apple Inc. All rights reserved.
+
+Source: https://github.com/samuelngs/apple-emoji-ttf
+Release: macos-26-20260722-484daf4e
+Asset: AppleColorEmoji-Linux.ttf
+SHA-256: e37c7af6265ac4a0af6d57bc65e86109a776d9966e8343334557f63da482516f
+
+Pookie uses offline 72px PNG renderings of this font's color glyphs. Composite
+sequences are shaped with HarfBuzz before rasterization; the original Unicode
+text is retained for editing, copying, searching and message transport.
+
+The samuelngs/apple-emoji-ttf repository licenses its conversion code under MIT,
+but explicitly excludes Apple Color Emoji assets from that license. Its README
+states that Apple Color Emoji assets and designs belong to Apple Inc., that
+the project is for educational purposes, and that use of fonts from another
+operating system can have licensing implications.
+
+This file records provenance and the upstream licensing limitation. It is not
+a license grant from Apple and does not assert permission to redistribute
+Apple's artwork under MIT or under Pookie's BSD license.
+
+Upstream statement:
+https://github.com/samuelngs/apple-emoji-ttf/blob/v2/README.md#license

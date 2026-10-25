@@ -47,6 +47,33 @@ handler, animation cleanup, quick and expanded message reactions, 36-character
 transport references, reaction/timestamp geometry, narrow/wide windows, Escape,
 conversation changes, and 10,000 menu rebinds. It never sends real messages or
 opens the microphone. GIFs remain available through the existing KLIPY setting.
+Emoji artwork comes from Apple Color Emoji via samuelngs/apple-emoji-ttf release
+`macos-26-20260722-484daf4e`; source checksum and licensing scope are recorded in
+`licenses/LicenseRef-Apple-Color-Emoji.txt`. The 3941 offline 72px images are shared
+by the picker, reactions and the application text engine: names, comments, track
+labels, menus, search fields/results, reply previews and message bodies. Inline presentation keeps
+Unicode text, selection, whole-sequence deletion, undo and sent bodies unchanged.
+Decoded artwork and reusable inline GPU textures are each capped at 192 entries.
+The three standalone symbols absent from that font remain ordinary text and are
+not offered as blank picker cells. Native checks include inline rendering and
+Unicode transport alongside the existing DPI, music-chip and reaction scenarios.
+Ordinary TextBox/TextBlock checks verify that rendering does not depend on a chat
+specific control. Delayed GIF fixtures check the first restored frame, bottom
+anchoring after intrinsic-size changes, and encrypted disk reuse by a fresh loader.
+GIF bytes share the account media budget and favorite pinning; uploaded attachment
+containers are cached immediately. All requests in these checks use local handlers.
+
+Local GIF API credentials use .NET User Secrets, shared by the app and this host
+through `UserSecretsId=Pookie-development`. Set `Klipy:ApiKey` with:
+
+```sh
+dotnet user-secrets set "Klipy:ApiKey" "<your-key>" --project src/Pookie.App
+```
+
+Restart the app after changing the key. The secret stays outside the repository
+and is not embedded or copied into published builds. A missing or invalid local
+secrets file leaves GIF search unavailable. Automated checks use local HTTP
+fixtures and do not consume the real API quota. No `.env` file is needed.
 
 On Windows, `POOKIE_RENDER_PROBE=1` with `--expanded-glass-ui-smoke-test --no-audio`
 runs an isolated rendering diagnostic. It records player opening time, lyric frame

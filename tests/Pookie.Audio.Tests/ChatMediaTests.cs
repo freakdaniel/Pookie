@@ -90,6 +90,25 @@ public sealed class ChatMediaTests
         Assert.Equal(Package().Attachments[0].Data, restored.Attachments[0].Data);
         Assert.Equal(Package().Caption, restored.Caption);
     }
+    [Fact]
+    public async Task UploadedContainerIsAvailableAfterRestartWithoutHostDownload()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pookie-upload-cache-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = new AppDataPaths(root);
+            var handler = new HostingHandler { PrimaryStatus = HttpStatusCode.OK, PrimaryResponse = """{"success":true,"files":[{"url":"https://pomf2.lain.la/f/Ab3xYz09.bin"}]}""" };
+            using var hosting = new ChatMediaHosting(handler) { DiskCache = new(paths, 42) };
+            var reference = await hosting.UploadAsync(Package(), CancellationToken.None);
+            var offline = new HostingHandler { DownloadRedirect = true };
+            using var restarted = new ChatMediaHosting(offline) { DiskCache = new(paths, 42) };
+            var restored = await restarted.DownloadAsync(reference, 42, 90, CancellationToken.None);
+            Assert.Equal(Package().Caption, restored.Caption);
+            Assert.Equal(Package().Attachments[0].Data, restored.Attachments[0].Data);
+            Assert.Equal(0, offline.Downloads);
+        }
+        finally { Directory.Delete(root, true); }
+    }
     [Theory]
     [InlineData(400)]
     [InlineData(403)]
