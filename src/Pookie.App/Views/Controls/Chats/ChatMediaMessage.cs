@@ -47,7 +47,7 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
     }
     protected override void OnDispose() { StopResize(); base.OnDispose(); }
     private Size photoSize = new(240, 180);
-    private bool inlineFooter, videoMode;
+    private bool inlineFooter, lastLineFooter, videoMode;
     private bool fileOnly, musicMode, musicOnly, voiceOnly;
     private ChatVoiceCard? voice;
     private Color captionBackground;
@@ -101,6 +101,16 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         }
         if (!PhotoMode && !inlineFooter) width = Math.Min(width, Math.Max(attachments.DesiredSize.Width,
             Math.Max(caption.DesiredSize.Width, Math.Max(open.DesiredSize.Width, footer.DesiredSize.Width))));
+        lastLineFooter = false;
+        if (!inlineFooter && caption.IsVisible && !open.IsVisible && !musicMode && caption is ChatMessageText message)
+        {
+            var textWidth = Math.Max(1,width-(PhotoMode ? 24 : 0));
+            caption.Measure(new Size(textWidth,double.PositiveInfinity));
+            // Reserve space only beside the final laid-out line. Narrowing the
+            // whole text column for the timestamp would rewrap every line.
+            if (message.LastLineAt(textWidth) is { } last && last.Bounds.Right+footer.DesiredSize.Width+11 <= textWidth)
+                inlineFooter = lastLineFooter = true;
+        }
         var height = attachments.IsVisible ? attachments.DesiredSize.Height : 0;
         if (fileOnly || musicOnly || voiceOnly) return AnimateSize(new(width, height));
         if (inlineFooter) return AnimateSize(new(width, height + Math.Max(caption.DesiredSize.Height, footer.DesiredSize.Height) + (PhotoMode ? 16 : musicMode ? 6 : 0)));
@@ -118,7 +128,7 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         if (caption.IsVisible)
         {
             y += PhotoMode ? 8 : attachments.IsVisible ? 6 : 0;
-            caption.Arrange(new Rect(x + (PhotoMode ? 12 : 0), y, Math.Max(1, width - (PhotoMode ? 24 : inlineFooter ? footer.DesiredSize.Width + 10 : 0)), caption.DesiredSize.Height));
+            caption.Arrange(new Rect(x + (PhotoMode ? 12 : 0), y, Math.Max(1, width - (PhotoMode ? 24 : inlineFooter && !lastLineFooter ? footer.DesiredSize.Width + 10 : 0)), caption.DesiredSize.Height));
             y += caption.DesiredSize.Height;
         }
         if (open.IsVisible) { y += 6; open.Arrange(new Rect(x, y, width, open.DesiredSize.Height)); y += open.DesiredSize.Height; }

@@ -345,8 +345,15 @@ internal sealed partial class MainWindow
             var longText = new string('Ш', 100);
             transport.AddOwn(longText); await RefreshChatsAsync();
             await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Body.Text == longText && r.Body.ActualHeight > 0));
-            if (ChatRows.First(r => r.Body.Text == longText).Content.InlineFooter)
-                throw new InvalidOperationException("Long text must put the time on the next row instead of stretching the bubble.");
+            var wrappedRow = ChatRows.First(r => r.Body.Text == longText);
+            var lastLine = wrappedRow.Body.LastLineAt(wrappedRow.Body.ActualWidth)!.Value;
+            // Length alone no longer forces an extra metadata row: use the
+            // available space on the final visual line, without growing past
+            // the normal bubble width or painting the time over the text.
+            if (wrappedRow.Bubble.ActualWidth > 520 || wrappedRow.Content.InlineFooter &&
+                wrappedRow.Footer.Bounds.X < wrappedRow.Body.Bounds.X+lastLine.Bounds.Right+6 ||
+                !wrappedRow.Content.InlineFooter && wrappedRow.Footer.Bounds.Y < wrappedRow.Body.Bounds.Bottom)
+                throw new InvalidOperationException("Long message timestamp overlaps its final line or stretches the bubble.");
             foreach (var row in ChatRows.Where(r => r.Bound && r.Message != null && r.Body.IsVisible))
             {
                 if (row.Body.ActualHeight < row.Body.FontSize) throw new InvalidOperationException("Message text has insufficient vertical ink bounds.");

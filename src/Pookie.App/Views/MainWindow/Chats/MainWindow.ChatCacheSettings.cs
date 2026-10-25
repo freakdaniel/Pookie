@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
     {
         EnsureChatAccount(); var account = chatAccountId;
         if (media) { if (chatMedia.DiskCache != null) await chatMedia.DiskCache.ClearAsync(); ClearChatMemoryCache(); }
-        else { if (chatHistory != null) await chatHistory.ClearAsync(); chatThreadCache.Clear(); chatThreadRecency.Clear(); }
+        else { if (chatHistory != null) await chatHistory.ClearAsync(); chatThreadCache.Clear(); chatThreadRecency.Clear(); chatReplyLookups.Clear(); }
         if (account != chatAccountId) return "Аккаунт изменился";
         await RefreshChatCacheStatisticsAsync();
         return media ? "Кеш вложений очищен. Папки, избранное и черновики сохранены." : "Кеш истории очищен. Папки, избранное и черновики сохранены.";

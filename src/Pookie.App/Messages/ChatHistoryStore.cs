@@ -155,6 +155,12 @@ internal sealed class ChatHistoryStore : IAsyncDisposable
         }
         return new ChatHistoryWindow(result.OrderBy(m => m.SentAt).ThenBy(m => m.Id, StringComparer.Ordinal).ToArray(), cursor == "" ? null : cursor, complete);
     }, token);
+    internal Task<ChatMessage?> FindMessageAsync(long peer,string id,CancellationToken token = default) => Run(db =>
+    {
+        using var command = Command(db,"SELECT id,sender,body,stamp FROM messages WHERE peer=$p AND id=$i",("$p",peer),("$i",id));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadMessage(reader) : null;
+    },token);
     internal Task SaveMediaMetadataAsync(long peer, string id, MediaFile[] files, string caption, CancellationToken token = default) => Run(db =>
     {
         var safe = files.Select(f => f with { Video = null }).ToArray();

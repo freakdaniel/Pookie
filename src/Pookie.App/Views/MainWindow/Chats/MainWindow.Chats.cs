@@ -135,7 +135,7 @@ internal sealed partial class MainWindow
             chatAttachmentLabel.Column(1).CenterVertical(), clearAttachments.Column(2).CenterVertical());
         attached.IsVisible = false;
         chatAttachmentStrip = attached;
-        chatComposerLayout = new(chatInput, attached, chatAttach, chatGif, chatSend, ChatVoiceView(),
+        chatComposerLayout = new(chatInput, attached, chatAttach, chatGif, chatSend, ChatVoiceView(), ChatReplyView(),
             () => chatColumns.ActualHeight * .4 - 16, () => chatComposer.Background);
         chatComposerSurface = new(chatComposerLayout);
         chatComposerSurface.ResizeStarted = () => chatFollowLayout = chatFollowLayout || chatWasAtBottom || chatScrollBottom || ChatIsAtBottom();
@@ -177,7 +177,7 @@ internal sealed partial class MainWindow
         var thread = new DockPanel().LastChildFill().Spacing(12).Children(
             ReadingChrome(chatIdentityCard).DockTop(),
             ReadingChrome(threadStatus).DockTop(),
-            ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(ChatReplyView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), ReadingChrome(chatNewMessages).DockBottom(), historyArea);
+            ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), ReadingChrome(chatNewMessages).DockBottom(), historyArea);
         var threadSurface = new ChatStage(new Grid().Columns("*").Rows("*").Children(thread, new ChatStage(ChatThreadSearchResults(), rightInset: () => chatColumns.ScrollGutter).Initialize()), centerReadingColumn: false).Initialize();
         chatColumns = new ChatColumns(new GlassCard(Surface).Background(ChatGlassSurface).CornerRadius(24).Padding(12).Margin(0, 0, 0, 16).Child(inbox), threadSurface, compact => chatBack.IsVisible = compact).Initialize();
         chatColumns.SetDetails(CreateChatDetails()); chatColumns.CloseDetails=CloseChatDetails;

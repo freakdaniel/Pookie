@@ -105,6 +105,7 @@ internal sealed partial class MainWindow
 
     private void ClearChatVisualCache()
     {
+        chatReplyLookups.Clear();
         chatMusicCache.Clear(); chatMusicLoads.Clear(); chatMusicAttempted.Clear();
         chatMusicRecognizeTimer.Stop(); ++chatMusicRecognition; chatMusicDraft = null; chatMusicEditor?.Update([]);
         chatDecodedPhotos.Clear(); chatDecodedRecency.Clear(); chatDecodedBytes = 0;

@@ -9,9 +9,11 @@ internal sealed class ChatComposerSurface : Panel
     private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(220), Easing.CubicBezier(.2, 0, 0, 1));
     private double fromHeight, targetHeight = -1, resizeAmount = 1;
     private bool snapNext;
+    private bool replyResize;
     internal bool IsResizing => resize.IsRunning;
     internal Action? ResizeStarted;
     internal void SnapNextLayout() { snapNext = true; resize.Stop(); InvalidateMeasure(); }
+    internal void AnimateReplyChange() { replyResize = true; InvalidateMeasure(); }
     private readonly FrameworkElement content;
     private readonly Border hint;
     internal Border DropHint => hint;
@@ -49,8 +51,12 @@ internal sealed class ChatComposerSurface : Panel
             var restarting = resize.IsRunning;
             if (!restarting) ResizeStarted?.Invoke();
             fromHeight = resize.IsRunning ? fromHeight + (targetHeight - fromHeight) * resizeAmount : ActualHeight;
-            resize.Stop(); targetHeight = nextHeight; resizeAmount = 0; resize.Start();
+            resize.Stop(); targetHeight = nextHeight; resizeAmount = 0;
+            resize.Duration = TimeSpan.FromMilliseconds(replyResize ? 250 : 220);
+            resize.EasingFunction = replyResize ? Easing.CubicBezier(.4,0,.2,1) : Easing.CubicBezier(.2,0,0,1);
+            resize.Start();
         }
+        replyResize = false;
         return new(content.DesiredSize.Width, resize.IsRunning ? fromHeight + (targetHeight - fromHeight) * resizeAmount : targetHeight);
     }
     protected override Size ArrangeOverride(Size finalSize)

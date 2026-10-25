@@ -64,6 +64,8 @@ internal sealed partial class MainWindow
 
     private void ResetChats()
     {
+        chatReplyLookups.Clear();
+        chatReplyQuote.BeginBinding(); chatReplyQuote.Set("","",null); chatComposerSurface.SnapNextLayout();
         SaveChatDraft(); ResetChatVoice(); CloseChatDetails(); CloseChatSearch(); chatFavoritesOpen = chatFollowLayout = false; chatSavedBound = null;
         if (chatSavedView != null) { chatSavedView.IsVisible = false; chatConversationView.IsVisible = true; chatSavedMessages.ItemsSource = ItemsView.Create(Array.Empty<ChatFavorite>(), f => f.Message.Body, f => $"{f.PeerId}:{f.Message.Id}"); }
         chatColumns.ResetDetails(); ResetChatDetailsContent(); chatGlobalMessages = chatGlobalSearchForced = chatFindMessages = chatHistoryLoading = false;
@@ -277,6 +279,10 @@ internal sealed partial class MainWindow
         finally { chatRenderingDraft = false; }
         chatReply=chatWorkspace.Drafts?.GetValueOrDefault(recipient.Id)?.Reply; RefreshChatReply(); RestoreChatVoiceDraft(recipient.Id);
         RefreshChatComposer(); RefreshChatTimeline();
+        // Returning from Saved Messages may reuse the same keyed timeline.
+        // Its containers were cleared above, so explicitly bind them again even
+        // when no message IDs or bodies changed on the server.
+        chatMessagesView.ItemsSource.Invalidate();
         foreach (var pair in chatInboxBindings)
         {
             var variant = pair.Value.Recipient.Id == recipient.Id ? TrackButtons.Tonal : TrackButtons.Text;

@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
         private readonly Grid deliveryIcon;
         private readonly Button quote;
         private readonly ChatMessageFrame frame;
-        private readonly TextBlock quoteText = new TextBlock().FontSize(12).Foreground(ChatAccent).TextTrimming(TextTrimming.CharacterEllipsis);
+        internal readonly ChatQuoteView Quote = new(ChatAccent);
         private readonly StackPanel reactions = new StackPanel().Horizontal().Spacing(3);
         internal readonly StackPanel Attachments = new StackPanel().Vertical().Spacing(8);
         internal Image MusicBackdrop = null!;
@@ -65,8 +65,8 @@ internal sealed partial class MainWindow
             Bubble.MouseLeave += () => UpdateMediaHover(false);
             DateBadge = new Border().Background(Color.FromRgb(48, 53, 59)).CornerRadius(14).Padding(12, 5)
                 .Margin(0, 8, 0, 12).Child(date).CenterHorizontal();
-            quote=TrackButtons.Action(new Grid().Columns("3,*").Rows("*").Spacing(8).Children(new Border().Background(ChatAccent).BorderThickness(0).CornerRadius(1).Margin(0,6).Column(0), quoteText.Column(1).CenterVertical()),()=>
-            {if(ReplyReference() is {} reply)owner.Run(()=>owner.JumpChatMessageAsync(reply.PeerId,reply.MessageId));},TrackButtons.Tonal,32).Padding(10,0).CornerRadius(8).MaxWidth(520).IsVisible(false);
+            quote=TrackButtons.Action(Quote,()=>
+            {if(ReplyReference() is {} reply)owner.Run(()=>owner.JumpChatMessageAsync(reply.PeerId,reply.MessageId));},TrackButtons.Text,42).Padding(0).CornerRadius(4).MaxWidth(520).IsVisible(false);
             ((FrameworkElement)quote.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
             frame = new ChatMessageFrame(quote, Bubble).Initialize();
             Motion.Content = new StackPanel().Vertical().Children(DateBadge,frame,reactions);
@@ -107,7 +107,7 @@ internal sealed partial class MainWindow
             Clear(); Message = message;
             Bound = true;
             var own = message.SenderId == owner.me?.Id;
-            Bubble.HorizontalAlignment = own ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            Bubble.HorizontalAlignment = HorizontalAlignment.Stretch;
             Bubble.Background = own ? ChatOutgoingColor : ChatIncomingColor;
             Time.Text = ChatPresentation.Time(message.SentAt);
             Time.Foreground = own ? Color.FromRgb(174, 199, 219) : Muted;
@@ -147,8 +147,7 @@ internal sealed partial class MainWindow
         {
             if(Message==null)return;
             var projection=ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0);
-            var reply=ReplyReference();quote.IsVisible=reply!=null;
-            quoteText.Text = reply?.Preview ?? "";
+            RefreshQuote();
             var own=Message.SenderId==owner.chatAccountId;
             frame.HorizontalAlignment=reactions.HorizontalAlignment=own?HorizontalAlignment.Right:HorizontalAlignment.Left;
             reactions.Clear();
@@ -156,11 +155,17 @@ internal sealed partial class MainWindow
                 foreach(var group in authors.GroupBy(p=>p.Value))
                 {var emoji=group.Key;reactions.Add(TrackButtons.Action(new TextBlock().Text(emoji+" "+group.Count()).FontSize(12),()=>owner.Run(()=>owner.ReactToChatAsync(Message,emoji)),group.Any(p=>p.Key==owner.chatAccountId)?TrackButtons.Tonal:TrackButtons.Text,26).Padding(7,0));}
             reactions.IsVisible=reactions.Children.Count>0;
-            ((MaterialTrackButton)quote).Palette(own ? ChatOutgoingColor : ChatIncomingColor, ChatAccent);
             var connected=owner.ChatMessageGroup(Message);
             Root.Margin=new Thickness(0,connected.Previous?2:8,0,0);
-            Bubble.NonUniformCornerRadius=own?new CornerRadius(18,connected.Previous?6:18,connected.Next?6:18,18):new CornerRadius(connected.Previous?6:18,18,18,connected.Next?6:18);
+            var corners=own?new CornerRadius(18,connected.Previous?6:18,connected.Next?6:18,18):new CornerRadius(connected.Previous?6:18,18,18,connected.Next?6:18);
+            frame.SetAppearance(own ? ChatOutgoingColor : ChatIncomingColor,corners);
+            Bubble.NonUniformCornerRadius=quote.IsVisible ? new CornerRadius(0,0,corners.BottomRight,corners.BottomLeft) : corners;
             Root.Background=owner.chatSelected.Contains(Message.Id)?Color.FromArgb(35,128,196,249):Color.Transparent;
+        }
+        internal void RefreshQuote()
+        {
+            var reply = ReplyReference(); quote.IsVisible = reply != null;
+            if (reply != null) owner.BindChatQuote(Quote,reply);
         }
         internal void RefreshDate()
         {
@@ -229,6 +234,7 @@ internal sealed partial class MainWindow
         }
         internal void Clear()
         {
+            Quote.BeginBinding(); Quote.Set("","",null); quote.IsVisible = false;
             highlight.Stop(); Bound = false; DateBadge.Opacity = 1; Content.StopResize();
             ItemKey = null; MediaKey = null; MediaResolved = FollowMediaResize = false; ++MediaGeneration;
             Load?.Cancel(); Load?.Dispose(); Load = null;

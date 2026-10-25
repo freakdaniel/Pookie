@@ -22,6 +22,11 @@ internal sealed class ChatMessageText : TextBlock
     internal string? SelectedText=>selectionAnchor==selectionEnd?null:Text[Math.Min(selectionAnchor,selectionEnd)..Math.Max(selectionAnchor,selectionEnd)];
     internal int MusicCount => links.Count;
     internal Rect[] MusicBounds => links.Select(link => link.Inline.Bounds).ToArray();
+    internal TextLayoutLineMetrics? LastLineAt(double width)
+    {
+        var lines = Layout(Math.Max(1,width)).Lines;
+        return lines.Count == 0 ? null : lines[^1];
+    }
 
     internal ChatMessageText()
     {
@@ -91,7 +96,7 @@ internal sealed class ChatMessageText : TextBlock
     private ITextLayout Layout(double width)
     {
         var dpi = (uint)Math.Round(96 * (FindVisualRoot() is Window window ? window.DpiScale : 1));
-        var style = new TextRunStyle(FontFamily, FontSize, FontWeight);
+        var style = new TextRunStyle(FontFamily, FontSize, FontWeight,FontStyle == FontStyle.Italic);
         if (layout != null && layoutWidth.Equals(width) && layoutDpi == dpi && layoutStyle == style) return layout;
         layoutWidth = width; layoutDpi = dpi; layoutStyle = style;
         foreach (var link in links) { link.Inline.MaximumWidth = width; link.Inline.ClearBounds(); }
@@ -99,7 +104,8 @@ internal sealed class ChatMessageText : TextBlock
         {
             Text = Text.AsMemory(), Dpi = dpi, DefaultStyle = style,
             Inlines = links.Select(link => new InlineRun(link.Start, link.Inline.Link.Url.Length, link.Inline, true)).ToArray(),
-            Paragraph = new() { MaxWidth = width, Wrapping = TextWrapping.Wrap, LineSpacing = LineSpacing }
+            Paragraph = new() { MaxWidth = width, Wrapping = TextWrapping.Wrap, LineSpacing = LineSpacing,
+                Alignment = TextAlignment,LineBoxTrim = LineBoxTrim,Culture = System.Globalization.CultureInfo.CurrentUICulture }
         });
     }
     protected override Size MeasureContent(Size availableSize)

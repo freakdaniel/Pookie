@@ -36,8 +36,11 @@ internal sealed partial class MainWindow
         await SelectChatAsync(transport.Other); ToggleChatSelection(target);
         if(!chatSelectionBar.IsVisible||chatSelected.Count!=1)throw new InvalidOperationException("Multiple selection toolbar missing.");
         RouteChatEscape();if(chatSelectionBar.IsVisible)throw new InvalidOperationException("Escape did not close selection.");
-        ReplyToChat(target);chatInput.Text="Связанный ответ";await SendChatAsync();
+        await VerifyChatReplyUiAsync(target);chatInput.Text="Связанный ответ";await SendChatAsync();
         if(chatReply!=null||!chatMessages.Any(m=>ChatProtocol.Project(m,42,90).Reply?.MessageId==target.Id))throw new InvalidOperationException("Reply was not confirmed and projected through the outbox.");
+        await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && ChatRows.Any(row => row.Bound && row.Quote.IsVisible && row.Quote.Title.Length > 0));
+        await WaitForLoginFrameAsync(); CaptureUiPreview("chats-reply-message");
+        await VerifyChatFooterUiAsync(target);
         var visibleCount=chatMessageItems.Count;await ReactToChatAsync(target,"🔥");
         if(chatMessageItems.Count!=visibleCount||chatReactions.GetValueOrDefault(target.Id)?.GetValueOrDefault(42)!="🔥")throw new InvalidOperationException("Reaction became a text bubble or was not projected.");
         await ReactToChatAsync(target,"🔥");if(chatReactions.GetValueOrDefault(target.Id)?.ContainsKey(42)==true)throw new InvalidOperationException("Second reaction did not remove own emoji.");
@@ -65,9 +68,9 @@ internal sealed partial class MainWindow
             if (chatThreadSearchPopup.ActualHeight > 50 && chatThreadSearchResults.ActualHeight < 1)
                 searchContentVanished = true;
         }
-        chatViewport.BeforePaint += SampleSearchReveal; chatThreadSearchPopup.Expanded = false;
+        Window.FrameRendered += SampleSearchReveal; chatThreadSearchPopup.Expanded = false;
         await WaitForLikedLayoutAsync(() => !chatThreadSearchPopup.Animating && chatThreadSearchPopup.ActualHeight < 41);
-        chatViewport.BeforePaint -= SampleSearchReveal;
+        Window.FrameRendered -= SampleSearchReveal;
         if (!searchHeights.Any(h => h > 41 && h < expandedSearchHeight - 1))
             throw new InvalidOperationException($"Search results collapse without intermediate animation frames: start={expandedSearchHeight}, frames={string.Join(",",searchHeights)}.");
         if (searchContentVanished) throw new InvalidOperationException("Search contents disappear before the collapsing surface.");
@@ -91,9 +94,9 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => !chatSidebarTransition.Animating);
         var sidebarOpacities = new List<double>();
         void SampleSidebarReveal() => sidebarOpacities.Add(chatSidebarSearch.Opacity);
-        chatViewport.BeforePaint += SampleSidebarReveal; RouteWaveformClick(SettingsCenter(chatSearch));
+        Window.FrameRendered += SampleSidebarReveal; RouteWaveformClick(SettingsCenter(chatSearch));
         await WaitForLikedLayoutAsync(() => chatSidebarSearching && !chatSidebarTransition.Animating);
-        chatViewport.BeforePaint -= SampleSidebarReveal;
+        Window.FrameRendered -= SampleSidebarReveal;
         if (!sidebarOpacities.Any(o => o > .01 && o < .99) || chatSidebarBack.Bounds.Right >= chatSearch.Bounds.X)
             throw new InvalidOperationException("Focusing sidebar search did not animate its content or keep the back button outside the field.");
         await WaitForLikedLayoutAsync(() => chatSearchLanding.IsVisible && chatSearchLanding.FindVisualChild<Image>() is Image { ActualHeight: > 0 });
@@ -247,10 +250,10 @@ internal sealed partial class MainWindow
         chatVoiceFactory=_=>new SyntheticChatRecorder();
         var voiceFrames = new List<(double Amount,double Text,double Voice)>();
         void SampleVoiceMode() => voiceFrames.Add((chatComposerLayout.VoiceAmount,chatInput.Opacity,chatVoiceBar.Opacity));
-        chatViewport.BeforePaint += SampleVoiceMode;
+        Window.FrameRendered += SampleVoiceMode;
         await ContinueChatVoiceAsync();if(chatVoiceRecorder is not {Recording:true}||!chatVoiceBar.IsVisible)throw new InvalidOperationException("Synthetic recorder did not start.");
         await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && !chatComposerLayout.IsChangingMode && chatComposerLayout.VoiceAmount>.99 && chatVoiceBar.ActualWidth > 100 && !chatColumns.Animating);
-        chatViewport.BeforePaint -= SampleVoiceMode;
+        Window.FrameRendered -= SampleVoiceMode;
         if (!voiceFrames.Any(frame=>frame.Amount>.02 && frame.Amount<.98 && frame.Text>.02 && frame.Voice>.02))
             throw new InvalidOperationException("Starting voice capture snapped the editor instead of cross-fading both surfaces.");
         if (chatVoiceBar.Bounds.Y < chatComposer.Bounds.Y || chatVoiceBar.Bounds.Bottom > chatComposer.Bounds.Bottom || chatInput.IsVisible)
@@ -260,14 +263,14 @@ internal sealed partial class MainWindow
         var beforePeak = chatVoiceWave.LastLiveFrame;
         var livePositions = new List<double>();
         void SampleLivePosition() => livePositions.Add(chatVoiceWave.LivePosition);
-        chatViewport.BeforePaint += SampleLivePosition;
+        Window.FrameRendered += SampleLivePosition;
         synthetic.AppendLevel(.005f,2);
         await WaitForLikedLayoutAsync(()=>chatVoiceWave.IsLive && chatVoiceWave.LastLiveFrame >= beforePeak+2);
         synthetic.AppendLevel(.7f,4);
         await WaitForLikedLayoutAsync(()=>chatVoiceWave.LastLiveFrame >= beforePeak+6);
         if (chatVoiceWave.LiveFrameCount<6) throw new InvalidOperationException("Live PCM did not reach the recording waveform.");
         await WaitForLikedLayoutAsync(()=>!chatVoiceWave.IsScrolling);
-        chatViewport.BeforePaint -= SampleLivePosition;
+        Window.FrameRendered -= SampleLivePosition;
         if (livePositions.Count<3 || livePositions.Zip(livePositions.Skip(1)).Any(pair=>pair.Second<pair.First-.00001) || !livePositions.Any(p=>Math.Abs(p-Math.Round(p))>.05))
             throw new InvalidOperationException("Live voice bars moved backwards or advanced only in whole capture packets.");
         await WaitForLoginFrameAsync();
@@ -306,10 +309,10 @@ internal sealed partial class MainWindow
         await SelectChatAsync(transport.Third);await SelectChatAsync(transport.Other);
         if(chatVoiceDraft?.Path!=draftPath)throw new InvalidOperationException("Changing dialog lost voice draft.");
         await WaitForLikedLayoutAsync(()=>!chatComposerLayout.IsChangingMode);
-        voiceFrames.Clear();chatViewport.BeforePaint+=SampleVoiceMode;
+        voiceFrames.Clear();Window.FrameRendered+=SampleVoiceMode;
         await DeleteChatVoiceAsync();if(File.Exists(draftPath))throw new InvalidOperationException("Deleting recording left private draft file.");
         await WaitForLikedLayoutAsync(()=>!chatComposerLayout.IsChangingMode && !chatVoiceBar.IsVisible);
-        chatViewport.BeforePaint-=SampleVoiceMode;
+        Window.FrameRendered-=SampleVoiceMode;
         if (!voiceFrames.Any(frame=>frame.Amount>.02 && frame.Amount<.98 && frame.Text>.02 && frame.Voice>.02))
             throw new InvalidOperationException("Discarding voice capture did not fade back to the editor.");
         ReplyToChat(target);await ContinueChatVoiceAsync();await StopChatVoiceAsync();await SendChatAsync();

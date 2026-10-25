@@ -12,7 +12,7 @@ internal sealed class ChatComposerLayout : Panel
     private const double TextInset = 6;
     private readonly MultiLineTextBox editor;
     private readonly FrameworkElement attachments, attach, gif, send;
-    private readonly FrameworkElement voice;
+    private readonly FrameworkElement voice, reply;
     private readonly Func<double> maximumHeight;
     private readonly EditorFade fade;
     private readonly List<ScrollBar> scrollbars = [];
@@ -20,25 +20,36 @@ internal sealed class ChatComposerLayout : Panel
     private readonly AnimationClock mode = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.25,.1,.25,1));
     private bool voiceMode;
     private double voiceAmount;
+    private bool replyOpen, replyTransition;
+    internal double ReplyHeight { get; private set; }
     internal bool IsChangingMode => mode.IsRunning;
     internal double VoiceAmount => voiceAmount;
     internal double HeightLimit { get; private set; }
     internal double FadeOpacity => fade.Opacity;
 
     internal ChatComposerLayout(MultiLineTextBox editor, FrameworkElement attachments,
-        FrameworkElement attach, FrameworkElement gif, FrameworkElement send, FrameworkElement voice, Func<double> maximumHeight, Func<Color> background)
+        FrameworkElement attach, FrameworkElement gif, FrameworkElement send, FrameworkElement voice, FrameworkElement reply, Func<double> maximumHeight, Func<Color> background)
     {
         this.editor = editor; this.attachments = attachments; this.attach = attach; this.gif = gif; this.send = send;
-        this.maximumHeight = maximumHeight; this.voice = voice;
+        this.maximumHeight = maximumHeight; this.voice = voice; this.reply = reply;
         editor.SizeToDocument = true;
         // The native editor keeps caret navigation, selection and wheel handling;
         // its overlay bars do not occupy space and need neither paint nor hit testing.
         VisualTree.Visit(editor, child =>
         { if (child is ScrollBar bar) { scrollbars.Add(bar); bar.Opacity = 0; bar.IsHitTestVisible = false; } });
         fade = new(background);
-        Add(attachments); Add(editor); Add(fade); Add(attach); Add(gif); Add(voice); Add(send);
+        Add(reply); Add(attachments); Add(editor); Add(fade); Add(attach); Add(gif); Add(voice); Add(send);
         editor.ScrollOffsetChanged += OnEditorScroll;
         editor.DocumentChanged += OnEditorDocumentChanged;
+    }
+
+    internal bool SetReplyOpen(bool value)
+    {
+        if (replyOpen == value) return false;
+        replyOpen = value; replyTransition = true;
+        // Keep the old quote alive until its closing mask reaches zero.
+        reply.IsVisible = true; reply.IsHitTestVisible = value;
+        InvalidateMeasure(); return true;
     }
 
     internal void SetVoiceMode(bool value, bool snap = false)
@@ -75,22 +86,28 @@ internal sealed class ChatComposerLayout : Panel
         HeightLimit = Math.Clamp(maximumHeight(), 80, 244);
         attachments.Measure(new Size(width, 44));
         attachmentHeight = attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height + 8 : 0;
+        reply.Measure(new Size(width,48));
+        var replyHeight = replyOpen ? 48 : 0;
         voice.Measure(new Size(Math.Max(40,width-44),40));
         foreach (var button in new[] { attach, gif, send }) button.Measure(new Size(40, 40));
-        editor.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), Math.Max(28, HeightLimit - attachmentHeight - 2 * TextInset)));
+        editor.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), Math.Max(28, HeightLimit - replyHeight - attachmentHeight - 2 * TextInset)));
         editorHeight = voiceMode ? 28 : Math.Max(28, editor.DesiredSize.Height);
         fade.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), 18));
-        return new(width, attachmentHeight + Math.Max(40, editorHeight + 2 * TextInset));
+        return new(width, replyHeight + attachmentHeight + Math.Max(40, editorHeight + 2 * TextInset));
     }
 
     protected override Size ArrangeOverride(Size finalSize)
     {
         voice.Arrange(voice.IsVisible ? new Rect(Bounds.X,Bounds.Bottom-40,Math.Max(0,finalSize.Width-44),40) : Rect.Empty);
         var x = Bounds.X; var bottom = Bounds.Bottom;
-        attachments.Arrange(new Rect(x, Bounds.Y, finalSize.Width, attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height : 0));
         // Keep the same text origin throughout resize, including the final
         // compact frame. Switching to centering at 40 px caused a visible jump.
-        var rowHeight = Math.Max(40, finalSize.Height - attachmentHeight);
+        var rowHeight = replyTransition ? Math.Max(40,editorHeight+2*TextInset) : Math.Max(40, finalSize.Height-attachmentHeight-(replyOpen ? 48 : 0));
+        ReplyHeight = Math.Clamp(finalSize.Height-attachmentHeight-rowHeight,0,48);
+        reply.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight-48,finalSize.Width,48));
+        if (replyTransition && Math.Abs(ReplyHeight-(replyOpen ? 48 : 0)) < .1)
+        { replyTransition = false; if (!replyOpen) reply.IsVisible = false; }
+        attachments.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight,finalSize.Width,attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height : 0));
         var textHeight = Math.Max(28, rowHeight - 2 * TextInset);
         var textY = bottom - rowHeight + TextInset;
         editor.Arrange(new Rect(x + 44, textY, Math.Max(40, finalSize.Width - (gif.IsVisible ? 132 : 88)), textHeight));

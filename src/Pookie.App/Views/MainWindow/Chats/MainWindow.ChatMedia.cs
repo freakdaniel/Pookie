@@ -201,6 +201,8 @@ internal sealed partial class MainWindow
         if (!chatMediaSummaries.ContainsKey(key)) chatMediaSummaryOrder.Enqueue(key);
         chatMediaSummaries[key] = summary;
         RefreshChatLibraryPreviews(key);
+        if (chatReply != null) RefreshChatReply();
+        foreach (var row in ChatRows.Where(row => row.Bound)) row.RefreshQuote();
         while (chatMediaSummaryOrder.Count > 64) chatMediaSummaries.Remove(chatMediaSummaryOrder.Dequeue());
     }
     private async Task OpenChatMediaAsync(ChatBubbleRow row)

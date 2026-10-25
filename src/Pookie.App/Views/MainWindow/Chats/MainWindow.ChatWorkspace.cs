@@ -8,8 +8,8 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private FrameworkElement chatFoldersSurface = null!;
-    private StackPanel chatFolderTabs = null!, chatDetailsBody = null!, chatSelectionBar = null!, chatReplyBar = null!;
-    private TextBlock chatDetailsTitle = null!, chatSelectionLabel = null!, chatReplyLabel = null!;
+    private StackPanel chatFolderTabs = null!, chatDetailsBody = null!, chatSelectionBar = null!;
+    private TextBlock chatDetailsTitle = null!, chatSelectionLabel = null!;
     private GlassCard chatDetailsCard = null!;
     private ChatProfileBackdrop chatProfileBackdrop = null!;
     private ChatPanelTransition chatDetailsTransition = null!, chatMediaTransition = null!;
@@ -169,20 +169,6 @@ internal sealed partial class MainWindow
         chatSelectionBar.IsVisible = chatSelected.Count > 0; chatSelectionLabel.Text = $"Выбрано: {chatSelected.Count}";
         foreach (var row in ChatRows) row.Root.Background = chatSelected.Contains(row.Message?.Id ?? "") ? Color.FromArgb(35, 128, 196, 249) : Color.Transparent;
     }
-    private FrameworkElement ChatReplyView()
-    {
-        chatReplyLabel = new TextBlock().FontSize(12).Foreground(ChatAccent).TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical();
-        chatReplyBar = new StackPanel().Horizontal().Spacing(6).Children(chatReplyLabel, TrackButtons.Icon(Icons.View("x-mark", 16), () => { chatReply = null; RefreshChatReply(); }, TrackButtons.Text, 28));
-        chatReplyBar.IsVisible = false; return chatReplyBar;
-    }
-    private void ReplyToChat(ChatMessage message)
-    {
-        if (chatRecipient == null || ChatOutgoing(message) != null) return;
-        var text = ChatProtocol.Project(message, chatAccountId, chatRecipient.Id).Text;
-        chatReply = new(chatRecipient.Id, message.Id, ChatProtocol.Clip(ChatPreview(text), 160));
-        RefreshChatReply(); chatInput.Focus();
-    }
-    private void RefreshChatReply() { if (chatReplyBar == null) return; chatReplyBar.IsVisible = chatReply != null; chatReplyLabel.Text = chatReply?.Preview ?? ""; }
     private async Task DownloadChatSearchHistoryAsync()
     {
         if (chatHistory == null || me == null || api.Session == null) return;

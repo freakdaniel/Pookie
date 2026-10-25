@@ -24,12 +24,15 @@ public sealed class ChatWorkspaceTests
                 Assert.Equal(2,(await history.SearchAsync("Привет")).Length);
                 Assert.Single(await history.SearchAsync("муз"));
                 Assert.Empty(await history.SearchAsync("Привет",91));
+                Assert.Equal("Привет музыка",(await history.FindMessageAsync(90,"2"))?.Body);
+                Assert.Null(await history.FindMessageAsync(91,"2"));
+                Assert.Null(await history.FindMessageAsync(90,"missing"));
                 await history.SavePageAsync(42,90,new([Message("2","Привет музыка",minute:2)],"cursor-two"));
                 Assert.Equal(3,(await history.LoadWindowAsync(90)).Messages.Length);
             }
             await using(var restored=new ChatHistoryStore(paths,42))
-            {Assert.Single(await restored.LoadDialogsAsync());Assert.Equal(3,(await restored.LoadWindowAsync(90)).Messages.Length);}
-            await using(var other=new ChatHistoryStore(paths,7)){Assert.Empty(await other.LoadDialogsAsync());Assert.Empty(await other.SearchAsync("Привет"));}
+            {Assert.Single(await restored.LoadDialogsAsync());Assert.Equal(3,(await restored.LoadWindowAsync(90)).Messages.Length);Assert.Equal("Привет мир",(await restored.FindMessageAsync(90,"1"))?.Body);}
+            await using(var other=new ChatHistoryStore(paths,7)){Assert.Empty(await other.LoadDialogsAsync());Assert.Empty(await other.SearchAsync("Привет"));Assert.Null(await other.FindMessageAsync(90,"1"));}
         }
         finally{Directory.Delete(path,true);}
     }
