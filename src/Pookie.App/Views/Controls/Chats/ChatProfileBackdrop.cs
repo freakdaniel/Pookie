@@ -60,7 +60,7 @@ internal sealed class ChatProfileBackdrop : GlassCard
         {
             ClearRaster(); factory = graphics;
             raster = new WriteableBitmap(width, Rows, clear: false, hasAlpha: true);
-            image = ((IImageSource)raster).CreateImage(graphics);
+            image = BitmapImage.Create(graphics, raster);
             noise = new float[width * Rows];
             for (var y = 0; y < Rows; y++)
             for (var x = 0; x < width; x++) noise[y * width + x] = (float)PlayerGradient.Noise(x, y);

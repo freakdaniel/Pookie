@@ -47,8 +47,8 @@ internal sealed class ShellChromeGlass(GlassContentFrame content, Color surface)
         if (raster == null || raster.PixelWidth != width || raster.PixelHeight != height || raster.DpiScale != scale || factory != graphics || contextIdentity != currentContext)
         {
             ClearRaster(); factory = graphics; contextIdentity = currentContext;
-            raster = graphics.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(width, height, scale, debugName: "ShellChromeGlass"));
-            renderer = graphics.CreateContext(raster);
+            raster = BackdropSurface.Create(graphics, width, height, scale, "ShellChromeGlass");
+            if (!BackdropSurface.UsesCpuCapture) renderer = graphics.CreateContext(raster);
             if (currentContext != 0 && raster is IGpuTextureSource && raster is IExternalWritableGpuSurface)
             {
                 try { gpuBlur = new Win32BackdropBlur(graphics, width, height, scale, BlurRadius * scale / 3); }
@@ -62,17 +62,28 @@ internal sealed class ShellChromeGlass(GlassContentFrame content, Color surface)
         if (amount <= .001) { context.FillRectangle(Bounds, surface); return; }
         // Refresh the narrow strip only on a requested UI frame, so late artwork and
         // animations remain live without starting a separate repaint loop.
-        renderer!.BeginFrame(raster!);
-        try
+        var region = new Rect(Bounds.X, Bounds.Y - BlurRadius, width / scale, height / scale);
+        if (BackdropSurface.UsesCpuCapture)
         {
-            renderer.Clear(surface);
-            renderer.Translate(-Bounds.X, BlurRadius - Bounds.Y);
-            renderer.SetClip(new Rect(Bounds.X, Bounds.Y - BlurRadius, width / scale, height / scale));
-            content.DrawBackdrop(renderer, new Rect(Bounds.X, Bounds.Y - BlurRadius, width / scale, height / scale));
+            // The native strip is already CPU-readable. Reduce those pixels
+            // directly instead of uploading and synchronizing another DC target
+            // for every half-size stage and again for the final blur input.
+            blurred!.UpdateReduced((ICpuPixelSurface)content.CaptureBackdrop(region, surface), BlurRadius * scale / 3);
         }
-        finally { renderer.EndFrame(); }
-        if (gpuBlur != null) gpuBlur.Update(raster!);
-        else blurred!.Update((ICpuPixelSurface)raster!, BlurRadius * scale / 3);
+        else
+        {
+            renderer!.BeginFrame(raster!);
+            try
+            {
+                renderer.Clear(surface);
+                renderer.Translate(-Bounds.X, BlurRadius - Bounds.Y);
+                renderer.SetClip(region);
+                content.DrawBackdrop(renderer, region, surface);
+            }
+            finally { renderer.EndFrame(); }
+            if (gpuBlur != null) gpuBlur.Update(raster!);
+            else blurred!.Update((ICpuPixelSurface)raster!, BlurRadius * scale / 3);
+        }
         context.Save();
         try
         {

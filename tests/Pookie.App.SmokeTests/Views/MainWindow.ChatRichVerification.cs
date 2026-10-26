@@ -14,13 +14,13 @@ internal sealed partial class MainWindow
         var fileRow = ChatRows.First(r => r.Message?.Body == document);
         var fileCard = (ChatFileCard)fileRow.Attachments.FindVisualChild<ChatFileCard>()!;
         await WaitForLikedLayoutAsync(() => !fileRow.Content.IsResizing);
-        if (fileCard.DetailLabel.Text != "87 Б" || fileRow.Bubble.ActualHeight > 72 || Math.Abs(fileCard.DetailLabel.Bounds.Bottom - fileRow.Time.Bounds.Bottom) > 1)
+        if (fileCard.DetailLabel.Text != "87 Б" || fileRow.Bubble.ActualHeight > 72 + 1 / Window.DpiScale || Math.Abs(fileCard.DetailLabel.Bounds.Bottom - fileRow.Time.Bounds.Bottom) > 1)
             throw new InvalidOperationException($"Document bubble lost its compact file/size/time layout: detail={fileCard.DetailLabel.Text}, bubble={fileRow.Bubble.Bounds}, detailBounds={fileCard.DetailLabel.Bounds}, time={fileRow.Time.Bounds}, content={fileRow.Content.Bounds}.");
         var photo = Fixture("chat-small.png");
         var asFile = media.Add(new(90, 42, "", [new("photo.png", "image/png", photo, true)]));
         transport.AddIncoming(asFile); await RefreshChatsAsync();
         await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == asFile && !r.Content.IsResizing && r.Motion.Opacity > .99 &&
-            r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard && r.Bubble.ActualHeight <= 72));
+            r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard && r.Bubble.ActualHeight <= 72 + 1 / Window.DpiScale));
         if (ChatRows.First(r => r.Message?.Body == asFile).Content.PhotoMode) throw new InvalidOperationException("An image sent as a document became a photo.");
         await WaitForLikedLayoutAsync(() => chatInboxVisuals.Any(pair => pair.Value.Preview.Text == "photo.png" && pair.Value.PreviewGlyph == "file" && pair.Value.PreviewIcon.IsVisible));
         CaptureUiPreview("chats-documents");

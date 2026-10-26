@@ -18,7 +18,7 @@ internal sealed partial class MainWindow
             await ShowWorkspaceAsync(); Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             await NavigateAsync(Page.Chats); chatTimer.Stop(); await SelectChatAsync(transport.Other);
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && !chatComposerSurface.IsResizing && chatInput.IsEnabled);
-            Window.WindowSize = WindowSize.Resizable(1840, 900, minWidth: 760, minHeight: 600);
+            Window.WindowSize = WindowSize.Resizable(VerificationWindowWidth(1840), 900, minWidth: 760, minHeight: 600);
             OpenChatInfo(); await WaitForLikedLayoutAsync(() => !chatColumns.Animating && chatColumns.DetailsOpen);
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             MoveActionPointer(new Point(2, 2));
@@ -170,8 +170,9 @@ internal sealed partial class MainWindow
             if (row.Reactions.Buttons.Count(b => b.IsVisible) != 2 || row.Reactions.Buttons.Where(b => b.IsVisible).Max(b => b.Bounds.Right) > row.Footer.Bounds.X - 1)
                 throw new InvalidOperationException("Two participants' reactions overlap the timestamp.");
             await VerifyEmojiPhotoCornersAsync(row);
-            foreach (var width in new[] { 780, 1000, 2560 })
+            foreach (var requestedWidth in new[] { 780, 1000, 2560 })
             {
+                var width = VerificationWindowWidth(requestedWidth);
                 Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 760, minHeight: 600);
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && !chatColumns.Animating);
                 await OpenChatGifsAsync(); await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);

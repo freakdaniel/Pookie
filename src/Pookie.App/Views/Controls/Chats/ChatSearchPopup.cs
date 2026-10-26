@@ -12,6 +12,7 @@ internal sealed class ChatSearchPopup : Panel
     private readonly AnimationClock reveal = new(TimeSpan.FromMilliseconds(220), Easing.CubicBezier(.4, 0, .2, 1));
     private readonly AnimationClock visibility = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.4, 0, .2, 1));
     private readonly GlassSheenRaster sheen = new();
+    private readonly BoxShadowRaster shadow = new(8, 3, Color.FromArgb(65, 0, 0, 0));
     private double height, from, target;
     private bool searching, expanded;
     internal bool Animating => reveal.IsRunning || visibility.IsRunning;
@@ -61,12 +62,14 @@ internal sealed class ChatSearchPopup : Panel
     }
     protected override void OnRender(IGraphicsContext context)
     {
-        context.DrawBoxShadow(Bounds, 21, 8, Color.FromArgb(65,0,0,0), offsetY: 3);
+        shadow.Draw(context, Bounds, 21);
         context.FillRoundedRectangle(Bounds, 21, 21, Color.FromRgb(35,35,39));
         sheen.Draw(context, Bounds, new CornerRadius(21), .15, GetDpi()/96d);
         if (height > 1) context.FillRectangle(new Rect(Bounds.X + 10, Bounds.Y + 40, Math.Max(0, Bounds.Width - 20), .5), Color.FromArgb(26,255,255,255));
     }
     protected override void RenderSubtree(IGraphicsContext context)
     { context.Save(); try { context.SetClipRoundedRect(Bounds, 21,21); base.RenderSubtree(context); } finally { context.Restore(); } }
-    protected override void OnDispose() { reveal.Stop(); visibility.Stop(); sheen.Dispose(); base.OnDispose(); }
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) shadow.Dispose(); }
+    protected override void OnDispose() { reveal.Stop(); visibility.Stop(); sheen.Dispose(); shadow.Dispose(); base.OnDispose(); }
 }

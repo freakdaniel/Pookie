@@ -40,13 +40,15 @@ internal sealed partial class MainWindow
             VisualTree.Visit(first.Root, element => { if (element is TextBlock { Text: "944" } text) counter = text; });
             await WaitForLikedLayoutAsync(() => counter is { IsVisible: true, ActualWidth: > 0 });
             await WaitForLoginFrameAsync(); CaptureUiPreview("feed-wide");
-            if (first.Cover.ActualWidth != TrackRowLayout.CoverSize || first.Root.ActualHeight != TrackRowLayout.Height || first.TrackArt.Source != art)
+            if (Math.Abs(first.Cover.ActualWidth - TrackRowLayout.CoverSize) > 1 / Window.DpiScale ||
+                Math.Abs(first.Root.ActualHeight - TrackRowLayout.Height) > 1 / Window.DpiScale || first.TrackArt.Source != art)
                 throw new InvalidOperationException("Feed did not reuse the shared artwork/waveform geometry or custom track art.");
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) > 800);
             shellScroll.SetScrollOffsets(0, 800);
             await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset > 799 && shellPageScroll.IsReady && feedViews.Values.Any(view => view.Entry.Item.Playlist != null && view.Preview.Count == 3));
             var playlistView = feedViews.Values.First(view => view.Entry.Item.Playlist != null);
-            if (playlistView.Preview.Any(row => row.Root.Height != 24) || playlistView.Covers[0].ActualHeight != TrackRowLayout.CoverSize)
+            if (playlistView.Preview.Any(row => row.Root.Height != 24) ||
+                Math.Abs(playlistView.Covers[0].ActualHeight - TrackRowLayout.CoverSize) > 1 / Window.DpiScale)
                 throw new InvalidOperationException("Playlist preview did not fit the shared 184px publication geometry.");
             await WaitForLoginFrameAsync();
             var pinnedTop = shellScroll.Bounds.Y + ShellChromeGlass.HeaderHeight + 16;

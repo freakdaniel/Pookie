@@ -52,6 +52,14 @@ internal sealed class ChatComposerLayout : Panel
         InvalidateMeasure(); return true;
     }
 
+    internal void CompleteReplyTransition()
+    {
+        if (!replyTransition) return;
+        replyTransition = false;
+        reply.IsVisible = replyOpen;
+        InvalidateArrange();
+    }
+
     internal void SetVoiceMode(bool value, bool snap = false)
     {
         if (voiceMode == value && !snap) return;
@@ -103,10 +111,8 @@ internal sealed class ChatComposerLayout : Panel
         // Keep the same text origin throughout resize, including the final
         // compact frame. Switching to centering at 40 px caused a visible jump.
         var rowHeight = replyTransition ? Math.Max(40,editorHeight+2*TextInset) : Math.Max(40, finalSize.Height-attachmentHeight-(replyOpen ? 48 : 0));
-        ReplyHeight = Math.Clamp(finalSize.Height-attachmentHeight-rowHeight,0,48);
+        ReplyHeight = replyTransition ? Math.Clamp(finalSize.Height-attachmentHeight-rowHeight,0,48) : replyOpen ? 48 : 0;
         reply.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight-48,finalSize.Width,48));
-        if (replyTransition && Math.Abs(ReplyHeight-(replyOpen ? 48 : 0)) < .1)
-        { replyTransition = false; if (!replyOpen) reply.IsVisible = false; }
         attachments.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight,finalSize.Width,attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height : 0));
         var textHeight = Math.Max(28, rowHeight - 2 * TextInset);
         var textY = bottom - rowHeight + TextInset;

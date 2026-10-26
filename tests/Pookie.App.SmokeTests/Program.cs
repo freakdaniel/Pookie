@@ -4,13 +4,16 @@ using Aprillz.MewUI;
 using Pookie.App;
 using Pookie.App.Diagnostics;
 using Pookie.Logging;
+using Aprillz.MewUI.Diagnostics;
+using System.Text.Json;
 
 internal static class Program
 {
     [STAThread]
     private static void Main(string[] args)
     {
-        if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROFILE") == "1")
+        if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROFILE") == "1" ||
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("POOKIE_PERF_CAPTURE")))
         {
             AppContext.SetSwitch("Aprillz.MewUI.DevTools.Enabled", true);
             var profilerType = typeof(Window).Assembly.GetType("Aprillz.MewUI.Diagnostics.PerformanceProfiler", throwOnError: true)!;
@@ -23,6 +26,9 @@ internal static class Program
 
     private static async Task RunAsync(string[] args)
     {
+        var capture = Environment.GetEnvironmentVariable("POOKIE_PERF_CAPTURE");
+        var frames = new List<FramePerformanceStats>();
+        long lastFrame = -1;
         try
         {
             if (args.Contains("--chat-video-smoke-test")) { await ChatVideoSmokeTest.RunAsync(); return; }
@@ -42,7 +48,18 @@ internal static class Program
             };
             Application.DispatcherUnhandledException += e => Console.Error.WriteLine(e.Exception);
             MainWindow? testedWindow = null;
-            await AppHost.RunAsync(options, window => { testedWindow = window; window.ConfigureVerification(args); });
+            await AppHost.RunAsync(options, window =>
+            {
+                testedWindow = window; window.ConfigureVerification(args);
+                if (!string.IsNullOrWhiteSpace(capture)) window.Window.FrameRendered += () =>
+                {
+                    // FrameRendered can precede native presentation. The public
+                    // stats describe the previous completed frame; deduplicate it.
+                    var frame = window.Window.LastFramePerformanceStats;
+                    if (frame.IsEmpty || frame.FrameIndex == lastFrame) return;
+                    lastFrame = frame.FrameIndex; frames.Add(frame);
+                };
+            });
             if (testedWindow?.VerificationFailure is { } verificationError) throw new InvalidOperationException("UI verification failed.", verificationError);
             if (args.Contains("--browser-shutdown-smoke-test"))
                 await testedWindow!.VerifyBrowserShutdownAsync();
@@ -52,6 +69,14 @@ internal static class Program
             Console.Error.WriteLine(error);
             Environment.ExitCode = 1;
         }
-        finally { AppLog.Shutdown(); }
+        finally
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(capture))
+                    File.WriteAllText(capture, JsonSerializer.Serialize(frames));
+            }
+            finally { AppLog.Shutdown(); }
+        }
     }
 }

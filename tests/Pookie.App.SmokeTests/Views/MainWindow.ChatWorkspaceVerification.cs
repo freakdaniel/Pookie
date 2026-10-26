@@ -129,15 +129,17 @@ internal sealed partial class MainWindow
         var avatarSource = ImageSource.FromBgraPixels(96, 96, avatarPixels, hasAlpha: false);
         chatHeaderAvatar.Source = avatarSource;
         chatInput.Text = ""; RefreshChatComposer();
-        Window.WindowSize=WindowSize.Resizable(1840,900,minWidth:760,minHeight:600);
-        await WaitForLikedLayoutAsync(()=>Math.Abs(Window.ClientSize.Width-1840)<1&&chatColumns.ActualWidth>1300&&!chatColumns.IsArrangeDirty&&!chatDetailsCard.IsVisible);
+        var wideWidth = VerificationWindowWidth(1840);
+        Window.WindowSize=WindowSize.Resizable(wideWidth,900,minWidth:760,minHeight:600);
+        await WaitForLikedLayoutAsync(()=>Math.Abs(Window.ClientSize.Width-wideWidth)<1&&chatColumns.ActualWidth>1300&&!chatColumns.IsArrangeDirty&&!chatDetailsCard.IsVisible);
         if (chatColumns.Children[1] is not ChatStage stage || stage.Children.Count != 1 || ChatOutgoingColor.B <= ChatOutgoingColor.R)
             throw new InvalidOperationException("The conversation still has a wallpaper or lost the blue outgoing-message palette.");
         CaptureUiPreview("chats-neutral-wide");
         VerifyChatScrollColumn();
         chatRecipient = chatRecipient! with { AvatarUrl = cachedAvatarUrl };
-        foreach(var width in new[]{2560,1920,1480,1440,1000,780})
+        foreach(var requestedWidth in new[]{2560,1920,1480,1440,1000,780})
         {
+            var width = VerificationWindowWidth(requestedWidth);
             Window.WindowSize=WindowSize.Resizable(width,900,minWidth:760,minHeight:600);
             await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width-width)<1 && Math.Abs(chatColumns.ActualWidth-(width-32))<1 && !chatColumns.IsArrangeDirty && !chatColumns.Animating);
             VerifyChatReferenceGeometry(detailsOpen: false);
@@ -171,7 +173,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The compact information panel must dismiss on an invisible layer confined to the conversation.");
             if(shouldDock&&(chatOptions.Bounds.Right>chatDetailsCard.Bounds.X-15||chatComposer.Bounds.Right>chatDetailsCard.Bounds.X-15))throw new InvalidOperationException("Docked details overlap conversation.");
             CaptureUiPreview("chats-workspace-"+width);
-            if (width == 1920)
+            if (requestedWidth == 1920)
             {
                 await VerifyChatProfileGradientAsync();
                 OpenChatThreadSearch(); chatMessageSearch.Text = "Связанный"; await SearchChatMessagesAsync();
@@ -193,7 +195,7 @@ internal sealed partial class MainWindow
             var closeSamples = new List<(double Reveal,int Passes)>();
             void SampleClose() => closeSamples.Add((chatColumns.Reveal,chatRestorePasses));
             Window.FrameRendered += SampleClose;
-            if (width == 1920) RouteWaveformClick(SettingsCenter(close)); else RouteChatEscape();
+            if (requestedWidth == 1920) RouteWaveformClick(SettingsCenter(close)); else RouteChatEscape();
             if(chatColumns.DetailsOpen)throw new InvalidOperationException("Closing attachments did not start.");
             await WaitForLikedLayoutAsync(() => !chatColumns.Animating && !chatDetailsCard.IsVisible && chatRestoreOffset == null);
             Window.FrameRendered -= SampleClose;
@@ -211,12 +213,13 @@ internal sealed partial class MainWindow
         }
         // Returning to an ordinary page must restore its own content limit,
         // including when no native window resize accompanies navigation.
-        Window.WindowSize=WindowSize.Resizable(2560,900,minWidth:760,minHeight:600);
-        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-2528)<1);
+        wideWidth = VerificationWindowWidth(2560);
+        Window.WindowSize=WindowSize.Resizable(wideWidth,900,minWidth:760,minHeight:600);
+        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-(wideWidth-32))<1);
         BeginNavigation(new(Page.Home));
         await WaitForLikedLayoutAsync(() => Math.Abs(contentFrame.ActualWidth-1440)<1 && contentFrame.Padding.Left==36);
         BeginNavigation(new(Page.Chats));
-        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-2528)<1 && !chatColumns.IsArrangeDirty);
+        await WaitForLikedLayoutAsync(() => Math.Abs(chatColumns.ActualWidth-(wideWidth-32))<1 && !chatColumns.IsArrangeDirty);
         VerifyChatReferenceGeometry(detailsOpen: false);
         Console.WriteLine("UI_CHAT_WIDE_LAYOUT_OK: full-width page, 360px sidebars, shared 696px column, 188px dock shift, overlay below 1480px, outer scrollbar and restored page limits");
         Window.WindowSize=WindowSize.Resizable(1280,900,minWidth:760,minHeight:600);

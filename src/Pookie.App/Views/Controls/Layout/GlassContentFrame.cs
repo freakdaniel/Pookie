@@ -22,7 +22,7 @@ internal sealed class GlassContentFrame : Panel
     protected override Size ArrangeOverride(Size finalSize)
     { content.Arrange(Bounds); return finalSize; }
 
-    internal void DrawBackdrop(IGraphicsContext context, Rect region)
+    internal IRenderSurface CaptureBackdrop(Rect region, Color background)
     {
         var scale = GetDpi() / 96d;
         var width = Math.Max(1, (int)Math.Ceiling(region.Width * scale));
@@ -33,19 +33,29 @@ internal sealed class GlassContentFrame : Panel
             factory != graphics || contextIdentity != currentContext)
         {
             ClearRaster(); factory = graphics; contextIdentity = currentContext;
-            raster = graphics.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(width, height, scale, debugName: "HeaderNativeStrip"));
+            raster = BackdropSurface.Create(graphics, width, height, scale, "HeaderNativeStrip");
             renderer = graphics.CreateContext(raster);
-            image = graphics.CreateImageView(raster);
         }
         renderer!.BeginFrame(raster!);
         try
         {
-            renderer.Clear(Color.Transparent);
+            renderer.Clear(BackdropSurface.ClearColor(background));
             renderer.Translate(-region.X, -region.Y);
             renderer.SetClip(region);
             base.RenderSubtree(renderer);
         }
         finally { renderer.EndFrame(); }
+        return raster;
+    }
+
+    internal void DrawBackdrop(IGraphicsContext context, Rect region, Color background)
+    {
+        var captured = CaptureBackdrop(region, background);
+        var scale = captured.DpiScale;
+        var width = captured.PixelWidth;
+        var height = captured.PixelHeight;
+        var graphics = factory!;
+        image ??= graphics.CreateImageView(captured);
         // A single bilinear sample from (for example) 2x DPI to .25x misses
         // most of each eight-row footprint. Text and artwork then stand still
         // and jump as they cross that sampling grid. Halving in aligned stages
@@ -61,7 +71,7 @@ internal sealed class GlassContentFrame : Panel
             var sampleHeight = Math.Max(1, (int)Math.Ceiling(region.Height * sampleScale));
             if (level == samples.Count) samples.Add(new SampleLevel(graphics, sampleWidth, sampleHeight, sampleScale));
             var sample = samples[level++];
-            sample.Draw(source, sourceBounds, region);
+            sample.Draw(source, sourceBounds, region, background);
             source = sample.Image;
             sourceBounds = new Rect(region.X, region.Y, sampleWidth / sampleScale, sampleHeight / sampleScale);
         }
@@ -91,16 +101,16 @@ internal sealed class GlassContentFrame : Panel
         internal IImage Image { get; }
         internal SampleLevel(IGraphicsFactory graphics, int width, int height, double scale)
         {
-            surface = graphics.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(width, height, scale, debugName: "HeaderDownsample"));
+            surface = BackdropSurface.Create(graphics, width, height, scale, "HeaderDownsample");
             renderer = graphics.CreateContext(surface);
             Image = graphics.CreateImageView(surface);
         }
-        internal void Draw(IImage source, Rect sourceBounds, Rect region)
+        internal void Draw(IImage source, Rect sourceBounds, Rect region, Color background)
         {
             renderer.BeginFrame(surface);
             try
             {
-                renderer.Clear(Color.Transparent);
+                renderer.Clear(BackdropSurface.ClearColor(background));
                 renderer.Translate(-region.X, -region.Y);
                 renderer.DrawImage(source, sourceBounds);
             }

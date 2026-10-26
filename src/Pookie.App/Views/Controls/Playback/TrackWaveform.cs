@@ -159,7 +159,7 @@ internal sealed class TrackWaveform : Control
         {
             ReleaseRaster(); factory = graphics;
             raster = new WriteableBitmap(width, pixelHeight, clear: false);
-            image = ((IImageSource)raster).CreateImage(graphics);
+            image = BitmapImage.Create(graphics, raster);
         }
         if (rasterSize != bounds.Size || rasterScale != scale) rasterDirty = true;
         rasterSize = bounds.Size; rasterScale = scale;

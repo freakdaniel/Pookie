@@ -11,6 +11,7 @@ internal sealed class HeaderSearchField : ContentControl
 {
     private readonly GlassSurface surface;
     private readonly TextBox input;
+    private readonly BoxShadowRaster shadow = new(6, 2, Color.FromArgb(90, 0, 0, 0));
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
 
@@ -45,10 +46,13 @@ internal sealed class HeaderSearchField : ContentControl
     protected override void OnRender(IGraphicsContext context)
     {
         if (surface.Bounds.Width <= 0) return;
-        context.DrawBoxShadow(surface.Bounds, 20, 6, Color.FromArgb((byte)(65 + emphasis * 25), 0, 0, 0), offsetY: 2);
+        shadow.Draw(context, surface.Bounds, 20, (byte)(65 + emphasis * 25) / 90d);
     }
 
-    protected override void OnDispose() { motion.Stop(); base.OnDispose(); }
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) shadow.Dispose(); }
+
+    protected override void OnDispose() { motion.Stop(); shadow.Dispose(); base.OnDispose(); }
 
     private sealed class GlassSurface : ContentControl
     {

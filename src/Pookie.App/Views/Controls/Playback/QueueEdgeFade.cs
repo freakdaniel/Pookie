@@ -43,7 +43,7 @@ internal sealed class QueueEdgeFade : Control
         {
             ClearRaster();
             source = new WriteableBitmap(pixelWidth, RasterRows, clear: false);
-            image = ((IImageSource)source).CreateImage(graphics);
+            image = BitmapImage.Create(graphics, source);
             factory = graphics;
             geometryChanged = true;
         }

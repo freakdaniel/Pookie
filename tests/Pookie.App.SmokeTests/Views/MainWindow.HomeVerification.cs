@@ -202,7 +202,9 @@ internal sealed partial class MainWindow
             if (row.Title.Opacity != 1) throw new InvalidOperationException("Empty row space triggers the title link hover.");
             var restingTitle = row.Title.Foreground;
             RouteWaveformPointer(new(row.Title.Bounds.X + 10, row.Title.Bounds.Y + 8));
-            if (row.Title.Opacity != 1 || row.Title.Foreground != Color.FromArgb((byte)Math.Round(restingTitle.A*.72),restingTitle.R,restingTitle.G,restingTitle.B))
+            var hoveredTitle = Color.FromArgb((byte)Math.Round(restingTitle.A*.72),restingTitle.R,restingTitle.G,restingTitle.B);
+            await WaitForLikedLayoutAsync(() => row.Title.Foreground == hoveredTitle);
+            if (row.Title.Opacity != 1)
                 throw new InvalidOperationException("Actual title lost its foreground hover or allocated an opacity layer.");
             playbackQueue.Clear(); RouteWaveformPointer(new(row.Cover.Bounds.X + 10, row.Cover.Bounds.Y + 10));
             await WaitForLikedLayoutAsync(() => row.Overlay.Strength > .999);

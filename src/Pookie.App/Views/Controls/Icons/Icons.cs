@@ -106,10 +106,7 @@ internal static class Icons
         public void Render(IGraphicsContext context, Rect destRect)
         {
             if (destRect.Width <= 0 || destRect.Height <= 0) return;
-            // Direct2D target bitmaps cannot be shared with every independent
-            // offscreen target. Its native path cache already retains geometry;
-            // draw those paths directly for both the window and glass captures.
-            if (OperatingSystem.IsWindows() || !cacheRaster) { source.Render(context, destRect); return; }
+            if (!cacheRaster) { source.Render(context, destRect); return; }
             var transform = context.GetTransform();
             var scale = context.DpiScale * Math.Max(Math.Sqrt(transform.M11 * transform.M11 + transform.M12 * transform.M12),
                 Math.Sqrt(transform.M21 * transform.M21 + transform.M22 * transform.M22));
@@ -128,14 +125,18 @@ internal static class Icons
                 // One immutable raster per icon/colour/size, shared by all rows.
                 // Per-Image SVG caches otherwise create a render target and
                 // repeat path tessellation for every newly revealed comment.
-                raster = graphics.CreateSurface(RenderSurfaceDescriptor.CachedImage(width, height, 1, debugName: "SharedIcon"));
+                var cpu = BackdropSurface.UsesCpuCapture;
+                raster = graphics.CreateSurface(cpu
+                    ? RenderSurfaceDescriptor.CpuPixels(width, height, 1, debugName: "SharedIcon")
+                    : RenderSurfaceDescriptor.CachedImage(width, height, 1, debugName: "SharedIcon"));
                 try
                 {
                     using var renderer = graphics.CreateContext(raster);
                     renderer.BeginFrame(raster);
                     try { renderer.Clear(Color.Transparent); source.Render(renderer, new Rect(0, 0, width, height)); }
                     finally { renderer.EndFrame(); }
-                    image = graphics.CreateImageView(raster);
+                    image = cpu && raster is IPixelBufferSource pixels
+                        ? BitmapImage.CreatePremultipliedView(graphics, pixels) : graphics.CreateImageView(raster);
                 }
                 catch { raster.Dispose(); throw; }
             }

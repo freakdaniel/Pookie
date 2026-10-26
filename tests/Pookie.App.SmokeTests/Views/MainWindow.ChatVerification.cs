@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
             {
                 var avatar = (Image)button.FindVisualChild<Image>()!;
                 if (avatar.Parent is not Border { ClipToBounds: true, CornerRadius: 23 } frame ||
-                    frame.ActualWidth != 46 || frame.ActualHeight != 46)
+                    Math.Abs(frame.ActualWidth - 46) > 1 / Window.DpiScale || Math.Abs(frame.ActualHeight - 46) > 1 / Window.DpiScale)
                     throw new InvalidOperationException("Inbox avatar does not have a square circular clipping frame.");
             }
             if (chatInput.IsEnabled || chatRecipient != null) throw new InvalidOperationException("Unselected chat enables sending.");
@@ -263,7 +263,8 @@ internal sealed partial class MainWindow
                 var frame = (ChatPhotoFrame)ChatRows.First(r => r.Message?.Body == imageCode).Attachments.FindVisualChild<ChatPhotoFrame>()!;
                 await WaitForLikedLayoutAsync(() => frame.Picture.ActualWidth > 0 && !ChatRows.First(r => r.Message?.Body == imageCode).Content.IsResizing);
                 var image = frame.Picture;
-                if (image.ActualWidth != width || image.ActualHeight != height) throw new InvalidOperationException("Media preview lost intrinsic sizing or aspect ratio.");
+                if (Math.Abs(image.ActualWidth - width) > 1 / Window.DpiScale || Math.Abs(image.ActualHeight - height) > 1 / Window.DpiScale)
+                    throw new InvalidOperationException("Media preview lost intrinsic sizing or aspect ratio.");
                 if (ChatMediaSummaryFor(ChatRows.First(r => r.Message?.Body == imageCode).Message!, 90)?.Thumbnail == null)
                     throw new InvalidOperationException("Photo is missing its inbox thumbnail.");
             }
@@ -320,8 +321,9 @@ internal sealed partial class MainWindow
                 var captionFrame = (ChatPhotoFrame)captionRow.Attachments.FindVisualChild<ChatPhotoFrame>()!;
                 await WaitForLikedLayoutAsync(() => captionFrame.Backdrop.IsVisible && captionFrame.Backdrop.Source != null);
                 var expected = caption == "тест" ? 220 : 440;
-                if (captionRow.Content.PhotoOnly || captionFrame.ActualWidth != expected || captionFrame.Picture.ActualWidth != 100 ||
-                    captionFrame.Picture.ActualHeight != 100 || captionRow.Body.ActualWidth > 416)
+                if (captionRow.Content.PhotoOnly || Math.Abs(captionFrame.ActualWidth - expected) > 1 / Window.DpiScale ||
+                    Math.Abs(captionFrame.Picture.ActualWidth - 100) > 1 / Window.DpiScale ||
+                    Math.Abs(captionFrame.Picture.ActualHeight - 100) > 1 / Window.DpiScale || captionRow.Body.ActualWidth > 416)
                     throw new InvalidOperationException("Caption media is not bounded or has stretched the small photo.");
                 if (caption != "тест" && captionRow.Body.ActualHeight < 100)
                     throw new InvalidOperationException("Long unbroken caption did not wrap.");

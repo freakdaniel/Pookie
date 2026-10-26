@@ -35,7 +35,12 @@ internal sealed partial class MainWindow
         var closing = new List<double>(); void SampleClosing() => closing.Add(chatComposerLayout.ReplyHeight);
         Window.FrameRendered += SampleClosing;
         RouteWaveformClick(SettingsCenter(chatReplyCancel));
-        await WaitForLikedLayoutAsync(() => chatReply == null && !chatComposerSurface.IsResizing && !chatReplyBar.IsVisible);
+        try { await WaitForLikedLayoutAsync(() => chatReply == null && !chatComposerSurface.IsResizing && !chatReplyBar.IsVisible); }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"REPLY_CLOSE_STATE reply={chatReply != null} resizing={chatComposerSurface.IsResizing} visible={chatReplyBar.IsVisible} height={chatComposerLayout.ReplyHeight} composer={chatComposer.Bounds} button={chatReplyCancel.Bounds} hit={Window.HitTest(SettingsCenter(chatReplyCancel))?.GetType().Name}: {error.Message}");
+            throw;
+        }
         Window.FrameRendered -= SampleClosing;
         if (!closing.Any(h => h is > 1 and < 47) || Math.Abs(chatComposer.ActualHeight-height)>1/Window.DpiScale)
             throw new InvalidOperationException("Reply cancellation discarded its content before the collapse animation.");

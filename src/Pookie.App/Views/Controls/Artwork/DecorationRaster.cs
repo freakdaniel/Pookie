@@ -42,7 +42,7 @@ internal sealed class DecorationRaster : IDisposable
                         output[i + channel] = (byte)Math.Min(255, (output[i + channel] * 255 + alpha / 2) / alpha);
                 }
             }
-            Image = ((IImageSource)bitmap).CreateImage(factory);
+            Image = BitmapImage.Create(factory, bitmap);
         }
         catch { bitmap.Dispose(); throw; }
     }
@@ -76,7 +76,7 @@ internal sealed class GlassSheenRaster : IDisposable
         {
             Dispose(); factory = graphics;
             bitmap = new WriteableBitmap(width, height, clear: false);
-            image = ((IImageSource)bitmap).CreateImage(graphics);
+            image = BitmapImage.Create(graphics, bitmap);
         }
         if (paintedEmphasis != emphasis)
         {

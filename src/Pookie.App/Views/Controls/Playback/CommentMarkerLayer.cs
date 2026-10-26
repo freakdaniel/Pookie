@@ -3,6 +3,7 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
+using Aprillz.MewUI.Resources;
 
 namespace Pookie.App;
 
@@ -69,7 +70,9 @@ internal sealed class CommentMarkerLayer : Grid
                 raster = graphics.CreateSurface(OperatingSystem.IsWindows() && currentContext == 0
                     ? RenderSurfaceDescriptor.CpuPixels(width, height, scale, debugName: "CommentMarkers")
                     : RenderSurfaceDescriptor.CachedImage(width, height, scale, debugName: "CommentMarkers"));
-                renderer = graphics.CreateContext(raster); image = graphics.CreateImageView(raster);
+                renderer = graphics.CreateContext(raster);
+                image = OperatingSystem.IsWindows() && currentContext == 0 && raster is IPixelBufferSource pixels
+                    ? BitmapImage.CreatePremultipliedView(graphics, pixels) : graphics.CreateImageView(raster);
             }
             renderer!.BeginFrame(raster!);
             try

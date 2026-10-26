@@ -110,7 +110,8 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Activity playback lost its source context");
             var playlistActions = userPlaylistActionViews.Single();
             shellScroll.SetScrollOffsets(0, 450);
-            await WaitForLikedLayoutAsync(() => playlistActions.Root.ActualWidth > 0 && userPublicationCovers[0].ActualWidth == TrackRowLayout.CoverSize);
+            await WaitForLikedLayoutAsync(() => playlistActions.Root.ActualWidth > 0 &&
+                Math.Abs(userPublicationCovers[0].ActualWidth - TrackRowLayout.CoverSize) <= 1 / Window.DpiScale);
             if (Math.Abs(playlistActions.Root.Bounds.X - userPublicationCovers[0].Bounds.Right - TrackRowLayout.ColumnGap - TrackRowLayout.ContentInset) > 1 ||
                 Math.Abs(playlistActions.Like.Bounds.Y - playlistActions.Queue.Bounds.Y) > 1 || playlistActions.Repost.Bounds.Right > playlistActions.Queue.Bounds.X)
                 throw new InvalidOperationException("Playlist artwork/actions do not share the library grid and a single footer row");

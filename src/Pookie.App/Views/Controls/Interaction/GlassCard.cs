@@ -9,6 +9,7 @@ namespace Pookie.App;
 internal class GlassCard : ContentControl
 {
     private readonly GlassSheenRaster sheen = new();
+    private readonly BoxShadowRaster shadow = new(6, 2, Color.FromArgb(90, 0, 0, 0));
     private readonly Color? underlay;
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
@@ -36,7 +37,7 @@ internal class GlassCard : ContentControl
 
     protected override void OnRender(IGraphicsContext context)
     {
-        context.DrawBoxShadow(Bounds, CornerRadius, 6, Color.FromArgb((byte)(65 + emphasis * 25), 0, 0, 0), offsetY: 2);
+        shadow.Draw(context, Bounds, CornerRadius, (byte)(65 + emphasis * 25) / 90d);
         // Drawers keep the shared translucent finish without leaking underlying text.
         if (underlay is { } color) context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, color);
         base.OnRender(context);
@@ -49,8 +50,8 @@ internal class GlassCard : ContentControl
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
-        if (newRoot == null) { motion.Stop(); emphasis = target; sheen.Dispose(); }
+        if (newRoot == null) { motion.Stop(); emphasis = target; sheen.Dispose(); shadow.Dispose(); }
     }
 
-    protected override void OnDispose() { motion.Stop(); sheen.Dispose(); base.OnDispose(); }
+    protected override void OnDispose() { motion.Stop(); sheen.Dispose(); shadow.Dispose(); base.OnDispose(); }
 }

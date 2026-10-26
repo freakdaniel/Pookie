@@ -11,6 +11,7 @@ internal sealed class BackdropBlur : IDisposable
     private readonly WriteableBitmap bitmap;
     private readonly byte[] first, second;
     private readonly int width, height;
+    private BackdropDownsample? downsample;
     internal IImage Image { get; }
     internal bool Ready { get; private set; }
     internal ReadOnlySpan<byte> Pixels => first;
@@ -27,6 +28,12 @@ internal sealed class BackdropBlur : IDisposable
     {
         var pixels = source.GetReadOnlyPixelSpan();
         for (var y = 0; y < height; y++) pixels.Slice(y * source.StrideBytes, width * 4).CopyTo(first.AsSpan(y * width * 4));
+        Process(sigma); Upload();
+    }
+    internal void UpdateReduced(ICpuPixelSurface source, double sigma)
+    {
+        downsample ??= new BackdropDownsample();
+        downsample.Resize(source.GetReadOnlyPixelSpan(), source.PixelWidth, source.PixelHeight, source.StrideBytes, first, width, height);
         Process(sigma); Upload();
     }
     // Capture while the render scope is current; process after it is released.

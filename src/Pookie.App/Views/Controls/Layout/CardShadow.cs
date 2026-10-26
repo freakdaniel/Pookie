@@ -12,10 +12,7 @@ internal sealed class CardShadow : Panel
     private static readonly Color Shadow = Color.FromArgb(60, 0, 0, 0);
     private static readonly Thickness ShadowPadding = new(Blur, Blur - Offset, Blur, Blur + Offset);
     private readonly FrameworkElement child;
-    private DecorationRaster? raster;
-    private IGraphicsFactory? factory;
-    private Size size;
-    private double scale;
+    private readonly BoxShadowRaster shadow = new(Blur, Offset, Shadow);
 
     internal CardShadow(FrameworkElement child) { this.child = child; Add(child); }
 
@@ -30,20 +27,7 @@ internal sealed class CardShadow : Panel
     protected override void OnRender(IGraphicsContext context)
     {
         if (child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;
-        if (!OperatingSystem.IsWindows())
-        {
-            context.DrawBoxShadow(child.Bounds, Radius, Blur, Shadow, offsetY: Offset);
-            return;
-        }
-        var graphics = Application.Current.GraphicsFactory;
-        if (raster == null || factory != graphics || size != Bounds.Size || scale != context.DpiScale)
-        {
-            raster?.Dispose(); raster = null;
-            factory = graphics; size = Bounds.Size; scale = context.DpiScale;
-            raster = new DecorationRaster(graphics, size, scale, (renderer, region) =>
-                renderer.DrawBoxShadow(region.Deflate(ShadowPadding), Radius, Blur, Shadow, offsetY: Offset));
-        }
-        context.DrawImage(raster.Image, Bounds);
+        shadow.Draw(context, child.Bounds, Radius);
     }
 
     protected override UIElement? OnHitTest(Point point) =>
@@ -52,8 +36,8 @@ internal sealed class CardShadow : Panel
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
-        if (newRoot == null) { raster?.Dispose(); raster = null; }
+        if (newRoot == null) shadow.Dispose();
     }
 
-    protected override void OnDispose() { raster?.Dispose(); base.OnDispose(); }
+    protected override void OnDispose() { shadow.Dispose(); base.OnDispose(); }
 }

@@ -12,6 +12,7 @@ internal sealed class ChatComposerSurface : Panel
     private bool replyResize;
     internal bool IsResizing => resize.IsRunning;
     internal Action? ResizeStarted;
+    internal Action? ResizeCompleted;
     internal void SnapNextLayout() { snapNext = true; resize.Stop(); InvalidateMeasure(); }
     internal void AnimateReplyChange() { replyResize = true; InvalidateMeasure(); }
     private readonly FrameworkElement content;
@@ -22,7 +23,7 @@ internal sealed class ChatComposerSurface : Panel
     {
         this.content = content; ClipToBounds = true;
         resize.TickCallback = value => { resizeAmount = value; InvalidateMeasure(); };
-        resize.CompletedCallback = () => { resizeAmount = 1; InvalidateMeasure(); };
+        resize.CompletedCallback = () => { resizeAmount = 1; InvalidateMeasure(); ResizeCompleted?.Invoke(); };
         // One horizontal hint fits the compact row. Only the outer composer
         // paints a surface, avoiding a second inset contour during the fade.
         hint = new Border().BorderThickness(0).Background(Color.Transparent)
@@ -45,7 +46,7 @@ internal sealed class ChatComposerSurface : Panel
         content.Measure(new Size(availableSize.Width, double.PositiveInfinity)); hint.Measure(content.DesiredSize);
         var nextHeight = Math.Ceiling(content.DesiredSize.Height);
         if (targetHeight < 0 || snapNext)
-        { resize.Stop(); targetHeight = nextHeight; resizeAmount = 1; snapNext = false; }
+        { resize.Stop(); targetHeight = nextHeight; resizeAmount = 1; snapNext = false; ResizeCompleted?.Invoke(); }
         else if (Math.Abs(targetHeight - nextHeight) > .5)
         {
             var restarting = resize.IsRunning;

@@ -11,6 +11,8 @@ internal sealed partial class MainWindow
     {
         try
         {
+            VerifyBackdropPixelBuffers();
+            VerifyShadowRasterPixels();
             timer.Stop();
             await ShowWorkspaceAsync();
             playerVisible.Value = true;
