@@ -136,6 +136,10 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("The conversation still has a wallpaper or lost the blue outgoing-message palette.");
         CaptureUiPreview("chats-neutral-wide");
         VerifyChatScrollColumn();
+        // Activation can legitimately refresh the selected peer from transport.
+        // Keep the fixture's server identity consistent with its cached avatar.
+        transport.Other = transport.Other with { AvatarUrl = cachedAvatarUrl };
+        await RefreshChatsAsync();
         chatRecipient = chatRecipient! with { AvatarUrl = cachedAvatarUrl };
         foreach(var requestedWidth in new[]{2560,1920,1480,1440,1000,780})
         {
@@ -153,7 +157,11 @@ internal sealed partial class MainWindow
             chatViewport.BeforePaint -= SampleMotion;
             VerifyChatScrollColumn();
             VerifyChatReferenceGeometry(detailsOpen: true);
-            await WaitForLikedLayoutAsync(() => chatProfileBackdrop.Target != new PlayerPalette(ChatGlassSurface,ChatGlassSurface,ChatGlassSurface) && !chatProfileBackdrop.Animating);
+            try { await WaitForLikedLayoutAsync(() => chatProfileBackdrop.Target != new PlayerPalette(ChatGlassSurface,ChatGlassSurface,ChatGlassSurface) && !chatProfileBackdrop.Animating); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"Profile palette at {width}: target={chatProfileBackdrop.Target}, animating={chatProfileBackdrop.Animating}, details={chatColumns.DetailsOpen}, samePeer={chatInfoPeer == chatRecipient?.Id}, fixtureAvatar={chatRecipient?.AvatarUrl == cachedAvatarUrl}, cached={ReferenceEquals(await SharedArtworkAsync(cachedAvatarUrl), cachedAvatar)}, active={Window.IsActive}.", error);
+            }
             if (chatColumns.Children[0] is not GlassCard inboxCard || inboxCard.Background != chatIdentityCard.Background || chatDetailsCard.Background != chatComposer.Background)
                 throw new InvalidOperationException("Chat side panels do not share the header and composer glass surface.");
             if (Math.Abs(chatDetailsCard.Bounds.Bottom - chatComposer.Bounds.Bottom) > 1 / Window.DpiScale ||

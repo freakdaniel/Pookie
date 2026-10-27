@@ -8,26 +8,31 @@ namespace Pookie.App;
 // Retain only the decoration, so waveform, artwork and controls remain live.
 internal sealed class CardShadow : Panel
 {
-    private const double Blur = 12, Offset = 4, Radius = 20;
-    private static readonly Color Shadow = Color.FromArgb(60, 0, 0, 0);
-    private static readonly Thickness ShadowPadding = new(Blur, Blur - Offset, Blur, Blur + Offset);
+    private readonly Thickness shadowPadding;
+    private readonly double radius;
     private readonly FrameworkElement child;
-    private readonly BoxShadowRaster shadow = new(Blur, Offset, Shadow);
+    private readonly BoxShadowRaster shadow;
 
-    internal CardShadow(FrameworkElement child) { this.child = child; Add(child); }
+    internal CardShadow(FrameworkElement child, double blur = 12, double offset = 4, double radius = 20, Color? color = null)
+    {
+        this.child = child; this.radius = radius;
+        shadowPadding = new Thickness(blur, Math.Max(0, blur - offset), blur, Math.Max(0, blur + offset));
+        shadow = new BoxShadowRaster(blur, offset, color ?? Color.FromArgb(60, 0, 0, 0));
+        Add(child);
+    }
 
     protected override Size MeasureContent(Size availableSize)
     {
-        child.Measure(availableSize.Deflate(ShadowPadding));
-        return child.DesiredSize.Inflate(ShadowPadding);
+        child.Measure(availableSize.Deflate(shadowPadding));
+        return child.DesiredSize.Inflate(shadowPadding);
     }
 
-    protected override void ArrangeContent(Rect bounds) => child.Arrange(bounds.Deflate(ShadowPadding));
+    protected override void ArrangeContent(Rect bounds) => child.Arrange(bounds.Deflate(shadowPadding));
 
     protected override void OnRender(IGraphicsContext context)
     {
         if (child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;
-        shadow.Draw(context, child.Bounds, Radius);
+        shadow.Draw(context, child.Bounds, radius);
     }
 
     protected override UIElement? OnHitTest(Point point) =>

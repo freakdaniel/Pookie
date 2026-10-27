@@ -49,6 +49,9 @@ internal sealed partial class MainWindow
         startupBackdrop = new Border().Background(Surface).Height(96).Top();
 
         startupHeader = Header();
+        // Playback and page scrolling do not change the fixed navigation bar.
+        // Descendant invalidation still refreshes hover, text and search edits.
+        if (OperatingSystem.IsWindows()) startupHeader.CacheMode = new BitmapCache();
         startupHeader.Opacity = 0;
         startupHeader.IsHitTestVisible = false;
 
@@ -64,11 +67,11 @@ internal sealed partial class MainWindow
             .Padding(36, ShellChromeGlass.HeaderHeight + 30, 36, 0).Child(startupContent);
         shellScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0);
         var glassContent = new GlassContentFrame(contentFrame);
-        shellPageScroll = new ShellPageScroll(glassContent, shellScroll, PageContentScroll, delta =>
+        shellPageScroll = new ShellPageScroll(glassContent, shellScroll, PageContentScroll, args =>
         {
-            if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.Scroll(delta);
+            if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.ScrollWheel(args.Delta.Y);
             var before = shellScroll.VerticalOffset;
-            shellScroll.SetScrollOffsets(0, before + delta);
+            shellScroll.SetScrollOffsets(0, before - args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep);
             return Math.Abs(shellScroll.VerticalOffset - before) > .01;
         }, () => page.Value != Page.Chats ? ContentBottomFade.FadeHeight : 0);
         shellScroll.Content = shellPageScroll;

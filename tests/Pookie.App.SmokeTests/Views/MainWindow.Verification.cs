@@ -522,6 +522,6 @@ internal sealed partial class MainWindow
         }
         var rows = string.Join(",", likedTiles.Values.Where(tile => tile.Track != null)
             .GroupBy(tile => Math.Round(tile.Root.Bounds.Y)).Select(group => $"{group.Key}:{group.Count()}"));
-        throw new InvalidOperationException($"Likes layout did not settle: grid={likedGrid.ActualWidth}x{likedGrid.ActualHeight}, items={likedGrid.ItemsSource.Count}, tiles={likedTiles.Count}, rows={rows}, window={Window.ClientSize.Width}, tile width={likedTiles.Values.FirstOrDefault()?.Root.ActualWidth}");
+        throw new InvalidOperationException($"Likes layout did not settle: grid={likedGrid.ActualWidth}x{likedGrid.ActualHeight}, items={likedGrid.ItemsSource.Count}, tiles={likedTiles.Count}, rows={rows}, window={Window.ClientSize.Width}, tile width={likedTiles.Values.FirstOrDefault()?.Root.ActualWidth}, active={Window.IsActive}, state={Window.WindowState}, page={page.Value}");
     }
 }

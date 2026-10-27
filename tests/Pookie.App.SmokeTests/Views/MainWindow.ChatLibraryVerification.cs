@@ -53,7 +53,11 @@ internal sealed partial class MainWindow
             await chatHistory.SavePageAsync(42,90,new([video],null));
             await chatHistory.SaveMediaMetadataAsync(90,video.Id,Files(videoPackage),"");
             await RenderChatMediaLibraryAsync("Видео");
-            await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews is [{Tile.Ready:true,Tile.Animating:false}]);
+            try { await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews is [{Tile.Ready:true,Tile.Animating:false}]); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"Library video: active={chatLibraryPreviewActive}, previews={chatLibraryPreviews.Count}, tiles={string.Join(';',chatLibraryPreviews.Select(e => $"ready={e.Tile.Ready}, motion={e.Tile.Animating}, notice={e.Tile.Notice}"))}.", error);
+            }
             CaptureUiPreview("chats-library-video-preview");
 
             var retryPackage = new ChatMediaPackage(90,42,"",[new("retry.png","image/png",Fixture("chat-small.png"))]);

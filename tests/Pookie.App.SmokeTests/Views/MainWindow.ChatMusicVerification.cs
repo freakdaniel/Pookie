@@ -86,9 +86,11 @@ internal sealed partial class MainWindow
             var button = track.Row.PlayButton;
             var point = new Point(button.Bounds.X + button.Bounds.Width / 2, button.Bounds.Y + button.Bounds.Height / 2);
             MoveActionPointer(point); PressActionPointer(point, true); PressActionPointer(point, false);
+            await WaitForLikedLayoutAsync(() => paused && fixture.Paused && !track.Row.ShowsPause);
             if (!paused || !fixture.Paused || track.Row.ShowsPause || playbackQueue.SourceVersion != sourceVersion || page.Value != Page.Chats)
                 throw new InvalidOperationException("Chat row restarted the current track, navigated away, or failed to pause it.");
             PressActionPointer(point, true); PressActionPointer(point, false);
+            await WaitForLikedLayoutAsync(() => !paused && !fixture.Paused && track.Row.ShowsPause);
             if (paused || fixture.Paused || !track.Row.ShowsPause) throw new InvalidOperationException("Chat row failed to resume the current track.");
             var wave = track.Row.Waveform.Bounds;
             point = new Point(wave.X + wave.Width * .6, wave.Y + 10);

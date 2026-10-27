@@ -9,7 +9,7 @@
     </ItemGroup>
     <ItemGroup>
       <PookieMewUiOriginal Update="@(PookieMewUiOriginal)">
-        <Patched>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)patched/%(Filename)%(Extension)</Patched>
+        <Patched>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'patched', '%(Filename)%(Extension)'))</Patched>
       </PookieMewUiOriginal>
     </ItemGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)mewui-patch-references.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />

@@ -10,7 +10,7 @@ internal sealed class ShellPageScroll : Panel
     private readonly FrameworkElement content;
     private readonly ScrollViewer owner;
     private readonly Func<ScrollViewer?> current;
-    private readonly Func<double, bool> scroll;
+    private readonly Func<MouseWheelEventArgs, bool> scroll;
     private readonly Func<double> trailingSpace;
     private readonly Dictionary<ScrollViewer, (Action Changed, Action<MouseWheelEventArgs> Wheel)> handlers = [];
     private ScrollViewer? inner;
@@ -20,7 +20,7 @@ internal sealed class ShellPageScroll : Panel
         Math.Abs(extent - ContentExtent()) < .5;
 
     internal ShellPageScroll(FrameworkElement content, ScrollViewer owner, Func<ScrollViewer?> current,
-        Func<double, bool> scroll, Func<double> trailingSpace)
+        Func<MouseWheelEventArgs, bool> scroll, Func<double> trailingSpace)
     {
         this.content = content; this.owner = owner; this.current = current; this.scroll = scroll; this.trailingSpace = trailingSpace;
         // Keep the native thumb, track and hit testing below the glass header.
@@ -51,7 +51,7 @@ internal sealed class ShellPageScroll : Panel
                 void Wheel(MouseWheelEventArgs args)
                 {
                     if (args.Handled || args.Delta.Y == 0) return;
-                    args.Handled = scroll(-args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep);
+                    args.Handled = scroll(args);
                 }
                 viewer.ScrollChanged += Changed; viewer.MouseWheel += Wheel;
                 handlers.Add(viewer, (Changed, Wheel));
@@ -110,7 +110,11 @@ internal sealed class ShellPageScroll : Panel
         // The final breathing room scrolls with the page. Mid-list viewports
         // reach the player, so rows pass through the fade instead of a blank gutter.
         var endShift = inner == null ? 0 : Math.Max(0, offset - prefix - maximum);
-        if (inner != null && (Math.Abs(inner.VerticalOffset - desired) > .001 || inner.HorizontalOffset != 0))
+        // ScrollViewer rounds its offset to physical pixels. Reapplying a
+        // subpixel residual on every arrange dirties the same viewport again
+        // and sends popup-dismiss notifications even though nothing moved.
+        var pixel = 96d / GetDpi();
+        if (inner != null && (Math.Abs(inner.VerticalOffset - desired) > pixel + .001 || inner.HorizontalOffset != 0))
         {
             applyingOffset = true;
             try { inner.SetScrollOffsets(0, desired); }

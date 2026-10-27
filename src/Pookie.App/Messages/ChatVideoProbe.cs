@@ -18,7 +18,11 @@ internal static class ChatVideoProbe
             }
         }
         catch (OperationCanceledException) { throw; }
-        catch { } // Sending/downloading a video remains possible without LibVLC.
+        catch (Exception error)
+        {
+            // Poster extraction is optional; keep sending/downloading available.
+            Pookie.Logging.AppLog.Failure("Pookie.Video", "Не удалось подготовить кадр видео", error, Serilog.Events.LogEventLevel.Debug);
+        }
         return null;
     }
 }

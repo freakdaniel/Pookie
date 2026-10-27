@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
         if (multipleBubble.Bubble.ActualWidth is < 323 or > 340)
             throw new InvalidOperationException("Short music attachments did not use a compact minimum width.");
         if (mentionBubble.Body.Text != mention || !mentionBubble.Body.IsVisible || views.Length != 3 ||
-            views.Any(view => view.Row.Cover.ActualWidth != 44 || view.ActualHeight > 65 || view.Item?.Track == null) ||
+            views.Any(view => Math.Abs(view.Row.Cover.ActualWidth - 44) > 1 / Window.DpiScale || view.ActualHeight > 65 || view.Item?.Track == null) ||
             multipleBubble.Attachments.FindVisualChild<TrackWaveform>() != null || multipleBubble.Bubble.ActualHeight > 290 ||
             multipleBubble.Bubble.Background != Raised || multipleBubble.Content.CaptionBackground != ChatOutgoingColor || multipleBubble.Body.Text != "Послушай три трека:")
             throw new InvalidOperationException("Chat mentions lost their inline link or multiple attachments did not reuse compact search rows.");

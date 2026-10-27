@@ -196,8 +196,8 @@ internal sealed partial class MainWindow
                 .OnClick(() => Run(() => MoveNavigationAsync(offset)));
         }
         backButton = Arrow("arrow-left", canGoBack, -1); forwardButton = Arrow("arrow-right", canGoForward, 1);
-        return new ShadowDecorator().BlurRadius(6).OffsetY(2).ShadowColor(Color.FromArgb(65, 0, 0, 0)).CornerRadius(18)
-            .Margin(-6, -4, -6, -8).CenterVertical()
-            .Child(new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton));
+        return new CardShadow(new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton),
+            blur: 6, offset: 2, radius: 18, color: Color.FromArgb(65, 0, 0, 0))
+            .Margin(-6, -4, -6, -8).CenterVertical();
     }
 }

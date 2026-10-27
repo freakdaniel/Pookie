@@ -7,6 +7,35 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly SemaphoreSlim chatMediaGate = new(2, 2);
+    private readonly HashSet<ChatBubbleRow> chatMediaLayoutPending = [];
+    private bool chatMediaLayoutQueued;
+
+    private void InvalidateChatMediaLayout(ChatBubbleRow row)
+    {
+        row.Root.InvalidateMeasure();
+        chatMediaLayoutPending.Add(row);
+        if (chatMediaLayoutQueued) return;
+        chatMediaLayoutQueued = true;
+        // Cached media can replace a preview while the variable-height presenter
+        // is binding/measuring it. That pass can consume the parent's dirty flag
+        // before the new subtree is measured. Reassert once after the pass; never
+        // re-enter layout from rendering or poll unchanged rows every frame.
+        Window.FrameRendered += CompleteChatMediaLayout;
+        Window.InvalidateVisual();
+    }
+
+    private void CompleteChatMediaLayout()
+    {
+        Window.FrameRendered -= CompleteChatMediaLayout;
+        Application.Current.Dispatcher!.BeginInvoke(() =>
+        {
+            chatMediaLayoutQueued = false;
+            foreach (var pending in chatMediaLayoutPending)
+                if (!disposed && pending.Bound && pending.Root.FindVisualRoot() == Window)
+                    pending.Root.InvalidateMeasure();
+            chatMediaLayoutPending.Clear();
+        });
+    }
     private readonly Dictionary<Image, ChatGifAnimation> chatAnimations = [];
     private ChatGifMediaCache? chatGifMedia;
     private ChatGifMediaCache GifMedia => chatGifMedia ??= new(chatMedia.DiskCache, (url, token) => klipy.DownloadAsync(url, token), chatAccountLifetime?.Token ?? lifetime.Token);
@@ -217,7 +246,7 @@ internal sealed partial class MainWindow
         foreach (var file in descriptions)
             row.Attachments.Add(new ChatFileCard(file.Name, "Не удалось загрузить · повторить", message.SenderId == me?.Id, false,
                 () => { if (row.Message?.Id == message.Id) Run(() => OpenChatMediaAsync(row)); }));
-        row.Root.InvalidateMeasure(); chatMessagesView.InvalidateMeasure();
+        InvalidateChatMediaLayout(row); chatMessagesView.InvalidateMeasure();
     }
     private void RenderChatMediaAction(ChatBubbleRow row, string prompt)
     {
@@ -382,7 +411,9 @@ internal sealed partial class MainWindow
                 LoadKlipyImage(row, frame, gif);
             }
         }
-        row.Root.InvalidateMeasure(); chatMessagesView.InvalidateMeasure();
+        // Metadata and the decoded package may arrive within the same binding
+        // pass. Keep the final replacement in the coalesced layout request too.
+        InvalidateChatMediaLayout(row); chatMessagesView.InvalidateMeasure();
         if (follow) RequestChatBottom();
     }
 

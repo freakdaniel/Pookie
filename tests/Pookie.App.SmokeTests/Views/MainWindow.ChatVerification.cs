@@ -478,7 +478,7 @@ internal sealed partial class MainWindow
         private readonly HashSet<long> unreadPeers = [];
         internal void AddIncoming(string body) { messages.Add(Message(90, body, DateTimeOffset.UtcNow)); unreadPeers.Add(90); }
         internal void AddOwn(string body) => messages.Add(Message(42, body, DateTimeOffset.UtcNow));
-        private object Conversation(SoundCloudUser other, object? last = null) => new { id = $"42:{other.Id}", users = new[] { new SoundCloudUser { Id = 42, Username = "Ты" }, other }.Select(u => new { id = u.Id, username = u.Username }).ToArray(), read = !unreadPeers.Contains(other.Id),
+        private object Conversation(SoundCloudUser other, object? last = null) => new { id = $"42:{other.Id}", users = new[] { new SoundCloudUser { Id = 42, Username = "Ты" }, other }.Select(u => new { id = u.Id, username = u.Username, avatar_url = u.AvatarUrl }).ToArray(), read = !unreadPeers.Contains(other.Id),
             last_message = last ?? (other.Id == 90 ? messages.Last() : Message(91, "Спасибо за подборку!", DateTimeOffset.UtcNow.AddHours(-1))) };
         public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {

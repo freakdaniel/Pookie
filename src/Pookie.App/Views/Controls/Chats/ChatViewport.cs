@@ -7,6 +7,7 @@ namespace Pookie.App;
 // Keep resized viewports anchored without re-entering measurement.
 internal sealed class ChatViewport(FrameworkElement content, Color surface) : Panel
 {
+    private bool composerWasResizing;
     internal Action? BeforePaint;
     internal Func<bool>? SynchronizeScroll;
     internal Func<bool>? ComposerResizing;
@@ -45,11 +46,16 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
                 changed=SynchronizeScroll?.Invoke()==true;
             }
         if(changed)InvalidateArrange();
-        if (ComposerResizing?.Invoke() == true)
+        var composerResizing = ComposerResizing?.Invoke() == true;
+        // Completion stops the clock before the last resized frame is painted.
+        // Apply its corrected bottom offset too, rather than painting the final
+        // viewport against row positions from the preceding animation frame.
+        if (composerResizing || composerWasResizing)
         {
             content.InvalidateArrange();
             content.Arrange(new Rect(Bounds.X, Bounds.Y, ActualWidth, ActualHeight));
         }
+        composerWasResizing = composerResizing;
         BeforePaint?.Invoke(); base.RenderSubtree(context);
         // The conversation has a plain surface. Blend its clipping edge into that
         // surface so a single bottom pixel of an offscreen bubble cannot linger.

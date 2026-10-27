@@ -54,7 +54,7 @@ internal sealed partial class MainWindow
                     await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => layer.Reveal > .999 && layer.Card.ActualWidth > 0);
                     if (!state.Value || layer.Card.BorderThickness != 0 ||
-                        layer is FloatingMenuLayer && (layer.Card.Background != chatComposer.Background || layer.Card.CornerRadius != 14))
+                        layer is FloatingMenuLayer && (layer.Card.Background != FloatingMenuLayer.Surface || layer.Card.CornerRadius != 14))
                         throw new InvalidOperationException(name + " menu lost its surface styling.");
                     if (layer is PlayerQueueDrawer drawer && (drawerHeights.Distinct().Count() < 3 || drawer.ContentReveal < .99 ||
                         drawer.RenderedGradient != playerBackdrop.CurrentGradient))
@@ -160,7 +160,7 @@ internal sealed partial class MainWindow
                     if (layer is PlayerQueueDrawer)
                     {
                         if (Math.Abs(card.Bottom - playerChrome.Bounds.Y) > .5 || Math.Abs(card.Right - playerContentFrame.Bounds.Right) > .5 ||
-                            card.Width != 460 || card.Y < startupHeader.Bounds.Bottom || card.Right > Window.ClientSize.Width + .5)
+                            Math.Abs(card.Width - 460) > 1 / Window.DpiScale || card.Y < startupHeader.Bounds.Bottom || card.Right > Window.ClientSize.Width + .5)
                             throw new InvalidOperationException($"Queue drawer detached from the player: card={card}, bar={playerChrome.Bounds}.");
                         return;
                     }

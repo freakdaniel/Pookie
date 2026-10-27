@@ -47,12 +47,18 @@ internal sealed partial class MainWindow
             await Task.Delay(300, lifetime.Token); Poll();
             if (lyricsActiveLine != 4) throw new InvalidOperationException("Paused lyrics advanced with wall time.");
 
+            Window.Activate();
+            await WaitForLikedLayoutAsync(() => Window.IsActive);
+            RouteExpandedPointer(new Point(1, 1));
             var next = lyricsRows.First(pair => pair.Value.Row?.Index == 5);
+            // A previous native test can leave the OS cursor over this row.
+            // Start from its actual resting color before sampling the hover.
+            await WaitForLikedLayoutAsync(() => !next.Value.Hovered && next.Value.Text.Foreground.A == (byte)Math.Round(.48 * 255));
             var beforeHover = next.Value.Text.Foreground.A / 255d;
             RouteExpandedPointer(new Point(next.Key.Bounds.X + next.Key.ActualWidth / 2, next.Key.Bounds.Y + next.Key.ActualHeight / 2));
             await Task.Delay(80, lifetime.Token);
             if (next.Value.Text.Foreground.A / 255d <= beforeHover || next.Value.Text.Foreground.A / 255d >= 1)
-                throw new InvalidOperationException("Lyric hover had no intermediate animation.");
+                throw new InvalidOperationException($"Lyric hover had no intermediate animation: before={beforeHover}, after={next.Value.Text.Foreground.A / 255d}, hovered={next.Value.Hovered}, active={Window.IsActive}, bounds={next.Key.Bounds}.");
             await Task.Delay(220, lifetime.Token);
             if (next.Value.Text.Foreground.A / 255d < .99 || next.Key.Background != Color.Transparent)
                 throw new InvalidOperationException("Lyric hover did not highlight the text transparently.");

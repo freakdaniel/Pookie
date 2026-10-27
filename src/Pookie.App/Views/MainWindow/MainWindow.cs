@@ -764,6 +764,9 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;
         Window.FrameRendered -= RefreshCardGlass;
+        Window.FrameRendered -= CompleteChatMediaLayout;
+        Window.FrameRendered -= CompleteExpandedQueueLayout;
+        chatMediaLayoutPending.Clear();
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
         expandedQueueAnimation.Dispose();

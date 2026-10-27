@@ -121,16 +121,26 @@ internal sealed partial class MainWindow
             {
                 ProbeShowWindow(Window.Handle, 5);
                 if (!ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53)) throw new InvalidOperationException("Could not expose native comment check.");
+                Window.Activate();
                 await WaitForLoginFrameAsync();
-                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !trackDetailComments.IsArrangeDirty);
+                await WaitForLikedLayoutAsync(() => Window.IsActive && shellPageScroll.IsReady && !trackDetailComments.IsArrangeDirty);
             }
-            var time = timeButtons[0]; MoveActionPointer(new(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12));
+            // Scrolling can recycle the rows collected before it. Hover the
+            // currently attached timestamp, never a detached previous binding.
+            timeButtons.Clear();
+            VisualTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
+            var time = timeButtons.First(button => button.FindVisualRoot() == Window && button.ActualWidth > 0 &&
+                button.Bounds.Y > trackDetailScroll.Bounds.Y && button.Bounds.Bottom < trackDetailScroll.Bounds.Bottom);
+            var hoverPoint = new Point(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12);
+            MoveActionPointer(hoverPoint);
             try { await WaitForLikedLayoutAsync(() => time.IsMouseOver && time.Background == TrackButtons.HoverColor(TrackButtons.CommentTimeSurface, TrackButtons.OnCommentTime)); }
             catch (InvalidOperationException error)
             {
                 var hit = ((UIElement)Window.Content!).HitTest(new(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12));
+                LikedActionPoint nativePointer = default;
+                if (OperatingSystem.IsWindows()) GetLikedActionCursor(out nativePointer);
                 CaptureUiPreview("comments-hover-failure");
-                throw new InvalidOperationException($"Timestamp hover failed: bounds={time.Bounds} enabled={time.IsEffectivelyEnabled} over={time.IsMouseOver} active={Window.IsActive} viewport={shellScroll.Bounds} offset={shellScroll.VerticalOffset} colour={time.Background}, hit={hit?.GetType().Name}:{(hit as TextBlock)?.Text}, belongs={hit != null && time.IsAncestorOf(hit)}, commentsHit={trackDetailComments.IsHitTestVisible}.", error);
+                throw new InvalidOperationException($"Timestamp hover failed: sent={hoverPoint}, screen={Window.ClientToScreen(hoverPoint)}, native={nativePointer.X},{nativePointer.Y}, bounds={time.Bounds} rooted={time.FindVisualRoot() == Window} enabled={time.IsEffectivelyEnabled} over={time.IsMouseOver} active={Window.IsActive} viewport={shellScroll.Bounds} offset={shellScroll.VerticalOffset} colour={time.Background}, hit={hit?.GetType().Name}:{(hit as TextBlock)?.Text}, belongs={hit == time || hit != null && time.IsAncestorOf(hit)}, commentsHit={trackDetailComments.IsHitTestVisible}.", error);
             }
             MoveActionPointer(new(1, 1));
             await WaitForLikedLayoutAsync(() => !time.IsMouseOver && time.Background == TrackButtons.CommentTimeSurface);

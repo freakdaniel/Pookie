@@ -21,6 +21,7 @@ internal sealed partial class MainWindow
     private QueueEdgeFade expandedQueueFade = null!;
     private (string Key, double Y)? expandedQueueAnchor;
     private bool expandedQueueStartPending = true;
+    private bool expandedQueueLayoutQueued;
     private long? expandedCurrentEntry;
     private long expandedSourceVersion = -1;
     private string queueOriginTitle = "Очередь воспроизведения", queueOriginKind = "Сейчас играет";
@@ -148,6 +149,24 @@ internal sealed partial class MainWindow
         return true;
     }
 
+    private void RequestExpandedQueueLayout()
+    {
+        if (expandedQueueLayoutQueued) return;
+        expandedQueueLayoutQueued = true;
+        Window.FrameRendered += CompleteExpandedQueueLayout;
+        Window.InvalidateVisual();
+    }
+
+    private void CompleteExpandedQueueLayout()
+    {
+        Window.FrameRendered -= CompleteExpandedQueueLayout;
+        Application.Current.Dispatcher!.BeginInvoke(() =>
+        {
+            expandedQueueLayoutQueued = false;
+            if (!disposed) expandedQueue.InvalidateMeasure();
+        });
+    }
+
     private bool QueueEntryIsNew(QueueBlock block) => expandedOpen && expandedPanelMode == PlayerPanel.Queue && panelReveal > .999 &&
         Environment.TickCount64 - expandedQueueChangedAt < 500 && expandedNewKeys.Contains(block.Key);
 
@@ -195,6 +214,7 @@ internal sealed partial class MainWindow
         {
             expandedQueueData = data;
             expandedQueueSource.SetData(data);
+            RequestExpandedQueueLayout();
             return;
         }
         expandedQueuePositions.Clear();
@@ -233,5 +253,6 @@ internal sealed partial class MainWindow
         foreach (var (motion, block) in expandedQueueBlocks)
             if (block != null) RetargetExpandedQueueRow(motion, block);
         expandedQueue.InvalidateMeasure();
+        RequestExpandedQueueLayout();
     }
 }

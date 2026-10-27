@@ -301,10 +301,16 @@ internal sealed partial class MainWindow
         Window.Activate();await WaitForSettingsLayoutAsync(()=>Window.IsActive);
         var control = settingsChoices[key];
         await RevealSettingsControlAsync(control);
-        RouteWaveformClick(SettingsCenter(control));
-        await WaitForSettingsLayoutAsync(() => control.IsDropDownOpen && control.MenuReveal == 1);
+        var point = SettingsCenter(control);
+        MoveActionPointer(point); PressActionPointer(point, true); PressActionPointer(point, false);
+        try { await WaitForSettingsLayoutAsync(() => control.IsDropDownOpen && control.MenuReveal == 1); }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Settings choice {key}: open={control.IsDropDownOpen}, reveal={control.MenuReveal}, bounds={control.Bounds}, hit={Window.HitTest(SettingsCenter(control))?.GetType().Name}, focus={Window.FocusManager.FocusedElement?.GetType().Name}.", error);
+        }
         RouteSettingsOptionClick(control.Menu!.Options[value]);
         await WaitForSettingsLayoutAsync(() => control.SelectedIndex == value && !control.IsDropDownOpen);
+        MoveActionPointer(new Point(10, 10));
     }
 
     private async Task VerifySettingsSelectAsync()
@@ -315,8 +321,13 @@ internal sealed partial class MainWindow
         if (select.BorderThickness != 0 || select.Height != 48)
             throw new InvalidOperationException("Settings select lost its filled, borderless 48px trigger.");
         var original = select.SelectedIndex;
-        RouteWaveformClick(SettingsCenter(select));
-        await Task.Delay(35, lifetime.Token);
+        var point = SettingsCenter(select);
+        MoveActionPointer(point); PressActionPointer(point, true); PressActionPointer(point, false);
+        try { await WaitForLikedLayoutAsync(() => select.IsDropDownOpen && select.MenuReveal is > 0 and < 1); }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Select reveal: open={select.IsDropDownOpen}, reveal={select.MenuReveal}, bounds={select.Bounds}, hit={Window.HitTest(SettingsCenter(select))?.GetType().Name}, menu={select.Menu?.Bounds}, active={Window.IsActive}.", error);
+        }
         if (!select.IsDropDownOpen || select.MenuReveal <= 0 || select.MenuReveal >= 1)
             throw new InvalidOperationException("Select opening skipped its intermediate animation frames.");
         CaptureUiPreview("settings-select-opening", select.Menu);
@@ -467,7 +478,7 @@ internal sealed partial class MainWindow
         Window.FrameRendered += Sample;
         try
         {
-            RouteWaveformPointer(new Point(chart.Bounds.X + 84 + Math.Cos(angle) * 70, chart.Bounds.Y + 84 + Math.Sin(angle) * 70));
+            MoveActionPointer(new Point(chart.Bounds.X + 84 + Math.Cos(angle) * 70, chart.Bounds.Y + 84 + Math.Sin(angle) * 70));
             await Task.Delay(45, lifetime.Token);
             if (chart.Highlights[0] <= 0 || chart.Highlights[0] >= 1 || view.Legends[0].Highlight != chart.Highlights[0])
                 throw new InvalidOperationException("The cache chart/legend hover snapped instead of animating together.");
@@ -479,7 +490,7 @@ internal sealed partial class MainWindow
             CaptureUiPreview("settings-data-chart-hover");
 
             var previous = chart.Highlights[0];
-            RouteWaveformPointer(SettingsCenter(view.Legends[1]));
+            MoveActionPointer(SettingsCenter(view.Legends[1]));
             if (chart.Highlights[0] != previous)
                 throw new InvalidOperationException("Switching cache categories reset an in-progress hover transition.");
             await Task.Delay(45, lifetime.Token);
@@ -488,7 +499,7 @@ internal sealed partial class MainWindow
             await WaitForSettingsLayoutAsync(() => chart.HoveredCategory == 1 && !chart.Animating &&
                 view.TotalText == FormatSettingsBytes(expected.WaveformsBytes));
             CaptureUiPreview("settings-data-legend-hover");
-            RouteWaveformPointer(new Point(10, 10));
+            MoveActionPointer(new Point(10, 10));
             await Task.Delay(45, lifetime.Token);
             if (chart.Highlights[1] <= 0 || chart.Highlights[1] >= 1)
                 throw new InvalidOperationException("Cache highlight removal snapped instead of fading.");
@@ -540,8 +551,8 @@ internal sealed partial class MainWindow
             }
         if (settingsSection.Value != SettingsSection.About) return;
         var links = settingsActions.Select(action => action.Button).Where(button => button.Content is StackPanel).ToArray();
-        if (links.Length != 2 || links.Any(button => button.StyleName != TrackButtons.Text || button.Height != 40 || button.CornerRadius != 20 ||
-            ((StackPanel)button.Content!).Children.OfType<Image>().Single().ActualWidth != 18))
+        if (links.Length != 3 || links.Any(button => button.StyleName != TrackButtons.Text || button.Height != 40 || button.CornerRadius != 20 ||
+            Math.Abs(((StackPanel)button.Content!).Children.OfType<Image>().Single().ActualWidth - 18) > 1 / Window.DpiScale))
             throw new InvalidOperationException("About links lost their external-link glyph or Material text-button styling.");
     }
 

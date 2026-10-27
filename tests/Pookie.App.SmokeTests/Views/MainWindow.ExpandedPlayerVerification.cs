@@ -347,7 +347,7 @@ internal sealed partial class MainWindow
             await WaitForExpandedPointerAsync(coverPoint, () => expandedCover.IsMouseOver && (expandedVolume.Parent as UIElement)?.Opacity > .99);
             var icon = new Point(expandedVolume.Bounds.X + 19, expandedVolume.Bounds.Y + 19);
             MoveLikedActionCursor(icon); SendLikedActionMouse(0x200, 0, icon);
-            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.ActualWidth > 159 && expandedVolumeSlider.Opacity > .99);
+            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == 160 && expandedVolume.ActualWidth > 159 && expandedVolumeSlider.Opacity > .99);
             if (widths.Count(width => width is > 38 and < 160) < 3 ||
                 expandedVolume.Bounds.X < expandedCover.Bounds.X || expandedVolume.Bounds.Y < expandedCover.Bounds.Y)
                 throw new InvalidOperationException("Volume did not unfold on the cover's top left with rendered intermediate frames.");
@@ -369,7 +369,7 @@ internal sealed partial class MainWindow
             if (expandedVolume.Width != 160 || !expandedVolumeSlider.IsEnabled)
                 throw new InvalidOperationException("Volume collapsed before the hover debounce elapsed.");
             MoveLikedActionCursor(icon); SendLikedActionMouse(0x200, 0, icon);
-            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.ActualWidth > 159);
+            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == 160 && expandedVolume.ActualWidth > 159);
             widths.Clear();
             MoveLikedActionCursor(outside); SendLikedActionMouse(0x200, 0, outside);
             await WaitForLikedLayoutAsync(() => Math.Abs(expandedVolume.ActualWidth - 38) <= 1 / Window.DpiScale && expandedVolumeSlider.Opacity == 0);

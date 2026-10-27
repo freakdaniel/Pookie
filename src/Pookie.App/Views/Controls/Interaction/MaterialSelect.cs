@@ -18,6 +18,8 @@ internal sealed class MaterialSelect : DropDownBase
     private (string Text, uint Dpi, TextRunStyle Style, double Width) labelKey;
     private Color stateFrom, stateTarget = TrackButtons.TonalSurface;
     private bool keyboardInteraction, headerHovered;
+    private Window? pendingPopupWindow;
+    private int popupGeneration;
     internal event Action<int>? SelectionChanged;
     internal double MenuReveal => menu?.Reveal ?? 0;
     internal MaterialSelectMenu? Menu => menu;
@@ -81,11 +83,43 @@ internal sealed class MaterialSelect : DropDownBase
 
     protected override void OnIsDropDownOpenChanged(bool oldValue, bool newValue)
     {
+        ++popupGeneration;
+        CancelPendingPopup();
         if (newValue) menu?.ResetReveal();
+        if (newValue && OperatingSystem.IsWindows() && FindVisualRoot() is Window owner)
+        {
+            // Focus can scroll the trigger's ancestors. Their extent is refined
+            // at the frame boundary; creating the native popup before that pass
+            // lets its scroll-dismiss policy immediately close the new menu.
+            pendingPopupWindow = owner;
+            owner.FrameRendered += OpenAfterLayout;
+            owner.InvalidateVisual();
+            RefreshState();
+            return;
+        }
         base.OnIsDropDownOpenChanged(oldValue, newValue);
         if (newValue) menu?.Open(); else menu?.Stop();
         if (!newValue) KeyboardFocusFeedback.Set(this, keyboardInteraction);
         RefreshState();
+    }
+
+    private void CancelPendingPopup()
+    {
+        if (pendingPopupWindow is not { } owner) return;
+        owner.FrameRendered -= OpenAfterLayout; pendingPopupWindow = null;
+    }
+
+    private void OpenAfterLayout()
+    {
+        var owner = pendingPopupWindow!; var generation = popupGeneration;
+        CancelPendingPopup();
+        Application.Current.Dispatcher!.BeginInvoke(() =>
+        {
+            if (generation != popupGeneration || !IsDropDownOpen || FindVisualRoot() != owner) return;
+            owner.PerformLayout();
+            base.OnIsDropDownOpenChanged(false, true);
+            menu?.Open(); RefreshState();
+        });
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -129,7 +163,7 @@ internal sealed class MaterialSelect : DropDownBase
         if (FindVisualRoot() is Window) stateMotion.Start(); else Background = next;
     }
 
-    protected override void OnDispose() { stateMotion.Stop(); base.OnDispose(); }
+    protected override void OnDispose() { ++popupGeneration; CancelPendingPopup(); stateMotion.Stop(); base.OnDispose(); }
 }
 
 internal sealed class MaterialSelectMenu : Panel

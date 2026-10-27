@@ -2,6 +2,8 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
 using Pookie.SoundCloud;
+using Pookie.Logging;
+using Serilog.Events;
 
 namespace Pookie.App;
 
@@ -67,7 +69,8 @@ internal sealed partial class MainWindow
                 if (!disposed && !token.IsCancellationRequested && generation == chatAttachmentGeneration)
                 { chatAttachmentPreview.Source = source; chatAttachmentImageSize = size; }
             }
-            catch (Exception) { }
+            catch (Exception error) when (error is not OperationCanceledException || !token.IsCancellationRequested)
+            { AppLog.Failure("Pookie.Chats", "Не удалось подготовить предпросмотр вложения", error, LogEventLevel.Debug); }
             finally { if (bytes != null) System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); }
         });
         RefreshChatComposer();

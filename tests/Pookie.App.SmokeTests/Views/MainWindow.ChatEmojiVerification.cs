@@ -175,7 +175,12 @@ internal sealed partial class MainWindow
                 var width = VerificationWindowWidth(requestedWidth);
                 Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 760, minHeight: 600);
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && !chatColumns.Animating);
-                await OpenChatGifsAsync(); await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);
+                await OpenChatGifsAsync();
+                try { await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading); }
+                catch (Exception error)
+                {
+                    throw new InvalidOperationException($"Resized emoji at {width}: open={chatEmojiPopup.IsOpen}, visible={chatEmojiPopup.IsVisible}, reveal={chatEmojiPopup.Reveal}, loading={chatEmojiLoading}, recipient={chatRecipient != null}, sending={chatSending}, voice={chatVoiceDraft != null}, recording={chatVoiceRecorder?.Recording}, active={Window.IsActive}, within={chatEmojiCard.IsFocusWithin}.", error);
+                }
                 if (!chatColumns.Bounds.Contains(chatEmojiPopup.SurfaceBounds)) throw new InvalidOperationException($"Emoji panel escaped a resized chat workspace: requested={width}, window={Window.ClientSize}, workspace={chatColumns.Bounds}, popup={chatEmojiPopup.SurfaceBounds}.");
                 CloseChatGifs(); await WaitForLikedLayoutAsync(() => !chatEmojiPopup.IsVisible);
             }

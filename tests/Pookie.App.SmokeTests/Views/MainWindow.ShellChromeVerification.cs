@@ -66,8 +66,17 @@ internal sealed partial class MainWindow
             var tile = likedTiles.Values.Where(item => item.Track != null && item.Cover.Bounds.Y > 200 &&
                 item.Cover.Bounds.Y < playerChrome.Bounds.Y).OrderByDescending(item => item.Cover.Bounds.Y).First();
             var fadeTrackId = tile.Track!.Id;
-            shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + tile.Cover.Bounds.Y + tile.Cover.ActualHeight / 2 -
-                (playerChrome.Bounds.Y - ContentBottomFade.FadeHeight / 2));
+            // Realizing a new grid row refines its height estimate. Position the
+            // pixel sample from that row's current geometry after each frame.
+            for (var alignment = 0; alignment < 8; alignment++)
+            {
+                tile = likedTiles.Values.Single(item => item.Track?.Id == fadeTrackId);
+                var correction = tile.Cover.Bounds.Y + tile.Cover.ActualHeight / 2 -
+                    (playerChrome.Bounds.Y - ContentBottomFade.FadeHeight / 2);
+                if (shellPageScroll.IsReady && Math.Abs(correction) < 1) break;
+                shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + correction);
+                await WaitForLoginFrameAsync();
+            }
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady &&
                 likedTiles.Values.Any(item => item.Track?.Id == fadeTrackId && Math.Abs(item.Cover.Bounds.Y + item.Cover.ActualHeight / 2 -
                     (playerChrome.Bounds.Y - ContentBottomFade.FadeHeight / 2)) < 1));

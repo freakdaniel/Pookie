@@ -29,5 +29,12 @@ internal static class ChatVideoSmokeTest
             }
             finally { bitmap?.Dispose(); }
         }
+        using var portrait = typeof(ChatVideoSmokeTest).Assembly.GetManifestResourceStream("Pookie.TestFixtures.Media.chat-video-portrait.mp4")!;
+        using var portraitOutput = new MemoryStream(); portrait.CopyTo(portraitOutput);
+        ImageSource? poster = null;
+        var info = await ChatVideoProbe.ReadAsync(portraitOutput.ToArray(), CancellationToken.None, image => poster = image);
+        if (info is not { Valid: true, Height: >= 470 } || poster == null || Math.Max(poster.PixelWidth, poster.PixelHeight) > 380)
+            throw new InvalidOperationException($"Portrait video probe failed: info={info}, poster={poster?.PixelWidth}x{poster?.PixelHeight}.");
+        Console.WriteLine("VIDEO_POSTER_OK: portrait metadata and bounded 380px preview");
     }
 }

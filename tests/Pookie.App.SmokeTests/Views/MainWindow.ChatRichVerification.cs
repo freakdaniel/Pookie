@@ -9,19 +9,35 @@ internal sealed partial class MainWindow
     private async Task VerifyChatRichAttachmentsAsync(ChatFixtureTransport transport, ChatFixtureMediaHandler media, bool musicOnly = false)
     {
         var document = media.Add(new(42, 90, "", [new("ghosty-config.txt", "text/plain", new byte[87], true)]));
-        transport.AddOwn(document); await RefreshChatsAsync();
-        await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == document && r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard { ActualHeight: > 0 }));
-        var fileRow = ChatRows.First(r => r.Message?.Body == document);
+        transport.AddOwn(document); await RefreshChatsAsync(); RequestChatBottom();
+        // Resolving metadata replaces the temporary card. Read the current
+        // child only after that replacement and its layout have completed.
+        await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Bound && r.Root.FindVisualRoot() == Window &&
+            r.Message?.Body == document && r.MediaResolved && !r.Content.IsResizing &&
+            r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard { IsMeasureDirty: false, IsArrangeDirty: false, ActualHeight: > 0 }));
+        var fileRow = ChatRows.First(r => r.Bound && r.Root.FindVisualRoot() == Window && r.Message?.Body == document);
         var fileCard = (ChatFileCard)fileRow.Attachments.FindVisualChild<ChatFileCard>()!;
-        await WaitForLikedLayoutAsync(() => !fileRow.Content.IsResizing);
         if (fileCard.DetailLabel.Text != "87 Б" || fileRow.Bubble.ActualHeight > 72 + 1 / Window.DpiScale || Math.Abs(fileCard.DetailLabel.Bounds.Bottom - fileRow.Time.Bounds.Bottom) > 1)
-            throw new InvalidOperationException($"Document bubble lost its compact file/size/time layout: detail={fileCard.DetailLabel.Text}, bubble={fileRow.Bubble.Bounds}, detailBounds={fileCard.DetailLabel.Bounds}, time={fileRow.Time.Bounds}, content={fileRow.Content.Bounds}.");
+            throw new InvalidOperationException($"Document bubble lost its compact file/size/time layout: detail={fileCard.DetailLabel.Text}, bubble={fileRow.Bubble.Bounds}, detailBounds={fileCard.DetailLabel.Bounds}, time={fileRow.Time.Bounds}, content={fileRow.Content.Bounds}, attachments={fileRow.Attachments.Bounds}, file={fileCard.Bounds}, dirty={fileCard.IsMeasureDirty}/{fileCard.IsArrangeDirty}, parent={fileCard.Parent?.GetType().Name}.");
         var photo = Fixture("chat-small.png");
         var asFile = media.Add(new(90, 42, "", [new("photo.png", "image/png", photo, true)]));
-        transport.AddIncoming(asFile); await RefreshChatsAsync();
-        await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == asFile && !r.Content.IsResizing && r.Motion.Opacity > .99 &&
-            r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard && r.Bubble.ActualHeight <= 72 + 1 / Window.DpiScale));
+        transport.AddIncoming(asFile); await RefreshChatsAsync(); RequestChatBottom();
+        try
+        {
+            await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Bound && r.Root.FindVisualRoot() == Window && r.Message?.Body == asFile && !r.Content.IsResizing && r.Motion.Opacity > .99 &&
+                r.Attachments.FindVisualChild<ChatFileCard>() is ChatFileCard && r.Bubble.ActualHeight <= 72 + 1 / Window.DpiScale));
+        }
+        catch (Exception error)
+        {
+            var incoming = ChatRows.FirstOrDefault(r => r.Message?.Body == asFile);
+            var ancestors = new List<string>();
+            for (Element? element = incoming?.Attachments.FindVisualChild<ChatFileCard>(); element != null; element = element.Parent)
+                ancestors.Add($"{element.GetType().Name}:{element.IsMeasureDirty}/{element.IsArrangeDirty}:{element.Bounds}");
+            Console.Error.WriteLine("DOCUMENT_LAYOUT_CHAIN: " + string.Join(" -> ", ancestors));
+            throw new InvalidOperationException($"Incoming document: found={incoming != null}, bound={incoming?.Bound}, rooted={incoming?.Root.FindVisualRoot() == Window}, resolved={incoming?.MediaResolved}, resizing={incoming?.Content.IsResizing}, opacity={incoming?.Motion.Opacity}, bubble={incoming?.Bubble.Bounds}, content={incoming?.Content.Bounds}, file={incoming?.Attachments.FindVisualChild<ChatFileCard>()?.Bounds}, photo={incoming?.Content.PhotoMode}, scrolling={chatScrollBottom}, restore={chatRestoreOffset}, follow={chatFollowLayout}, queued={chatMediaLayoutQueued}/{chatMediaLayoutPending.Count}.", error);
+        }
         if (ChatRows.First(r => r.Message?.Body == asFile).Content.PhotoMode) throw new InvalidOperationException("An image sent as a document became a photo.");
+        Console.WriteLine("CHAT_DOCUMENT_LAYOUT_OK: resolved replacement cards are measured and resize transitions finish");
         await WaitForLikedLayoutAsync(() => chatInboxVisuals.Any(pair => pair.Value.Preview.Text == "photo.png" && pair.Value.PreviewGlyph == "file" && pair.Value.PreviewIcon.IsVisible));
         CaptureUiPreview("chats-documents");
         Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
@@ -68,8 +84,12 @@ internal sealed partial class MainWindow
         {
             await File.WriteAllBytesAsync(videoPath, Fixture("chat-video-portrait.mp4"));
             await AddChatFilesAsync([videoPath]);
-            await WaitForLikedLayoutAsync(() => chatAttachmentPreview.Source != null && chatAttachmentPreview.ActualWidth > 0);
-            if (chatAttachmentPreview.ActualWidth != 44 || chatAttachmentPreview.ActualHeight != 44 || chatAttachmentImageSize is not { Height: >= 470 })
+            try { await WaitForLikedLayoutAsync(() => chatAttachmentPreview.Source != null && chatAttachmentPreview.ActualWidth > 0); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException($"Video composer poster: source={chatAttachmentPreview.Source != null}, width={chatAttachmentPreview.ActualWidth}, files={chatSelectedFiles.Length}, sending={chatSending}, importing={chatImporting}, size={chatAttachmentImageSize}, status={chatThreadStatus.Value}.", error);
+            }
+            if (Math.Abs(chatAttachmentPreview.ActualWidth - 44) > 1 / Window.DpiScale || Math.Abs(chatAttachmentPreview.ActualHeight - 44) > 1 / Window.DpiScale || chatAttachmentImageSize is not { Height: >= 470 })
                 throw new InvalidOperationException("The video attachment is missing its square composer poster.");
             CaptureUiPreview("chats-video-composer");
         }

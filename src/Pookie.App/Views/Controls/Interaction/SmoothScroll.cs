@@ -11,6 +11,7 @@ internal sealed class SmoothScroll : IDisposable
     private readonly AnimationClock motion;
     private double target, last, velocity;
     private long timestamp;
+    private long precisionTimestamp;
     private bool running, applying;
     private bool enabled = true;
     internal bool Enabled
@@ -49,6 +50,32 @@ internal sealed class SmoothScroll : IDisposable
     internal bool Scroll(double delta)
     {
         return ScrollTo((running ? target : viewer.VerticalOffset) + delta);
+    }
+
+    internal bool ScrollWheel(double wheelDelta)
+    {
+        var delta = -wheelDelta * ThemeManager.DefaultMetrics.ScrollWheelStep;
+        if (OperatingSystem.IsWindows())
+        {
+            var now = Stopwatch.GetTimestamp();
+            // Precision devices already supply a continuous, inertial stream.
+            // A second spring trails the finger and keeps moving the old way
+            // after reversal. Whole notches inside that same stream remain
+            // direct too; ordinary wheel notches retain the user's animation.
+            if (Math.Abs(wheelDelta - Math.Round(wheelDelta)) > .00001) precisionTimestamp = now;
+            if (precisionTimestamp != 0 && Stopwatch.GetElapsedTime(precisionTimestamp, now).TotalMilliseconds < 150)
+            {
+                precisionTimestamp = now;
+                Stop();
+                var before = viewer.VerticalOffset;
+                target = Math.Clamp(before + delta, 0, Maximum(viewer));
+                if (Math.Abs(target - before) < .01) return false;
+                viewer.SetScrollOffsets(viewer.HorizontalOffset, target);
+                last = viewer.VerticalOffset;
+                return true;
+            }
+        }
+        return Scroll(delta);
     }
 
     internal bool ScrollTo(double position)
@@ -106,7 +133,7 @@ internal sealed class SmoothScroll : IDisposable
 
     private void OnWheel(MouseWheelEventArgs args)
     {
-        if (!args.Handled && args.Delta.Y != 0 && Scroll(-args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep))
+        if (!args.Handled && args.Delta.Y != 0 && ScrollWheel(args.Delta.Y))
             args.Handled = true;
     }
 

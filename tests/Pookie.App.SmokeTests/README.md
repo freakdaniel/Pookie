@@ -782,3 +782,35 @@ Stream resolution and external Discord/MPRIS integrations are outside this UI
 fixture. `PlaybackMemoryTests` separately drains 40 minutes of PCM through the
 production HTTP-range, disk-cache, decoder and bounded-queue path at full speed,
 including analysis capture and cache cleanup, without a 40-minute allocation.
+
+### Frame measurements
+
+Set `POOKIE_PERF_CAPTURE` to an absolute JSON file path to retain the native
+window's public `LastFramePerformanceStats` during a UI scenario. The host writes
+the samples after the window closes, so file I/O does not run on each UI frame.
+Repeated frame indices are discarded: `FrameRendered` may observe the previous
+completed frame before native presentation finishes.
+
+The timings describe application frame work, including layout, rendering and
+the backend's presentation call. They are **not display FPS or input latency**.
+Compare the same viewport, DPI, backend, playback state and scroll pattern;
+separate continuous scrolling from first-time loading and large jumps. Keep
+profiling, builds and other UI scenarios out of a timed run. Do not enable frame
+capture for lifetime/memory checks: retaining the samples changes their heap.
+
+Windows geometry assertions allow one physical pixel for layout rounding.
+Requested wide windows are limited to the monitor work area, and the actual
+tested width is printed as `UI_VIEWPORT_LIMIT`; this does not verify resolutions
+larger than the attached monitor.
+
+The scrolling fixture also checks Windows precision-wheel routing. Fractional
+wheel input, coalesced whole deltas within that gesture and direction reversal
+must update the offset immediately, without a second spring or trailing motion.
+Ordinary wheel notches must retain their intermediate animated positions.
+
+A probe that changes offsets once per rendered frame cannot establish input
+responsiveness: it slows its own input whenever rendering stalls. For a live
+session, produce native wheel messages independently on wall time and retain
+send/receive times, frame notification intervals, playback state and window
+activation. Frame work, notification cadence and input handling latency are
+different measurements; none alone establishes displayed FPS.

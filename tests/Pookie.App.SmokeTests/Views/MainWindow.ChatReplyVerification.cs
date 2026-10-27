@@ -42,8 +42,10 @@ internal sealed partial class MainWindow
             throw;
         }
         Window.FrameRendered -= SampleClosing;
-        if (!closing.Any(h => h is > 1 and < 47) || Math.Abs(chatComposer.ActualHeight-height)>1/Window.DpiScale)
-            throw new InvalidOperationException("Reply cancellation discarded its content before the collapse animation.");
+        // Compare device pixels: at 110 DPI a one-pixel difference expressed
+        // in DIPs can exceed 96/110 by a few floating-point ulps.
+        if (!closing.Any(h => h is > 1 and < 47) || Math.Round(Math.Abs(chatComposer.ActualHeight-height)*Window.DpiScale, 9)>1)
+            throw new InvalidOperationException($"Reply cancellation discarded its content before the collapse animation: height={height}->{chatComposer.ActualHeight}, frames={string.Join(',', closing.Select(h => h.ToString("F2")))}.");
 
         // A known media preview belongs in the same quote. No media download or
         // real transport is involved, and the fixture never enters the timeline.

@@ -176,9 +176,26 @@ internal sealed partial class MainWindow
     private async Task WaitForExpandedQueueSettledAsync()
     {
         await WaitForLoginFrameAsync();
-        await WaitForLikedLayoutAsync(() => expandedQueueAnchor == null &&
-            !expandedQueueBlocks.Keys.Any(row => row.Animating) &&
-            !expandedQueue.IsMeasureDirty && !expandedQueue.IsArrangeDirty);
+        var frames = 0;
+        void Sample() => frames++;
+        Window.FrameRendered += Sample;
+        try
+        {
+            await WaitForLikedLayoutAsync(() => expandedQueueAnchor == null &&
+                !expandedQueueBlocks.Keys.Any(row => row.Animating) &&
+                !expandedQueue.IsMeasureDirty && !expandedQueue.IsArrangeDirty);
+        }
+        catch (Exception error)
+        {
+            var anchor = expandedQueueAnchor == null ? null : expandedQueueBlocks.FirstOrDefault(pair => pair.Value?.Key == expandedQueueAnchor.Value.Key).Key;
+            var ancestors = new List<string>();
+            for (Element? element = expandedQueue; element != null; element = element.Parent)
+                ancestors.Add($"{element.GetType().Name}:{element.IsMeasureDirty}/{element.IsArrangeDirty}:{(element as UIElement)?.IsVisible}");
+            Console.Error.WriteLine("QUEUE_LAYOUT_CHAIN " + string.Join(" -> ", ancestors));
+            Console.Error.WriteLine($"QUEUE_INNER_STATE dirty={expandedQueueScroll.IsMeasureDirty}/{expandedQueueScroll.IsArrangeDirty}, rows={string.Join(';', expandedQueueBlocks.Where(pair => pair.Value != null).Select(pair => $"{pair.Value!.Key}:{pair.Key.IsMeasureDirty}/{pair.Key.IsArrangeDirty}:{pair.Key.Bounds}"))}");
+            throw new InvalidOperationException($"Queue settle: anchor={expandedQueueAnchor}, anchorBounds={anchor?.Bounds}, viewport={expandedQueueScroll.Bounds}, offset={expandedQueueScroll.VerticalOffset}/{SmoothScroll.Maximum(expandedQueueScroll)}, dirty={expandedQueue.IsMeasureDirty}/{expandedQueue.IsArrangeDirty}, moving={expandedQueueBlocks.Keys.Count(row => row.Animating)}, start={expandedQueueStartPending}, shown={expandedOpen}/{expandedHost.IsVisible}, mode={expandedPanelMode}, reveal={panelReveal}, frames={frames}.", error);
+        }
+        finally { Window.FrameRendered -= Sample; }
         await WaitForLoginFrameAsync();
     }
 

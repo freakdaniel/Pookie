@@ -133,7 +133,8 @@ internal sealed partial class MainWindow
     {
         var screen = Window.ClientToScreen(clientPoint);
         if (!SetLikedActionCursor((int)Math.Round(screen.X), (int)Math.Round(screen.Y)))
-            throw new InvalidOperationException("Could not move cursor into the test window.");
+            throw new InvalidOperationException($"Could not move cursor into the test window: client={clientPoint}, screen={screen}, dpi={Window.DpiScale}, active={Window.IsActive}.",
+                new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
     }
 
     private void SendLikedActionMouse(uint message, nuint buttons, Point position)
@@ -141,13 +142,17 @@ internal sealed partial class MainWindow
         var scale = Window.DpiScale;
         var x = (int)Math.Round(position.X * scale);
         var y = (int)Math.Round(position.Y * scale);
-        if (!PostLikedActionMessage(Window.Handle, message, buttons, (nint)((y << 16) | (x & 0xffff))))
+        // Return after the native window has handled the input. An immediate
+        // assertion must not race a mouse message still waiting in the queue.
+        if (SendLikedActionMessage(Window.Handle, message, buttons, (nint)((y << 16) | (x & 0xffff)), 2, 1000, out _) == 0)
             throw new InvalidOperationException("Could not deliver native action input.");
     }
 
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+    private static extern nint SendLikedActionMessage(nint window, uint message, nuint wparam, nint lparam, uint flags, uint timeout, out nuint result);
     [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
     private static extern bool PostLikedActionMessage(nint window, uint message, nuint wparam, nint lparam);
     [StructLayout(LayoutKind.Sequential)] private struct LikedActionPoint { public int X, Y; }
     [DllImport("user32.dll", EntryPoint = "GetCursorPos")] private static extern bool GetLikedActionCursor(out LikedActionPoint point);
-    [DllImport("user32.dll", EntryPoint = "SetCursorPos")] private static extern bool SetLikedActionCursor(int x, int y);
+    [DllImport("user32.dll", EntryPoint = "SetCursorPos", SetLastError = true)] private static extern bool SetLikedActionCursor(int x, int y);
 }

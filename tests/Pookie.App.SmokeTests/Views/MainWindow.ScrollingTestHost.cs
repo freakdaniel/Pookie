@@ -1,4 +1,5 @@
 using Aprillz.MewUI;
+using Aprillz.MewUI.Controls;
 using Pookie.App.Storage;
 using Pookie.SoundCloud;
 using System.Text.Json;
@@ -46,6 +47,7 @@ internal sealed partial class MainWindow
                     await WaitForLikedLayoutAsync(() => NavigationScroll() is { ViewportHeight: > 100 } scroll &&
                         SmoothScroll.Maximum(scroll) > 1000 && smoothScrolls.ContainsKey(scroll));
                     var viewer = NavigationScroll()!;
+                    if (OperatingSystem.IsWindows()) await VerifyPrecisionWheelAsync(viewer);
                     viewer.SetScrollOffsets(0, SmoothScroll.Maximum(viewer)); CheckPageEnd();
                     await WaitForLikedLayoutAsync(() => transport.Calls == 1 && paginationLoading.Value);
                     viewer.SetScrollOffsets(0, SmoothScroll.Maximum(viewer) - 260);
@@ -78,5 +80,36 @@ internal sealed partial class MainWindow
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("SCROLLING_UI_FAILED: " + error); }
         finally { Window.Close(); }
+    }
+
+    private async Task VerifyPrecisionWheelAsync(ScrollViewer viewer)
+    {
+        smoothScrolls[viewer].Stop();
+        viewer.SetScrollOffsets(0, Math.Min(500, SmoothScroll.Maximum(viewer) / 2));
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
+        using var motion = new SmoothScroll(viewer);
+        var start = viewer.VerticalOffset;
+        var step = ThemeManager.DefaultMetrics.ScrollWheelStep;
+        motion.ScrollWheel(-1);
+        if (Math.Abs(viewer.VerticalOffset - start) > .01)
+            throw new InvalidOperationException("An ordinary wheel notch lost its animated transition.");
+        await WaitForLikedLayoutAsync(() => viewer.VerticalOffset > start + 1 && viewer.VerticalOffset < start + step - 1);
+        await WaitForLikedLayoutAsync(() => Math.Abs(viewer.VerticalOffset - start - step) < 1);
+        motion.Stop();
+
+        void Direct(double delta)
+        {
+            var before = viewer.VerticalOffset;
+            if (!motion.ScrollWheel(delta) || Math.Abs(viewer.VerticalOffset - before + delta * step) > 1 / Window.DpiScale)
+                throw new InvalidOperationException("Precision wheel input acquired an extra animation delay.");
+        }
+        Direct(.15);
+        Direct(1); // A coalesced whole notch in the same precision stream.
+        Direct(-.15); // Reversal follows the next input, not the old velocity.
+        var stopped = viewer.VerticalOffset;
+        await WaitForLoginFrameAsync();
+        if (Math.Abs(viewer.VerticalOffset - stopped) > 1 / Window.DpiScale)
+            throw new InvalidOperationException("A precision gesture kept animating after its final input.");
+        Console.WriteLine("PRECISION_WHEEL_OK: immediate fractional/coalesced/reversed input; ordinary notches retain animation");
     }
 }
