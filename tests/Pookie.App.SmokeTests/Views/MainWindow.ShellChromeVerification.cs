@@ -12,7 +12,10 @@ internal sealed partial class MainWindow
         try
         {
             VerifyBackdropPixelBuffers();
+            VerifyBackdropBlurPixels();
             VerifyShadowRasterPixels();
+            VerifyGlassCachePixels();
+            await VerifyHeaderCaptureLifetimeAsync();
             timer.Stop();
             await ShowWorkspaceAsync();
             playerVisible.Value = true;
@@ -61,6 +64,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => Math.Abs(native.VerticalOffset - before - 60) < 1);
             if (native.CornerRadius != 0 || contentFrame.Bounds.Y >= 0 || native.Bounds.Bottom > playerChrome.Bounds.Y + 1)
                 throw new InvalidOperationException("Page scrolling lost the under-header viewport, square clipping or player boundary.");
+            await VerifyLiveHeaderBackdropAsync();
             CaptureUiPreview("shell-chrome-scrolled");
             VerifyHeaderBackdropPixels();
             var tile = likedTiles.Values.Where(item => item.Track != null && item.Cover.Bounds.Y > 200 &&
@@ -205,7 +209,7 @@ internal sealed partial class MainWindow
     {
         var bounds = headerGlass.Bounds; var scale = Window.DpiScale;
         using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
             (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         var centers = new List<double>();
@@ -246,7 +250,7 @@ internal sealed partial class MainWindow
         var bounds = headerGlass.Bounds;
         var scale = Window.DpiScale;
         using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
             (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         probe.Scales.Clear();
@@ -259,12 +263,72 @@ internal sealed partial class MainWindow
         Console.WriteLine($"HEADER_SAMPLING_OK: page and header capture share native DPI {scale:F4} before downsampling");
     }
 
+    private async Task VerifyLiveHeaderBackdropAsync()
+    {
+        await WaitForLoginFrameAsync();
+        var pixels = ReadLiveHeaderBackdrop();
+        var minimum = 255; var maximum = 0;
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            if (pixels[i + 3] != 255)
+                throw new InvalidOperationException($"Native header capture lost its opaque page background: alpha={pixels[i + 3]}.");
+            minimum = Math.Min(minimum, pixels[i + 1]); maximum = Math.Max(maximum, pixels[i + 1]);
+        }
+        if (pixels.Length == 0 || maximum - minimum < 8)
+            throw new InvalidOperationException($"Native header capture lost page variation: green={minimum}..{maximum}.");
+        var before = pixels.ToArray();
+        var offset = shellScroll.VerticalOffset;
+        try
+        {
+            shellScroll.SetScrollOffsets(0, offset + 40);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
+            await WaitForLoginFrameAsync();
+            var moved = ReadLiveHeaderBackdrop();
+            if (moved.AsSpan().SequenceEqual(before))
+                throw new InvalidOperationException("Native header capture reused stale pixels after scrolling.");
+            for (var i = 3; i < moved.Length; i += 4)
+                if (moved[i] != 255) throw new InvalidOperationException("Moving native header capture became transparent.");
+        }
+        finally
+        {
+            shellScroll.SetScrollOffsets(0, offset);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
+            await WaitForLoginFrameAsync();
+        }
+        Console.WriteLine($"LIVE_HEADER_BACKDROP_OK: native frame, alpha=255, green={minimum}..{maximum}, refreshed after scrolling");
+    }
+
+    private byte[] ReadLiveHeaderBackdrop()
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        if (typeof(ShellChromeGlass).GetField("nativeBlur", flags)!.GetValue(headerGlass) is NativeBackdropBlur { Result: { } result })
+        {
+            // Read the result of the real window frame, without calling Render.
+            // Gaussian halo pixels lie outside the header and are intentionally
+            // transparent. Every pixel inside the visible header must be opaque.
+            var span = result.ReadPixels(out var stride);
+            var scaleX = result.PixelWidth / result.Bounds.Width;
+            var scaleY = result.PixelHeight / result.Bounds.Height;
+            var x = (int)Math.Ceiling((headerGlass.Bounds.X - result.Bounds.X) * scaleX);
+            var y = (int)Math.Ceiling((headerGlass.Bounds.Y - result.Bounds.Y) * scaleY);
+            var width = (int)Math.Floor(headerGlass.Bounds.Width * scaleX);
+            var height = (int)Math.Floor(headerGlass.Bounds.Height * scaleY);
+            var pixels = new byte[width * height * 4];
+            for (var row = 0; row < height; row++)
+                span.Slice((y + row) * stride + x * 4, width * 4).CopyTo(pixels.AsSpan(row * width * 4));
+            return pixels;
+        }
+        var blur = typeof(ShellChromeGlass).GetField("blurred", flags)!.GetValue(headerGlass) as BackdropBlur;
+        if (blur is not { Ready: true }) throw new InvalidOperationException("Native frame did not prepare its header blur.");
+        return blur.Pixels.ToArray();
+    }
+
     private void VerifyHeaderBackdropPixels()
     {
         var bounds = headerGlass.Bounds;
         var scale = Window.DpiScale;
         using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
             (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         context.BeginFrame(surface);

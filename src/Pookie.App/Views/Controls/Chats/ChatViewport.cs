@@ -8,6 +8,11 @@ namespace Pookie.App;
 internal sealed class ChatViewport(FrameworkElement content, Color surface) : Panel
 {
     private bool composerWasResizing;
+    private const double FadeHeight = 12;
+    private readonly LinearGradientBrush topFade = new(new Point(0,0), new Point(0,FadeHeight),
+        [new(0,surface),new(1,Color.FromArgb(0,surface.R,surface.G,surface.B))]);
+    private readonly LinearGradientBrush bottomFade = new(new Point(0,0), new Point(0,FadeHeight),
+        [new(0,Color.FromArgb(0,surface.R,surface.G,surface.B)),new(1,surface)]);
     internal Action? BeforePaint;
     internal Func<bool>? SynchronizeScroll;
     internal Func<bool>? ComposerResizing;
@@ -61,14 +66,23 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
         // surface so a single bottom pixel of an offscreen bubble cannot linger.
         if (content.FindVisualChild<ScrollViewer>() is ScrollViewer scroll)
         {
-            const double edge = 12;
-            var clear = Color.FromArgb(0, surface.R, surface.G, surface.B);
             if (scroll.VerticalOffset > 1)
-                context.FillRectangle(new Rect(Bounds.X, Bounds.Y, Bounds.Width, edge),
-                    new LinearGradientBrush(new Point(Bounds.X, Bounds.Y), new Point(Bounds.X, Bounds.Y + edge), [new(0,surface),new(1,clear)]));
+                DrawFade(context, new Rect(Bounds.X, Bounds.Y, Bounds.Width, FadeHeight), topFade);
             if (SmoothScroll.Maximum(scroll) - scroll.VerticalOffset > 1)
-                context.FillRectangle(new Rect(Bounds.X, Bounds.Bottom - edge, Bounds.Width, edge),
-                    new LinearGradientBrush(new Point(Bounds.X, Bounds.Bottom - edge), new Point(Bounds.X, Bounds.Bottom), [new(0,clear),new(1,surface)]));
+                DrawFade(context, new Rect(Bounds.X, Bounds.Bottom - FadeHeight, Bounds.Width, FadeHeight), bottomFade);
         }
+    }
+
+    internal static void DrawFade(IGraphicsContext context, Rect bounds, LinearGradientBrush brush)
+    {
+        // A moving viewport changes only the transform, not its gradient-stop
+        // collection. Keep native coverage rather than resampling a mask image.
+        context.Save();
+        try
+        {
+            context.Translate(bounds.X, bounds.Y);
+            context.FillRectangle(new Rect(0,0,bounds.Width,bounds.Height), brush);
+        }
+        finally { context.Restore(); }
     }
 }

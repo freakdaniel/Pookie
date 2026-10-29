@@ -8,6 +8,23 @@ public sealed partial class SoundCloudWebClient
     {
         ValidateDetailTrackId(userId);
         if (Session == null) throw new SoundCloudException("Для персональных подборок нужен вход в SoundCloud.");
+        if (Session.MobileIdentity != null && Transport is ISoundCloudMobileApi mobile)
+        {
+            try
+            {
+                using var home = await mobile.GetMobileSduiAsync(cancellationToken: token);
+                var mixes = DiscoverData.MobilePersonalMixes(home.RootElement, userId);
+                if (mixes.Length > 0) return mixes;
+            }
+            catch (NotSupportedException) { return await GetRestMixesAsync(userId, token); }
+            catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 400 or 404)
+            { return await GetRestMixesAsync(userId, token); }
+        }
+        return await GetRestMixesAsync(userId, token);
+    }
+
+    private async Task<LibraryItem[]> GetRestMixesAsync(long userId, CancellationToken token)
+    {
         using var document = await GetJsonAsync(Api("mixed-selections"), token);
         return DiscoverData.PersonalMixes(document.RootElement, userId);
     }
@@ -15,6 +32,28 @@ public sealed partial class SoundCloudWebClient
 
 public static class DiscoverData
 {
+    public static LibraryItem[] MobilePersonalMixes(JsonElement root, long userId)
+    {
+        var items = new Dictionary<string, LibraryItem>(StringComparer.Ordinal); var remaining = 20000;
+        Visit(root, 0);
+        return items.Values.ToArray();
+        void Visit(JsonElement value, int depth)
+        {
+            if (--remaining < 0 || depth > 24) return;
+            if (value.ValueKind == JsonValueKind.Array) { foreach (var child in value.EnumerateArray()) Visit(child, depth + 1); return; }
+            if (value.ValueKind != JsonValueKind.Object) return;
+            if (value.TryGetProperty("urn", out var urn) && urn.ValueKind == JsonValueKind.String &&
+                urn.GetString()?.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal) == true &&
+                value.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                var playlist = LibraryData.ParsePlaylist(value);
+                if (playlist.MadeFor == null || playlist.MadeFor.Id == userId)
+                { var item = LibraryData.FromPlaylist(playlist); items.TryAdd(item.Key, item); }
+            }
+            foreach (var child in value.EnumerateObject()) Visit(child.Value, depth + 1);
+        }
+    }
+
     public static LibraryItem[] PersonalMixes(JsonElement root, long userId)
     {
         var result = new List<LibraryItem>();

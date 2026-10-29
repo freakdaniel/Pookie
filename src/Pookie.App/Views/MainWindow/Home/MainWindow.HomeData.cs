@@ -60,7 +60,13 @@ internal sealed partial class MainWindow
         var recentTask = Read("recent", () => api.GetLibraryAsync("recent", user.Id, token), new LibraryPage([], null));
         var historyTask = Read("recommendations", () => api.GetLibraryAsync("history", user.Id, token), new LibraryPage([], null));
         var likesTask = Read("recommendations", () => libraryLikes != null && !force ? Task.FromResult(libraryLikes) : api.GetLikesAsync(user.Id, token), new TrackPage([], null));
-        var knownLikesTask = Read("recommendations", () => likedIdsReady && !force ? Task.FromResult(new HashSet<long>(likedIds)) : api.GetLikedIdsAsync(token), new HashSet<long>());
+        async Task<HashSet<long>> KnownLikes()
+        {
+            if (force) likedIdsReady = false;
+            await LoadLikedIdsAsync().WaitAsync(token);
+            return new(likedIds);
+        }
+        var knownLikesTask = Read("recommendations", KnownLikes, new HashSet<long>());
         async Task Recent()
         {
             recent = (await recentTask).Items; history = (await historyTask).Items;

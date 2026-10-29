@@ -150,35 +150,44 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnRender(IGraphicsContext context)
     {
         RefreshSurface();
+        // Only disabled ink changes the caller's state. A native Restore on
+        // every ordinary button is measurable while scrolling dense lists.
+        if (IsEffectivelyEnabled || pending) { DrawSurface(context); return; }
         context.Save();
         try
         {
-            if (!IsEffectivelyEnabled && !pending) context.GlobalAlpha *= .38f;
-            if (glassBackdrop != null)
-            {
-                var bounds = GetSnappedBorderBounds(Bounds);
-                var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
-                var shape = geometry.Get(bounds,corners);
-                glassBackdrop.Draw(context, bounds, corners, shape);
-                context.FillPath(shape, glassTint);
-            }
-            else if (connected)
-                DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
-            else base.OnRender(context);
-            if (glassFinish) sheen.Draw(context, GetSnappedBorderBounds(Bounds),
-                connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35, GetDpi() / 96d);
+            context.GlobalAlpha *= .38f;
+            DrawSurface(context);
         }
         finally { context.Restore(); }
     }
 
+    private void DrawSurface(IGraphicsContext context)
+    {
+        if (glassBackdrop != null)
+        {
+            var bounds = GetSnappedBorderBounds(Bounds);
+            var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
+            var shape = geometry.Get(bounds,corners);
+            glassBackdrop.Draw(context, bounds, corners, shape);
+            context.FillPath(shape, glassTint);
+        }
+        else if (connected)
+            DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
+        else base.OnRender(context);
+        if (glassFinish) sheen.Draw(context, GetSnappedBorderBounds(Bounds),
+            connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35, GetDpi() / 96d);
+    }
+
     protected override void RenderSubtree(IGraphicsContext context)
     {
+        if (IsEffectivelyEnabled || pending) { base.RenderSubtree(context); return; }
         // Fading a disabled control through UIElement.Opacity allocates a
         // viewport-sized group on MewVG/Win32. Its ink needs no separate layer.
         context.Save();
         try
         {
-            if (!IsEffectivelyEnabled && !pending) context.GlobalAlpha *= .38f;
+            context.GlobalAlpha *= .38f;
             base.RenderSubtree(context);
         }
         finally { context.Restore(); }

@@ -18,7 +18,14 @@ internal sealed class ChatMessageMotion : ContentControl
     internal void Reveal() { Finish(); offset = 16; Opacity = 0; clock.Start(); }
     internal void Finish() { clock.Stop(); offset = 0; Opacity = 1; }
     protected override void RenderSubtree(IGraphicsContext context)
-    { context.Save(); context.Translate(0, offset); base.RenderSubtree(context); context.Restore(); }
+    {
+        // Settled rows need no transform. Restoring an unchanged Direct2D
+        // state still calls into the native render target for every message.
+        if (offset == 0) { base.RenderSubtree(context); return; }
+        context.Save();
+        try { context.Translate(0, offset); base.RenderSubtree(context); }
+        finally { context.Restore(); }
+    }
     protected override UIElement? OnHitTest(Point point) => Opacity < .1 ? null : base.OnHitTest(new Point(point.X, point.Y - offset));
     protected override void OnDispose() { clock.Stop(); base.OnDispose(); }
 }

@@ -18,6 +18,7 @@ internal sealed class ChatProfileBackdrop : GlassCard
     private IGraphicsFactory? factory;
     private PlayerGradient painted;
     private float[] noise = [];
+    private byte[] alpha = [];
     private bool dirty = true;
     private double scrollOffset;
     internal double ScrollOffset
@@ -60,14 +61,29 @@ internal sealed class ChatProfileBackdrop : GlassCard
         {
             ClearRaster(); factory = graphics;
             raster = new WriteableBitmap(width, Rows, clear: false, hasAlpha: true);
-            image = BitmapImage.Create(graphics, raster);
+            image = OperatingSystem.IsWindows() ? BitmapImage.CreatePremultipliedView(graphics, raster) : BitmapImage.Create(graphics, raster);
             noise = new float[width * Rows];
+            alpha = new byte[width * Rows];
             for (var y = 0; y < Rows; y++)
-            for (var x = 0; x < width; x++) noise[y * width + x] = (float)PlayerGradient.Noise(x, y);
+            {
+                // Coverage and grain depend only on the raster size, not the
+                // animated palette. Compute them once per size/device.
+                var fade = Math.Clamp((y / (Rows - 1d) - .45) / .55, 0, 1);
+                fade = fade * fade * (3 - 2 * fade);
+                for (var x = 0; x < width; x++)
+                {
+                    var i = y * width + x;
+                    noise[i] = (float)PlayerGradient.Noise(x, y);
+                    alpha[i] = (byte)Math.Clamp((1 - fade) * 255 + noise[i], 0, 255);
+                }
+            }
             dirty = true;
         }
         if (dirty || painted != current)
         {
+            // Direct2D consumes premultiplied pixels; write that format here
+            // instead of allocating/converting the entire image on every tick.
+            var premultiplied = OperatingSystem.IsWindows();
             using var write = raster!.LockForWrite();
             var pixels = write.PixelsBgra32;
             for (var x = 0; x < width; x++)
@@ -75,15 +91,15 @@ internal sealed class ChatProfileBackdrop : GlassCard
                 var color = current.Sample((x + .5) / width);
                 for (var y = 0; y < Rows; y++)
                 {
-                    var fade = Math.Clamp((y / (Rows - 1d) - .45) / .55, 0, 1);
-                    fade = fade * fade * (3 - 2 * fade);
                     var i = y * width + x; var grain = noise[i];
-                    pixels[i * 4] = (byte)(color.Z + grain);
-                    pixels[i * 4 + 1] = (byte)(color.Y + grain);
-                    pixels[i * 4 + 2] = (byte)(color.X + grain);
+                    var a = alpha[i];
+                    var b = (byte)(color.Z + grain); var g = (byte)(color.Y + grain); var r = (byte)(color.X + grain);
+                    pixels[i * 4] = premultiplied ? (byte)((b * a + 127) / 255) : b;
+                    pixels[i * 4 + 1] = premultiplied ? (byte)((g * a + 127) / 255) : g;
+                    pixels[i * 4 + 2] = premultiplied ? (byte)((r * a + 127) / 255) : r;
                     // Fade into the actual glass, including its reflection and
                     // hover state, rather than an approximation of its base colour.
-                    pixels[i * 4 + 3] = (byte)Math.Clamp((1 - fade) * 255 + grain, 0, 255);
+                    pixels[i * 4 + 3] = a;
                 }
             }
             dirty = false; painted = current;

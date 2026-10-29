@@ -11,6 +11,8 @@ internal sealed partial class MainWindow
     private ChatWorkspaceStore? chatWorkspaceStore;
     private ChatWorkspaceState chatWorkspace = ChatWorkspaceStore.Empty;
     private bool chatDiskRestored, chatWindowHasNewer, chatWindowBusy;
+    private string? chatOlderCacheBoundary;
+    private DateTimeOffset chatOlderRetryAfter;
     private Dictionary<string, Dictionary<long, string>> chatReactions = [];
     private void RefreshChatFavoriteMedia()
     {
@@ -86,6 +88,7 @@ internal sealed partial class MainWindow
         try
         {
             await store.SavePageAsync(account, peer, result, cursor, token);
+            if (chatHistory == store && chatRecipient?.Id == peer) chatOlderCacheBoundary = null;
             var reactions = await store.ReactionsAsync(peer, token, chatMessages.Concat(result.Messages).Where(m => !ChatProtocol.Project(m, account, peer).IsReaction).Select(m => m.Id).Distinct().TakeLast(200));
             if (chatHistory == store && chatRecipient?.Id == peer) chatReactions = reactions;
         }
@@ -93,42 +96,85 @@ internal sealed partial class MainWindow
         catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or InvalidOperationException)
         { if (chatHistory == store) { chatHistory = null; _ = store.DisposeAsync(); } chatThreadStatus.Value = "Кеш истории недоступен."; }
     }
-    private Task LoadChatOlderWindowAsync() => ShiftChatWindowAsync(true);
+    private (string Id, double Y, double Offset)? ReadChatReadingAnchor(ScrollViewer? viewer)
+    {
+        if (viewer == null) return null;
+        var anchor = ChatRows.Where(r => r.Bound && r.Message != null && r.Root.Bounds.Bottom > viewer.Bounds.Y + 1 &&
+            r.Root.Bounds.Y < viewer.Bounds.Bottom).OrderBy(r => r.Root.Bounds.Y).FirstOrDefault();
+        if (anchor == null) return null;
+        return (anchor.Message!.Id, anchor.Bubble.Bounds.Y - viewer.Bounds.Y, viewer.VerticalOffset);
+    }
+    private bool CaptureChatReadingAnchor(ScrollViewer? viewer)
+    {
+        if (ReadChatReadingAnchor(viewer) is not { } anchor) return false;
+        RestoreChatReadingAnchor(anchor); return true;
+    }
+    private void RestoreChatReadingAnchor((string Id, double Y, double Offset) anchor)
+    {
+        // Prepending can remove this row's date badge. Anchor the bubble itself
+        // so the text stays put even when that decoration changes height.
+        chatRestoreBubbleAnchor = true;
+        chatRestoreAnchor = anchor.Id; chatRestoreAnchorY = anchor.Y;
+        chatRestoreOffset = anchor.Offset; chatRestorePasses = 0; chatPrependAnchor = null;
+    }
     private async Task ShiftChatWindowAsync(bool older)
     {
-        if (chatThreadBusy || chatWindowBusy || chatRecipient == null || chatHistory == null || chatMessages.Count == 0) return;
+        if (chatThreadBusy || chatWindowBusy || chatRecipient == null || chatMessages.Count == 0) return;
         var store = chatHistory; var revision = chatRevision; var peer = chatRecipient.Id; chatWindowBusy = true;
+        var first = chatMessages[0].Id; var count = chatMessages.Count; var cursor = chatMessageCursor;
         try
         {
-            var segment = older ? await store.BeforeAsync(peer, chatMessages[0], 100, ChatReadToken()) : await store.AfterAsync(peer, chatMessages[^1], 100, ChatReadToken());
-            if (revision != chatRevision) return;
+            var segment = store == null || older && chatOlderCacheBoundary == first ? [] :
+                older ? await store.BeforeAsync(peer, chatMessages[0], 100, ChatReadToken()) : await store.AfterAsync(peer, chatMessages[^1], 100, ChatReadToken());
+            if (revision != chatRevision || chatHistory != store) return;
             if (segment.Length == 0)
-            { if (older) await RefreshChatThreadAsync(older: true); else chatWindowHasNewer = false; return; }
+            {
+                if (older) { chatOlderCacheBoundary = first; await RefreshChatThreadAsync(older: true); }
+                else chatWindowHasNewer = false;
+                return;
+            }
             var viewer = chatMessagesView.FindVisualChild<ScrollViewer>() as ScrollViewer;
-            var anchor = ChatRows.Where(r => r.Bound && r.Message != null && r.Root.Bounds.Bottom > (viewer?.Bounds.Y ?? 0) + 1).OrderBy(r => r.Root.Bounds.Y).FirstOrDefault();
+            var anchor = ReadChatReadingAnchor(viewer);
             var combined = chatMessages.Concat(segment).DistinctBy(m => m.Id).OrderBy(m => m.SentAt).ThenBy(m => m.Id, StringComparer.Ordinal).ToArray();
-            var anchorIndex = anchor == null ? -1 : Array.FindIndex(combined, m => m.Id == anchor.Message!.Id);
+            var anchorIndex = anchor == null ? -1 : Array.FindIndex(combined, m => m.Id == anchor.Value.Id);
             var start = older ? 0 : Math.Max(0, combined.Length - 200);
             if (anchorIndex >= 0) start = Math.Clamp(start, Math.Max(0, anchorIndex - 180), anchorIndex);
-            chatMessages.Clear(); chatMessages.AddRange(combined.Skip(start).Take(200));
-            if (anchor != null && viewer != null)
-            { chatRestoreAnchor = anchor.Message!.Id; chatRestoreAnchorY = anchor.Root.Bounds.Y - viewer.Bounds.Y; chatRestoreOffset = viewer.VerticalOffset; chatRestorePasses = 0; }
-            var newer = (await store.AfterAsync(peer, chatMessages[^1], 1, ChatReadToken())).Length > 0;
-            if (revision != chatRevision) return;
-            chatWindowHasNewer = newer;
+            var window = combined.Skip(start).Take(200).ToArray();
+            var newer = (await store!.AfterAsync(peer, window[^1], 1, ChatReadToken())).Length > 0;
+            if (revision != chatRevision || chatHistory != store) return;
             // A background search may have filled the remaining server ranges.
             // Keep paging from the cache instead of reusing the old network cursor.
             var coverage = await store.LoadWindowAsync(peer, limit: 1, token: ChatReadToken());
-            if (revision != chatRevision) return;
-            chatMessageCursor = coverage.Cursor;
-            chatReactions = await store.ReactionsAsync(peer, ChatReadToken(), chatMessages.Select(m => m.Id));
-            if (revision != chatRevision) return;
+            if (revision != chatRevision || chatHistory != store) return;
+            var reactions = await store.ReactionsAsync(peer, ChatReadToken(), window.Select(m => m.Id));
+            if (revision != chatRevision || chatHistory != store) return;
+            // Do not start restoring against the old item source while the
+            // metadata reads are still in flight: painted frames would finish
+            // that restoration before the new window had even been installed.
+            if (chatMessages.Count != count || chatMessages[0].Id != first) return;
+            anchor = ReadChatReadingAnchor(viewer) ?? anchor;
+            if (anchor is { } currentAnchor && !window.Any(message => message.Id == currentAnchor.Id)) return;
+            var follow = older && (chatFollowLayout || chatScrollBottom || ChatIsAtBottom());
+            if (follow && window[^1].Id != chatMessages[^1].Id) return;
+            chatMessages.Clear(); chatMessages.AddRange(window);
+            chatWindowHasNewer = newer; chatMessageCursor = coverage.Cursor; chatReactions = reactions;
+            if (follow) RequestChatBottom();
+            else if (anchor is { } reading) RestoreChatReadingAnchor(reading);
             RefreshChatTimeline();
             if (chatRestoreAnchor != null) { var index = chatMessageItems.ToList().FindIndex(m => m.Id == chatRestoreAnchor); if (index >= 0) chatMessagesView.ScrollIntoView(index); }
             Window.PerformLayout(); RememberChatThread();
         }
         catch (OperationCanceledException) { }
-        finally { chatWindowBusy = false; }
+        finally
+        {
+            if (revision == chatRevision)
+            {
+                chatWindowBusy = false;
+                if (count != chatMessages.Count || first != chatMessages[0].Id || cursor != chatMessageCursor)
+                { chatPresentationDirty = true; chatViewport.InvalidateVisual(); }
+                else if (older && chatMessageCursor != null) chatOlderRetryAfter = DateTimeOffset.UtcNow.AddSeconds(5);
+            }
+        }
     }
     private async Task ShowLatestChatAsync()
     {

@@ -159,7 +159,9 @@ internal sealed class TrackWaveform : Control
         {
             ReleaseRaster(); factory = graphics;
             raster = new WriteableBitmap(width, pixelHeight, clear: false);
-            image = BitmapImage.Create(graphics, raster);
+            image = OperatingSystem.IsWindows()
+                ? BitmapImage.CreatePremultipliedView(graphics, raster)
+                : BitmapImage.Create(graphics, raster);
         }
         if (rasterSize != bounds.Size || rasterScale != scale) rasterDirty = true;
         rasterSize = bounds.Size; rasterScale = scale;
@@ -208,7 +210,19 @@ internal sealed class TrackWaveform : Control
             {
                 var alpha = (byte)Math.Round(color.A * coverage * (Math.Min(y + 1, bottom) - Math.Max(y, top)));
                 var offset = (y * width + x) * 4;
-                pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R; pixels[offset + 3] = alpha;
+                // Windows uploads premultiplied pixels. Convert only the bars
+                // being painted instead of scanning the entire waveform again.
+                if (OperatingSystem.IsWindows())
+                {
+                    pixels[offset] = (byte)((color.B * alpha + 127) / 255);
+                    pixels[offset + 1] = (byte)((color.G * alpha + 127) / 255);
+                    pixels[offset + 2] = (byte)((color.R * alpha + 127) / 255);
+                }
+                else
+                {
+                    pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R;
+                }
+                pixels[offset + 3] = alpha;
             }
         }
     }

@@ -7,7 +7,7 @@ internal static class BrowserChildHost
     public static bool TryRun(string[] args, out int exitCode)
     {
         exitCode = 2;
-        if (args.Length == 0 || args[0] is not ("--web-login" or "--web-requests")) return false;
+        if (args.Length == 0 || args[0] is not ("--web-login" or "--web-requests" or "--mobile-login")) return false;
         if (args.Length < 4 || args[2] != "--login-profile") return true;
         string? fixture = null;
         var hidden = false;
@@ -17,7 +17,8 @@ internal static class BrowserChildHost
             else if (args[i] == "--restore-session") hidden = true;
             else return true;
         }
-        exitCode = args[0] == "--web-requests" ? NativeBrowserSession.RunChild(args[1], args[3], fixture)
+        exitCode = args[0] == "--mobile-login" ? NativeMobileLogin.RunChild(args[1], args[3], fixture)
+            : args[0] == "--web-requests" ? NativeBrowserSession.RunChild(args[1], args[3], fixture)
             : NativeWebLogin.RunChild(args[1], args[3], fixture, hidden);
         return true;
     }

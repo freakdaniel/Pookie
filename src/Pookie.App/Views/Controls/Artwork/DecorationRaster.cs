@@ -76,12 +76,12 @@ internal sealed class GlassSheenRaster : IDisposable
         {
             Dispose(); factory = graphics;
             bitmap = new WriteableBitmap(width, height, clear: false);
-            image = BitmapImage.Create(graphics, bitmap);
+            image = OperatingSystem.IsWindows() ? BitmapImage.CreatePremultipliedView(graphics, bitmap) : BitmapImage.Create(graphics, bitmap);
         }
         if (paintedEmphasis != emphasis)
         {
             using var write = bitmap!.LockForWrite();
-            FillPixels(write.PixelsBgra32, width, height, emphasis);
+            FillPixels(write.PixelsBgra32, width, height, emphasis, OperatingSystem.IsWindows());
             paintedEmphasis = emphasis;
         }
         // Quantize only at the final physical pixel size. Stretching a small
@@ -89,10 +89,25 @@ internal sealed class GlassSheenRaster : IDisposable
         context.Save();
         try
         {
-            context.SetClipPath(clip.Get(bounds, corners));
-            context.DrawImage(image!, bounds);
+            // Scrolling only moves the coordinate system. Keeping paths and
+            // gradient endpoints local lets Direct2D reuse geometry and stop
+            // collections instead of filling its caches with every position.
+            context.Translate(bounds.X, bounds.Y);
+            var local = new Rect(0, 0, bounds.Width, bounds.Height);
+            context.Save();
+            try
+            {
+                context.SetClipPath(clip.Get(local, corners));
+                context.DrawImage(image!, local);
+            }
+            finally { context.Restore(); }
+            DrawEdge(context, local, corners, emphasis);
         }
         finally { context.Restore(); }
+    }
+
+    private void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis)
+    {
         if (edgePen == null || edgeBounds != bounds || edgeEmphasis != emphasis)
         {
             edgeBounds = bounds; edgeEmphasis = emphasis;
@@ -104,20 +119,32 @@ internal sealed class GlassSheenRaster : IDisposable
         context.DrawPath(edge.Get(insetBounds,insetCorners),edgePen);
     }
 
-    internal static void FillPixels(Span<byte> pixels, int width, int height, double emphasis)
+    internal static void FillPixels(Span<byte> pixels, int width, int height, double emphasis, bool premultiplied = false)
     {
         var denominator = (double)width * width + (double)height * height;
+        var words = System.Runtime.InteropServices.MemoryMarshal.Cast<byte,uint>(pixels);
         for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
         {
-            var position = ((x + .5) * width + (y + .5) * height) / denominator;
-            var alpha = position < .45 ? (17 + emphasis * 6) * (1 - position / .45) + 5 * position / .45
-                : 5 - 4 * (position - .45) / .55;
-            var offset = (y * width + x) * 4;
-            pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
-            // A stable, neutral one-level dither preserves fractional alpha
-            // without visible grain, moving noise or changes to the glass tint.
-            pixels[offset + 3] = (byte)Math.Clamp(alpha + PlayerGradient.Noise(x, y), 0, 255);
+            var row = y * width;
+            var vertical = (y + .5) * height;
+            for (var x = 0; x < width; x++)
+            {
+                var position = ((x + .5) * width + vertical) / denominator;
+                var alpha = position < .45 ? (17 + emphasis * 6) * (1 - position / .45) + 5 * position / .45
+                    : 5 - 4 * (position - .45) / .55;
+                // A stable, neutral one-level dither preserves fractional alpha
+                // without visible grain, moving noise or changes to the glass tint.
+                var coverage = (byte)Math.Clamp(alpha + PlayerGradient.Noise(x, y), 0, 255);
+                // Premultiplied white has identical BGRA bytes. One store also
+                // avoids three extra bounds checks in the animated reflection.
+                if (premultiplied) words[row + x] = (uint)coverage * 0x01010101u;
+                else
+                {
+                    var offset = (row + x) * 4;
+                    pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
+                    pixels[offset + 3] = coverage;
+                }
+            }
         }
     }
 

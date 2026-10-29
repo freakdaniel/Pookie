@@ -2,8 +2,10 @@ using System.Text.Json;
 
 namespace Pookie.SoundCloud;
 
-public interface ISoundCloudBrowserTransport
+public interface ISoundCloudTransport
 {
+    Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support follow signing.");
     Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support chats.");
     Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default);
@@ -24,4 +26,14 @@ public interface ISoundCloudBrowserTransport
         throw new NotSupportedException("This transport does not support track page reads.");
     Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support comments.");
+}
+
+// Browser adapters remain available for session verification and compatibility.
+public interface ISoundCloudBrowserTransport : ISoundCloudTransport;
+
+// Preparation must only read account/session state, never perform the rejected
+// mutation. Native HTTP gets the first opportunity to resume after preparation.
+public interface ISoundCloudSessionVerifier
+{
+    Task PrepareSessionAsync(CancellationToken cancellationToken = default);
 }

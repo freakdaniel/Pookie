@@ -10,7 +10,7 @@ using Pookie.Logging;
 namespace Pookie.App.Browser;
 
 // One live website per account. Secrets travel through stdin, never through argv or logs.
-internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, IBrowserAudioSession
+internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, ISoundCloudSessionVerifier, IBrowserAudioSession
 {
     private WebSession account = account;
     private readonly SemaphoreSlim requests = new(1);
@@ -21,6 +21,21 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private readonly List<Worker> workers = [];
     public event Action<BrowserRequestEvent>? Changed;
     public WebSession Account { get { lock (sync) return account; } }
+
+    public void UpdateAccount(WebSession updated)
+    {
+        if (!updated.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.");
+        lock (sync)
+        {
+            lifetime.Token.ThrowIfCancellationRequested();
+            if (account.ClientId != updated.ClientId || account.UserAgent != updated.UserAgent || account.MobileIdentity != updated.MobileIdentity ||
+                account.SessionId != null && account.SessionId != updated.SessionId)
+                throw new InvalidOperationException("Обновление принадлежит другой сессии SoundCloud.");
+            account = updated;
+            worker?.UpdateAccount(updated);
+        }
+        Changed?.Invoke(new("session") { Session = updated });
+    }
 
     private void BrowserChanged(BrowserRequestEvent message)
     {
@@ -35,6 +50,16 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "me"), token);
         return result.User is { Id: > 0 } user ? user : throw new InvalidOperationException("SoundCloud не вернул профиль.");
+    }
+
+    public async Task PrepareSessionAsync(CancellationToken cancellationToken = default) =>
+        _ = await GetMeAsync(cancellationToken).ConfigureAwait(false);
+
+    public async Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "follow-signature", UserId: userId, ArtistId: artistId), cancellationToken);
+        using var json = JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал подпись подписки."));
+        return json.RootElement.GetProperty("signature").GetString() ?? throw new SoundCloudException("SoundCloud не передал подпись подписки.");
     }
 
     public async Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default) =>
@@ -255,7 +280,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 AppLog.ConfigureChild(start);
                 Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView."));
                 pipe.DisposeLocalCopyOfClientHandle();
-                Process.StandardInput.WriteLine(JsonSerializer.Serialize(account, SoundCloudJson.Default.WebSession));
+                Process.StandardInput.WriteLine(JsonSerializer.Serialize(account.BrowserSnapshot(), SoundCloudJson.Default.WebSession));
                 Process.StandardInput.Flush();
                 Completion = ReadAsync(pipe, profile, changed);
             }
@@ -278,12 +303,16 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             try
             {
                 token.ThrowIfCancellationRequested();
+                var update = new BrowserRequestCommand(Guid.NewGuid().ToString("N"), "session-update", Session: Volatile.Read(ref account).BrowserSnapshot());
+                await Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(update, SoundCloudJson.Default.BrowserRequestCommand)).ConfigureAwait(false);
                 // A line must be written atomically; cancel via the next command.
                 await Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command, SoundCloudJson.Default.BrowserRequestCommand)).ConfigureAwait(false);
                 await Process.StandardInput.FlushAsync().ConfigureAwait(false);
             }
             finally { input.Release(); }
         }
+
+        public void UpdateAccount(WebSession updated) => Volatile.Write(ref account, updated);
 
         public async Task CancelReadAsync(string id)
         {

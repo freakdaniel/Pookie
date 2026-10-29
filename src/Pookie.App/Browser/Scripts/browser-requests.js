@@ -200,6 +200,7 @@
       // Check the real API address before remapping local smoke-test fixtures.
       if (url.origin !== 'https://api-v2.soundcloud.com' || url.username || url.password || url.hash ||
         !(/^\/users\/soundcloud(%3[Aa]|:)users(%3[Aa]|:)[1-9][0-9]*\/web-profiles$/.test(url.pathname) || /^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(mixed-selections|me|me\/track_likes\/ids|me\/track_reposts\/ids|me\/playlist_likes\/ids|me\/playlist_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
+          url.pathname === '/configuration/android' || /^\/tracks\/[1-9][0-9]*\/streams\/(https|hls)$/.test(url.pathname) ||
           /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*(\/(likes|followings|followings\/ids|followers|tracks|playlists|playlists_without_albums|albums|comments))?|stream\/users\/[1-9][0-9]*(\/reposts)?)$/.test(url.pathname))) return null;
       return new URL(url.pathname + url.search, apiOrigin);
     } catch { return null; }
@@ -269,6 +270,17 @@
   }
 
   async function request(command, context) {
+    if (command.operation === 'follow-signature') {
+      await wait(ready, context);
+      const signature = followSignature(command.user_id, command.artist_id);
+      if (typeof signature !== 'string' || signature.length === 0 || signature.length > 4096 || /[\x00-\x1f\x7f]/.test(signature))
+        throw new Error('invalid-follow-signature');
+      const text = JSON.stringify({ signature });
+      for (let start = 0, index = 0; start < text.length; start += 1024)
+        send({ kind: 'json-chunk', request_id: command.id, chunk_index: index++, chunk: text.slice(start, start + 1024) });
+      send({ kind: 'complete', request_id: command.id, status: 200 });
+      return;
+    }
     if (command.operation === 'chat') {
       const d = command.chat;
       if (!historyUserId) {
@@ -427,6 +439,14 @@
 
   window.__pookieRequest = command => {
     if (!command || !/^[a-f0-9]{32}$/.test(command.id || '')) return;
+    if (command.operation === 'session-update') {
+      const next = command.session;
+      if (!next || next.client_id !== account.client_id || next.refresh_token != null || next.mobile_identity != null ||
+        typeof next.access_token !== 'string' || !/^[A-Za-z0-9._-]{1,4096}$/.test(next.access_token) ||
+        account.session_id != null && next.session_id !== account.session_id) return;
+      window.__pookieUpdateSession(next);
+      return;
+    }
     if (command.operation === 'audio') {
       window.__pookieAudioRequest?.(command, send);
       return;
@@ -451,7 +471,10 @@
         Number.isSafeInteger(command.track_id) && command.track_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'playlist-like' &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 &&
         !command.track_id && typeof command.liked === 'boolean' || command.operation === 'playlist-repost' && !command.user_id && !command.track_id &&
-        Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'follow'  &&
+        Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 && typeof command.reposted === 'boolean' || command.operation === 'follow-signature' &&
+        !command.url && !command.audio && !command.detail && !command.playlist_id && !command.track_id &&
+        Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.artist_id) && command.artist_id > 0 &&
+        command.artist_id !== command.user_id || command.operation === 'follow'  &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.artist_id) && command.artist_id > 0 &&
         command.artist_id !== command.user_id && !command.track_id && typeof command.following === 'boolean' || command.operation === 'playlist-add' &&
         Number.isSafeInteger(command.user_id) && command.user_id > 0 && Number.isSafeInteger(command.playlist_id) && command.playlist_id > 0 &&

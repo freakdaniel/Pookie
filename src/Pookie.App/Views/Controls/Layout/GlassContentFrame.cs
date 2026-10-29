@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
+using Aprillz.MewUI.Resources;
 
 namespace Pookie.App;
 
@@ -13,10 +14,16 @@ internal sealed class GlassContentFrame : Panel
     private IGraphicsContext? renderer;
     private IImage? image;
     private IGraphicsFactory? factory;
+    private RenderDeviceIdentity? deviceIdentity;
     private nint contextIdentity;
     private readonly List<SampleLevel> samples = [];
 
     internal GlassContentFrame(FrameworkElement content) { this.content = content; Add(content); }
+    internal IGraphicsFactory CaptureGraphics => Application.Current.GraphicsFactory;
+    internal IRenderSurface CreateCaptureSurface(IGraphicsFactory graphics, int width, int height, double scale, string name) =>
+        OperatingSystem.IsWindows()
+            ? graphics.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(width, height, scale, debugName: name))
+            : BackdropSurface.Create(graphics, width, height, scale, name);
     protected override Size MeasureContent(Size availableSize)
     { content.Measure(availableSize); return content.DesiredSize; }
     protected override Size ArrangeOverride(Size finalSize)
@@ -27,15 +34,18 @@ internal sealed class GlassContentFrame : Panel
         var scale = GetDpi() / 96d;
         var width = Math.Max(1, (int)Math.Ceiling(region.Width * scale));
         var height = Math.Max(1, (int)Math.Ceiling(region.Height * scale));
-        var graphics = Application.Current.GraphicsFactory;
+        var graphics = CaptureGraphics;
         var currentContext = Win32BackdropBlur.CurrentContextIdentity;
+        var currentDevice = (graphics as IRenderDevice)?.RenderIdentity;
         if (raster == null || raster.PixelWidth != width || raster.PixelHeight != height || raster.DpiScale != scale ||
-            factory != graphics || contextIdentity != currentContext)
+            factory != graphics || contextIdentity != currentContext || deviceIdentity != currentDevice)
         {
             ClearRaster(); factory = graphics; contextIdentity = currentContext;
-            raster = BackdropSurface.Create(graphics, width, height, scale, "HeaderNativeStrip");
+            raster = CreateCaptureSurface(graphics, width, height, scale, "HeaderNativeStrip");
             renderer = graphics.CreateContext(raster);
+            deviceIdentity = (graphics as IRenderDevice)?.RenderIdentity;
         }
+        var version = (raster as IRasterSource)?.Version;
         renderer!.BeginFrame(raster!);
         try
         {
@@ -45,12 +55,21 @@ internal sealed class GlassContentFrame : Panel
             base.RenderSubtree(renderer);
         }
         finally { renderer.EndFrame(); }
+        if (BackdropSurface.UsesCpuCapture && raster is IExternalWritableGpuSurface completed &&
+            (raster as IRasterSource)?.Version == version)
+        {
+            // The retained frame may still own the shared D2D BeginDraw. EndFrame
+            // then restores its target without flushing or versioning this nested
+            // capture. Submit its pixels and invalidate the cached readback before
+            // reading them; never finish the enclosing window's draw ourselves.
+            using (var write = completed.BeginExternalWrite()) write.Flush();
+            completed.MarkExternalContentChanged();
+        }
         return raster;
     }
 
-    internal void DrawBackdrop(IGraphicsContext context, Rect region, Color background)
+    internal (IImage Image, Rect Bounds) PrepareBackdrop(IRenderSurface captured, Rect region, Color background, double targetScale)
     {
-        var captured = CaptureBackdrop(region, background);
         var scale = captured.DpiScale;
         var width = captured.PixelWidth;
         var height = captured.PixelHeight;
@@ -64,18 +83,18 @@ internal sealed class GlassContentFrame : Panel
         var sourceBounds = new Rect(region.X, region.Y, width / scale, height / scale);
         var sampleScale = scale;
         var level = 0;
-        while (sampleScale > context.DpiScale * 2 + .0001)
+        while (sampleScale > targetScale * 2 + .0001)
         {
             sampleScale /= 2;
             var sampleWidth = Math.Max(1, (int)Math.Ceiling(region.Width * sampleScale));
             var sampleHeight = Math.Max(1, (int)Math.Ceiling(region.Height * sampleScale));
-            if (level == samples.Count) samples.Add(new SampleLevel(graphics, sampleWidth, sampleHeight, sampleScale));
+            if (level == samples.Count) samples.Add(new SampleLevel(this, graphics, sampleWidth, sampleHeight, sampleScale));
             var sample = samples[level++];
             sample.Draw(source, sourceBounds, region, background);
             source = sample.Image;
             sourceBounds = new Rect(region.X, region.Y, sampleWidth / sampleScale, sampleHeight / sampleScale);
         }
-        context.DrawImage(source, sourceBounds);
+        return (source, sourceBounds);
     }
 
     private void ClearRaster()
@@ -99,9 +118,9 @@ internal sealed class GlassContentFrame : Panel
         private readonly IRenderSurface surface;
         private readonly IGraphicsContext renderer;
         internal IImage Image { get; }
-        internal SampleLevel(IGraphicsFactory graphics, int width, int height, double scale)
+        internal SampleLevel(GlassContentFrame owner, IGraphicsFactory graphics, int width, int height, double scale)
         {
-            surface = BackdropSurface.Create(graphics, width, height, scale, "HeaderDownsample");
+            surface = owner.CreateCaptureSurface(graphics, width, height, scale, "HeaderDownsample");
             renderer = graphics.CreateContext(surface);
             Image = graphics.CreateImageView(surface);
         }

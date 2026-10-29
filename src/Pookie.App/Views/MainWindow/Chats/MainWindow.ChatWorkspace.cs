@@ -90,6 +90,7 @@ internal sealed partial class MainWindow
         if (page.Value != Page.Chats || chatScrollBottom || chatRestoreOffset != null || chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return;
         var row = ChatRows.Where(r => r.Bound && r.Message != null && r.Root.Bounds.Bottom > viewer.Bounds.Y + 1 && r.Root.Bounds.Y < viewer.Bounds.Bottom).OrderBy(r => r.Root.Bounds.Y).FirstOrDefault();
         if (row == null) return;
+        chatRestoreBubbleAnchor = false;
         chatRestoreAnchor = row.Message!.Id; chatRestoreAnchorY = row.Root.Bounds.Y - viewer.Bounds.Y; chatRestoreOffset = viewer.VerticalOffset; chatRestorePasses = 0;
     }
     private void OpenChatDetails(string title)

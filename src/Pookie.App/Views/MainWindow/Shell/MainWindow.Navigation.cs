@@ -69,6 +69,7 @@ internal sealed partial class MainWindow
     private Task LoadLikedIdsAsync()
     {
         if (likedTask is { IsCompleted: false }) return likedTask;
+        if (likedIdsReady) return Task.CompletedTask;
         likedLoading?.Cancel(); likedLoading?.Dispose();
         likedLoading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = likedLoading.Token;
@@ -80,8 +81,8 @@ internal sealed partial class MainWindow
 
     private async Task ReadLikedIdsAsync(WebSession session, CancellationToken token)
     {
-        if (browser == null) AttachBrowser(new NativeBrowserSession(session));
-        var ids = await browser!.GetLikedIdsAsync(token);
+        if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
+        var ids = await api.GetLikedIdsAsync(token);
         token.ThrowIfCancellationRequested();
         if (api.Session != session) return;
         likedIds.Clear(); likedIds.UnionWith(ids); likedIdsReady = true;
@@ -104,7 +105,7 @@ internal sealed partial class MainWindow
             if (api.Session != session) return;
             var liked = waveTaste.IsBlocked(track) || !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
-            if (api.BrowserTransport == null) AttachBrowser(new NativeBrowserSession(session));
+            if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;

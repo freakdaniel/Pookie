@@ -9,6 +9,7 @@ namespace Pookie.App;
 // Use the same inline artwork/title as the composer, retaining the source URL for copying.
 internal sealed class ChatMessageText : SelectableTextBlock
 {
+    private const int MaximumSharedTextLength = 4096;
     private readonly List<(int Start, ChatMusicInline Inline)> links = [];
     private string? emojiText;
     private (int Start, int Length, ChatEmojiInline Inline)[] emoji = [];
@@ -17,6 +18,11 @@ internal sealed class ChatMessageText : SelectableTextBlock
     private double layoutWidth = -1;
     private uint layoutDpi;
     private TextRunStyle layoutStyle;
+    private IGraphicsFactory? layoutFactory;
+    private double layoutSpacing;
+    private TextAlignment layoutAlignment;
+    private LineBoxTrim layoutTrim;
+    private string? layoutCulture;
     internal Action<string>? OpenMusic;
     internal Func<bool>? SelectionClick;
     internal int MusicCount => links.Count;
@@ -66,36 +72,65 @@ internal sealed class ChatMessageText : SelectableTextBlock
     private ITextLayout Layout(double width)
     {
         EnsureEmoji();
-        var dpi = (uint)Math.Round(96 * (FindVisualRoot() is Window window ? window.DpiScale : 1));
+        width = double.IsFinite(width) && width > 0 ? width : 1_000_000;
+        var dpi = GetDpi();
         var style = new TextRunStyle(FontFamily, FontSize, FontWeight,FontStyle == FontStyle.Italic);
-        if (layout != null && layoutWidth.Equals(width) && layoutDpi == dpi && layoutStyle == style) return layout;
+        var graphics = GetGraphicsFactory();
+        var culture = System.Globalization.CultureInfo.CurrentUICulture;
+        if (layout != null && layoutWidth.Equals(width) && layoutDpi == dpi && layoutStyle == style &&
+            layoutFactory == graphics && layoutSpacing.Equals(LineSpacing) && layoutAlignment == TextAlignment &&
+            layoutTrim == LineBoxTrim && layoutCulture == culture.Name) return layout;
         layoutWidth = width; layoutDpi = dpi; layoutStyle = style;
+        layoutFactory = graphics; layoutSpacing = LineSpacing; layoutAlignment = TextAlignment;
+        layoutTrim = LineBoxTrim; layoutCulture = culture.Name;
         foreach (var link in links) { link.Inline.MaximumWidth = width; link.Inline.ClearBounds(); }
-        return layout = Application.Current.GraphicsFactory.TextEngine.CreateLayout(new TextLayoutRequest
+        var request = new TextLayoutRequest
         {
             Text = Text.AsMemory(), Dpi = dpi, DefaultStyle = style,
-            Inlines = links.Select(link => new InlineRun(link.Start, link.Inline.Link.Url.Length, link.Inline, true))
+            Inlines = links.Count == 0 && emoji.Length == 0 ? [] : links.Select(link => new InlineRun(link.Start, link.Inline.Link.Url.Length, link.Inline, true))
                 .Concat(emoji.Where(span => !links.Any(link => span.Start < link.Start + link.Inline.Link.Url.Length && span.Start + span.Length > link.Start))
                     .Select(span => new InlineRun(span.Start, span.Length, span.Inline, true))).OrderBy(span => span.Position).ToArray(),
             Paragraph = new() { MaxWidth = width, Wrapping = TextWrapping.Wrap, LineSpacing = LineSpacing,
-                Alignment = TextAlignment,LineBoxTrim = LineBoxTrim,Culture = System.Globalization.CultureInfo.CurrentUICulture }
-        });
+                Alignment = TextAlignment,LineBoxTrim = LineBoxTrim,Culture = culture }
+        };
+        // A recycled row alternates natural, wrapped and arranged widths. The
+        // framework's owner cache keeps only one of them, reshaping the same
+        // message on each return to the viewport. Its bounded content cache can
+        // share plain paragraphs; inline objects must stay with their control.
+        return layout = request.Inlines.Count == 0 && Text.Length <= MaximumSharedTextLength
+            ? graphics.TextEngine.GetOrCreateLayout(request, TextLayoutCachePolicy.Content)
+            : graphics.TextEngine.CreateLayout(request);
     }
     protected override Size MeasureContent(Size availableSize)
     {
-        if (links.Count == 0 && EmojiCount == 0) return base.MeasureContent(availableSize);
+        if (Text.Length == 0) return Size.Empty;
         var measured = Layout(availableSize.Width).MeasuredSize;
+        if (links.Count == 0 && emoji.Length == 0)
+        {
+            var scale = GetDpi() / 96d;
+            return new(Math.Ceiling(measured.Width * scale) / scale + 1 / scale, measured.Height);
+        }
         return new(Math.Min(availableSize.Width, measured.Width + 1), measured.Height);
     }
     protected override void OnRender(IGraphicsContext context)
     {
         DrawSelection(context);
-        if (links.Count == 0 && EmojiCount == 0) { base.OnRender(context); return; }
+        if (Text.Length == 0) return;
+        var paragraph = Layout(Bounds.Width);
+        var y = Bounds.Y + (VerticalTextAlignment switch
+        {
+            TextAlignment.Center => Math.Max(0, (Bounds.Height - paragraph.ContentHeight) / 2),
+            TextAlignment.Right => Math.Max(0, Bounds.Height - paragraph.ContentHeight),
+            _ => 0
+        });
+        var options = new TextDrawOptions(Foreground, Owner: this);
+        if (paragraph.MeasuredSize.Width <= Bounds.Width + .5 && paragraph.ContentHeight <= Bounds.Height + .5)
+        { context.Text.Draw(paragraph, new(Bounds.X, y), in options); return; }
         context.Save();
         try
         {
             context.SetClip(Bounds);
-            context.Text.Draw(Layout(Bounds.Width), new(Bounds.X, Bounds.Y), new TextDrawOptions(Foreground, Owner: this));
+            context.Text.Draw(paragraph, new(Bounds.X, y), in options);
         }
         finally { context.Restore(); }
     }

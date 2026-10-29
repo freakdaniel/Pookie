@@ -23,6 +23,7 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
         var protectedAvailable = false;
         foreach (var source in new[] { primary }.Concat(regionalSources))
         {
+            var mobile = source is SoundCloudWebClient { Session.MobileIdentity: not null };
             cancellationToken.ThrowIfCancellationRequested();
             SoundCloudTrack track;
             try { track = await source.GetTrackAsync(trackId, cancellationToken); }
@@ -38,13 +39,15 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
             protectedAvailable |= full.Any(t => t.Format!.Protocol.Contains("encrypted", StringComparison.Ordinal));
             foreach (var transcoding in full.Where(t => protocols.Contains(t.Format!.Protocol, StringComparer.Ordinal))
                 .OrderBy(t => Array.IndexOf(protocols, t.Format!.Protocol))
-                .ThenBy(t => t.Format!.MimeType?.Contains("mpeg", StringComparison.OrdinalIgnoreCase) == true ? 0 : 1))
+                .ThenBy(t => mobile && t.Format!.Protocol != "progressive" ? 0 : t.Format!.MimeType?.Contains("mpeg", StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
+                .ThenBy(t => !mobile ? 0 : t.Quality == "hq" ? 0 : t.Quality == "sq" ? 1 : 2)
+                .ThenBy(t => mobile && t.Preset == "aac_256k" ? 0 : 1))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
                     var stream = await source.ResolveTranscodingAsync(track, transcoding, cancellationToken);
-                    if (stream == null || !SoundCloudWebClient.IsMediaUri(stream.Uri)) continue;
+                    if (stream == null || !SoundCloudWebClient.IsPlaybackUri(stream.Uri) || !protocols.Contains(stream.Protocol, StringComparer.Ordinal)) continue;
                     if (stream.Protected && (stream.LicenseAuthToken is not { Length: > 0 and <= 16384 } ||
                         stream.LicenseAuthToken.Any(c => c < 32 || c == 127))) continue;
                     return new(track, stream);

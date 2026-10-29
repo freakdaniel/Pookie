@@ -16,9 +16,11 @@ internal sealed class LinuxSessionVault : ISessionVault
     private readonly Release freeError;
     private readonly Release unrefSchema;
     private bool disposed;
+    private readonly string application;
 
-    public LinuxSessionVault()
+    public LinuxSessionVault(string application = "pookie")
     {
+        this.application = application;
         if (!OperatingSystem.IsLinux() || !NativeLibrary.TryLoad("libsecret-1.so.0", out library)) throw new InvalidOperationException("Сохранение сессии требует Linux Secret Service (GNOME Keyring или KWallet).");
         lookup = Export<Lookup>("secret_password_lookup_sync");
         store = Export<Store>("secret_password_store_sync");
@@ -38,7 +40,7 @@ internal sealed class LinuxSessionVault : ISessionVault
     }
     public WebSession? Load()
     {
-        var value = lookup(schema, 0, out var error, "application", "pookie", 0);
+        var value = lookup(schema, 0, out var error, "application", application, 0);
         Check(error);
         if (value == 0) return null;
         try
@@ -50,11 +52,11 @@ internal sealed class LinuxSessionVault : ISessionVault
     }
     public void Save(WebSession session)
     {
-        var success = store(schema, "default", "Pookie SoundCloud web session", JsonSerializer.Serialize(session, SoundCloudJson.Default.WebSession), 0, out var error, "application", "pookie", 0);
+        var success = store(schema, "default", "Pookie SoundCloud session", JsonSerializer.Serialize(session, SoundCloudJson.Default.WebSession), 0, out var error, "application", application, 0);
         Check(error);
         if (success == 0) throw new InvalidOperationException("Сессию не удалось сохранить в хранилище паролей.");
     }
-    public void Delete() { clear(schema, 0, out var error, "application", "pookie", 0); Check(error); }
+    public void Delete() { clear(schema, 0, out var error, "application", application, 0); Check(error); }
     public void Dispose() { if (disposed) return; disposed = true; unrefSchema(schema); NativeLibrary.Free(library); }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate nint NewSchema([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int flags, [MarshalAs(UnmanagedType.LPUTF8Str)] string attribute, int type, nint end);

@@ -35,7 +35,7 @@ internal sealed partial class MainWindow
 
     private async Task ReadRepostedIdsAsync(WebSession session, CancellationToken token)
     {
-        if (api.BrowserTransport == null) AttachBrowser(new NativeBrowserSession(session));
+        if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
         var ids = await api.GetRepostedIdsAsync(token);
         token.ThrowIfCancellationRequested();
         if (disposed || api.Session != session || repostSession != session) return;

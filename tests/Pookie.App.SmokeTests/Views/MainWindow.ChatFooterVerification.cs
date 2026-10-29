@@ -9,14 +9,22 @@ internal sealed partial class MainWindow
     private async Task VerifyChatFooterUiAsync(ChatMessage target)
     {
         const string wrapped = "Длинное сообщение проверяет переносы строк и положение времени. Мы оставляем текст на полной ширине пузыря, а отметку отправки ставим рядом с последними словами, если для неё хватает места. Всё готово. Подтверждаю.";
+        await WaitForLikedLayoutAsync(() => !chatWindowBusy && !chatThreadBusy);
         var originals = chatMessages.ToArray(); var dpi = Window.Dpi;
+        var originalHistory = chatHistory; var originalCursor = chatMessageCursor;
         var stamp = DateTimeOffset.UtcNow.AddSeconds(1);
         ChatMessage[] fixtures = [new("footer-wrapped",42,wrapped,stamp),
             new("footer-break",90,wrapped+"\nГотово 👨‍👩‍👧‍👦",stamp.AddSeconds(1)),
             new("footer-tight",42,wrapped+"\n"+new string('Ш',36),stamp.AddSeconds(2)),
             new("footer-quote",42,ChatProtocol.Reply(42,90,target.Id,"Сохранённая цитата",wrapped),stamp.AddSeconds(3))];
+        // This test replaces the timeline with four synthetic messages. Give it
+        // matching complete history so automatic paging cannot mix in the real
+        // conversation behind the fixture while DPI changes realize new rows.
+        await using var fixtureHistory = new ChatHistoryStore(new Storage.AppDataPaths(Path.Combine(dataPaths.Root,"FooterFixture-"+Guid.NewGuid().ToString("N"))),42);
+        await fixtureHistory.SavePageAsync(42,90,new(fixtures,null));
         try
         {
+            chatHistory = fixtureHistory; chatMessageCursor = null; chatOlderCacheBoundary = null;
             chatMessages.Clear(); chatMessages.AddRange(fixtures); RefreshChatTimeline(); RequestChatBottom();
             foreach (var scale in new uint[]{96,110,144,192})
             {
@@ -43,6 +51,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
+            chatHistory = originalHistory; chatMessageCursor = originalCursor; chatOlderCacheBoundary = null;
             typeof(Window).GetMethod("SetDpi",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.Invoke(Window,[dpi]);
             chatMessages.Clear(); chatMessages.AddRange(originals); RefreshChatTimeline(); RequestChatBottom();
         }

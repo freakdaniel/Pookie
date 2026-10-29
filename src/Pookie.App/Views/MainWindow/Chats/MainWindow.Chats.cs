@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
     private ChatLoadingView chatInboxLoading = null!, chatThreadLoading = null!;
     private MultiLineTextBox chatInput = null!;
     private TextBox chatSearch = null!;
-    private Button chatSend = null!, chatAttach = null!, chatGif = null!, chatOlder = null!, chatMore = null!, chatBack = null!, chatNewMessages = null!;
+    private Button chatSend = null!, chatAttach = null!, chatGif = null!, chatMore = null!, chatBack = null!, chatNewMessages = null!;
     private GlassCard chatComposer = null!, chatIdentityCard = null!;
     private readonly ChatComposerGlyph chatSendGlyph = new();
     private Button chatOptions = null!;
@@ -86,9 +86,6 @@ internal sealed partial class MainWindow
 
         chatName = new TextBlock().Text("Твои сообщения").FontSize(16).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         chatBack = TrackButtons.Icon(Icons.View("arrow-left", 20), () => { SaveChatDraft(); chatColumns.Selected = false; }, TrackButtons.Text, 36).IsVisible(false);
-        chatOlder = TrackButtons.Action(new TextBlock().Text("Ранее ↑").FontSize(12), () => Run(LoadOlderMessagesAsync), TrackButtons.Tonal, 30).IsVisible(false).Right().ToolTip("Загрузить предыдущие сообщения");
-        chatOlder.Opacity = 0; chatOlder.IsHitTestVisible = false;
-        chatOlder.Transitions = [Transition.Create(UIElement.OpacityProperty, 160)];
         chatNewMessages = TrackButtons.Action(new TextBlock().Text("Новые сообщения ↓").FontSize(12), ()=>Run(ShowLatestChatAsync), TrackButtons.Tonal, 32).IsVisible(false).CenterHorizontal();
         chatMessagesView = new ItemsControl().Items(Array.Empty<ChatMessageItem>(), m => m.Key).ItemHeight(84).VariableHeightPresenter()
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 0));
@@ -104,7 +101,7 @@ internal sealed partial class MainWindow
         chatViewport.SynchronizeScroll = SynchronizeChatScroll;
         chatViewport.Restoring=()=>chatRestoreOffset!=null || chatScrollBottom || chatFollowLayout;
         chatViewport.ComposerResizing = () => chatComposerSurface is { IsResizing: true };
-        chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer, chatOlder.Top().Margin(0, 4, 4, 0)), inbox: false);
+        chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer), inbox: false);
         chatConversationView = chatThreadLoading.Root;
         var historyArea = new Grid().Columns("*").Rows("*").Children(chatConversationView, ChatSavedView());
         chatMessagesView.MouseDown += _ => { if (chatThreadSearchOpen) chatThreadSearchPopup.Expanded = false; };

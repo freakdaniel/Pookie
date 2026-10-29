@@ -59,6 +59,13 @@ internal sealed partial class MainWindow
         if (detachedResult.FindVisualChild<Image>() is not Image { Source: var avatar } || !ReferenceEquals(avatar,cachedAvatar))
             throw new InvalidOperationException("Synchronously cached search avatar was discarded before attachment.");
         me = me with { AvatarUrl = avatarBeforeSearch };
+        // Automatic timeline paging may already have indexed the older page.
+        // Establish the cold-search fixture explicitly, retaining current local
+        // replies/reactions but requiring this page to be fetched and indexed.
+        await chatHistory!.ClearAsync();
+        await chatHistory.SaveDialogsAsync(chatConversations);
+        await chatHistory.SavePageAsync(42,90,new(chatMessages.Where(message=>!message.Body.StartsWith("Старое сообщение ",StringComparison.Ordinal)).ToArray(),
+            "https://api-v2.soundcloud.com/users/42/conversations/90/messages?older=1"));
         transport.DelayThread = true; transport.ThreadReady = null;
         OpenChatThreadSearch(); chatMessageSearch.Text="Связанный"; await SearchChatMessagesAsync();
         await WaitForLikedLayoutAsync(() => chatThreadSearchPopup.ActualHeight > 50 && chatSearchCount.ActualWidth > 0 && chatThreadSearchResults.Children.OfType<Button>().FirstOrDefault() is { ActualWidth: > 100, ActualHeight: > 0 } && !chatThreadSearchResults.IsMeasureDirty && !chatThreadSearchResults.IsArrangeDirty && !chatThreadSearchPopup.Animating && !chatSearchResultsTransition.Animating);

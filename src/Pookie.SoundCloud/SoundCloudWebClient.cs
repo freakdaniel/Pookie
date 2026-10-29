@@ -5,15 +5,18 @@ using System.Text.RegularExpressions;
 
 namespace Pookie.SoundCloud;
 
-// Website protocol, deliberately isolated from UI and audio. Not the registered-app API.
+// SoundCloud API facade, isolated from UI/audio, with session-specific transports.
 public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPlaybackSource
 {
     public const string DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
     private readonly SemaphoreSlim discoveryGate = new(1, 1);
     private string? anonymousClientId;
     public WebSession? Session { get; set; }
-    public ISoundCloudBrowserTransport? BrowserTransport { get; set; }
-    public bool RequireBrowserTransport { get; init; }
+    public ISoundCloudTransport? Transport { get; set; }
+    public bool RequireSessionTransport { get; init; }
+    // Compatibility names for existing browser adapters and fixture consumers.
+    public ISoundCloudTransport? BrowserTransport { get => Transport; set => Transport = value; }
+    public bool RequireBrowserTransport { get => RequireSessionTransport; init => RequireSessionTransport = value; }
 
     [GeneratedRegex("\"hydratable\"\\s*:\\s*\"apiClient\"\\s*,\\s*\"data\"\\s*:\\s*\\{\\s*\"id\"\\s*:\\s*\"([A-Za-z0-9]+)\"")]
     private static partial Regex ClientIdPattern();
@@ -28,6 +31,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public static bool IsMediaUri(Uri uri) => uri.Scheme == "https" &&
         (uri.Host == "sndcdn.com" || uri.Host.EndsWith(".sndcdn.com", StringComparison.OrdinalIgnoreCase) ||
          uri.Host == "playback.media-streaming.soundcloud.cloud") && uri.Port == 443 && uri.UserInfo == "";
+    public static bool IsPlaybackUri(Uri uri) => uri.Fragment == "" && (IsMediaUri(uri) || SoundCloudMobileRoutes.IsStream(uri));
 
     public async Task<string> GetClientIdAsync(CancellationToken cancellationToken = default)
     {
@@ -293,7 +297,8 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default)
     {
         using var document = await GetJsonAsync(Api($"tracks/{id}"), cancellationToken);
-        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
+        var track = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
+        return Session?.MobileIdentity == null ? track : SoundCloudMobileStreams.WithFallbacks(track);
     }
 
     public async Task<SoundCloudTrack> ResolveAsync(string url, CancellationToken cancellationToken = default)
@@ -312,16 +317,27 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<SoundCloudStream?> ResolveTranscodingAsync(SoundCloudTrack track, Transcoding transcoding, CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(transcoding.Url, UriKind.Absolute, out var target) || !IsApiUri(target)) return null;
+        if (!Uri.TryCreate(transcoding.Url, UriKind.Absolute, out var target)) return null;
+        var mobileStream = Session?.MobileIdentity != null && SoundCloudMobileRoutes.IsStream(target) &&
+            target.AbsolutePath.StartsWith($"/tracks/{SoundCloudMobileRoutes.Urn("tracks", track.Id)}/streams/", StringComparison.Ordinal);
+        if (!IsApiUri(target) && !mobileStream) return null;
         var query = target.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Where(part => !part.StartsWith("track_authorization=", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrEmpty(track.TrackAuthorization))
             query = query.Append("track_authorization=" + Uri.EscapeDataString(track.TrackAuthorization));
-        using var document = await GetJsonAsync(new UriBuilder(target) { Query = string.Join('&', query) }.Uri, cancellationToken);
+        target = new UriBuilder(target) { Query = string.Join('&', query) }.Uri;
+        using var document = mobileStream && Transport is ISoundCloudMobileApi mobileApi
+            ? await mobileApi.ResolveMobileStreamAsync(target, cancellationToken)
+            : mobileStream ? throw new SoundCloudException("Мобильный транспорт аудио не подключён.") : await GetJsonAsync(target, cancellationToken);
+        if (document.RootElement.TryGetProperty("snipped", out var snipped) && snipped.ValueKind != JsonValueKind.False) return null;
         if (!document.RootElement.TryGetProperty("url", out var value) || value.ValueKind != JsonValueKind.String ||
-            !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var media) || !IsMediaUri(media)) return null;
+            !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var media) || !(IsMediaUri(media) || mobileStream && media.GetLeftPart(UriPartial.Path) == target.GetLeftPart(UriPartial.Path)) ||
+            media.Fragment != "" || media.AbsolutePath.Contains("preview", StringComparison.OrdinalIgnoreCase)) return null;
         var license = document.RootElement.TryGetProperty("licenseAuthToken", out var token) && token.ValueKind == JsonValueKind.String ? token.GetString() : null;
-        return new(media, transcoding.Format!.Protocol, track.DurationSeconds) { LicenseAuthToken = license };
+        var protocol = document.RootElement.TryGetProperty("protocol", out var actual) && actual.ValueKind == JsonValueKind.String
+            ? actual.GetString() : transcoding.Format!.Protocol;
+        if (protocol is not ("progressive" or "hls" or "ctr-encrypted-hls" or "cbc-encrypted-hls")) return null;
+        return new(media, protocol, track.DurationSeconds) { LicenseAuthToken = license };
     }
 
     // Compatibility entry point for native-only consumers and diagnostics.

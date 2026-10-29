@@ -45,6 +45,10 @@ internal sealed partial class MainWindow
             transport.ThreadReady!.SetResult(); await selecting;
             await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message != null && r.Root.ActualHeight > 40) && chatInput.IsEnabled);
             await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && chatIdentityCard.ActualWidth > 100);
+            var viewer = (ScrollViewer)chatMessagesView.FindVisualChild<ScrollViewer>()!;
+            await WaitForLikedLayoutAsync(() => !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
+            if (chatMessages.Count != 30 || chatMessageCursor == null) throw new InvalidOperationException("Initial chat page or pagination was lost.");
+            await VerifyChatAutomaticHistoryAsync(transport, viewer);
             if (Math.Abs(chatColumns.Bounds.Bottom - chatComposer.Bounds.Bottom - 16) > 1 ||
                 Math.Abs(chatIdentityCard.Bounds.Y + chatIdentityCard.ActualHeight / 2 - chatOptions.Bounds.Y - chatOptions.ActualHeight / 2) > 1 ||
                 !chatIdentityCard.Bounds.Contains(chatOptions.Bounds) || chatName.Bounds.Right > chatOptions.Bounds.X || !chatIdentityCard.Bounds.Contains(chatName.Bounds))
@@ -65,15 +69,14 @@ internal sealed partial class MainWindow
             }
             finally { playerVisible.Value = hadPlayer; }
             await WaitForLikedLayoutAsync(() => (hadPlayer ? Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 : !playerChrome.IsVisible) && !chatComposerSurface.IsResizing);
-            var viewer = (ScrollViewer)chatMessagesView.FindVisualChild<ScrollViewer>()!;
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
-            if (chatMessages.Count != 30 || !chatOlder.IsVisible) throw new InvalidOperationException("Initial chat page or pagination was lost.");
             var bound = ChatRows.First(r => r.Message != null);
             var reference = bound;
             await RefreshChatsAsync();
             if (!ChatRows.Contains(reference) || ChatRows.All(r => r.Message == null)) throw new InvalidOperationException("Polling discarded visible chat rows.");
             if (chatMusicUiSmoke || chatMediaUiSmoke)
             {
+                await VerifyChatFooterUiAsync(bound.Message!);
                 await VerifyChatRichAttachmentsAsync(transport, mediaTransport, musicOnly: !chatMediaUiSmoke);
                 Console.WriteLine(chatMediaUiSmoke ? "UI_CHAT_MEDIA_OK: documents, images, music attachments, inline video, focus-aware autoplay, viewer reopen, controls and music suspension" :
                     "UI_CHAT_MUSIC_OK: inline artwork/title mentions, compact search attachments, ordered message queue, Next/Previous, skipped track selection, navigation, clipboard, undo and recycled bindings");
@@ -105,13 +108,13 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             viewer.SetScrollOffsets(0, 0);
             await WaitForLoginFrameAsync();
+            var readingOffset = viewer.VerticalOffset;
             for (var unreadIndex = 0; unreadIndex < 4; unreadIndex++) transport.AddIncoming($"Новое сообщение в фоне {unreadIndex + 1}");
             await RefreshChatsAsync();
             await WaitForLoginFrameAsync();
-            if (viewer.VerticalOffset > 10 || !chatNewMessages.IsVisible) throw new InvalidOperationException($"Incoming chat message interrupted reading history: offset={viewer.VerticalOffset}, maximum={SmoothScroll.Maximum(viewer)}, badge={chatNewMessages.IsVisible}, following={chatScrollBottom}");
+            if (Math.Abs(viewer.VerticalOffset - readingOffset) > 10 || !chatNewMessages.IsVisible) throw new InvalidOperationException($"Incoming chat message interrupted reading history: offset={viewer.VerticalOffset}, maximum={SmoothScroll.Maximum(viewer)}, badge={chatNewMessages.IsVisible}, following={chatScrollBottom}");
             if (chatUnread.Badge(90) != "4") throw new InvalidOperationException($"Unread counter did not count four arrivals: {chatUnread.Badge(90)}");
             await Task.Delay(300); CaptureUiPreview("chats-unread-counter");
-            await LoadOlderMessagesAsync();
             if (chatMessages.Count != 39 || chatMessageCursor != null) throw new InvalidOperationException($"Older history did not merge or exhausted cursor reappeared: count={chatMessages.Count}, cursor={chatMessageCursor}.");
             RequestChatBottom();
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
@@ -470,9 +473,10 @@ internal sealed partial class MainWindow
     {
         internal SoundCloudUser Other = new() { Id = 90, Username = "Аня" };
         internal SoundCloudUser Third = new() { Id = 91, Username = "Длинное имя собеседника, которое должно аккуратно обрезаться" };
+        private readonly DateTimeOffset olderSentAt = DateTimeOffset.UtcNow.AddDays(-1);
         private readonly List<object> messages = Enumerable.Range(1, 30).Select(i => Message(i % 3 == 0 ? 42 : 90,
             i == 29 ? "Нашла очень классный альбом. Кажется, тебе понравится — особенно последний трек!" : i % 3 == 0 ? "Да, звучит отлично 🎧" : "Привет! Есть что-нибудь интересное послушать?", DateTimeOffset.UtcNow.AddMinutes(i - 35))).ToList();
-        internal int Sends; internal bool FailReads, DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList; internal TaskCompletionSource? SendReady, ThreadReady, ListReady;
+        internal int Sends, OlderReads; internal bool FailReads, DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList, DelayOlder; internal TaskCompletionSource? SendReady, ThreadReady, ListReady, OlderReady;
         internal DateTimeOffset? NextSentAt;
         private static object Message(long sender, string body, DateTimeOffset date) => new { sender_urn = $"soundcloud:users:{sender}", content = body, sent_at = date.ToString("O") };
         private readonly HashSet<long> unreadPeers = [];
@@ -492,9 +496,14 @@ internal sealed partial class MainWindow
             }
             else if (request.Kind == "thread")
             {
+                if (request.Cursor != null)
+                {
+                    OlderReads++;
+                    if (DelayOlder) { DelayOlder = false; OlderReady = new(TaskCreationOptions.RunContinuationsAsynchronously); await OlderReady.Task.WaitAsync(cancellationToken); }
+                }
                 result = request.RecipientId == 91 ? new { collection = Array.Empty<object>(), next_href = (string?)null } :
                     request.Cursor == null ? new { collection = messages.ToArray(), next_href = (string?)"https://api-v2.soundcloud.com/users/42/conversations/90/messages?older=1" } :
-                    new { collection = Enumerable.Range(1, 5).Select(i => Message(90, "Старое сообщение " + i, DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(i))).ToArray(), next_href = (string?)null };
+                    new { collection = Enumerable.Range(1, 5).Select(i => Message(90, "Старое сообщение " + i, olderSentAt.AddMinutes(i))).ToArray(), next_href = (string?)null };
                 if (DelayThread) { DelayThread = false; ThreadReady = new(TaskCreationOptions.RunContinuationsAsynchronously); await ThreadReady.Task.WaitAsync(cancellationToken); }
             }
             else if (request.Kind == "send")

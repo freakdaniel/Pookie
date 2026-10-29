@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Pookie.App;
 
 // Area sampling includes every source pixel in the destination footprint. A
@@ -6,7 +8,7 @@ namespace Pookie.App;
 internal sealed class BackdropDownsample
 {
     private Sample[] columns = [], rows = [];
-    private float[] intermediate = [];
+    private Vector4[] intermediate = [];
     private int sourceWidth, sourceHeight, targetWidth, targetHeight;
 
     internal void Resize(ReadOnlySpan<byte> source, int width, int height, int stride,
@@ -22,7 +24,7 @@ internal sealed class BackdropDownsample
         if (sourceWidth != width || sourceHeight != height || targetWidth != reducedWidth || targetHeight != reducedHeight)
         {
             columns = Map(width, reducedWidth); rows = Map(height, reducedHeight);
-            intermediate = new float[checked(reducedWidth * height * 4)];
+            intermediate = new Vector4[checked(reducedWidth * height)];
             sourceWidth = width; sourceHeight = height; targetWidth = reducedWidth; targetHeight = reducedHeight;
         }
         for (var y = 0; y < height; y++)
@@ -30,30 +32,30 @@ internal sealed class BackdropDownsample
         {
             var sample = columns[x];
             var index = y * stride + sample.First * 4;
-            var target = (y * reducedWidth + x) * 4;
-            for (var channel = 0; channel < 4; channel++)
-            {
-                var sum = source[index + channel] * sample.FirstWeight;
-                for (var pixel = sample.First + 1; pixel < sample.Last; pixel++) sum += source[y * stride + pixel * 4 + channel];
-                if (sample.Last != sample.First) sum += source[y * stride + sample.Last * 4 + channel] * sample.LastWeight;
-                intermediate[target + channel] = sum * sample.InverseWidth;
-            }
+            // One pixel footprint and one SIMD sum for BGRA, rather than
+            // traversing the same source row independently for every channel.
+            var sum = Read(source, index) * sample.FirstWeight;
+            for (var pixel = sample.First + 1; pixel < sample.Last; pixel++) sum += Read(source, y * stride + pixel * 4);
+            if (sample.Last != sample.First) sum += Read(source, y * stride + sample.Last * 4) * sample.LastWeight;
+            intermediate[y * reducedWidth + x] = sum * sample.InverseWidth;
         }
         for (var y = 0; y < reducedHeight; y++)
         for (var x = 0; x < reducedWidth; x++)
         {
             var sample = rows[y];
-            var index = (sample.First * reducedWidth + x) * 4;
+            var index = sample.First * reducedWidth + x;
             var target = (y * reducedWidth + x) * 4;
-            for (var channel = 0; channel < 4; channel++)
-            {
-                var sum = intermediate[index + channel] * sample.FirstWeight;
-                for (var pixel = sample.First + 1; pixel < sample.Last; pixel++) sum += intermediate[(pixel * reducedWidth + x) * 4 + channel];
-                if (sample.Last != sample.First) sum += intermediate[(sample.Last * reducedWidth + x) * 4 + channel] * sample.LastWeight;
-                destination[target + channel] = (byte)Math.Clamp((int)MathF.Round(sum * sample.InverseWidth), 0, 255);
-            }
+            var sum = intermediate[index] * sample.FirstWeight;
+            for (var pixel = sample.First + 1; pixel < sample.Last; pixel++) sum += intermediate[pixel * reducedWidth + x];
+            if (sample.Last != sample.First) sum += intermediate[sample.Last * reducedWidth + x] * sample.LastWeight;
+            var value = Vector4.Clamp(Vector4.Round(sum * sample.InverseWidth), Vector4.Zero, new Vector4(255));
+            destination[target] = (byte)value.X; destination[target + 1] = (byte)value.Y;
+            destination[target + 2] = (byte)value.Z; destination[target + 3] = (byte)value.W;
         }
     }
+
+    private static Vector4 Read(ReadOnlySpan<byte> pixels, int index) =>
+        new(pixels[index], pixels[index + 1], pixels[index + 2], pixels[index + 3]);
 
     private static Sample[] Map(int source, int target)
     {

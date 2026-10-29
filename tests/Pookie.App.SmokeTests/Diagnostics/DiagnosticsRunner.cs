@@ -13,6 +13,18 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args.Contains("--mobile-profile-status"))
+        {
+            var profile = Pookie.App.Auth.MobileOAuthConfiguration.Load();
+            Console.WriteLine(profile == null ? "MOBILE_PROFILE_DISABLED" :
+                $"MOBILE_PROFILE_ENABLED: build={profile.MobileIdentity.AppBuild}; signals={(profile.MobileIdentity.Signals == null ? "absent" : "configured")}; TLS=system; credentials omitted");
+            return true;
+        }
+        if (args.Contains("--native-session-recovery-smoke-test")) { await NativeSessionRecoverySmokeTest.RunAsync(); return true; }
+        if (args.Contains("--mobile-oauth-smoke-test")) { await MobileOAuthSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--native-api-network-probe")) { await NativeApiNetworkProbe.RunAsync(); return true; }
+        if (args.Length == 2 && args[0] == "--native-track-network-probe") { await NativeApiNetworkProbe.RunAsync(args[1]); return true; }
+        if (args.Length == 2 && args[0] == "--mobile-contract-network-probe") { await NativeApiNetworkProbe.RunAsync(args[1], mobileContracts: true); return true; }
         if (args.Contains("--user-profile-network-probe")) { await UserProfileNetworkProbe.RunAsync(); return true; }
         if (args.Contains("--feed-network-probe")) { await FeedNetworkProbe.RunAsync(); return true; }
         if (args.Contains("--external-browser-smoke-test")) { await ExternalBrowserSmokeTest.RunAsync(); return true; }

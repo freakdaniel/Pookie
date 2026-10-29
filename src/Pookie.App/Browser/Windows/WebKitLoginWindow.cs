@@ -23,6 +23,10 @@ internal sealed partial class WebKitLoginWindow
     private readonly string script;
     private readonly bool background;
     private readonly Action<BrowserRequestEvent>? browserEvent;
+    private readonly MobileAuthorizationRequest? mobileAuthorization;
+    private readonly Action<MobileAuthorizationResult>? authorized;
+    private readonly Native.PolicyCallback policyCallback;
+    private string? mobileCookie;
     private readonly ConcurrentQueue<Action> dispatch = new();
     private readonly Native.IdleCallback idleCallback;
     private readonly string pairing = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
@@ -33,14 +37,17 @@ internal sealed partial class WebKitLoginWindow
     private bool hiddenLogin;
 
     private WebKitLoginWindow(Action<WebSession> connected, string origin, bool background,
-        WebSession? account = null, Action<BrowserRequestEvent>? browserEvent = null)
+        WebSession? account = null, Action<BrowserRequestEvent>? browserEvent = null,
+        MobileAuthorizationRequest? mobileAuthorization = null, Action<MobileAuthorizationResult>? authorized = null)
     {
         this.connected = connected; this.origin = origin; this.background = background;
         this.browserEvent = browserEvent;
+        this.mobileAuthorization = mobileAuthorization; this.authorized = authorized;
+        policyCallback = DecideMobilePolicy;
         idleCallback = DrainDispatch;
         messageCallback = MessageReceived; deleteCallback = WindowDeleted;
         uriCallback = UriChanged; createCallback = CreatePopup; closeCallback = ClosePopup;
-        var scriptBody = account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
+        var scriptBody = mobileAuthorization != null ? NativeMobileLogin.CookieScript : account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
         CustomizeScript(ref scriptBody, account == null);
         script = "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) { (()=>{" +
             "const pairing=" + JsonSerializer.Serialize(pairing) + ";" +
@@ -159,6 +166,7 @@ internal sealed partial class WebKitLoginWindow
         Connect(view, "notify::uri", uriCallback);
         Connect(view, "create", createCallback);
         Connect(view, "close", closeCallback);
+        if (mobileAuthorization != null) Connect(view, "decide-policy", policyCallback);
         // Allocate the browser without ever mapping its top-level window. Relying on
         // iconify lets window managers show it (and may flash it at startup).
         if (background)
@@ -187,6 +195,12 @@ internal sealed partial class WebKitLoginWindow
             // injected only into the permitted top frame with the native navigation URI.
             var source = views.Keys.Select(view => Marshal.PtrToStringUTF8(Native.webkit_web_view_get_uri(view)))
                 .FirstOrDefault(uri => Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.GetLeftPart(UriPartial.Authority) == origin);
+            if (mobileAuthorization != null)
+            {
+                var message = BrowserRequestProtocol.Parse(raw, source, origin, pairing);
+                if (message?.Kind == "protection-session") mobileCookie = message.DataDomeClientId;
+                return;
+            }
             if (browserEvent != null)
             {
                 var message = BrowserRequestProtocol.Parse(raw, source, origin, pairing);
@@ -262,7 +276,7 @@ internal sealed partial class WebKitLoginWindow
     private static void Connect(nint instance, string signal, Delegate callback) =>
         Native.g_signal_connect_data(instance, signal, Marshal.GetFunctionPointerForDelegate(callback), 0, 0, 0);
 
-    private static class Native
+    private static partial class Native
     {
         private const string Gtk = "libgtk-3.so.0", WebKit = "libwebkit2gtk-4.1.so.0", GObject = "libgobject-2.0.so.0", Jsc = "libjavascriptcoregtk-4.1.so.0";
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void MessageCallback(nint manager, nint result, nint data);

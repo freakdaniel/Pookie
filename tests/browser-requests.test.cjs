@@ -27,6 +27,17 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
   return {window,document,messages,calls,timers,emit:(name,type)=>events.get(name)?.({detail:{challengeType:type}})};
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
+
+test('mobile configuration and full stream fallbacks are read-only fixed paths; snippets stay excluded', async () => {
+  const h = harness(async()=>response(200, {}));
+  const paths = ['/configuration/android', '/tracks/90/streams/https', '/tracks/90/streams/hls'];
+  for (const [i,path] of paths.entries())
+    h.window.__pookieRequest({id:(910+i).toString(16).padStart(32,'0'), operation:'api-get', url:'https://api-v2.soundcloud.com'+path});
+  h.window.__pookieRequest({id:'f'.repeat(32), operation:'api-get', url:'https://api-v2.soundcloud.com/tracks/90/streams/hls/snippet'});
+  await tick();
+  assert.deepEqual(h.calls.map(call=>new URL(call[0]).pathname),paths);
+  assert.ok(h.calls.every(call=>call[1].method==='GET'));
+});
 test('an initially restricted document reports a hard block without waiting for protection readiness or sending an API request', async () => {
   const h = harness(async()=>{throw Error('Blocked document must not send requests');}, 'https://soundcloud.com', false, true, true, false);
   h.document.title='Access temporarily restricted';
@@ -551,6 +562,40 @@ test('follow delegates signature to the current website helper and uses POST/DEL
     {...playlistAdd(1106),playlist_id:0},{...playlistAdd(1107),track_id:Number.MAX_SAFE_INTEGER+1}]) h.window.__pookieRequest(value);
   await tick();assert.equal(h.calls.length,2);
 });
+test('follow signing returns only a bounded signature without making an API request', async () => {
+  const h=harness(()=>{throw Error('Signing must not make an API request');});
+  const modules={
+    signer(module){module.exports={__FOLLOWS_SIGNATURE_VERSION__:'fixture',sign:()=> 'fixture-signature'};},
+    secret(module){module.exports={__FOLLOWS_SIGNATURE_SECRET__:'fixture-secret'};}
+  };
+  const require=id=>{const module={exports:{}};modules[id](module,{},require);return module.exports;};require.m=modules;
+  h.window.webpackJsonp={push:entry=>Object.values(entry[1])[0]({}, {}, require)};
+  h.window.__pookieRequest({id:command(1150).id,operation:'follow-signature',user_id:42,artist_id:7});await tick();
+  const text=h.messages.filter(message=>message.kind==='json-chunk').map(message=>message.chunk).join('');
+  assert.equal(JSON.parse(text).signature,'fixture-signature');assert.equal(h.calls.length,0);
+  assert.equal(h.messages.at(-1).status,200);assert.equal(JSON.stringify(h.messages).includes('fixture-secret'),false);
+  const before=h.messages.length;
+  h.window.__pookieRequest({id:command(1151).id,operation:'follow-signature',user_id:42,artist_id:42});await tick();
+  assert.equal(h.messages.length,before);
+});
+
+test('native refresh updates the live browser token and rejects refresh secrets and foreign client sessions', async () => {
+  const h=harness(()=>response(200,{id:42}), 'https://soundcloud.com', false, true, true, true, {session_id:'family'});
+  const update=(id, session)=>({id:command(id).id,operation:'session-update',session});
+  h.window.__pookieRequest(update(1160,{client_id:'fixtureid',access_token:'rotated-token',session_id:'family'}));
+  h.window.__pookieRequest(command(1161,'me'));await tick();
+  assert.equal(h.calls[0][1].headers.Authorization,'OAuth rotated-token');
+  for (const session of [
+    {client_id:'foreign',access_token:'foreign-token',session_id:'family'},
+    {client_id:'fixtureid',access_token:'bad-token',session_id:'other-family'},
+    {client_id:'fixtureid',access_token:'bad-token',session_id:'family',refresh_token:'private-refresh'},
+    {client_id:'fixtureid',access_token:'bad-token',session_id:'family',mobile_identity:{android_id:'device'}}
+  ]) h.window.__pookieRequest(update(1162,session));
+  h.window.__pookieRequest(command(1163,'me'));await tick();
+  assert.equal(h.calls[1][1].headers.Authorization,'OAuth rotated-token');
+  assert.equal(JSON.stringify(h.messages).includes('private-refresh'),false);
+});
+
 test('following and own playlist reads are allowed while writes cannot masquerade as GET', async () => {
   const h=harness(()=>response(200,[]));
   for(const [i,path] of ['/users/42/playlists','/users/42/followings/ids','/me/followings/7'].entries())

@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Rendering;
+using System.Numerics;
 
 namespace Pookie.App;
 
@@ -64,18 +65,23 @@ internal sealed class BackdropBlur : IDisposable
         var stride = horizontal ? 4 : width * 4;
         var diameter = radius * 2 + 1;
         for (var line = 0; line < lines; line++)
-        for (var channel = 0; channel < 4; channel++)
         {
-            var start = (horizontal ? line * width * 4 : line * 4) + channel;
-            var sum = input[start] * (radius + 1);
-            for (var i = 1; i <= radius; i++) sum += input[start + Math.Min(length - 1, i) * stride];
+            var start = horizontal ? line * width * 4 : line * 4;
+            var sum = Read(input, start) * (radius + 1);
+            for (var i = 1; i <= radius; i++) sum += Read(input, start + Math.Min(length - 1, i) * stride);
             for (var i = 0; i < length; i++)
             {
-                output[start + i * stride] = (byte)((sum + diameter / 2) / diameter);
-                sum += input[start + Math.Min(length - 1, i + radius + 1) * stride] - input[start + Math.Max(0, i - radius) * stride];
+                var index = start + i * stride;
+                var value = (sum + new Vector4(diameter / 2)) / diameter;
+                output[index] = (byte)value.X; output[index + 1] = (byte)value.Y;
+                output[index + 2] = (byte)value.Z; output[index + 3] = (byte)value.W;
+                sum += Read(input, start + Math.Min(length - 1, i + radius + 1) * stride) - Read(input, start + Math.Max(0, i - radius) * stride);
             }
         }
     }
+
+    private static Vector4 Read(byte[] pixels, int index) =>
+        new(pixels[index], pixels[index + 1], pixels[index + 2], pixels[index + 3]);
 
     public void Dispose() { Image.Dispose(); bitmap.Dispose(); }
 }

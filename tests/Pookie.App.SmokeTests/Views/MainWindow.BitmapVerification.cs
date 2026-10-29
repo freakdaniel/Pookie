@@ -1,11 +1,89 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Resources;
 using Aprillz.MewUI.Rendering;
+using Aprillz.MewUI.Controls;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private async Task VerifyHeaderCaptureLifetimeAsync()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = (Panel)Window.Content!;
+        var host = new Grid().Width(320).Height(120).Left().Top();
+        using var frame = new GlassContentFrame(new Border().BorderThickness(0).Background(Color.FromRgb(190, 70, 20)));
+        root.Add(host);
+        try
+        {
+            IRenderSurface? previous = null;
+            for (var cycle = 0; cycle < 3; cycle++)
+            {
+                host.Add(frame);
+                await WaitForLikedLayoutAsync(() => frame.ActualWidth > 300 && frame.ActualHeight > 100);
+                var surface = frame.CaptureBackdrop(frame.Bounds, Surface);
+                if (ReferenceEquals(surface, previous))
+                    throw new InvalidOperationException("Reattached header capture retained its detached surface.");
+                if (!ReferenceEquals(surface, frame.CaptureBackdrop(frame.Bounds, Surface)))
+                    throw new InvalidOperationException("An unchanged header capture recreated its surface.");
+                var pixels = ((ICpuPixelSurface)surface).GetReadOnlyPixelSpan();
+                if (pixels[0] != 20 || pixels[1] != 70 || pixels[2] != 190 || pixels[3] != 255)
+                    throw new InvalidOperationException("Reattached header capture lost its pixels or alpha.");
+                previous = surface;
+                host.Remove(frame);
+                await WaitForLoginFrameAsync();
+            }
+            Console.WriteLine("HEADER_CAPTURE_LIFETIME_OK: retained attached surface, three detach/reattach cycles, opaque source pixels retained");
+        }
+        finally { root.Remove(host); host.Dispose(); }
+    }
+
+    private void VerifyBackdropBlurPixels()
+    {
+        foreach (var (width, height) in new[] { (1, 1), (7, 9), (2, 17), (19, 11) })
+        foreach (var sigma in new[] { 0, .5, 2, 12, 80 })
+        {
+            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(width, height));
+            var source = (ICpuPixelSurface)surface;
+            var input = source.GetWritablePixelSpan();
+            for (var i = 0; i < input.Length; i++) input[i] = (byte)((i * 73 + i / 7 * 19) % 256);
+            var expected = input.ToArray();
+            source.CommitCpuWrite();
+            var scratch = new byte[expected.Length];
+            var lower = Math.Max(1, (int)Math.Floor(Math.Sqrt(4 * sigma * sigma + 1)) | 1);
+            if (lower > Math.Sqrt(4 * sigma * sigma + 1)) lower = Math.Max(1, lower - 2);
+            var count = (int)Math.Round((12 * sigma * sigma - 3 * lower * lower - 12 * lower - 9) / (-4d * lower - 4));
+            // Independent direct box sums also cover kernels larger than the
+            // strip, where every out-of-bounds sample must clamp to an edge.
+            void Reference(byte[] from, byte[] to, int radius, bool horizontal)
+            {
+                for (var y = 0; y < height; y++)
+                for (var x = 0; x < width; x++)
+                for (var channel = 0; channel < 4; channel++)
+                {
+                    var sum = 0;
+                    for (var offset = -radius; offset <= radius; offset++)
+                    {
+                        var sx = horizontal ? Math.Clamp(x + offset, 0, width - 1) : x;
+                        var sy = horizontal ? y : Math.Clamp(y + offset, 0, height - 1);
+                        sum += from[(sy * width + sx) * 4 + channel];
+                    }
+                    to[(y * width + x) * 4 + channel] = (byte)((sum + radius) / (radius * 2 + 1));
+                }
+            }
+            for (var pass = 0; pass < 3; pass++)
+            {
+                var radius = ((pass < count ? lower : lower + 2) - 1) / 2;
+                Reference(expected, scratch, radius, true); Reference(scratch, expected, radius, false);
+            }
+            using var blur = new BackdropBlur(Window.GraphicsFactory, width, height);
+            blur.Capture(source); blur.Process(sigma);
+            if (!blur.Pixels.SequenceEqual(expected))
+                throw new InvalidOperationException($"SIMD blur changed integer-rounded BGRA pixels: {width}x{height}, sigma={sigma}.");
+        }
+        Console.WriteLine("BACKDROP_BLUR_PIXELS_OK: SIMD output exactly matches direct clamped BGRA box sums");
+    }
+
     private void VerifyShadowRasterPixels()
     {
         if (!OperatingSystem.IsWindows()) return;

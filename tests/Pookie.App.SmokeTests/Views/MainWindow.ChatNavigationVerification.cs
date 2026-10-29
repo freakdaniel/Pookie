@@ -71,12 +71,13 @@ internal sealed partial class MainWindow
             chatInput.Text = "";
             await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && Math.Abs(chatComposer.ActualHeight - composerHeight) < 2 / Window.DpiScale);
 
+            var messagesBeforeNavigation = chatMessages.Select(message => message.Id).ToHashSet();
             BeginNavigation(new(Page.Home));
             await WaitForLoginFrameAsync();
             await NavigateAsync(Page.Chats);
             chatTimer.Stop();
             await WaitForLoginFrameAsync();
-            if (chatRecipient?.Id != transport.Other.Id || chatMessages.Count != 30 || !chatInput.IsEnabled)
+            if (chatRecipient?.Id != transport.Other.Id || messagesBeforeNavigation.Except(chatMessages.Select(message => message.Id)).Any() || !chatInput.IsEnabled)
                 throw new InvalidOperationException("Reopening chats lost the selected conversation.");
             await VerifyChatWorkspaceAsync(transport);
             Console.WriteLine($"UI_CHAT_NAVIGATION_OK: inbox, repeated navigation, resizing, history anchor, growing composer and bottom scroll; dpi={Window.Dpi}");

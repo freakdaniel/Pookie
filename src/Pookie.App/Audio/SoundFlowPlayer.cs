@@ -2,13 +2,14 @@ using SoundFlow.Abstracts.Devices;
 using SoundFlow.Backends.MiniAudio;
 using SoundFlow.Backends.MiniAudio.Enums;
 using SoundFlow.Components;
+using Pookie.SoundCloud;
 
 namespace Pookie.Audio;
 
 public sealed class SoundFlowPlayer : IAudioPlayer
 {
     private readonly MiniAudioEngine engine;
-    private readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) };
+    private readonly HttpClient http;
     private readonly Func<Uri, bool> allowed;
     private readonly SemaphoreSlim operations = new(1);
     private readonly object stateSync = new();
@@ -29,8 +30,10 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private bool disposed;
     private Task? release;
 
-    public SoundFlowPlayer(bool silent = false, Func<Uri, bool>? allowedUri = null)
+    public SoundFlowPlayer(bool silent = false, Func<Uri, bool>? allowedUri = null, Func<WebSession?>? networkSession = null)
     {
+        http = new(new SoundCloudMediaSessionHandler(networkSession ?? (() => null))
+            { InnerHandler = new HttpClientHandler { AllowAutoRedirect = false } }) { Timeout = TimeSpan.FromSeconds(30) };
         allowed = allowedUri ?? (uri => uri.UserInfo.Length == 0 && (uri.Scheme == "https" || (uri.Scheme == "http" && uri.IsLoopback)));
         // SoundFlow 1.4.1's Null enum is 0 (native WASAPI); the bundled miniaudio ABI uses 14.
         // Leave normal backend probing to miniaudio; use the correct ABI value for headless checks.

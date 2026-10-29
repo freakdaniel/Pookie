@@ -1,5 +1,10 @@
 # Application integration checks
 
+`--mobile-contract-network-probe <track-url>` checks the saved Android session
+against native `/configuration/android` and URN `/tracks/.../streams/https|hls`.
+It sends reads only, never refreshes the shared rotating token, and never starts
+a browser. Audio response bodies are not buffered during stream resolution.
+
 Browser scenarios use the production InfiniFrame host: WebView2 on Windows,
 WebKitGTK on Linux and WKWebView on macOS. The app executable starts its browser
 child on an STA thread, using a private pipe and persistent native browser profile.
@@ -50,6 +55,7 @@ handler (separate delayed metadata/thumbnail skeletons), animation cleanup, quic
 transport references, reaction/timestamp geometry, narrow/wide windows, Escape,
 conversation changes, and 10,000 menu rebinds. It never sends real messages or
 opens the microphone. GIFs remain available through the existing KLIPY setting.
+
 Emoji artwork comes from Apple Color Emoji via samuelngs/apple-emoji-ttf release
 `macos-26-20260722-484daf4e`; source checksum and licensing scope are recorded in
 `licenses/LicenseRef-Apple-Color-Emoji.txt`. The 3941 offline 72px images are shared
@@ -65,6 +71,19 @@ specific control. Delayed GIF fixtures check the first restored frame, bottom
 anchoring after intrinsic-size changes, and encrypted disk reuse by a fresh loader.
 GIF bytes share the account media budget and favorite pinning; uploaded attachment
 containers are cached immediately. All requests in these checks use local handlers.
+
+The chat music/media checks also hold an older network page while scrolling the
+initial 30-message conversation to its upper edge. History must load automatically,
+preserve the visible message anchor and stop requesting an exhausted cursor; there
+is no manual earlier-history button. They cancel an in-flight page by changing
+conversations, resume automatic paging on return, and walk 300 cached messages in
+both directions with at most 200 live messages. The bubble anchor must survive
+date-badge changes and asynchronous SQLite metadata reads. Footer fixtures use their
+own complete SQLite history so automatic paging cannot mix unrelated messages into
+the synthetic rows. The cold-search fixture explicitly excludes the already loaded
+older page from SQLite before scanning; automatic timeline prefetch must not turn
+a network/indexing test into a cache hit. Repeated fixture pages retain stable
+timestamps and message identities.
 
 Local GIF API credentials use .NET User Secrets, shared by the app and this host
 through `UserSecretsId=Pookie-development`. Set `Klipy:ApiKey` with:
@@ -111,14 +130,22 @@ environment variables afterwards. Optional `POOKIE_SCROLL_PROFILE=1` enables
 the framework profiler for attribution and adds measurement overhead.
 `--comments-ui-smoke-test` also compares the cached paragraph renderer against
 standard TextBlock pixels across fractional widths, Unicode and emoji.
-The chrome check verifies native-DPI page sampling before header downsampling,
+The chrome check verifies native-DPI page sampling,
 and pixel-readback motion of a contrast edge through the blur: each one-device-pixel
 step must remain continuous instead of freezing and jumping across the reduced grid.
-Header reduction uses cached, aligned half-size stages to average fine text/artwork
-before the blur, including on HiDPI screens. The check also covers
+Windows Direct2D keeps capture and Gaussian blur on GPU surfaces at native DPI;
+the transparent filter halo stays outside the visible header. CPU fallback keeps
+exact area reduction, while other reduction paths use aligned half-size stages.
+The real window's computed backdrop is checked before any isolated render: visible
+pixels must be opaque, contain page variation and change after scrolling. Isolated
+GPU-effect checks use GPU-compatible intermediate targets, then read pixels back.
+The check also covers
 shared SVG visibility across independent render targets,
-and that first/repeated GPU blur passes preserve independent read/draw framebuffer
-bindings, viewport, program, VAO and texture bindings. Expanded-player checks
+and that first/repeated Direct2D blur passes preserve the caller's target, DPI,
+transform and clip. OpenGL passes preserve independent read/draw framebuffer
+bindings, viewport, program, VAO and texture bindings. The chat music/media scenarios
+also check wrapped text and timestamp placement at 96, 110, 144 and 192 DPI.
+Expanded-player checks
 require spring overshoot in both directions, retained layout and no panel overlap.
 
 `--external-browser-smoke-test` checks Linux external URL launching with a private
@@ -143,7 +170,14 @@ the compact connected history button near its inner edge without a stuck focus c
 Fade checks compare rendered pixels with/without the compact mask on Home and a
 virtualized cover grid. They verify soft gradient endpoints, visible content at the
 player boundary, persistent fading without the player, animated opacity changes,
-and a fully readable final item at the end of scrolling.
+and a fully readable final item at the end of scrolling. On Windows the gradient
+is cached as one physical column at native DPI; these checks also catch partial
+column coverage at fractional DPI reducing the mask's opacity.
+Glass-edge and conversation-fade checks also compare the reused local-coordinate
+geometry/brushes against the original absolute-coordinate native drawing at
+96/110/144/192 DPI and fractional positions. Moving a list row or chat drawer must
+retain the original native coverage without rebuilding its geometry and gradient
+stop collections for every new scroll position.
 
 Pure queue model checks live in `tests/Pookie.Playback.Tests` and run without a
 native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entry
@@ -814,3 +848,55 @@ session, produce native wheel messages independently on wall time and retain
 send/receive times, frame notification intervals, playback state and window
 activation. Frame work, notification cadence and input handling latency are
 different measurements; none alone establishes displayed FPS.
+
+Detailed element profiling adds work of its own. Compare live input cadence with
+the profiler disabled as well; `LastFramePerformanceStats` may then be stale and
+must not be used to report render-work or presentation durations.
+
+The chrome fixture compares SIMD blur output byte for byte with direct clamped
+box sums, including one-pixel strips and kernels larger than the image. It also
+checks capture-surface reuse, three detach/reattach cycles, native-DPI backdrop
+sampling and continuous one-pixel movement through the blurred header.
+Before any standalone header rendering, it also inspects the blur produced by
+the normal native window frame: opaque page alpha, visible color variation and
+changed pixels after scrolling are required. Offscreen-only checks cannot detect
+a nested GPU capture that caches an empty readback during retained rendering.
+
+### Mobile OAuth
+
+`dotnet run --project tests/Pookie.App.SmokeTests -- --mobile-oauth-smoke-test`
+opens a real login WebView against a loopback fixture and verifies the intercepted
+`sc://auth` callback, PKCE exchange, private IPC, encrypted session round trip,
+single-use refresh after API `401`, token rotation in an already running browser
+worker and process cancellation. No real SoundCloud account or credentials are
+used. The Windows InfiniFrame path is verified; the Linux WebKit path still needs
+a runtime run. Configuration for real mobile login is described in
+`docs/soundcloud-api-internals.md`, section 14.
+
+The same fixture also withholds an actual InfiniFrame JavaScript evaluation
+reply before clicking Continue. The OAuth callback must publish the result and
+close the native window independently of that pending observer. A pipe fixture
+keeps its writer open to require completion on the bounded newline-framed result
+rather than EOF. Normal login, cancellation and oversized-result rejection remain
+part of this smoke test.
+
+`dotnet run --project tests/Pookie.App.SmokeTests -- --native-session-recovery-smoke-test`
+checks a real WebView preparing the session with a read-only `/me`, exporting the
+rotated protection cookie before the pending native mutation resumes, keeping
+subsequent writes native, completing a browser fallback once when HTTP is still
+rejected, and returning the next operation to HTTP. It uses a loopback fixture
+only and does not change a SoundCloud account or reproduce real DataDome checks.
+
+`--mobile-profile-status` validates the configured default mobile OAuth profile
+without contacting SoundCloud. It prints only build/signal availability and the
+actual system TLS choice; credentials and device identifiers are omitted.
+`tools/enable-mobile-profile.ps1` enables the local research profile without
+embedding its credentials in the app. Set `POOKIE_SOUNDCLOUD_PROFILE=web` for the
+existing web profile. Protocol, feature configuration, SDUI fallback, full-stream
+selection and CDN credential scoping are covered by `MobileProtocolTests`.
+
+`--native-track-network-probe <SoundCloud track URL>` checks `/me`, resolves the
+supplied track and reads fresh metadata using the selected saved web/mobile
+profile. It sends no like or other account mutation and prints no credentials.
+Native HTTP diagnostics include the host as well as the status so Android batch
+routes on `api-mobile.soundcloud.com` cannot be confused with V2 routes.

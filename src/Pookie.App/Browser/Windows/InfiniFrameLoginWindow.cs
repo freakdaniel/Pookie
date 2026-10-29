@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace Pookie.App.Browser;
 
-internal static class InfiniFrameLoginWindow
+internal static partial class InfiniFrameLoginWindow
 {
     private const string BridgeMessageId = "pookie:browser-message";
     // Pookie owns SMTC and the queue. Chromium must not create a second OS session
