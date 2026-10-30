@@ -621,6 +621,7 @@ internal sealed partial class MainWindow
         foreach (var row in ChatRows) row.Clear();
         CancelChatPolling();
         chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose();
+        chatInfoBody.Dispose();
         chatInboxLoading.Dispose(); chatThreadLoading.Dispose(); ClearChatMediaCache(clearSummaries: true); ClearChatVisualCache(); chatMedia.Dispose(); klipy.Dispose();
     }
 }

@@ -10,14 +10,19 @@ internal sealed class ChatStage(FrameworkElement content, bool centerReadingColu
     protected override Size MeasureContent(Size availableSize)
     {
         var room = Math.Max(0,availableSize.Width-(rightInset?.Invoke() ?? 0));
-        content.Measure(new Size(centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room, availableSize.Height));
+        var width = ChatColumns.SnapPixel(centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room, GetDpi()/96d);
+        content.Measure(new Size(width, availableSize.Height));
         return availableSize;
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
         var room = Math.Max(0,finalSize.Width-(rightInset?.Invoke() ?? 0));
-        var width = centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room;
-        content.Arrange(new Rect(Bounds.X + (room - width) / 2, Bounds.Y, width, finalSize.Height));
+        // Keep the reading width and its pixel phase stable as docked details
+        // move its centre; text and glass should move without being resized.
+        var scale = GetDpi()/96d;
+        var width = ChatColumns.SnapPixel(centerReadingColumn ? Math.Min(ChatColumns.ReadingWidth, room) : room, scale);
+        var x = ChatColumns.SnapPixel(Bounds.X + (room - width) / 2, scale);
+        content.Arrange(new Rect(x, Bounds.Y, width, finalSize.Height));
         return finalSize;
     }
     protected override UIElement? OnHitTest(Point point) => content.HitTest(point);

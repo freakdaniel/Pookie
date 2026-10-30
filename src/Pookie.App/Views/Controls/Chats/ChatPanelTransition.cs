@@ -36,8 +36,10 @@ internal sealed class ChatPanelTransition : Panel
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
-        current?.Arrange(new Rect(Bounds.X + direction * 24 * (1 - amount), Bounds.Y, finalSize.Width, finalSize.Height));
-        previous?.Arrange(new Rect(Bounds.X - direction * 24 * amount, Bounds.Y, finalSize.Width, Math.Max(finalSize.Height, previous.DesiredSize.Height)));
+        var scale = GetDpi()/96d;
+        var width = ChatColumns.SnapPixel(finalSize.Width,scale);
+        current?.Arrange(new Rect(ChatColumns.SnapPixel(Bounds.X + direction * 24 * (1 - amount),scale), Bounds.Y, width, finalSize.Height));
+        previous?.Arrange(new Rect(ChatColumns.SnapPixel(Bounds.X - direction * 24 * amount,scale), Bounds.Y, width, Math.Max(finalSize.Height, previous.DesiredSize.Height)));
         return finalSize;
     }
     protected override void RenderSubtree(IGraphicsContext context)

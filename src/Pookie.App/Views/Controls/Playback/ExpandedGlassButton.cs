@@ -10,7 +10,8 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     private readonly GlassSheenRaster sheen = new();
     private readonly GlassGeometry geometry = new(), focusGeometry = new();
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
-    private bool active, feedback;
+    private bool active;
+    internal Color SelectionTint { get; private set; } = Color.FromRgb(52, 52, 62);
     private bool? connectedStart;
     private double layer, selection, fromLayer, fromSelection, targetLayer, targetSelection;
     internal bool IsConnected => connectedStart.HasValue;
@@ -39,7 +40,8 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     }
 
     internal void SetActive(bool value) { active = value; Refresh(); }
-    internal void Connect(bool start) { connectedStart = start; feedback = true; InvalidateVisual(); }
+    internal void Connect(bool start, Color? selectionTint = null)
+    { connectedStart = start; SelectionTint = selectionTint ?? Color.FromRgb(75, 28, 44); InvalidateVisual(); }
 
     private void Refresh()
     {
@@ -69,8 +71,8 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
         {
             backdrop?.Draw(context, Bounds, corners, shape);
             var neutral = GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
-            var tint = neutral.Lerp(feedback ? Color.FromArgb((byte)Math.Min(230, neutral.A + 28), 75, 28, 44) :
-                Color.FromArgb((byte)Math.Min(230, neutral.A + 28), 52, 52, 62), selection);
+            var tint = neutral.Lerp(Color.FromArgb((byte)Math.Min(230, neutral.A + 28),
+                SelectionTint.R, SelectionTint.G, SelectionTint.B), selection);
             context.FillPath(shape!, tint);
         }
         if (layer > 0) context.FillPath(shape!, Color.FromArgb((byte)Math.Round(layer * 255), 232, 232, 235));

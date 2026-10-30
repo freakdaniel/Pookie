@@ -10,6 +10,7 @@ internal sealed class LibraryLoadingView : IDisposable
     public Grid Root { get; }
     public LibrarySkeleton Skeleton { get; } = new();
     public bool Loading { get; private set; }
+    internal event Action? ContentRevealed;
     private readonly FrameworkElement content;
     private readonly AnimationClock fade;
     private double previewHeight;
@@ -32,7 +33,11 @@ internal sealed class LibraryLoadingView : IDisposable
                     Skeleton.Height = previewHeight + (content.DesiredSize.Height - previewHeight) * value;
                 }
             },
-            CompletedCallback = () => { Skeleton.IsVisible = false; Skeleton.Height = double.NaN; Skeleton.SetActive(false); }
+            CompletedCallback = () =>
+            {
+                Skeleton.IsVisible = false; Skeleton.Height = double.NaN; Skeleton.SetActive(false);
+                ContentRevealed?.Invoke();
+            }
         };
     }
 

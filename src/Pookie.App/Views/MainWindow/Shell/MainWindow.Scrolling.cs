@@ -63,7 +63,9 @@ internal sealed partial class MainWindow
     private void RefreshPaginationSkeletons(bool loading)
     {
         foreach (var existing in pageItems.Values) existing.SetLoading(0);
-        if (!loading) return;
+        // A filtered library scans metadata pages, not visible rows. A compact
+        // search notice replaces the unrelated full waveform/card skeletons.
+        if (!loading || FilteringLikes) return;
         var control = page.Value switch
         {
             Page.Search => searchList,
@@ -170,12 +172,14 @@ internal sealed partial class MainWindow
         if (viewer == null || viewer.ViewportHeight <= 0 || cursor == null) return;
         var remaining = SmoothScroll.Maximum(viewer) - viewer.VerticalOffset;
         var threshold = Math.Max(160, viewer.ViewportHeight * .5);
-        if (remaining > threshold)
+        if (!FilteringLikes && remaining > threshold)
         {
             failedPageCursor = null; emptyPageStreak = 0;
             return;
         }
-        if (cursor == failedPageCursor || loadedPageCursors.Contains(cursor) || emptyPageStreak >= 3) return;
+        // No matches on a page does not mean older likes cannot match. Follow
+        // every distinct library cursor while filtering, even with a full viewport.
+        if (cursor == failedPageCursor || loadedPageCursors.Contains(cursor) || !FilteringLikes && emptyPageStreak >= 3) return;
         Run(LoadNextVisiblePageAsync);
     }
 
@@ -206,7 +210,11 @@ internal sealed partial class MainWindow
         finally
         {
             if (!disposed && generation == navigationGeneration)
-            { RefreshPaginationSkeletons(false); paginationLoading.Value = false; }
+            {
+                RefreshPaginationSkeletons(false); paginationLoading.Value = false;
+                // Even a page with no tracks/matches must schedule the next scan.
+                if (FilteringLikes) Window.InvalidateVisual();
+            }
         }
     }
 

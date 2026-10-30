@@ -203,7 +203,7 @@ internal sealed partial class MainWindow
     private void CycleRepeat()
     {
         playbackQueue.SetRepeat((RepeatMode)(((int)playbackQueue.Repeat + 1) % 3));
-        RefreshRepeatState(); RefreshQueue(); configurationTimer.Stop(); configurationTimer.Start();
+        RefreshRepeatState(); RefreshQueue(); queueLoader.PolicyChanged(); configurationTimer.Stop(); configurationTimer.Start();
         Run(() => queueLoader.EnsureAheadAsync());
     }
     private void RefreshRepeatState()
@@ -254,7 +254,7 @@ internal sealed partial class MainWindow
 
     private ItemsControl CreatePlaybackQueueList()
     {
-        var result = new ItemsControl().ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0));
+        var result = new ItemsControl().ItemHeight(64).VariableHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(16, 0, 16, 0));
         result.ItemsSource = popupQueueSource.View;
         popupQueueAnimation = new QueueRowAnimation(result.InvalidateVisual);
         result.ItemTemplate = new DelegateTemplate<QueueBlock>(context =>
@@ -278,6 +278,7 @@ internal sealed partial class MainWindow
             row.EntryId = block.EntryId; BindCompactTrackRow(row, block.Track);
             var heading = context.Get<TextBlock>("heading");
             heading.Text = block.Title; heading.IsVisible = block.Kind != QueueBlockKind.Track;
+            heading.Margin = new Thickness(8, block.Key == "now" ? 8 : 12, 8, 6);
         }, (_, _, _, context) =>
         {
             var row = compactTrackRows.Single(row => row.Root == context.Get<Grid>("row"));

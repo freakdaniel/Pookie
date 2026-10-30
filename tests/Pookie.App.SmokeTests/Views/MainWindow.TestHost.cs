@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
     private bool chromeUiSmoke;
     private bool settingsUiSmoke;
     private bool queueContinuationUiSmoke;
-    private bool chatNavigationUiSmoke, chatEmojiUiSmoke;
+    private bool chatNavigationUiSmoke, chatDrawerUiSmoke, chatEmojiUiSmoke;
     private bool chatVideoLiveUi;
     private bool uiSmoke;
     private bool loginUiSmoke;
@@ -24,9 +24,9 @@ internal sealed partial class MainWindow
     private bool lyricsUiSmoke;
     private bool artworkUiSmoke;
     private bool scrollingUiSmoke;
-    private bool trackPageUiSmoke;
+    private bool trackPageUiSmoke, trackDescriptionUiSmoke;
     private bool trackPageLiveUi;
-    private bool likesEditsUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
+    private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
     private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
@@ -42,7 +42,8 @@ internal sealed partial class MainWindow
         settingsUiSmoke = args.Contains("--settings-ui-smoke-test");
         queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
         chatsUiSmoke = chatMusicUiSmoke || chatMediaUiSmoke || args.Contains("--chats-ui-smoke-test");
-        chatNavigationUiSmoke = args.Contains("--chat-navigation-ui-smoke-test");
+        chatDrawerUiSmoke = args.Contains("--chat-drawer-ui-smoke-test");
+        chatNavigationUiSmoke = chatDrawerUiSmoke || args.Contains("--chat-navigation-ui-smoke-test");
         chatEmojiUiSmoke = args.Contains("--chat-emoji-ui-smoke-test");
         chatVideoLiveUi = args.Contains("--chat-video-live-ui-probe");
         waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
@@ -58,10 +59,12 @@ internal sealed partial class MainWindow
         lyricsUiSmoke = args.Contains("--lyrics-ui-smoke-test");
         artworkUiSmoke = args.Contains("--artwork-ui-smoke-test");
         scrollingUiSmoke = args.Contains("--scrolling-ui-smoke-test");
-        trackPageUiSmoke = args.Contains("--track-page-ui-smoke-test");
+        trackDescriptionUiSmoke = args.Contains("--track-description-ui-smoke-test");
+        trackPageUiSmoke = trackDescriptionUiSmoke || args.Contains("--track-page-ui-smoke-test");
         trackPageLiveUi = args.Contains("--track-page-live-ui-probe");
         collectionsUiSmoke = args.Contains("--collections-ui-smoke-test");
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
+        likesFilterUiSmoke = args.Contains("--likes-filter-ui-smoke-test");
         commentsUiSmoke = args.Contains("--comments-ui-smoke-test");
         homeUiSmoke = args.Contains("--home-ui-smoke-test");
         waveJournalUiSmoke = args.Contains("--wave-journal-ui-smoke-test");
@@ -112,6 +115,7 @@ internal sealed partial class MainWindow
         if (trackPageLiveUi) Run(VerifyTrackPageLiveUiAsync);
         if (collectionsUiSmoke) Run(VerifyCollectionsUiAsync);
         if (likesEditsUiSmoke) Run(VerifyLikesEditsUiAsync);
+        if (likesFilterUiSmoke) Run(VerifyLikesFilterUiAsync);
         if (commentsUiSmoke) Run(VerifyCommentsUiAsync);
         if (homeUiSmoke) Run(VerifyHomeUiAsync);
         if (waveJournalUiSmoke) Run(VerifyWaveJournalOnlyUiAsync);

@@ -60,22 +60,25 @@ internal sealed partial class MainWindow
         var like = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                 Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
                 Icons.View("heart-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isLiked)),
-            () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable).ToolTip("Нравится");
+            () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable);
         var dislike = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                 Icons.View("thumbs-down", 24, Color.White).Center().BindIsVisible(isDisliked, value => !value),
                 Icons.View("thumbs-down-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isDisliked)),
-            () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable)
-            .ToolTip("Не нравится — исключить из волны · Нажми ещё раз, чтобы отменить");
+            () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable);
         ((ExpandedGlassButton)like).Connect(true); ((ExpandedGlassButton)dislike).Connect(false);
+        var shuffleControl = ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle);
+        var repeatControl = ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive);
+        var playbackTint = Color.FromRgb(28, 76, 76);
+        ((ExpandedGlassButton)shuffleControl).Connect(true, playbackTint);
+        ((ExpandedGlassButton)repeatControl).Connect(false, playbackTint);
         transport.Children(
             new Border().Background(Color.FromArgb(100, 0, 0, 0)).IsHitTestVisible(false),
             coverControls,
             ExpandedVolumeControl().Left().Top().Margin(14),
-            ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive).CenterHorizontal().Top().Margin(14),
             ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), 38, expandedQueueActive)
                 .Right().Top().Margin(14),
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
-                ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle).Left().Column(0),
+                new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
                 new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, dislike)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()

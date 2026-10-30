@@ -110,6 +110,27 @@ internal sealed partial class MainWindow
         await WaitForLoginFrameAsync();
         if (Math.Abs(viewer.VerticalOffset - stopped) > 1 / Window.DpiScale)
             throw new InvalidOperationException("A precision gesture kept animating after its final input.");
-        Console.WriteLine("PRECISION_WHEEL_OK: immediate fractional/coalesced/reversed input; ordinary notches retain animation");
+        motion.Scroll(500);
+        typeof(SmoothScroll).GetField("timestamp",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(motion,System.Diagnostics.Stopwatch.GetTimestamp()-System.Diagnostics.Stopwatch.Frequency*2);
+        var resumed=viewer.VerticalOffset;
+        motion.Scroll(ThemeManager.DefaultMetrics.ScrollWheelStep);
+        await WaitForLikedLayoutAsync(()=>Math.Abs(viewer.VerticalOffset-resumed-step)<1);
+        if(viewer.VerticalOffset>resumed+step+1)
+            throw new InvalidOperationException("A resumed spring retained the old long scroll target.");
+        motion.Stop();
+        var registered=smoothScrolls[viewer];
+        registered.Scroll(500);
+        var inactive=viewer.VerticalOffset;
+        const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.Public|System.Reflection.BindingFlags.NonPublic;
+        typeof(Window).GetMethod("RaiseDeactivated",flags)!.Invoke(Window,[]);
+        await WaitForLoginFrameAsync();
+        typeof(Window).GetMethod("RaiseActivated",flags)!.Invoke(Window,[]);
+        await WaitForLoginFrameAsync();
+        if(Math.Abs(viewer.VerticalOffset-inactive)>1/Window.DpiScale)
+            throw new InvalidOperationException("Window reactivation resumed an old scroll target.");
+        registered.Scroll(step);
+        await WaitForLikedLayoutAsync(()=>Math.Abs(viewer.VerticalOffset-inactive-step)<1);
+        Console.WriteLine("PRECISION_WHEEL_OK: immediate fractional/coalesced/reversed input; animated notches; stale-frame and window-reactivation targets discarded");
     }
 }

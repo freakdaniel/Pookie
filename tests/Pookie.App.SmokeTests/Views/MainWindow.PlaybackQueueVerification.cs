@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
             var data = Enumerable.Range(1, 8).Select(id => new SoundCloudTrack
                 { Id = id, Title = "Queue fixture " + id, Duration = 12000, User = new() { Username = "Queue artist" } }).ToArray();
             shuffle.Value = false; playbackQueue.SetRepeat(RepeatMode.Off); RefreshRepeatState();
+            await VerifyPopupQueueFitAsync(data);
             StartQueueContext(new("likes", "Понравившиеся треки", "Сейчас играет из подборки"), data, data[0]);
             await PlayAsync(data[0]);
             var first = playbackQueue.Current!;
@@ -119,6 +120,42 @@ internal sealed partial class MainWindow
             Console.WriteLine("UI_PLAYBACK_QUEUE_OK: duplicate occurrence state and editing menus, manual priority, three-second Previous, actual back/forward history, stable Shuffle, displayed/system next parity, isolated search playback, repeat modes, finite end and source pagination across navigation");
         }
         finally { player = originalPlayer; queueLoader = originalLoader; }
+    }
+
+    private async Task VerifyPopupQueueFitAsync(SoundCloudTrack[] data)
+    {
+        playerVisible.Value=true;
+        StartQueueContext(new("track:fixture","Для тебя","Отдельный трек"),[data[0]],data[0]);
+        playbackQueue.AppendRecommendations(playbackQueue.SourceVersion,data.Skip(1).Take(3));
+        RefreshQueue();queueOpen.Value=true;
+        await WaitForLikedLayoutAsync(()=>queueList.FindVisualChild<ScrollViewer>() is ScrollViewer { ViewportHeight:>200 } &&
+            popupQueueBlocks.Count(pair=>pair.Value!=null)==6 && !queueList.IsMeasureDirty && !queueList.IsArrangeDirty);
+        var viewer=(ScrollViewer)queueList.FindVisualChild<ScrollViewer>()!;
+        await WaitForLoginFrameAsync();await WaitForLoginFrameAsync();
+        if(SmoothScroll.Maximum(viewer)>1/Window.DpiScale)
+            throw new InvalidOperationException($"Four-track queue has a phantom scroll extent: max={SmoothScroll.Maximum(viewer)}, viewport={viewer.ViewportHeight}.");
+        var retained=popupQueueData.Select(block=>block.Key).ToArray();
+        var rows=popupQueueBlocks.Where(pair=>pair.Value!=null).ToDictionary(pair=>pair.Value!.Key,pair=>pair.Key);
+        for(var mode=0;mode<3;mode++)
+        {
+            CycleRepeat();await WaitForLoginFrameAsync();
+            if(!retained.SequenceEqual(popupQueueData.Select(block=>block.Key)) ||
+                popupQueueBlocks.Any(pair=>pair.Value!=null && rows[pair.Value.Key]!=pair.Key))
+                throw new InvalidOperationException("Repeat removed or recreated visible queue rows.");
+        }
+        var large=Enumerable.Range(1,40).Select(i=>data[i%data.Length] with {Id=1000+i}).ToArray();
+        StartQueueContext(new("large-fixture","Большая очередь","Плейлист"),large,large[0]);
+        await WaitForLikedLayoutAsync(()=>SmoothScroll.Maximum(viewer)>200);
+        ScrollBar? bar=null;
+        ((IVisualTreeHost)viewer).VisitChildren(element=>
+        { if(element is ScrollBar {Orientation:Orientation.Vertical} vertical)bar=vertical;return true; });
+        var card=(Border)queueList.Parent!.Parent!;
+        if(bar is not {IsVisible:true} || Math.Abs(bar.Bounds.Right-card.Bounds.Right)>1/Window.DpiScale)
+            throw new InvalidOperationException("Popup queue scrollbar is not flush with its surface edge.");
+        viewer.SetScrollOffsets(0,120);await WaitForLoginFrameAsync();
+        if(viewer.VerticalOffset<100)throw new InvalidOperationException("A genuinely overflowing queue cannot scroll.");
+        queueOpen.Value=false;
+        Console.WriteLine("POPUP_QUEUE_FIT_OK: four tracks fit without overflow, repeat retains rows, long queue scrolls with its bar at the surface edge");
     }
 
     private sealed class QueueVerificationPlayer : IAudioPlayer

@@ -181,10 +181,11 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
-        Window.Deactivated += () => { CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
+        Window.Deactivated += () => { foreach (var motion in smoothScrolls.Values) motion.Stop(); CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
         chatTimer.Start();
         Window.Activated += () =>
         {
+            foreach (var motion in smoothScrolls.Values) motion.Stop();
             chatNextPoll = default;
             trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
             if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync);

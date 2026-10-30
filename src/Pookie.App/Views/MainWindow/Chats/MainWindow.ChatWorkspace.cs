@@ -15,6 +15,13 @@ internal sealed partial class MainWindow
     private ChatPanelTransition chatDetailsTransition = null!, chatMediaTransition = null!;
     private ChatTabs? chatMediaPill;
     private long? chatInfoPeer;
+    private StackPanel chatInfoBody = null!;
+    private Image chatInfoAvatar = null!;
+    private TextBlock chatInfoName = null!, chatInfoProgress = null!;
+    private ChatTabs chatInfoTabs = null!;
+    private ChatPanelTransition chatInfoMediaTransition = null!;
+    private SoundCloudUser? chatInfoUser;
+    private long chatInfoRevision;
     private ScrollViewer chatDetailsScroll = null!;
     private StackPanel? chatMediaLibrary;
     private FrameworkElement? chatMediaEmpty, chatMediaMore;
@@ -55,6 +62,9 @@ internal sealed partial class MainWindow
 
     private FrameworkElement CreateChatDetails()
     {
+        // Build reusable controls with the chat workspace, before a header
+        // click needs to start the drawer animation.
+        chatInfoBody = CreateChatInfoBody();
         chatDetailsTitle = new TextBlock().FontSize(17).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         chatDetailsBody = new StackPanel().Vertical().Spacing(10);
         chatDetailsTransition = new ChatPanelTransition(); chatDetailsTransition.Show(chatDetailsBody);
@@ -75,7 +85,10 @@ internal sealed partial class MainWindow
     }
     private void ResetChatDetailsContent()
     {
-        chatInfoPeer = null; ClearChatLibraryPreviews();
+        chatInfoPeer = null; ++chatInfoRevision; chatInfoUser = null;
+        chatInfoAvatar.Source = null; chatInfoName.Text = "";
+        if (!ReferenceEquals(chatMediaTransition,chatInfoMediaTransition)) chatInfoMediaTransition.Reset();
+        ClearChatLibraryPreviews();
         chatProfileBackdrop.Reset();
         if (chatMediaLibrary is { } library) compactTrackRows.RemoveAll(row => library.Children.Contains(row.Root));
         chatMediaLibrary = null; chatMediaLibraryKind = null; chatMediaPill = null;
@@ -93,17 +106,20 @@ internal sealed partial class MainWindow
         chatRestoreBubbleAnchor = false;
         chatRestoreAnchor = row.Message!.Id; chatRestoreAnchorY = row.Root.Bounds.Y - viewer.Bounds.Y; chatRestoreOffset = viewer.VerticalOffset; chatRestorePasses = 0;
     }
-    private void OpenChatDetails(string title)
+    private void OpenChatDetails(string title, StackPanel? body = null)
     {
-        chatInfoPeer = null; ClearChatLibraryPreviews();
+        chatInfoPeer = null; ++chatInfoRevision; ClearChatLibraryPreviews();
         chatProfileBackdrop.Reset();
         CaptureChatPanelAnchor();
-        ++chatDetailsGeneration; chatHistorySearch?.Cancel(); if (chatMediaLibrary is { } oldLibrary) compactTrackRows.RemoveAll(row => oldLibrary.Children.Contains(row.Root)); chatMediaLibrary = null; chatMediaPill = null; chatHistoryProgress = null; chatDetailsTitle.Text = title; chatDetailsBody = new StackPanel().Vertical().Spacing(12); chatDetailsTransition.Show(chatDetailsBody);
+        // A hidden outgoing body has no transition to show. The drawer already
+        // owns the opening slide/fade; keep section transitions for open panels.
+        if (!chatColumns.DetailsOpen && chatColumns.Reveal <= 0) chatDetailsTransition.Reset();
+        ++chatDetailsGeneration; chatHistorySearch?.Cancel(); if (chatMediaLibrary is { } oldLibrary) compactTrackRows.RemoveAll(row => oldLibrary.Children.Contains(row.Root)); chatMediaLibrary = null; chatMediaPill = null; chatHistoryProgress = null; chatDetailsTitle.Text = title; chatDetailsBody = body ?? new StackPanel().Vertical().Spacing(12); chatDetailsTransition.Show(chatDetailsBody);
         if (chatDetailsCard.FindVisualChild<ScrollViewer>() is ScrollViewer scroll) scroll.SetScrollOffsets(0, 0);
         chatColumns.DetailsOpen = true;
     }
     private void CloseChatDetails()
-    { chatInfoPeer = null; ClearChatLibraryPreviews(); ++chatDetailsGeneration; var open = chatColumns.DetailsOpen; if (open) chatHistorySearch?.Cancel(); if (open) CaptureChatPanelAnchor(); chatColumns.DetailsOpen = false; chatFindMessages = chatThreadSearchOpen || chatGlobalMessages && chatSearch.Text.Length > 0; if (open) { if (chatRecipient != null) chatInput.Focus(); else chatSearch.Focus(); } }
+    { chatInfoPeer = null; ++chatInfoRevision; ClearChatLibraryPreviews(); ++chatDetailsGeneration; var open = chatColumns.DetailsOpen; if (open) chatHistorySearch?.Cancel(); if (open) CaptureChatPanelAnchor(); chatColumns.DetailsOpen = false; chatFindMessages = chatThreadSearchOpen || chatGlobalMessages && chatSearch.Text.Length > 0; if (open) { if (chatRecipient != null) chatInput.Focus(); else chatSearch.Focus(); } }
     private void OpenChatFolderEditor(ChatFolder? folder)
     {
         OpenChatDetails(folder == null ? "Новая папка" : "Изменить папку");
@@ -280,37 +296,45 @@ internal sealed partial class MainWindow
         if (index >= 0) { chatMessagesView.ScrollIntoView(index); Window.PerformLayout(); foreach (var row in ChatRows.Where(r => r.Message?.Id == id)) row.Highlight(); }
         chatThreadStatus.Value = "";
     }
+    private StackPanel CreateChatInfoBody()
+    {
+        chatInfoAvatar = new Image().Width(96).Height(96).StretchMode(Stretch.UniformToFill);
+        chatInfoName = new TextBlock().FontSize(20).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).CenterHorizontal();
+        chatInfoTabs = new ChatTabs();
+        foreach (var kind in new[] { "Музыка", "Фото", "Видео", "Файлы", "Ссылки" })
+            chatInfoTabs.AddTab(kind, () => Run(() => RenderChatMediaLibraryAsync(kind)));
+        chatInfoMediaTransition = new ChatPanelTransition();
+        chatInfoProgress = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
+        return new StackPanel().Vertical().Spacing(12).Children(
+            new StackPanel().Vertical().Spacing(10).Margin(0, 8, 0, 16).Children(
+                new Border().Width(96).Height(96).CornerRadius(48).ClipToBounds().Child(chatInfoAvatar).CenterHorizontal(),
+                chatInfoName,
+                TrackButtons.Action(new TextBlock().Text("Открыть профиль").FontSize(12).Foreground(ChatAccent),
+                    () => { if (chatInfoUser is { } user) Run(() => OpenUserProfileAsync(user)); }, TrackButtons.Text, 30).CenterHorizontal()),
+            chatInfoTabs, chatInfoMediaTransition, chatInfoProgress);
+    }
     private void OpenChatInfo()
     {
         if (chatColumns.DetailsOpen && chatRecipient != null && chatInfoPeer == chatRecipient.Id) return;
-        CloseChatSearch(); chatFindMessages = false; OpenChatDetails("Информация");
+        CloseChatSearch(); chatFindMessages = false; OpenChatDetails("Информация",chatInfoBody);
         if (chatRecipient is not { } peer) return;
-        chatInfoPeer = peer.Id;
-        var avatar = new Image().Width(96).Height(96).StretchMode(Stretch.UniformToFill);
-        avatar.Source = chatHeaderAvatar.Source;
-        var account = chatAccountId; var profileBody = chatDetailsBody;
+        chatInfoPeer = peer.Id; chatInfoUser = peer;
+        chatInfoAvatar.Source = chatHeaderAvatar.Source; chatInfoName.Text = peer.Username;
+        chatInfoTabs.Select(0,animate:false); chatMediaPill = chatInfoTabs;
+        chatMediaLibrary = new StackPanel().Vertical().Spacing(4);
+        chatMediaTransition = chatInfoMediaTransition; chatMediaTransition.Reset();
+        chatHistoryProgress = chatInfoProgress; chatInfoProgress.Text = ""; chatInfoProgress.IsVisible = false;
+        // Body identity is intentionally shared across openings. A request
+        // revision must reject late artwork/palettes from a previous binding.
+        var account = chatAccountId; var revision = chatInfoRevision;
         Run(async () =>
         {
             var source = await SharedArtworkAsync(peer.AvatarUrl);
-            if (source == null || disposed || account != chatAccountId || profileBody != chatDetailsBody || chatRecipient?.Id != peer.Id) return;
-            avatar.Source = source;
+            if (source == null || disposed || account != chatAccountId || revision != chatInfoRevision || chatInfoPeer != peer.Id) return;
+            chatInfoAvatar.Source = source;
             var palette = await playerPalettes.GetValue(source, image => Task.Run(() => PlayerPalette.FromArtwork(image), lifetime.Token));
-            if (!disposed && account == chatAccountId && profileBody == chatDetailsBody && chatRecipient?.Id == peer.Id) chatProfileBackdrop.SetPalette(palette);
+            if (!disposed && account == chatAccountId && revision == chatInfoRevision && chatInfoPeer == peer.Id) chatProfileBackdrop.SetPalette(palette);
         });
-        chatDetailsBody.Add(new StackPanel().Vertical().Spacing(10).Margin(0, 8, 0, 16).Children(
-            new Border().Width(96).Height(96).CornerRadius(48).ClipToBounds().Child(avatar).CenterHorizontal(),
-            new TextBlock().Text(peer.Username).FontSize(20).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).CenterHorizontal(),
-            TrackButtons.Action(new TextBlock().Text("Открыть профиль").FontSize(12).Foreground(ChatAccent),
-                () => Run(() => OpenUserProfileAsync(peer)), TrackButtons.Text, 30).CenterHorizontal()));
-        chatMediaPill = new ChatTabs();
-        foreach (var kind in new[] { "Музыка", "Фото", "Видео", "Файлы", "Ссылки" })
-            chatMediaPill.AddTab(kind, () => Run(() => RenderChatMediaLibraryAsync(kind)));
-        chatDetailsBody.Add(chatMediaPill);
-        chatMediaLibrary = new StackPanel().Vertical().Spacing(4);
-        chatMediaTransition = new ChatPanelTransition(); chatMediaTransition.Show(chatMediaLibrary);
-        chatDetailsBody.Add(chatMediaTransition);
-        chatHistoryProgress = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
-        chatDetailsBody.Add(chatHistoryProgress);
         chatFindPeer = peer.Id;
         Run(async () => { await RenderChatMediaLibraryAsync("Музыка"); await DownloadChatSearchHistoryAsync(); });
     }

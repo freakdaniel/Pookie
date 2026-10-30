@@ -10,6 +10,9 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
     internal const double SidebarWidth = 360;
     internal const double ColumnGap = 16;
     internal const double ReadingWidth = 696;
+    // Round size independently from position. Rounding the two moving edges
+    // of a 360 DIP panel at 110 DPI otherwise alternates between 412/413 px.
+    internal static double SnapPixel(double value, double scale) => Math.Round(value * scale) / scale;
     private const double CompactWidth = 760;
     private bool selected, compact, panelOpen, panelVisible, docked;
     private double reveal;
@@ -65,7 +68,7 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
         if (thread.IsVisible) thread.Measure(new Size(Math.Max(0, center - (docked ? SidebarWidth * reveal : 0)), availableSize.Height));
         outsideClickLayer.IsVisible = panelVisible && !docked;
         if (outsideClickLayer.IsVisible) outsideClickLayer.Measure(new Size(width, availableSize.Height));
-        if (details != null) { details.IsVisible = panelVisible; if (panelVisible) details.Measure(new Size(Math.Min(SidebarWidth, center), availableSize.Height)); }
+        if (details != null) { details.IsVisible = panelVisible; if (panelVisible) details.Measure(new Size(SnapPixel(Math.Min(SidebarWidth, center), GetDpi()/96d), availableSize.Height)); }
         return new Size(width, double.IsFinite(availableSize.Height) ? availableSize.Height : 600);
     }
     protected override Size ArrangeOverride(Size finalSize)
@@ -76,8 +79,10 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
         if (inbox.IsVisible) inbox.Arrange(new Rect(Bounds.X, Bounds.Y, compact ? finalSize.Width : SidebarWidth, finalSize.Height));
         if (thread.IsVisible) thread.Arrange(new Rect(start, Bounds.Y, room, finalSize.Height));
         if (outsideClickLayer.IsVisible) outsideClickLayer.Arrange(new Rect(start, Bounds.Y, center, finalSize.Height));
-        var detailsWidth = Math.Min(SidebarWidth, center);
-        if (panelVisible && details != null) details.Arrange(new Rect(Bounds.Right - detailsWidth + (detailsWidth + ColumnGap) * (1 - reveal), Bounds.Y, detailsWidth, finalSize.Height));
+        var scale = GetDpi() / 96d;
+        var detailsWidth = SnapPixel(Math.Min(SidebarWidth, center), scale);
+        var detailsX = SnapPixel(Bounds.Right - detailsWidth + (detailsWidth + ColumnGap) * (1 - reveal), scale);
+        if (panelVisible && details != null) details.Arrange(new Rect(detailsX, Bounds.Y, detailsWidth, finalSize.Height));
         return finalSize;
     }
     protected override void RenderSubtree(IGraphicsContext context)

@@ -43,16 +43,17 @@ internal sealed class ChatTabs : Panel
         ((MaterialTrackButton)button).SetPassive(index == selected);
         tabs.Add(button); Add(button);
     }
-    internal void Select(int index)
+    internal void Select(int index, bool animate = true)
     {
         if (index < 0 || index >= tabs.Count || !tabs[index].IsVisible) return;
+        if (animate && initialized && index == selected) return;
         selected = index;
         for (var i = 0; i < labels.Count; i++)
         {
             TrackButtons.SetTextColor(labels[i], i == selected ? Color.FromRgb(128,196,249) : TrackButtons.OnSurface);
             ((MaterialTrackButton)tabs[i]).SetPassive(i == selected);
         }
-        Retarget(animate: true);
+        Retarget(animate);
     }
     internal void SetTabVisible(int index, bool visible)
     { if (index < 0 || index >= tabs.Count || tabs[index].IsVisible == visible) return; tabs[index].IsVisible = visible; initialized = false; InvalidateMeasure(); }

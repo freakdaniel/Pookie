@@ -49,6 +49,8 @@ internal sealed partial class MainWindow
                 trackDetailWaveform.ActualWidth > 100 && trackDetailMarkerLayer.ActualHeight > 0 && !trackDetailScroll.IsArrangeDirty);
             if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROBE") == "1")
             { await ProbeDetailScrollingAsync(); return; }
+            if (trackDescriptionUiSmoke)
+            { await VerifyDescriptionFocusScrollAsync(); return; }
             if (current?.Id != originalPlayback || playGeneration != originalGeneration)
                 throw new InvalidOperationException("Opening a title started playback.");
             await VerifyPlayerLinksAndWaveCommentsAsync(fixtures[0]);

@@ -26,6 +26,15 @@ Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated 
 directory when the production app is open: MewUI's extracted font files otherwise
 share the same cache and another process can remove them when it exits.
 
+`--chat-drawer-ui-smoke-test --no-audio` runs the fixture navigation setup and
+checks opening/closing the profile drawer in overlay, docked and compact layouts
+at 96/110/144/192 DPI. Physical widths and glass/profile raster identities must
+remain stable while moving. It also checks reuse of the profile body, rejection
+of a delayed palette from an earlier opening, and clearing account data on reset.
+These checks also run in the complete chat-navigation scenario. They assert
+layout/resource behavior; frame-cadence measurements use separate native input
+probes without forced frames or detailed profiling.
+
 `--user-profile-ui-smoke-test --no-audio` checks hydrated profile headers,
 responsive banner/avatar layout, all 257 offline country flags, independent verification
 and Artist Pro badges, long names at narrow/wide widths, independent delayed activity/sidebar skeletons,
@@ -245,6 +254,9 @@ advancing retains remaining rows, animates their movement and adds one candidate
 Manual entries have a separate heading, mode changes dissolve changed recommendations,
 and advancing does not move a viewport reading playback history. It uses isolated demo
 data and a fixture player, with no SoundCloud requests or account writes.
+It also checks a current track plus three recommendations without a phantom
+scrollbar, actual overflow with a scrollbar at the surface edge, and unchanged
+visible row identities across all repeat modes.
 
 The Home scenario also checks the local wave journal: native dislike, like/unlike,
 reset exclusions, actual listened time, shutdown classification and account isolation.
@@ -312,6 +324,20 @@ the user's clipboard is untouched. The writer and search inputs also work with
 forward/reverse background, icon and count colours, interruption, and the absence
 of a faded disabled state during pending requests. It uses an isolated demo profile
 and a local browser-transport fixture.
+
+`--track-description-ui-smoke-test --no-audio` isolates the focus regression,
+including a routed click on a description taller than the viewport. Focus must
+preserve every enclosing scroll offset while keyboard selection remains available.
+`--scrolling-ui-smoke-test --no-audio` additionally checks that a stalled spring
+and window deactivation/reactivation discard old destinations before the next input.
+
+`--likes-filter-ui-smoke-test --no-audio` checks library-only title/author filtering
+in grid and list views. It follows six delayed metadata pages, including three
+empty pages and more matches after a full viewport, without global search or writes.
+It checks exclusive loading/empty states, completed-cache reuse, failure and retry,
+query changes during a request, clearing the filter, cursor-cycle protection and
+navigation cancellation. Filtered pagination uses a compact progress notice instead
+of unrelated waveform/card skeletons.
 
 `--likes-edits-ui-smoke-test` uses an isolated account fixture to check per-track
 pending state, duplicate suppression, animated removal/insertion and movement in

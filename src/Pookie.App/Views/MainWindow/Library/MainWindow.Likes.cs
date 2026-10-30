@@ -14,7 +14,11 @@ internal sealed partial class MainWindow
     private ItemsControl likedGrid = null!;
     private ItemsControl likedList = null!;
     private TextBox likedFilter = null!;
+    private StackPanel likedFilterNotice = null!;
+    private TextBlock likedFilterStatus = null!;
+    private Button likedFilterRetry = null!;
     private string likedFilterText = "";
+    private bool FilteringLikes => page.Value == Page.LibraryTracks && !string.IsNullOrWhiteSpace(likedFilterText);
     private double likedArtworkSize = 176;
     private int libraryColumns = 6;
 
@@ -90,7 +94,19 @@ internal sealed partial class MainWindow
             if (paginationLoading.Value && page.Value == Page.LibraryTracks) RefreshPaginationSkeletons(true);
         };
         likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
-            .OnTextChanged(value => { likedFilterText = value; RefreshLikedViews(); });
+            .OnTextChanged(value =>
+            {
+                likedFilterText = value;
+                if (page.Value == Page.LibraryTracks) { failedPageCursor = null; emptyPageStreak = 0; }
+                RefreshLikedViews();
+            });
+        likedFilterStatus = new TextBlock().Foreground(Muted).FontSize(13).CenterVertical();
+        likedFilterRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13),
+            RetryLikedFilter, TrackButtons.Text, 32);
+        likedFilterNotice = new StackPanel().Horizontal().Spacing(12).DockTop().IsVisible(false)
+            .Children(likedFilterStatus, likedFilterRetry);
+        paginationLoading.Changed += RefreshLikedFilterState;
+        likesLoadingView.ContentRevealed += RefreshLikedFilterState;
         var viewSwitch = new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
             LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true)));
         var tools = new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
@@ -100,6 +116,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
                 tools.Column(1), filterField.Column(2)),
+            likedFilterNotice,
             new Grid().Columns("*").Rows("*").Children(
                 likesLoadingView.Root,
                 new TextBlock().Text("По этому фильтру ничего не найдено.")
@@ -127,7 +144,29 @@ internal sealed partial class MainWindow
             track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
         SetPageItems(likedGrid, visible, LoadingRowStyle.Card);
         SetPageItems(likedList, visible, LoadingRowStyle.Waveform);
-        likedEmpty.Value = !likesLoading && visible.Length == 0;
+        if (paginationLoading.Value) RefreshPaginationSkeletons(true);
+        RefreshLikedFilterState();
+    }
+
+    private void RefreshLikedFilterState()
+    {
+        if (page.Value != Page.LibraryTracks) return;
+        var incomplete = FilteringLikes && nextHref != null;
+        var failed = incomplete && !paginationLoading.Value &&
+            (failedPageCursor == nextHref || loadedPageCursors.Contains(nextHref!));
+        likedFilterNotice.IsVisible = incomplete && !likesLoading;
+        likedFilterStatus.Text = failed ? "Не удалось проверить оставшиеся лайки." : "Ищем среди более ранних лайков…";
+        likedFilterRetry.IsVisible = failed;
+        likedEmpty.Value = !likesLoading && !likesLoadingView.Skeleton.IsVisible && !paginationLoading.Value && !incomplete &&
+            pageItems.TryGetValue(likedList, out var source) && source.DataCount == 0;
+    }
+
+    private void RetryLikedFilter()
+    {
+        if (!FilteringLikes || paginationLoading.Value || nextHref == null) return;
+        failedPageCursor = null; emptyPageStreak = 0; loadedPageCursors.Remove(nextHref);
+        RefreshLikedFilterState();
+        CheckPageEnd();
     }
 
     private void UpdateLikedGridSize(double width)

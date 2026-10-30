@@ -89,6 +89,7 @@ internal sealed partial class MainWindow
             await VerifyTelegramDescriptionAsync(fixtureClipboard, opened);
             await VerifyDescriptionReplacementAsync();
             await VerifyDescriptionCaretAsync();
+            await VerifyDescriptionFocusScrollAsync();
             Console.WriteLine("TRACK_DESCRIPTION_OK: wrapped HTTP/WWW links, trimmed punctuation, animated hover without underline, circular favicon/fallback, link click, drag selection without activation, Unicode/line-break copying, noneditable text and text replacement reset");
         }
         finally
@@ -143,6 +144,28 @@ internal sealed partial class MainWindow
         CaptureUiPreview("track-description-no-caret");
 
         Console.WriteLine("DESCRIPTION_CARET_OK: selectable TextBlock shares message selection without any editor, input client or caret pixels across a blink interval");
+    }
+
+    private async Task VerifyDescriptionFocusScrollAsync()
+    {
+        Window.Activate();
+        await WaitForLikedLayoutAsync(()=>Window.IsActive);
+        Window.FocusManager.ClearFocus();
+        trackDetailDescription.Text=string.Join('\n',Enumerable.Range(1,120).Select(i=>$"Строка длинного описания {i}"));
+        await WaitForLikedLayoutAsync(()=>trackDetailDescription.ActualHeight>shellScroll.ViewportHeight*2 && !trackDetailDescription.IsArrangeDirty);
+        shellScroll.SetScrollOffsets(0,Math.Max(0,shellScroll.VerticalOffset+trackDetailDescription.Bounds.Y-shellScroll.Bounds.Y-100));
+        await WaitForLoginFrameAsync();
+        var positions=new List<(ScrollViewer Viewer,double Offset)>();
+        for(Element? node=trackDetailDescription.Parent;node!=null;node=node.Parent)
+            if(node is ScrollViewer viewer)positions.Add((viewer,viewer.VerticalOffset));
+        var point=new Point(trackDetailDescription.Bounds.X+30,Math.Max(trackDetailDescription.Bounds.Y,shellScroll.Bounds.Y)+30);
+        RouteWaveformClick(point);await WaitForLoginFrameAsync();
+        if(!trackDetailDescription.IsFocused || positions.Any(p=>Math.Abs(p.Viewer.VerticalOffset-p.Offset)>1/Window.DpiScale))
+            throw new InvalidOperationException($"Clicking a tall description moved or missed its viewport: focused={trackDetailDescription.IsFocused}, point={point}, text={trackDetailDescription.Bounds}, offsets={string.Join(';',positions.Select(p=>$"{p.Offset}->{p.Viewer.VerticalOffset}"))}.");
+        RouteSelectableTextKey(Key.A,ModifierKeys.Control);
+        if(trackDetailDescription.SelectionLength!=trackDetailDescription.Text.Length)
+            throw new InvalidOperationException("Stable description focus lost keyboard selection.");
+        Console.WriteLine("DESCRIPTION_FOCUS_SCROLL_OK: tall text remains at the clicked viewport; keyboard selection retained");
     }
 
     private void RouteSelectableTextKey(Key key, ModifierKeys modifiers = 0) =>

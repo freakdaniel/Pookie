@@ -44,16 +44,21 @@ public sealed class QueueContinuationTests
         Assert.Equal(2, queue.Previous()!.Track.Id); Assert.Equal(recommendation, queue.Next());
     }
     [Fact]
-    public void RepeatSupersedesRecommendationsAndLateResultsCannotRestoreThem()
+    public void RepeatPreservesVisibleRecommendationsAndRejectsLateRefills()
     {
         var queue = Queue(1); queue.AppendRecommendations(queue.SourceVersion, [Track(2)]);
+        var retained=queue.Snapshot.Recommendations.ToArray();
         queue.SetRepeat(RepeatMode.Context);
-        Assert.Empty(queue.Snapshot.Recommendations);
+        Assert.Equal(retained,queue.Snapshot.Recommendations);
         Assert.False(queue.AppendRecommendations(queue.SourceVersion, [Track(3)]));
         Assert.Equal(1, queue.Next()!.Track.Id);
         queue.SetRepeat(RepeatMode.Track);
+        Assert.Equal(retained,queue.Snapshot.Recommendations);
+        Assert.False(queue.Snapshot.CanNext);
         Assert.Equal(1, queue.Next(naturalEnd: true)!.Track.Id);
         queue.SetRepeat(RepeatMode.Off); Assert.True(queue.Snapshot.CanLoadRecommendations);
+        Assert.Equal(retained,queue.Snapshot.Recommendations);
+        Assert.Equal(2,queue.Next(naturalEnd:true)!.Track.Id);
     }
     [Fact]
     public void AddingARecommendationManuallyRemovesItsAutomaticDuplicate()

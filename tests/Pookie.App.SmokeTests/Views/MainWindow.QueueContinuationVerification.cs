@@ -47,10 +47,16 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Expanded queue did not distinguish continuation from the original playlist.");
             CaptureUiPreview("queue-continuation-expanded");
             SetExpandedPlayer(false);
-            playbackQueue.SetRepeat(RepeatMode.Context);
+            var retained = AssertRecommendations().ToArray();
+            CycleRepeat();
             await queueLoader.EnsureAheadAsync();
-            if (playbackQueue.Snapshot.Recommendations.Count != 0 || !playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(new long[] { 101, 102 }))
-                throw new InvalidOperationException("Repeat included recommended tracks in the original source.");
+            if (!playbackQueue.Snapshot.Recommendations.SequenceEqual(retained) || playbackQueue.Snapshot.CanLoadRecommendations ||
+                !playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(new long[] { 101, 102 }))
+                throw new InvalidOperationException("Repeat cleared retained recommendations, kept refilling them or replaced the original source.");
+            await SkipAsync(1, naturalEnd: true);
+            if (current?.Id != 101 || playbackQueue.Current?.Origin != PlaybackEntryOrigin.Context ||
+                !playbackQueue.Snapshot.Recommendations.SequenceEqual(retained))
+                throw new InvalidOperationException("Repeat played a retained recommendation instead of restarting the original source.");
             await HandleMediaCommandAsync(new(Pookie.Media.MediaAction.Stop));
             if (waveListening.Track != null || audioReady || isPlaying.Value)
                 throw new InvalidOperationException("System Stop did not finish the listening observation.");

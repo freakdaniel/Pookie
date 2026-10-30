@@ -49,6 +49,7 @@ internal sealed class SmoothScroll : IDisposable
 
     internal bool Scroll(double delta)
     {
+        if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
         return ScrollTo((running ? target : viewer.VerticalOffset) + delta);
     }
 
@@ -65,8 +66,8 @@ internal sealed class SmoothScroll : IDisposable
             if (Math.Abs(wheelDelta - Math.Round(wheelDelta)) > .00001) precisionTimestamp = now;
             if (precisionTimestamp != 0 && Stopwatch.GetElapsedTime(precisionTimestamp, now).TotalMilliseconds < 150)
             {
-                precisionTimestamp = now;
                 Stop();
+                precisionTimestamp = now;
                 var before = viewer.VerticalOffset;
                 target = Math.Clamp(before + delta, 0, Maximum(viewer));
                 if (Math.Abs(target - before) < .01) return false;
@@ -80,6 +81,9 @@ internal sealed class SmoothScroll : IDisposable
 
     internal bool ScrollTo(double position)
     {
+        // Do not retarget a spring which stopped receiving frames while the
+        // window was inactive. Resume from the visible position and zero speed.
+        if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
         var next = Math.Clamp(position, 0, Maximum(viewer));
         if (Math.Abs(next - viewer.VerticalOffset) < .5) { Stop(); return false; }
         if (!Enabled) { Stop(); viewer.SetScrollOffsets(viewer.HorizontalOffset, next); return true; }
@@ -95,7 +99,9 @@ internal sealed class SmoothScroll : IDisposable
     private void Advance()
     {
         var now = Stopwatch.GetTimestamp();
-        var dt = Math.Min(.05, Stopwatch.GetElapsedTime(timestamp, now).TotalSeconds);
+        var elapsed = Stopwatch.GetElapsedTime(timestamp, now).TotalSeconds;
+        if (elapsed > .25) { Stop(); return; }
+        var dt = Math.Min(.05, elapsed);
         timestamp = now;
         if (dt <= 0) return;
         target = Math.Clamp(target, 0, Maximum(viewer));
@@ -144,7 +150,8 @@ internal sealed class SmoothScroll : IDisposable
         if (running && !applying && Math.Abs(viewer.VerticalOffset - last) > 1) Stop();
     }
 
-    internal void Stop() { motion.Stop(); running = false; velocity = 0; }
+    internal void Stop()
+    { motion.Stop(); running = false; velocity = 0; target = last = viewer.VerticalOffset; timestamp = precisionTimestamp = 0; }
     public void Dispose()
     {
         Stop(); viewer.MouseWheel -= OnWheel; viewer.ScrollChanged -= OnChanged; viewer.MouseDown -= OnPointerDown;

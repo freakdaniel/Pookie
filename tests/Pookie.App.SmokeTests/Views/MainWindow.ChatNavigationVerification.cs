@@ -79,7 +79,8 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync();
             if (chatRecipient?.Id != transport.Other.Id || messagesBeforeNavigation.Except(chatMessages.Select(message => message.Id)).Any() || !chatInput.IsEnabled)
                 throw new InvalidOperationException("Reopening chats lost the selected conversation.");
-            await VerifyChatWorkspaceAsync(transport);
+            await VerifyChatDrawerStabilityAsync();
+            if (!chatDrawerUiSmoke) await VerifyChatWorkspaceAsync(transport);
             Console.WriteLine($"UI_CHAT_NAVIGATION_OK: inbox, repeated navigation, resizing, history anchor, growing composer and bottom scroll; dpi={Window.Dpi}");
         }
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine(error); }

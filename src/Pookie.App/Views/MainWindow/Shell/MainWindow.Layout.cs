@@ -377,12 +377,12 @@ internal sealed partial class MainWindow
     private FrameworkElement QueuePanel()
     {
         var close = TrackButtons.Icon(Icons.View("caret-down", 20, PlayerSecondaryText), () => queueOpen.Value = false, TrackButtons.Text, 32);
-        var heading = new Grid().Columns("*,32").Rows("*").Spacing(12).Margin(8, 4, 4, 8).DockTop().Children(
+        var heading = new Grid().Columns("*,32").Rows("*").Spacing(12).Margin(24, 4, 20, 8).DockTop().Children(
             new StackPanel().Vertical().Spacing(5).CenterVertical().Column(0).Children(
                 new TextBlock().Text("Очередь").FontSize(20).SemiBold(),
                 new TextBlock().BindText(queueStatus).Foreground(PlayerSecondaryText).FontSize(12)
                     .TextTrimming(TextTrimming.CharacterEllipsis)), close.CenterVertical().Column(1));
-        var card = new Border().Background(Color.Transparent).BorderThickness(0).Padding(16, 16, 16, 12)
+        var card = new Border().Background(Color.Transparent).BorderThickness(0).Padding(0, 16, 0, 12)
             .Child(new DockPanel().LastChildFill().Spacing(4).Children(heading, queueList));
         var drawer = new PlayerQueueDrawer(queueButton, playerChrome, playerContentFrame, playerBackdrop, card);
         RegisterShellMenu(queueButton, drawer, queueOpen);

@@ -17,7 +17,9 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
     internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming).Concat(Recommendations);
     internal bool CanLoadRecommendations => AutoContinue && Context is { Kind: not PlaybackContextKind.Wave, NextHref: null } &&
         Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.WaveUpcomingLimit;
-    internal bool CanNext => Upcoming.Any() || Context?.NextHref != null || Repeat == RepeatMode.Context && Source.Count > 0;
+    internal bool CanNext => ManualUpcoming.Count + Forward.Count + ContextUpcoming.Count > 0 ||
+        AutoContinue && Repeat == RepeatMode.Off && Recommendations.Count > 0 ||
+        Context?.NextHref != null || Repeat == RepeatMode.Context && Source.Count > 0;
     internal bool CanPrevious => Current != null;
 }
 
@@ -83,7 +85,8 @@ internal sealed class PlaybackQueue
     {
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
         if (Repeat == mode) return;
-        Repeat = mode; recommendations.Clear(); recommendationsExhausted = false; Changed();
+        // Repeat changes advancement policy, not the retained visible queue.
+        Repeat = mode; Changed();
     }
     internal PlaybackEntry Enqueue(SoundCloudTrack track, bool next = false)
     {
