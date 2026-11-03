@@ -1,14 +1,16 @@
 using Aprillz.MewUI;
 using Pookie.App.Messages;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
     private ChatMusicEditor? chatMusicEditor;
-    private readonly DispatcherTimer chatMusicRecognizeTimer = new(TimeSpan.FromMilliseconds(250));
+    private readonly DispatcherTimer chatMusicRecognizeTimer = new(TimeSpan.FromMilliseconds(200));
     private string? chatMusicDraft;
     private long chatMusicDraftRevision = -1, chatMusicRecognition;
+    private readonly Dictionary<string, LinkPreviewData> chatComposerLinks = new(StringComparer.Ordinal);
 
     private void InitializeChatMusicEditor()
     {
@@ -19,7 +21,7 @@ internal sealed partial class MainWindow
     private async Task OpenChatMusicUrlAsync(string url)
     {
         var account = chatAccountId;
-        var item = await ResolveChatMusicAsync(url);
+        var item = await ResolveLinkPreviewItemAsync(url, ChatReadToken());
         if (disposed || account != chatAccountId) return;
         if (item.Track is { } track) await OpenTrackPageAsync(track); else await OpenLibraryItemAsync(item);
     }
@@ -29,14 +31,17 @@ internal sealed partial class MainWindow
         if (chatMusicEditor == null || chatMusicDraft == chatInput.Text && chatMusicDraftRevision == chatRevision) return;
         chatMusicDraft = chatInput.Text; chatMusicDraftRevision = chatRevision; ++chatMusicRecognition;
         chatMusicRecognizeTimer.Stop(); UpdateChatMusicChips();
-        if (chatRecipient != null && ChatMusicLink.Find(chatInput.Text).Length > 0) chatMusicRecognizeTimer.Start();
+        if (chatRecipient != null && SoundCloudLinks.Find(chatInput.Text).Any(url => !chatComposerLinks.ContainsKey(url) || chatComposerLinks[url].Loading)) chatMusicRecognizeTimer.Start();
     }
 
     private void UpdateChatMusicChips()
     {
-        var links = ChatMusicLink.Find(chatInput.Text).Select(url => (Url: url, Item: chatMusicCache.GetValueOrDefault(url)))
-            .Where(value => value.Item != null).Select(value => new ChatMusicEditor.Link(value.Url,
-                value.Item!.Title, CachedCollectionArtwork(value.Item))).ToArray();
+        var urls = SoundCloudLinks.Find(chatInput.Text);
+        foreach (var old in chatComposerLinks.Keys.Except(urls).ToArray()) chatComposerLinks.Remove(old);
+        var links = urls.Select(url => chatComposerLinks.TryGetValue(url, out var state) ? state :
+            chatMusicCache.TryGetValue(url, out var item) && (CachedCollectionArtwork(item) != null || CollectionArtworkUrl(item) == null)
+                ? new LinkPreviewData(url, item.Title, CachedCollectionArtwork(item)) : LinkPreviewData.Pending(url)).ToArray();
+        foreach (var link in links) chatComposerLinks[link.Url] = link;
         chatMusicEditor?.Update(links);
     }
 
@@ -45,19 +50,25 @@ internal sealed partial class MainWindow
         if (chatRecipient == null || me == null || chatAccountLifetime == null || chatSending) return;
         var generation = chatMusicRecognition; var account = chatAccountId; var revision = chatRevision;
         bool Current() => !disposed && account == chatAccountId && revision == chatRevision && generation == chatMusicRecognition;
-        foreach (var url in ChatMusicLink.Find(chatInput.Text))
+        var token = ChatReadToken();
+        foreach (var url in SoundCloudLinks.Find(chatInput.Text))
         {
+            if (chatComposerLinks.TryGetValue(url, out var known) && !known.Loading) continue;
             try
             {
-                var item = await ResolveChatMusicAsync(url);
+                var (item, cover) = await LoadLinkPreviewAsync(url, token);
                 if (!Current()) return;
-                UpdateChatMusicChips();
-                await GetCollectionArtworkAsync(item);
-                if (!Current()) return;
+                CacheChatMusic(url, item);
+                chatComposerLinks[url] = new(url, item.Title, cover);
                 UpdateChatMusicChips();
             }
             catch (OperationCanceledException) { return; }
-            catch { } // An unavailable link remains editable as ordinary text.
+            catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException)
+            {
+                if (!Current()) return;
+                chatComposerLinks[url] = LinkPreviewData.Missing(url); UpdateChatMusicChips();
+                Pookie.Logging.AppLog.For("Pookie.Links").Debug(error, "Не удалось распознать ссылку в сообщении");
+            }
         }
     }
 }

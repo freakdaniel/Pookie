@@ -5,6 +5,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private bool userProfileUiSmoke;
+    private bool searchLinksUiSmoke;
     private bool feedUiSmoke;
     private bool chatsUiSmoke;
     private bool chatMusicUiSmoke;
@@ -34,6 +35,7 @@ internal sealed partial class MainWindow
     internal void ConfigureVerification(string[] args)
     {
         userProfileUiSmoke = args.Contains("--user-profile-ui-smoke-test");
+        searchLinksUiSmoke = args.Contains("--search-links-ui-smoke-test");
         feedUiSmoke = args.Contains("--feed-ui-smoke-test");
         chatMusicUiSmoke = args.Contains("--chat-music-ui-smoke-test");
         chatMediaUiSmoke = args.Contains("--chat-media-ui-smoke-test");
@@ -90,6 +92,7 @@ internal sealed partial class MainWindow
             lyricsService = new(new EmptyLyricsProvider(), Path.Combine(dataPaths.Cache, "FixtureLyrics"));
         }
         if (userProfileUiSmoke) Run(VerifyUserProfilesAsync);
+        if (searchLinksUiSmoke) Run(VerifySearchLinksUiAsync);
         if (feedUiSmoke) Run(VerifyFeedAsync);
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
         if (menusUiSmoke) Run(VerifyFloatingMenusAsync);

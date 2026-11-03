@@ -8,14 +8,13 @@ namespace Pookie.App;
 // Presentation only: the document, clipboard, undo stack and sent body keep the URL.
 internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
 {
-    internal sealed record Link(string Url, string Label, ImageSource? Cover);
     private sealed record Span(int Start, int Length, ChatMusicInline Chip) { internal int End => Start + Length; }
     private readonly MultiLineTextBox editor;
     private readonly Action<string> open;
     private readonly List<Span> spans = [];
     private double width;
-    internal int Count => spans.Count;
-    internal Rect[] ChipBounds => spans.Select(span => span.Chip.Bounds).ToArray();
+    internal int Count => spans.Count(span => span.Chip.IsInline);
+    internal Rect[] ChipBounds => spans.Where(span => span.Chip.IsInline).Select(span => span.Chip.Bounds).ToArray();
 
     internal ChatMusicEditor(MultiLineTextBox editor, Action<string> open)
     {
@@ -26,14 +25,15 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
         editor.SizeChanged += Resize;
     }
 
-    internal void Update(IReadOnlyList<Link> links)
+    internal void Update(IReadOnlyList<LinkPreviewData> links)
     {
         var next = new List<Span>(); var text = editor.Text;
         var byUrl = links.ToDictionary(link => link.Url, StringComparer.Ordinal);
         foreach (var (offset, url) in ChatMusicLink.Occurrences(text, byUrl.Keys).Take(32))
         {
             var link = byUrl[url];
-            var old = spans.FirstOrDefault(span => span.Start == offset && span.Chip.Link == link);
+            var old = spans.FirstOrDefault(span => span.Start == offset && span.Chip.Link.Url == link.Url);
+            old?.Chip.Update(link);
             next.Add(new(offset, link.Url.Length, old?.Chip ?? new ChatMusicInline(editor, link)));
         }
         if (next.Count == spans.Count && next.Zip(spans).All(pair => pair.First == pair.Second)) return;
@@ -42,7 +42,7 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
         editor.InvalidateTextView(); editor.InvalidateMeasure();
     }
 
-    private static bool Matches(Span span, IReadOnlyTextDocument document) => span.End <= document.TextLength &&
+    private static bool Matches(Span span, IReadOnlyTextDocument document) => span.Chip.IsInline && span.End <= document.TextLength &&
         document.GetText(span.Start, span.Length) == span.Chip.Link.Url;
     public int GetFirstInterestedOffset(in TextElementScanContext context, int startOffset)
     {
@@ -108,7 +108,7 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
         PrepareInsertion();
         var start = editor.SelectionStart; var end = start + editor.SelectionLength;
         // Keep the raw URL delimited, including when typing immediately after pasting it.
-        var prefix = !char.IsWhiteSpace(text[0]) && spans.Any(span => span.End == start && Matches(span, editor.Document));
+        var prefix = !char.IsWhiteSpace(text[0]) && spans.Any(span => !span.Chip.Link.Loading && span.End == start && Matches(span, editor.Document));
         var suffix = !char.IsWhiteSpace(text[^1]) && spans.Any(span => span.Start == end && Matches(span, editor.Document));
         if (editor.Text.Length - editor.SelectionLength + text.Length + (prefix ? 1 : 0) + (suffix ? 1 : 0) > maximum) return false;
         editor.ReplaceSelection((prefix ? " " : "") + text + (suffix ? " " : ""));
@@ -125,7 +125,7 @@ internal sealed class ChatMusicEditor : ITextElementGenerator, IDisposable
     }
     internal void PasteText(string text)
     {
-        if (ChatMusicLink.Find(text).Any(url => text.EndsWith(url, StringComparison.Ordinal))) text += " ";
+        if (SoundCloudLinks.Find(text).Any(url => text.EndsWith(url, StringComparison.Ordinal))) text += " ";
         InsertText(text);
     }
     private void TextInput(TextInputEventArgs args)

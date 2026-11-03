@@ -109,6 +109,7 @@ internal sealed partial class MainWindow
     {
         chatReplyLookups.Clear();
         chatMusicCache.Clear(); chatMusicLoads.Clear(); chatMusicAttempted.Clear();
+        chatComposerLinks.Clear();
         chatMusicRecognizeTimer.Stop(); ++chatMusicRecognition; chatMusicDraft = null; chatMusicEditor?.Update([]);
         chatDecodedPhotos.Clear(); chatDecodedRecency.Clear(); chatDecodedBytes = 0;
         chatThreadCache.Clear(); chatThreadRecency.Clear(); chatRestoreOffset = null; chatRestoreAnchor = null;

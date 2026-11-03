@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
     private string? chatScanKey;
     private string? chatResultKey, chatGlobalResultKey;
     private Image chatGlobalSearchIcon = null!;
-    private ProgressRing chatGlobalSearchBusy = null!, chatThreadSearchBusy = null!;
+    private LoadingSpinner chatGlobalSearchBusy = null!, chatThreadSearchBusy = null!;
     private TextBlock chatSearchCount = null!;
     private Button chatSearchPrevious = null!, chatSearchNext = null!, chatGlobalSearchClear = null!;
     private DispatcherTimer chatMessageSearchTimer = null!;
@@ -99,7 +99,7 @@ internal sealed partial class MainWindow
         chatGlobalSearchClear = TrackButtons.Icon(Icons.View("x-mark", 16, Muted), () => { chatSearch.Text = ""; chatSearch.Focus(); }, TrackButtons.Text, 28).IsVisible(false).ToolTip("Очистить поиск");
         chatSearch.Padding = new Thickness(0);
         chatGlobalSearchIcon = Icons.View("magnifying-glass",20,Muted).Center();
-        chatGlobalSearchBusy = new ProgressRing().Width(16).Height(16).IsActive(false).IsVisible(false).Center();
+        chatGlobalSearchBusy = new LoadingSpinner().Width(16).Height(16).IsActive(false).IsVisible(false).Center();
         var card = new GlassCard().Height(40).CornerRadius(20).Padding(12,0).Child(new Grid().Columns("20,*,Auto").Rows("*").Spacing(10).Children(
             new Grid().Columns("*").Rows("*").Children(chatGlobalSearchIcon,chatGlobalSearchBusy).Column(0), chatSearch.Column(1).CenterVertical(), chatGlobalSearchClear.Column(2).CenterVertical()));
         chatSearch.GotFocus += () => card.SetEmphasized(true); chatSearch.LostFocus += () => card.SetEmphasized(false);
@@ -128,7 +128,7 @@ internal sealed partial class MainWindow
             if (e.Key == Key.Escape) { e.Handled = true; CloseChatSearch(); }
             if (e.Key == Key.Enter) { e.Handled = true; Run(() => NavigateChatSearchAsync(e.Modifiers.HasFlag(ModifierKeys.Shift) ? -1 : 1)); }
         });
-        chatThreadSearchBusy = new ProgressRing().Width(12).Height(12).IsActive(false).IsVisible(false).CenterVertical();
+        chatThreadSearchBusy = new LoadingSpinner().Width(12).Height(12).IsActive(false).IsVisible(false).CenterVertical();
         chatSearchCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
         chatSearchPrevious = TrackButtons.Icon(Icons.View("arrow-left", 17, Muted), () => Run(() => NavigateChatSearchAsync(-1)), TrackButtons.Text, 30).ToolTip("Предыдущий результат · Shift+Enter");
         chatSearchNext = TrackButtons.Icon(Icons.View("arrow-right", 17, Muted), () => Run(() => NavigateChatSearchAsync(1)), TrackButtons.Text, 30).ToolTip("Следующий результат · Enter");

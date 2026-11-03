@@ -36,7 +36,7 @@ internal sealed partial class MainWindow
     private void UpdateChatMusicMentions(ChatBubbleRow bubble, string[] urls)
     {
         if (bubble.Body.UpdateMusic(urls.Where(url => bubble.Body.Text.Contains(url, StringComparison.Ordinal)).Select(url =>
-            chatMusicCache.TryGetValue(url, out var item) ? new ChatMusicEditor.Link(url, item.Title, CachedCollectionArtwork(item)) : new(url, "Трек", null)).ToArray()))
+            chatMusicCache.TryGetValue(url, out var item) ? new LinkPreviewData(url, item.Title, CachedCollectionArtwork(item)) : new(url, "Трек", null)).ToArray()))
             BeginChatMusicChange(bubble);
     }
     private void BeginChatMusicChange(ChatBubbleRow bubble)
@@ -88,7 +88,7 @@ internal sealed partial class MainWindow
                     UpdateChatMusicMentions(bubble, group.Urls);
                     return image;
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { return null; }
                 catch
                 {
                     if (!view.IsCurrent()) return null;

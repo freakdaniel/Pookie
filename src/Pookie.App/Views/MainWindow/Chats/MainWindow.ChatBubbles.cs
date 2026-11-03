@@ -26,7 +26,7 @@ internal sealed partial class MainWindow
         internal readonly ChatMessageText Body = new() { FontSize = 14, FontWeight = FontWeight.Normal, TextWrapping = TextWrapping.Wrap };
         internal readonly TextBlock Time = new TextBlock().Bottom().FontSize(10).Foreground(Color.FromRgb(171, 189, 204));
         internal readonly TextBlock Checks = new TextBlock().Text("✓").FontSize(11).Foreground(ChatAccent);
-        internal readonly ProgressRing Spinner = new ProgressRing().Width(12).Height(12).IsActive(false);
+        internal readonly LoadingSpinner Spinner = new LoadingSpinner().Width(12).Height(12).IsActive(false);
         internal readonly Button Error;
         internal readonly Button Open;
         private readonly Grid deliveryIcon;

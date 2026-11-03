@@ -360,7 +360,7 @@ internal sealed partial class MainWindow
             if (chatMediaMore != null) library.Remove(chatMediaMore);
         }
         chatMediaEmpty = chatMediaMore = null;
-        var loading = new ProgressRing().Width(24).Height(24).IsActive(true).CenterHorizontal().Margin(0, 24);
+        var loading = new LoadingSpinner().Width(24).Height(24).IsActive(true).CenterHorizontal().Margin(0, 24);
         library.Add(loading);
         ChatMessage[] messages; Dictionary<string, MediaFile[]> metadata;
         var store = chatHistory; var token = ChatReadToken();

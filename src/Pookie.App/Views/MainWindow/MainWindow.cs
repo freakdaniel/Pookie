@@ -321,24 +321,24 @@ internal sealed partial class MainWindow : IDisposable
 
     private Task SearchAsync() => SearchAsync(preferences.RememberSearchSection ? (SearchSection)preferences.LastSearchSection : SearchSection.All);
 
-    private Task SearchAsync(SearchSection section)
+    private async Task SearchAsync(SearchSection section)
     {
-        if (!CanUseWorkspace) return Task.CompletedTask;
+        if (!CanUseWorkspace) return;
         var search = query.Value.Trim();
-        if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку на трек."; return Task.CompletedTask; }
-        if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return Task.CompletedTask; }
+        if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку SoundCloud."; return; }
+        if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return; }
+        var isLink = SoundCloudWebClient.IsSoundCloudUrl(search);
+        if (isLink) { await OpenSearchLinkAsync(search); return; }
         if (preferences.LastSearchSection != (int)section)
         { preferences = preferences with { LastSearchSection = (int)section }; configurationTimer.Stop(); configurationTimer.Start(); }
-        return NavigateRouteAsync(new(Page.Search, Search: search, Section: section), async generation =>
+        await NavigateRouteAsync(new(Page.Search, Search: search, Section: section), async generation =>
         {
             var token = BeginLoad();
             searchSection.Value = section; searchHeading.Value = $"Результаты для «{search}»";
             searchStatus.Value = "Ничего не найдено. Попробуй изменить запрос.";
             searchLoading.Value = true;
             SetSearchResults(new([], null));
-            var result = search.StartsWith("https://soundcloud.com/", StringComparison.OrdinalIgnoreCase)
-                ? new LibraryPage([LibraryItem.FromTrack(await api.ResolveAsync(search, token))], null)
-                : await api.SearchResultsAsync(search, section, token);
+            var result = await api.SearchResultsAsync(search, section, token);
             await PrepareCollectionArtworkAsync(result.Items, token, rows: true);
             token.ThrowIfCancellationRequested();
             if (generation != navigationGeneration || disposed) return;
@@ -633,6 +633,7 @@ internal sealed partial class MainWindow : IDisposable
         loginBusy.Value = true;
         ClosePlaylistPicker(); profileOpen.Value = queueOpen.Value = false;
         CloseTopSearch(clear: true);
+        ClearLinkPreviews();
         try
         {
             CancelSeek();
@@ -821,6 +822,8 @@ internal sealed partial class MainWindow : IDisposable
         foreach (var hover in hoverReveals) hover.Dispose();
         foreach (var view in libraryLoadingViews) view.Dispose();
         searchInput?.Dispose(); windowClipboard?.Dispose(); clipboardTimer?.Dispose();
+        query.Changed -= RefreshSearchLinkPreview; ClearSearchLink();
+        ClearLinkPreviews();
         SaveConfiguration(); configurationTimer.Dispose();
         playbackLoading.Value = false;
         bufferedTrack.Reset();

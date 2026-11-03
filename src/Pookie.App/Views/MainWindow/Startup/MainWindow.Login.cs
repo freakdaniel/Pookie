@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
     private FrameworkElement loginBrand = null!;
     private TransitionContentControl loginLabelHost = null!;
     private TextBlock loginButtonLabel = null!;
-    private ProgressRing loginSpinner = null!;
+    private LoadingSpinner loginSpinner = null!;
     private PathShape loginButtonGlyph = null!;
     private LoginButtonState loginButtonState;
     private static readonly Color LoginOrange = Color.FromRgb(255, 85, 0);
@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
         loginButtonGlyph = new PathShape().Width(18).Height(18).Stroke(LoginPaper, 2)
             .CenterHorizontal().CenterVertical();
         loginButtonGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(0.2, 0, 0, 1))];
-        loginSpinner = new ProgressRing().Width(22).Height(22).IsActive(false).CenterHorizontal().CenterVertical();
+        loginSpinner = new LoadingSpinner().Width(22).Height(22).IsActive(false).CenterHorizontal().CenterVertical();
         loginSpinner.Opacity = 0;
         loginSpinner.Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(0.2, 0, 0, 1))];
         loginLabelHost = new TransitionContentControl

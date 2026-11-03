@@ -408,6 +408,10 @@ dotnet run --project tests/Pookie.App.SmokeTests -- --browser-audio-state-smoke-
 dotnet run --project tests/Pookie.App.SmokeTests -- --browser-shutdown-smoke-test
 ```
 
+`--login-ui-smoke-test` also checks the shared arc spinner at 12, 16, 22, 24 and 34 DIP:
+rendered pixels change while animating, centres remain transparent, and clocks stop for
+hidden, transparent, detached and inactive controls, then resume on reattachment.
+
 `--startup-log-smoke-test` checks default/explicit console and file thresholds,
 worker file output, console fallback when files are unavailable, stage timings,
 exception propagation and filtering of private text, using isolated temporary data.
@@ -926,3 +930,18 @@ supplied track and reads fresh metadata using the selected saved web/mobile
 profile. It sends no like or other account mutation and prints no credentials.
 Native HTTP diagnostics include the host as well as the status so Android batch
 routes on `api-mobile.soundcloud.com` cannot be confused with V2 routes.
+
+## Search links
+
+`dotnet run --project tests/Pookie.App.SmokeTests -- --search-links-ui-smoke-test --no-audio`
+uses local API fixtures to verify that pasted URLs immediately display a chip, metadata resolves
+before Enter, and Enter opens track pages without playback, user profiles, playlists, albums and
+system mixes directly, without a search frame or a duplicate resolve request. It also checks
+atomic chip editing, native undo, normal text search and section selection, back navigation, late response isolation, unavailable links
+and recovery after an error. Short SoundCloud share links are covered by `MusicLinkTests`.
+
+The `--chat-music-ui-smoke-test --no-audio` scenario also exercises the shared link
+preview in the composer and search: profile URLs, typed URL continuation, the loading
+spinner, crossfades and editable URL fallback, shared metadata reads, single-line height,
+vertical text alignment and image attachment insets. Preview captures are written when
+`POOKIE_UI_PREVIEW` points to an output directory.

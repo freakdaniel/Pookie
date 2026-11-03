@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
     private Grid startupBrandLayer = null!;
     private StackPanel startupBrand = null!;
     private PathShape startupLogo = null!;
-    private ProgressRing startupSpinner = null!;
+    private LoadingSpinner startupSpinner = null!;
     private double startupCurtainOffset = -1;
     private readonly Dictionary<Button, LikedTrackTile> libraryTiles = [];
     private ItemsControl libraryGrid = null!;
@@ -129,7 +129,7 @@ internal sealed partial class MainWindow
     {
         startupLogo = Icons.LogoMark(0, 0);
         startupLogo.Opacity = 0;
-        startupSpinner = new ProgressRing().Width(34).Height(34).IsActive(true).CenterHorizontal();
+        startupSpinner = new LoadingSpinner().Width(34).Height(34).IsActive(true).CenterHorizontal();
         startupSpinner.Opacity = 0;
         startupBrand = new StackPanel().Vertical().Spacing(22).CenterHorizontal().CenterVertical().Children(
             new Border().Width(138).Height(130).CenterHorizontal().CenterVertical()
@@ -156,6 +156,7 @@ internal sealed partial class MainWindow
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
         topSearchBar = new HeaderSearchField(topSearchInput).Width(0);
+        query.Changed += RefreshSearchLinkPreview;
         topNavigation.Transitions = [
             Transition.Create(FrameworkElement.WidthProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1)),
             Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];

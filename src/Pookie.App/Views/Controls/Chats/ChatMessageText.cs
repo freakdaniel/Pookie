@@ -51,7 +51,7 @@ internal sealed class ChatMessageText : SelectableTextBlock
         var local = args.GetPosition(this); var point = new Point(Bounds.X + local.X, Bounds.Y + local.Y);
         return Bounds.Contains(point) ? links.FirstOrDefault(link => link.Inline.Bounds.Contains(point)).Inline : null;
     }
-    internal bool UpdateMusic(IReadOnlyList<ChatMusicEditor.Link> values)
+    internal bool UpdateMusic(IReadOnlyList<LinkPreviewData> values)
     {
         var byUrl = values.ToDictionary(value => value.Url, StringComparer.Ordinal);
         var next = ChatMusicLink.Occurrences(Text, byUrl.Keys).Take(32).ToArray();

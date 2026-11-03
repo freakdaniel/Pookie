@@ -20,10 +20,19 @@ public sealed partial class SoundCloudWebClient
 {
     public async Task<LibraryItem> ResolveChatMusicAsync(string url, CancellationToken token = default)
     {
+        var item = await ResolveLinkAsync(url, token);
+        return item is { Track: not null } or { Playlist: not null } ? item : throw new SoundCloudException("Нужна ссылка на трек или плейлист.");
+    }
+
+    public static bool IsSoundCloudUrl(string url) => url.Length <= 4096 &&
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && IsSoundCloudLink(uri);
+
+    public async Task<LibraryItem> ResolveLinkAsync(string url, CancellationToken token = default)
+    {
         var uri = await ExpandSoundCloudUrlAsync(url, token);
         using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), token);
-        var item = LibraryData.ParseItem(document.RootElement);
-        return item is { Track: not null } or { Playlist: not null } ? item : throw new SoundCloudException("Нужна ссылка на трек или плейлист.");
+        return LibraryData.ParseItem(document.RootElement)
+            ?? throw new SoundCloudException("Эта ссылка SoundCloud не ведёт на трек, пользователя или подборку.");
     }
 
     private static bool IsSoundCloudLink(Uri uri) => uri.Scheme == "https" && uri.UserInfo.Length == 0 && uri.IsDefaultPort &&

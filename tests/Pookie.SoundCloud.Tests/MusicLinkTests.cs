@@ -8,6 +8,60 @@ namespace Pookie.SoundCloud.Tests;
 public sealed class MusicLinkTests
 {
     [Theory]
+    [InlineData("https://soundcloud.com/artist/song?secret_token=s-fixture", "{\"kind\":\"track\",\"id\":42,\"title\":\"Song\"}", "track:42")]
+    [InlineData("https://www.soundcloud.com/artist", "{\"kind\":\"user\",\"id\":42,\"username\":\"Artist\"}", "user:42")]
+    [InlineData("https://soundcloud.com/artist/sets/list", "{\"kind\":\"playlist\",\"id\":42,\"title\":\"List\",\"tracks\":[]}", "playlist:42")]
+    [InlineData("https://soundcloud.com/artist/sets/album", "{\"kind\":\"playlist\",\"id\":42,\"title\":\"Album\",\"is_album\":true,\"tracks\":[]}", "playlist:42")]
+    [InlineData("https://soundcloud.com/discover/sets/mix", "{\"kind\":\"system-playlist\",\"id\":\"soundcloud:system-playlists:mix\",\"title\":\"Mix\",\"tracks\":[]}", "playlist:soundcloud:system-playlists:mix")]
+    public async Task LinksResolveToTheirActualObjectType(string url, string json, string key)
+    {
+        using var http = new HttpClient(new Handler(_ => throw new InvalidOperationException("Unexpected HTTP request")));
+        var browser = new LinkBrowser(json);
+        var api = new SoundCloudWebClient(http) { Session = new("fixture", "fixture-token", "Test"), BrowserTransport = browser, RequireBrowserTransport = true };
+        var item = await api.ResolveLinkAsync(url);
+        Assert.Equal(key, item.Key);
+        Assert.Equal("/resolve", Assert.Single(browser.Calls).AbsolutePath);
+        Assert.Equal("?url=" + Uri.EscapeDataString(url), browser.Calls[0].Query);
+        if (url.EndsWith("/album", StringComparison.Ordinal)) Assert.True(item.IsAlbum);
+    }
+
+    [Theory]
+    [InlineData("https://soundcloud.com/artist", true)]
+    [InlineData("https://WWW.SOUNDCLOUD.COM/artist/song", true)]
+    [InlineData("https://on.soundcloud.com/share", true)]
+    [InlineData("artist song", false)]
+    [InlineData("https://soundcloud.com.evil.test/artist/song", false)]
+    [InlineData("https://evil.test/soundcloud.com/artist", false)]
+    [InlineData("https://user@soundcloud.com/artist", false)]
+    [InlineData("https://soundcloud.com:444/artist", false)]
+    [InlineData("http://soundcloud.com/artist", false)]
+    public void OnlySoundCloudHttpsAddressesAreRecognized(string value, bool expected)
+        => Assert.Equal(expected, SoundCloudWebClient.IsSoundCloudUrl(value));
+
+    [Fact]
+    public async Task UserShareLinksExpandButRemainUnavailableAsChatMusic()
+    {
+        const string url = "https://soundcloud.com/artist";
+        using var http = new HttpClient(new Handler(_ => Redirect(url)));
+        var browser = new LinkBrowser("""{"kind":"user","id":42,"username":"Artist"}""");
+        var api = new SoundCloudWebClient(http) { Session = new("fixture", "fixture-token", "Test"), BrowserTransport = browser, RequireBrowserTransport = true };
+        Assert.NotNull((await api.ResolveLinkAsync("https://on.soundcloud.com/share")).User);
+        await Assert.ThrowsAsync<SoundCloudException>(() => api.ResolveChatMusicAsync(url));
+    }
+
+    [Fact]
+    public async Task UnsupportedPagesAndFailedResolutionsProduceAnError()
+    {
+        var browser = new LinkBrowser("""{"kind":"unknown"}""");
+        using var http = new HttpClient(new Handler(_ => throw new InvalidOperationException("Unexpected HTTP request")));
+        var api = new SoundCloudWebClient(http) { Session = new("fixture", "fixture-token", "Test"), BrowserTransport = browser, RequireBrowserTransport = true };
+        await Assert.ThrowsAsync<SoundCloudException>(() => api.ResolveLinkAsync("https://soundcloud.com/settings"));
+        browser.Error = new SoundCloudException("Not found", 404);
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => api.ResolveLinkAsync("https://soundcloud.com/artist/missing"));
+        Assert.Equal(404, error.StatusCode);
+    }
+
+    [Theory]
     [InlineData("https://soundcloud.com/artist/song?secret_token=s-fixture", "track")]
     [InlineData("https://soundcloud.com/artist/sets/list?si=share", "playlist")]
     public async Task MobileShareLinksExpandBeforeTheBrowserApiResolvesThem(string canonical, string kind)
@@ -79,6 +133,18 @@ public sealed class MusicLinkTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         { cancellationToken.ThrowIfCancellationRequested(); return Task.FromResult(respond(request)); }
+    }
+    private sealed class LinkBrowser(string json) : ISoundCloudBrowserTransport
+    {
+        internal List<Uri> Calls { get; } = [];
+        internal Exception? Error { get; set; }
+        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(uri); cancellationToken.ThrowIfCancellationRequested();
+            return Error == null ? Task.FromResult(JsonDocument.Parse(json)) : Task.FromException<JsonDocument>(Error);
+        }
+        public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Unexpected write");
     }
     private sealed class Browser(string canonical, string kind) : ISoundCloudBrowserTransport
     {

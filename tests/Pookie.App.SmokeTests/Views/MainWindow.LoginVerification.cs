@@ -80,6 +80,7 @@ internal sealed partial class MainWindow
             if (loginButton.ActualWidth < 300 || loginButton.ActualHeight < 50)
                 throw new InvalidOperationException("Login action was not arranged at its intended size");
             VerifyLoginComposition();
+            await VerifyLoadingSpinnerAsync();
             CaptureUiPreview("login");
             Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
             await WaitForLoginFrameAsync();

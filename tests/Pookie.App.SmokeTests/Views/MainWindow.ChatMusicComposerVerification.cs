@@ -13,7 +13,8 @@ internal sealed partial class MainWindow
         var draft = chatInput.Text; var originalTrack = current?.Id; var originalGeneration = playGeneration;
         var text = url + "\nОгненный ваще";
         chatInput.Focus(); chatInput.SelectAll(); chatInput.ReplaceSelection(text);
-        await WaitForLikedLayoutAsync(() => recognizer.Count == 1 && recognizer.ChipBounds[0].Width > 50 && !chatComposerSurface.IsResizing);
+        await WaitForLikedLayoutAsync(() => recognizer.Count == 1 && recognizer.ChipBounds[0].Width > 50 && !chatComposerSurface.IsResizing &&
+            chatMusicCache.ContainsKey(url) && chatComposerLinks.TryGetValue(url, out var state) && !state.Loading);
         if (chatInput.Text != text || chatDrafts.GetValueOrDefault(chatRecipient!.Id) != text || chatComposer.ActualHeight > 120)
             throw new InvalidOperationException("Recognizing a music link altered the draft or inflated the composer.");
         foreach (var position in new[] { url.Length, url.Length / 2, 0 })
@@ -98,6 +99,7 @@ internal sealed partial class MainWindow
         if (!chatMessages.Any(message => message.SenderId == me!.Id && message.Body == text) || chatInput.Text != "" ||
             chatPending.ContainsKey(chatRecipient!.Id) || chatOutgoing.GetValueOrDefault(chatRecipient.Id)?.State == ChatDelivery.Failed)
             throw new InvalidOperationException($"The recognized link or caption was lost when sending the source message: enabled={chatSend.IsEnabled}; sending={chatSending}; pending={chatPending.Count}; input_length={chatInput.Text.Length}; message_found={chatMessages.Any(message => message.SenderId == me!.Id && message.Body == text)}; outgoing={chatOutgoing.GetValueOrDefault(chatRecipient!.Id)?.State}; status={chatThreadStatus.Value}.");
+        await VerifyChatLinkPreviewsAsync();
         chatInput.Text = draft;
     }
 

@@ -11,6 +11,10 @@ internal sealed class HeaderSearchField : ContentControl
 {
     private readonly GlassSurface surface;
     private readonly TextBox input;
+    private readonly LinkPreviewControl linkPreview;
+    internal bool ShowsLink => linkPreview.IsVisible;
+    internal string? LinkLabel => ShowsLink ? linkPreview.Label : null;
+    internal bool LinkTransitioning => linkPreview.Transitioning;
     private readonly BoxShadowRaster shadow = new(6, 2, Color.FromArgb(90, 0, 0, 0));
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
@@ -20,9 +24,12 @@ internal sealed class HeaderSearchField : ContentControl
         this.input = input;
         Height = compact ? 40 : 48; Padding = compact ? new Thickness(0) : new Thickness(6, 4); BorderThickness = 0; Background = Color.Transparent;
         input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(compact ? 13 : 14).Foreground(TrackButtons.OnSurface);
+        linkPreview = new LinkPreviewControl().Left().CenterVertical().IsVisible(false);
+        linkPreview.FallbackCompleted = () => { linkPreview.IsVisible = false; input.Opacity = 1; };
         surface = new GlassSurface().Height(40).CornerRadius(20).Padding(16, 0)
             .Content(new Grid().Columns(compact ? "20,*" : "24,*").Rows("*").Spacing(compact ? 10 : 12).Children(
-                Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center().Column(0), input.CenterVertical().Column(1)));
+                Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center().Column(0),
+                new Grid().Columns("*").Rows("*").Column(1).Children(input.CenterVertical(), linkPreview)));
         Content = surface;
         motion.TickCallback = value =>
         {
@@ -30,9 +37,32 @@ internal sealed class HeaderSearchField : ContentControl
             surface.InvalidateVisual(); InvalidateVisual();
         };
         MouseEnter += Refresh; MouseLeave += Refresh;
-        MouseDown += args => { if (args.Button == MouseButton.Left) input.Focus(); };
+        MouseDown += args => { if (args.Button == MouseButton.Left) { input.Focus(); if (ShowsLink) input.SelectAll(); } };
         input.GotFocus += Refresh; input.LostFocus += Refresh;
+        input.KeyDown += PrepareLinkKey;
+        input.TextInput += PrepareLinkText;
     }
+
+    internal void ShowLink(LinkPreviewData? data)
+    {
+        if (data != null) linkPreview.Update(data);
+        else linkPreview.Clear();
+        linkPreview.IsVisible = data != null;
+        input.Opacity = data == null ? 1 : 0;
+        linkPreview.ToolTip = data == null ? null : new TextBlock().Text(data.Url);
+    }
+
+    internal void ShowMissingLink(string url) => linkPreview.Update(LinkPreviewData.Missing(url));
+
+    private void PrepareLinkKey(KeyEventArgs args)
+    {
+        if (!ShowsLink || args.Handled || input.IsReadOnly) return;
+        if (args.Key is Key.Backspace or Key.Delete || args.Modifiers.HasFlag(ModifierKeys.Control) && args.Key is Key.C or Key.X or Key.V)
+            input.SelectAll();
+    }
+
+    private void PrepareLinkText(TextInputEventArgs args)
+    { if (ShowsLink && !linkPreview.Loading && !args.Handled && !input.IsReadOnly) input.SelectAll(); }
 
     private void Refresh()
     {
@@ -52,7 +82,11 @@ internal sealed class HeaderSearchField : ContentControl
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) shadow.Dispose(); }
 
-    protected override void OnDispose() { motion.Stop(); shadow.Dispose(); base.OnDispose(); }
+    protected override void OnDispose()
+    {
+        input.KeyDown -= PrepareLinkKey; input.TextInput -= PrepareLinkText;
+        motion.Stop(); shadow.Dispose(); base.OnDispose();
+    }
 
     private sealed class GlassSurface : ContentControl
     {

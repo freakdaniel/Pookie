@@ -16,7 +16,7 @@ internal sealed class ChatComposerLayout : Panel
     private readonly Func<double> maximumHeight;
     private readonly EditorFade fade;
     private readonly List<ScrollBar> scrollbars = [];
-    private double attachmentHeight, editorHeight;
+    private double attachmentHeight, editorHeight, textCenterOffset;
     private readonly AnimationClock mode = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.25,.1,.25,1));
     private bool voiceMode;
     private double voiceAmount;
@@ -92,14 +92,16 @@ internal sealed class ChatComposerLayout : Panel
     {
         var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 640;
         HeightLimit = Math.Clamp(maximumHeight(), 80, 244);
-        attachments.Measure(new Size(width, 44));
-        attachmentHeight = attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height + 8 : 0;
+        attachments.Measure(new Size(Math.Max(0, width - 24), 44));
+        attachmentHeight = attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height + 16 : 0;
         reply.Measure(new Size(width,48));
         var replyHeight = replyOpen ? 48 : 0;
         voice.Measure(new Size(Math.Max(40,width-44),40));
         foreach (var button in new[] { attach, gif, send }) button.Measure(new Size(40, 40));
+        var textPadding = Math.Max(0, (28 - editor.DefaultLineHeight) / 2);
+        editor.Padding = new Thickness(10, textPadding, 8, textPadding);
         editor.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), Math.Max(28, HeightLimit - replyHeight - attachmentHeight - 2 * TextInset)));
-        editorHeight = voiceMode ? 28 : Math.Max(28, editor.DesiredSize.Height);
+        editorHeight = voiceMode || HasSingleVisualLine() ? 28 : Math.Max(28, editor.DesiredSize.Height);
         fade.Measure(new Size(Math.Max(40, width - (gif.IsVisible ? 132 : 88)), 18));
         return new(width, replyHeight + attachmentHeight + Math.Max(40, editorHeight + 2 * TextInset));
     }
@@ -113,10 +115,21 @@ internal sealed class ChatComposerLayout : Panel
         var rowHeight = replyTransition ? Math.Max(40,editorHeight+2*TextInset) : Math.Max(40, finalSize.Height-attachmentHeight-(replyOpen ? 48 : 0));
         ReplyHeight = replyTransition ? Math.Clamp(finalSize.Height-attachmentHeight-rowHeight,0,48) : replyOpen ? 48 : 0;
         reply.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight-48,finalSize.Width,48));
-        attachments.Arrange(new Rect(x,bottom-rowHeight-attachmentHeight,finalSize.Width,attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height : 0));
+        attachments.Arrange(new Rect(x + 12,bottom-rowHeight-attachmentHeight + 8,Math.Max(0,finalSize.Width - 24),attachments.IsVisible && !voiceMode ? attachments.DesiredSize.Height : 0));
         var textHeight = Math.Max(28, rowHeight - 2 * TextInset);
-        var textY = bottom - rowHeight + TextInset;
+        var textY = bottom - rowHeight + TextInset + textCenterOffset;
         editor.Arrange(new Rect(x + 44, textY, Math.Max(40, finalSize.Width - (gif.IsVisible ? 132 : 88)), textHeight));
+        var firstCharacter = editor.GetCharRectInWindow(0);
+        if (firstCharacter.Height > 0)
+        {
+            var desiredTextTop = bottom - rowHeight + (40 - firstCharacter.Height) / 2;
+            var correction = desiredTextTop - (firstCharacter.Y + editor.VerticalOffset);
+            if (Math.Abs(correction) > .25)
+            {
+                textCenterOffset += correction;
+                editor.Arrange(new Rect(x + 44, textY + correction, Math.Max(40, finalSize.Width - (gif.IsVisible ? 132 : 88)), textHeight));
+            }
+        }
         // MultiLineTextBox hit-tests its overlay bars directly. Empty their
         // geometry as well, so the hidden strip cannot intercept editor clicks.
         foreach (var bar in scrollbars) bar.Arrange(Rect.Empty);
@@ -130,6 +143,7 @@ internal sealed class ChatComposerLayout : Panel
     }
 
     private void OnEditorScroll(Aprillz.MewUI.Text.ITextViewHost _) => UpdateFade();
+    private bool HasSingleVisualLine() => editor.VisibleTextLines.Sum(line => line.VisualLines.Count) <= 1;
     private void OnEditorDocumentChanged(Aprillz.MewUI.Text.ITextViewHost _) => editor.InvalidateMeasure();
     private void UpdateFade() => fade.Opacity = editor.VerticalOffset > 1 ? 1 - voiceAmount : 0;
     protected override void OnDispose()
