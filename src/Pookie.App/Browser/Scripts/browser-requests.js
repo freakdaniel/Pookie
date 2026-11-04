@@ -340,7 +340,8 @@
           action: 'play', source: 'pookie', player_type: 'native',
           track: body.track_urn, track_owner: `soundcloud:users:${owner}`,
           in_playlist: command.context_urn?.startsWith('soundcloud:playlists:') ? command.context_urn : undefined,
-          track_length: track.duration, track_authorization: track.track_authorization,
+          track_length: Number.isFinite(track.full_duration) && track.full_duration >= track.duration ? track.full_duration : track.duration,
+          track_authorization: track.track_authorization,
           user: `soundcloud:users:${historyUserId}`, playhead_position: 0,
           anonymous_id: anonymousId, session_id: playbackSessionId, url: new URL(location.href).origin + new URL(location.href).pathname,
           // The web application's numeric ID differs from the REST client_id.

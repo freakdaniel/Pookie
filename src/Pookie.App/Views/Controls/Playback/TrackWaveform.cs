@@ -12,6 +12,10 @@ internal sealed class TrackWaveform : Control
     private static readonly Color IdleColor = Color.FromRgb(131, 131, 131);
     private static readonly Color PlayedColor = Color.FromRgb(235, 235, 235);
     private readonly AnimationClock colorMotion;
+    private readonly AnimationClock revealMotion = new(TimeSpan.FromMilliseconds(620), Easing.Linear);
+    private double reveal = 1;
+    private bool revealPending;
+    private Func<bool>? revealOnce;
     private float[] samples = [], bars = [];
     private double[] emphasis = [];
     private byte[] renderedColors = [];
@@ -33,6 +37,8 @@ internal sealed class TrackWaveform : Control
     private double rasterScale;
     public event Action<double>? SeekRequested;
     public bool HasSamples => samples.Length > 0;
+    internal bool IsAnimating => colorMotion.IsRunning || revealMotion.IsRunning;
+    internal double RevealProgress => reveal;
     public double Progress
     {
         get => progress;
@@ -59,12 +65,18 @@ internal sealed class TrackWaveform : Control
             RepeatCount = -1,
             TickCallback = _ => AdvanceColors()
         };
+        revealMotion.TickCallback = value => { reveal = value; InvalidateVisual(); };
+        revealMotion.CompletedCallback = () => { reveal = 1; InvalidateVisual(); };
     }
 
-    public void SetSamples(float[] values)
+    public void SetSamples(float[] values, Func<bool>? revealOnce = null)
     {
-        colorMotion.Stop();
+        if (ReferenceEquals(samples, values)) return;
+        colorMotion.Stop(); revealMotion.Stop();
         samples = values; bars = []; emphasis = []; renderedColors = [];
+        revealPending = values.Length > 0;
+        reveal = revealPending ? 0 : 1;
+        this.revealOnce = revealPending ? revealOnce : null;
         rasterDirty = true;
         // A recycled row must not inherit the previous track's hover or colors.
         hoverPosition = null;
@@ -142,6 +154,14 @@ internal sealed class TrackWaveform : Control
             context.FillRectangle(new Rect(bounds.X, baseline, bounds.Width, 1), Color.FromRgb(65, 65, 65));
             return;
         }
+        if (revealPending)
+        {
+            revealPending = false;
+            // Claim a list row's one-time entrance only when actually painted.
+            var animate = revealOnce?.Invoke() ?? true;
+            revealOnce = null;
+            if (animate) revealMotion.Start(); else reveal = 1;
+        }
         var count = Math.Clamp((int)Math.Ceiling(bounds.Width / 3), 1, 20000);
         if (bars.Length != count)
         {
@@ -175,7 +195,43 @@ internal sealed class TrackWaveform : Control
             DrawBars(pixels, width, pixelHeight, scale);
             rasterDirty = false;
         }
-        context.DrawImage(image!, new Rect(bounds.X, bounds.Y, width / scale, pixelHeight / scale));
+        if (reveal >= 1)
+            context.DrawImage(image!, new Rect(bounds.X, bounds.Y, width / scale, pixelHeight / scale));
+        else DrawReveal(context, width, pixelHeight, scale);
+    }
+
+    private void DrawReveal(IGraphicsContext context, int width, int height, double scale)
+    {
+        // Animate slices of the existing raster. No waveform reshaping, pixel
+        // rewrites or layout passes on animation frames; one image draw at rest.
+        var bounds = Bounds;
+        var alpha = context.GlobalAlpha;
+        var groups = Math.Min(16, bars.Length);
+        context.Save();
+        try
+        {
+            context.SetClip(bounds);
+            context.GlobalAlpha = alpha * (float)(1 - reveal);
+            context.FillRectangle(new Rect(bounds.X, bounds.Y + bounds.Height * .7, bounds.Width, 1), Color.FromRgb(65, 65, 65));
+            for (var group = 0; group < groups; group++)
+            {
+                var delay = groups == 1 ? 0 : group / (double)(groups - 1) * .3;
+                var t = Math.Clamp((reveal - delay) / .7, 0, 1);
+                if (t <= 0) continue;
+                var remaining = t - 1;
+                var growth = 1 + 2.25 * remaining * remaining * remaining + 1.25 * remaining * remaining;
+                var start = group * bars.Length / groups;
+                var end = (group + 1) * bars.Length / groups;
+                var pitch = bounds.Width / bars.Length * scale;
+                var left = group == 0 ? 0 : (int)Math.Round(start * pitch - scale * .5);
+                var right = group == groups - 1 ? width : (int)Math.Round(end * pitch - scale * .5);
+                var opacity = Math.Min(1, t * 4);
+                context.GlobalAlpha = alpha * (float)(opacity * opacity * (3 - 2 * opacity));
+                context.DrawImage(image!, new Rect(bounds.X + left / scale, bounds.Y + bounds.Height * .7 * (1 - growth),
+                    (right - left) / scale, height / scale * growth), new Rect(left, 0, right - left, height));
+            }
+        }
+        finally { context.GlobalAlpha = alpha; context.Restore(); }
     }
 
     private void DrawBars(Span<byte> pixels, int width, int pixelHeight, double scale)
@@ -237,7 +293,11 @@ internal sealed class TrackWaveform : Control
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
-        if (newRoot == null) { colorMotion.Stop(); hoverPosition = null; ReleaseRaster(); }
+        if (newRoot == null)
+        {
+            colorMotion.Stop(); revealMotion.Stop(); revealPending = false; reveal = 1; revealOnce = null;
+            hoverPosition = null; ReleaseRaster();
+        }
     }
-    protected override void OnDispose() { colorMotion.Stop(); ReleaseRaster(); base.OnDispose(); }
+    protected override void OnDispose() { colorMotion.Stop(); revealMotion.Stop(); revealOnce = null; ReleaseRaster(); base.OnDispose(); }
 }

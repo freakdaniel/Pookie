@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
     private bool lyricsUiSmoke;
     private bool artworkUiSmoke;
     private bool scrollingUiSmoke;
-    private bool trackPageUiSmoke, trackDescriptionUiSmoke;
+    private bool trackPageUiSmoke, trackDescriptionUiSmoke, trackPlaybackUiSmoke, waveformUiSmoke;
     private bool trackPageLiveUi;
     private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
     private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke, playbackMemoryUiSmoke;
@@ -62,7 +62,9 @@ internal sealed partial class MainWindow
         artworkUiSmoke = args.Contains("--artwork-ui-smoke-test");
         scrollingUiSmoke = args.Contains("--scrolling-ui-smoke-test");
         trackDescriptionUiSmoke = args.Contains("--track-description-ui-smoke-test");
-        trackPageUiSmoke = trackDescriptionUiSmoke || args.Contains("--track-page-ui-smoke-test");
+        trackPlaybackUiSmoke = args.Contains("--track-playback-ui-smoke-test");
+        waveformUiSmoke = args.Contains("--waveform-ui-smoke-test");
+        trackPageUiSmoke = trackDescriptionUiSmoke || trackPlaybackUiSmoke || waveformUiSmoke || args.Contains("--track-page-ui-smoke-test");
         trackPageLiveUi = args.Contains("--track-page-live-ui-probe");
         collectionsUiSmoke = args.Contains("--collections-ui-smoke-test");
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");

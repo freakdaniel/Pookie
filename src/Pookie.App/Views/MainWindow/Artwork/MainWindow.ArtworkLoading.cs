@@ -12,6 +12,30 @@ internal sealed partial class MainWindow
     private static readonly Storage.CacheBudget ArtworkCacheBudget = new(64L * 1024 * 1024);
     private static long ArtworkBytes(ImageSource source) => (long)source.PixelWidth * source.PixelHeight * 4;
     private readonly Storage.AsyncResourceCache<string, ImageSource> artworkRequests = new(256, ArtworkCacheBudget, ArtworkBytes);
+    private readonly Storage.AsyncResourceCache<(string Url, int Side), ImageSource> trackAvatarRequests = new(512, ArtworkCacheBudget, ArtworkBytes);
+
+    private Task<ImageSource?> TrackAvatarAsync(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return Task.FromResult<ImageSource?>(null);
+        // Comments and sidebar fans use at most 44 DIP. Keep these sources
+        // independent of 500px cover artwork, including after a DPI change.
+        var side = Math.Clamp((int)Math.Ceiling(44 * Window.DpiScale / 32) * 32, 64, 256);
+        return trackAvatarRequests.GetAsync((url, side), () => FetchTrackAvatarAsync(url, side), lifetime.Token);
+    }
+
+    private async Task<ImageSource?> FetchTrackAvatarAsync(string url, int side)
+    {
+        await coverGate.WaitAsync(lifetime.Token);
+        try
+        {
+            // The API's "large" avatar is 100px. Preserve sharpness on very
+            // high-DPI displays while still bounding the decoded source.
+            if (side > 100 && ToLargeArtworkUrl(url) is { } larger &&
+                await FetchImageAsync(larger.AbsoluteUri, lifetime.Token, side) is { } image) return image;
+            return await FetchImageAsync(url, lifetime.Token, side);
+        }
+        finally { coverGate.Release(); }
+    }
 
     private Grid ArtworkLayer(Image cover)
     {

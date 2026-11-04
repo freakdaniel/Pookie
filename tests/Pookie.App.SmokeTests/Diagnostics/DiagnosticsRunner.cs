@@ -122,9 +122,21 @@ internal static class DiagnosticsRunner
             }
             else track = await protectedApi.ResolveAsync(args[flag + 1], timeout.Token);
             Console.WriteLine($"PROTECTED_TRACK_OK: track {track.Id}; credentials redacted");
-            var resolved = await new SoundCloudStreamResolver(protectedApi).ResolveAsync(track.Id, timeout.Token,
+            using var regionalSource = args.Contains("--no-regional-fallback") ? null : RegionalPlaybackPool.FromEnvironment();
+            if (regionalSource != null && Environment.GetEnvironmentVariable("POOKIE_DRM_DIAGNOSTICS") == "1")
+                regionalSource.ProbeCompleted += (country, protocol, httpStatus, outcome) =>
+                    Console.WriteLine($"REGIONAL_PROBE: country={country}; protocol={protocol}; http={httpStatus}; outcome={outcome}; credentials redacted");
+            var playbackResolver = new SoundCloudStreamResolver(protectedApi) { RegionalResolver = regionalSource };
+            var resolved = await playbackResolver.ResolveAsync(track.Id, timeout.Token,
                 args.Contains("--default-stream-selection") ? null : ["ctr-encrypted-hls"]);
-            Console.WriteLine($"PROTECTED_STREAM_OK: track {track.Id}; {resolved.Stream.Protocol}; credentials redacted");
+            Console.WriteLine($"PROTECTED_STREAM_OK: track {track.Id}; {resolved.Stream.Protocol}; regional={resolved.UsedRegionalSource}; duration={resolved.Stream.Duration:F3}; credentials redacted");
+            if (args.Contains("--regional-cache-probe"))
+            {
+                var warmStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+                resolved = await playbackResolver.ResolveAsync(track.Id, timeout.Token,
+                    args.Contains("--default-stream-selection") ? null : ["ctr-encrypted-hls"]);
+                Console.WriteLine($"REGIONAL_CACHE_PROBE_OK: fresh stream resolved again; regional={resolved.UsedRegionalSource}; elapsed_ms={System.Diagnostics.Stopwatch.GetElapsedTime(warmStarted).TotalMilliseconds:F0}; credentials redacted");
+            }
             if (!resolved.Stream.Protected)
             {
                 Console.WriteLine("STREAM_SELECTION_PROBE_OK: production resolver selected an ordinary stream; DRM playback not attempted");
@@ -198,6 +210,25 @@ internal static class DiagnosticsRunner
                 Console.WriteLine($"NORMALIZATION_PROBE_OK: constant waveform correction={gain:F2} dB; user volume remains zero");
             }
             Console.WriteLine("PROTECTED_PLAYBACK_OK: decoded audio clock advances");
+            if (args.Contains("--record-playback-history"))
+            {
+                using var historyTransport = new SoundCloudHttpTransport(protectedHttp, () => protectedAccount, protectedBrowser);
+                var historyApi = new SoundCloudWebClient(protectedHttp) { Session = protectedAccount, Transport = historyTransport, RequireSessionTransport = true };
+                using var listenTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+                while (player.Poll().Position < 1.2) await listenTimer.WaitForNextTickAsync(timeout.Token);
+                await historyApi.RecordPlaybackAsync(track.Id, token: timeout.Token);
+                var user = await historyApi.GetMeAsync(timeout.Token);
+                using var historyTimeout = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                historyTimeout.CancelAfter(TimeSpan.FromSeconds(25));
+                using var historyTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+                while (true)
+                {
+                    var history = await historyApi.GetLibraryAsync("history", user.Id, historyTimeout.Token);
+                    if (history.Items.FirstOrDefault()?.Track?.Id == track.Id) break;
+                    await historyTimer.WaitForNextTickAsync(historyTimeout.Token);
+                }
+                Console.WriteLine("REGIONAL_AUTHENTICATED_HISTORY_OK: one real play submitted directly with the account; track is first in remote SoundCloud history");
+            }
             if (Math.Abs(player.Poll().Duration - resolved.Stream.Duration) > 2) throw new InvalidOperationException("DRM duration mismatch.");
             if (player is WindowsAudioPlayer)
             {

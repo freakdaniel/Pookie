@@ -75,7 +75,7 @@ internal sealed partial class MainWindow
         Console.WriteLine("DETAIL_SCROLL_OK: comments, append, hero reentry and playlist");
     }
 
-    private async Task ProbeNativeTouchpadScrollingAsync(string name)
+    private async Task ProbeNativeTouchpadScrollingAsync(string name, bool wheelNotches = false)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native touchpad probe requires Windows.");
         LikedActionPoint saved = default;
@@ -106,7 +106,7 @@ internal sealed partial class MainWindow
                 try
                 {
                     indicator.FrameColor = color; indicator.InvalidateVisual();
-                    for (var burst = 0; burst < 4 && wheelDelta != 0; burst++)
+                    for (var burst = 0; burst < (wheelNotches ? 1 : 4) && wheelDelta != 0; burst++)
                         if (!PostLikedActionMessage(Window.Handle, 0x20A, unchecked((nuint)(uint)(wheelDelta << 16)), coordinates))
                             throw new InvalidOperationException("Cannot post precision wheel input.");
                     await rendered.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
@@ -153,7 +153,7 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
                 for (var step = 0; step < 180; step++)
                 {
-                    await PresentedFrame(step < 90 ? -18 : 18);
+                    await PresentedFrame((step < 90 ? -1 : 1) * (wheelNotches ? 120 : 18));
                     maximumMovement = Math.Max(maximumMovement, Math.Abs(shellScroll.VerticalOffset - start));
                     // GetPixel on the desktop synchronizes with DWM. Sample
                     // page contents periodically so the probe still generates
@@ -194,7 +194,7 @@ internal sealed partial class MainWindow
                 while (tooltipWatch.Elapsed < TimeSpan.FromSeconds(1.2)) await PresentedFrame(0);
             }
             times.Sort();
-            Console.WriteLine($"NATIVE_TOUCHPAD_OK {name}: wheel_messages=2160 presented_frames={frames} movement={maximumMovement:F0} p95={times[(int)(times.Count * .95)]:F1}ms max={times[^1]:F1}ms; every frame verified on desktop pixels, including comment hover");
+            Console.WriteLine($"NATIVE_{(wheelNotches ? "WHEEL" : "TOUCHPAD")}_OK {name}: wheel_messages={540 * (wheelNotches ? 1 : 4)} presented_frames={frames} movement={maximumMovement:F0} p95={times[(int)(times.Count * .95)]:F1}ms max={times[^1]:F1}ms; every frame verified on desktop pixels, including comment hover");
         }
         finally
         {

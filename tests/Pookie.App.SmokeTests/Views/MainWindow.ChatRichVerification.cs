@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
         Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
         ShowChatAttachMenu();
         if (!chatAttachMenu.IsOpen) throw new InvalidOperationException("Attachment choices did not open.");
-        var choices = ((StackPanel)chatAttachMenuPanel.Child!).Children.OfType<Button>()
+        var choices = ((StackPanel)chatAttachMenuPanel.Content!).Children.OfType<Button>()
             .Select(b => ((TextBlock)b.FindVisualChild<TextBlock>()!).Text).ToArray();
         if (!choices.SequenceEqual(new[] { "Трек или плейлист", "Документ", "Фото или видео" })) throw new InvalidOperationException("Attachment choices are incomplete.");
         await WaitForLikedLayoutAsync(() => chatAttachMenuPanel.ActualHeight > 100 && chatAttachMenu.Reveal > .99);

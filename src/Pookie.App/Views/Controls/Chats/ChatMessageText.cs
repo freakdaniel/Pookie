@@ -12,6 +12,7 @@ internal sealed class ChatMessageText : SelectableTextBlock
     private const int MaximumSharedTextLength = 4096;
     private readonly List<(int Start, ChatMusicInline Inline)> links = [];
     private string? emojiText;
+    private bool clipInk;
     private (int Start, int Length, ChatEmojiInline Inline)[] emoji = [];
     internal int EmojiCount { get { EnsureEmoji(); return emoji.Length; } }
     private ITextLayout? layout;
@@ -68,7 +69,7 @@ internal sealed class ChatMessageText : SelectableTextBlock
         links.Clear(); layout = null; layoutWidth = -1; Cursor = CursorType.Arrow;
         InvalidateMeasure(); InvalidateVisual();
     }
-    protected override void OnTextChanged() { ClearMusic(); base.OnTextChanged(); }
+    protected override void OnTextChanged() { clipInk = CombiningText.ContainsMark(Text.AsSpan()); ClearMusic(); base.OnTextChanged(); }
     private ITextLayout Layout(double width)
     {
         EnsureEmoji();
@@ -124,7 +125,7 @@ internal sealed class ChatMessageText : SelectableTextBlock
             _ => 0
         });
         var options = new TextDrawOptions(Foreground, Owner: this);
-        if (paragraph.MeasuredSize.Width <= Bounds.Width + .5 && paragraph.ContentHeight <= Bounds.Height + .5)
+        if (!clipInk && paragraph.MeasuredSize.Width <= Bounds.Width + .5 && paragraph.ContentHeight <= Bounds.Height + .5)
         { context.Text.Draw(paragraph, new(Bounds.X, y), in options); return; }
         context.Save();
         try

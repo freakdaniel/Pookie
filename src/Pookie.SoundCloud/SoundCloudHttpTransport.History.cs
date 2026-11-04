@@ -27,6 +27,8 @@ public sealed partial class SoundCloudHttpTransport
         if (!track.TryGetProperty("id", out var id) || !id.TryGetInt64(out var actual) || actual != trackId ||
             !track.TryGetProperty("duration", out var duration) || !duration.TryGetDouble(out var length) || length <= 0 || !double.IsFinite(length))
             throw new SoundCloudException("SoundCloud не подтвердил прослушанный трек.");
+        if (track.TryGetProperty("full_duration", out var fullDuration) && fullDuration.ValueKind == JsonValueKind.Number &&
+            fullDuration.TryGetDouble(out var fullLength) && double.IsFinite(fullLength) && fullLength >= length) length = fullLength;
         var owner = track.TryGetProperty("user_id", out var ownerValue) && ownerValue.TryGetInt64(out var ownerId) ? ownerId :
             track.TryGetProperty("user", out var user) && user.TryGetProperty("id", out ownerValue) && ownerValue.TryGetInt64(out ownerId) ? ownerId : 0;
         ValidateId(owner);

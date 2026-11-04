@@ -39,7 +39,7 @@ internal sealed partial class MainWindow
         var age = DetailAge(comment.CreatedAt);
         if (age.Length > 0) top.Add(new CommentTextBlock().Text("· " + age).FontSize(12).Foreground(Muted).CenterVertical());
         var more = TrackButtons.Icon(Icons.View("dots-three", 20).Center(), () => { }, TrackButtons.Text, 28);
-        var menu = new ContextMenu();
+        var menu = PopupAppearance.CreateMenu();
         var copy = new Command("pookie.comment.copy", "Скопировать текст");
         more.Commands.Register(copy, () => CopyText(comment.Body));
         menu.Item(copy);
@@ -52,7 +52,7 @@ internal sealed partial class MainWindow
                 () => CanDeleteTrackComment(track.Id, comment));
             menu.Item(delete);
         }
-        more.OnClick(() => menu.Show(more)); more.ContextMenu = menu;
+        more.OnClick(() => menu.Show(more)); PopupAppearance.Attach(more, menu);
         var actions = new StackPanel().Horizontal().Spacing(12).Children(
             TrackButtons.Action(new CommentTextBlock().Text("Ответить").FontSize(13).SemiBold(),
                 () => OpenSoundCloudPage(track.PermalinkUrl), TrackButtons.Text, 28).Padding(0), more);
@@ -114,11 +114,14 @@ internal sealed partial class MainWindow
         var generation = navigationGeneration;
         Run(async () =>
         {
-            var source = await SharedArtworkAsync(url);
+            var source = await TrackAvatarAsync(url);
             if (!IsTrackDetailCurrent(trackId, generation)) return;
             if (source != null) image.Source = source;
-            if (marker) { image.Opacity = 1; trackDetailMarkerLayer.Interact(); }
-            trackDetailMarkerLayer.RefreshSnapshot();
+            if (marker)
+            {
+                image.Opacity = 1; trackDetailMarkerLayer.Interact();
+                trackDetailMarkerLayer.RefreshSnapshot();
+            }
         });
     }
 

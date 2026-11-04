@@ -97,6 +97,16 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => Math.Abs(viewer.VerticalOffset - start - step) < 1);
         motion.Stop();
 
+        motion.ScrollWheel(-3);
+        await WaitForLikedLayoutAsync(() => viewer.VerticalOffset > start + step + 1);
+        var reversing = viewer.VerticalOffset;
+        motion.ScrollWheel(1);
+        await WaitForLikedLayoutAsync(() => Math.Abs(viewer.VerticalOffset - reversing) > .1);
+        if (viewer.VerticalOffset >= reversing)
+            throw new InvalidOperationException("A reversed wheel notch kept moving toward the previous accumulated scroll destination.");
+        await WaitForLikedLayoutAsync(() => Math.Abs(viewer.VerticalOffset - (reversing - step)) < 1);
+        motion.Stop();
+
         void Direct(double delta)
         {
             var before = viewer.VerticalOffset;

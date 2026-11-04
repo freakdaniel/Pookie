@@ -43,9 +43,9 @@ internal static class AppHost
         using var brandFont = FontResources.Register(brandStream, ".ttf", "Bungee");
         ThemeManager.DefaultDarkSeed = ThemeSeed.DefaultDark with
         {
-            WindowBackground = Color.FromRgb(34, 34, 34),
+            WindowBackground = PopupAppearance.AppBackground,
             WindowText = Color.FromRgb(236, 236, 236),
-            ControlBackground = Color.FromRgb(24, 24, 24),
+            ControlBackground = PopupAppearance.AppBackground,
             ButtonFace = Color.FromRgb(43, 43, 43),
             ButtonDisabledBackground = Color.FromRgb(35, 35, 35)
         };

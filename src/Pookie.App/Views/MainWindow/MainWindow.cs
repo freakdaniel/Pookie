@@ -29,6 +29,8 @@ internal sealed partial class MainWindow : IDisposable
     private CancellationTokenSource? playLoading;
     private readonly HttpClient http;
     private readonly SoundCloudWebClient api;
+    private readonly RegionalPlaybackPool? regionalPlayback;
+    private readonly SoundCloudStreamResolver playbackResolver;
     private readonly ObservableValue<string> query = new("");
     private readonly ObservableValue<string> profile = new("SoundCloud: вход не выполнен");
     private readonly ObservableValue<bool> signedIn = new(false);
@@ -102,6 +104,8 @@ internal sealed partial class MainWindow : IDisposable
         if (Environment.GetEnvironmentVariable("POOKIE_PROXY") is { Length: > 0 } proxy) handler.Proxy = new WebProxy(proxy);
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireSessionTransport = true };
+        regionalPlayback = RegionalPlaybackPool.FromEnvironment(enabledByDefault: !isolatedRun);
+        playbackResolver = new(api) { RegionalResolver = regionalPlayback };
         InitializeWave();
         InitializePlaybackQueue();
         InitializeLyrics();
@@ -138,7 +142,7 @@ internal sealed partial class MainWindow : IDisposable
         timer.Tick += Poll;
 
         Window = new Window().Title("Pookie").Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
-            .Padding(0).Background(Surface)
+            .Padding(0).Background(Surface).StyleSheet(PopupAppearance.CreateStyles())
             .Content(Layout())
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
@@ -162,6 +166,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (InAppPopup.HandleKey(Window, e)) return;
             if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && chatMessageMenu.IsOpen) { e.Handled = true; CloseChatMessageMenu(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && page.Value == Page.Chats && chatThreadSearchOpen) { e.Handled=true;CloseChatSearch();return; }
@@ -454,9 +459,10 @@ internal sealed partial class MainWindow : IDisposable
                 var resolver = new WaveformGainResolver(http, dataPaths);
                 var waveformUrl = track.WaveformUrl;
                 var gainTask = preferences.NormalizeVolume ? resolver.ResolveAsync(waveformUrl, token) : Task.FromResult(0d);
-                var streamTask = new SoundCloudStreamResolver(api).ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
+                var streamTask = playbackResolver.ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
                 await Task.WhenAll(gainTask, streamTask);
                 var resolved = await streamTask;
+                if (resolved.UsedRegionalSource) AppLog.For("Pookie.Playback").Information("Трек {TrackId}: полный поток получен через региональный источник", track.Id);
                 track = resolved.Track;
                 var stream = resolved.Stream;
                 source = new(stream.Uri.AbsoluteUri, stream.Protected ? AudioTransport.WidevineHls : stream.Protocol == "hls" ? AudioTransport.Hls : AudioTransport.Progressive, stream.Duration)
@@ -835,6 +841,7 @@ internal sealed partial class MainWindow : IDisposable
         videoMusicFade.Stop();
         timer.Dispose(); player?.Dispose(); presence?.Dispose();
         // An outstanding libsecret operation may still be completing on its worker; process teardown releases it.
+        regionalPlayback?.Dispose();
         http.Dispose();
     }
 

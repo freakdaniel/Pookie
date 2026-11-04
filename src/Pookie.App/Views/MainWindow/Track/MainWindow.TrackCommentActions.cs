@@ -81,14 +81,14 @@ internal sealed partial class MainWindow
     {
         trackCommentSortLabel = new TextBlock().FontSize(13).Foreground(Muted).CenterVertical();
         var button = TrackButtons.Action(trackCommentSortLabel, () => { }, TrackButtons.Text, 32).Padding(12, 0);
-        var menu = new ContextMenu();
+        var menu = PopupAppearance.CreateMenu();
         foreach (var sort in new[] { "NEWEST", "OLDEST", "TIMESTAMP" })
         {
             var command = new Command("pookie.comments.sort." + sort, CommentSortLabel(sort));
             button.Commands.Register(command, () => Run(() => ChangeTrackCommentSortAsync(sort)), () => trackDetailState != null);
             menu.Item(command);
         }
-        button.ContextMenu = menu; button.OnClick(() => menu.Show(button));
+        PopupAppearance.Attach(button, menu); button.OnClick(() => menu.Show(button));
         return button;
     }
 

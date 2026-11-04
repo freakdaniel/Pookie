@@ -11,6 +11,14 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public const string DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
     private readonly SemaphoreSlim discoveryGate = new(1, 1);
     private string? anonymousClientId;
+    // A public web client ID may be shared between anonymous regional transports.
+    // This avoids downloading the homepage through every candidate proxy.
+    public SoundCloudWebClient(HttpClient http, string publicClientId) : this(http)
+    {
+        if (string.IsNullOrEmpty(publicClientId) || publicClientId.Length > 128 || !publicClientId.All(char.IsAsciiLetterOrDigit))
+            throw new ArgumentException("Некорректный публичный client ID.", nameof(publicClientId));
+        anonymousClientId = publicClientId;
+    }
     public WebSession? Session { get; set; }
     public ISoundCloudTransport? Transport { get; set; }
     public bool RequireSessionTransport { get; init; }

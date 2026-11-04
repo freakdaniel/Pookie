@@ -114,6 +114,64 @@ public sealed class StreamResolverTests
     }
 
     [Theory]
+    [InlineData("SNIP", "")]
+    [InlineData("", "preview")]
+    public async Task PreviewFallsThroughToFreshRegionalMetadata(string policy, string access)
+    {
+        var local = new Source(new() { Id = 42, Policy = policy, Access = access, Duration = 30000 });
+        var region = new Source(Track("regional-authorization") with { Duration = 114625 });
+        var result = await new SoundCloudStreamResolver(local, region).ResolveAsync(42);
+        Assert.True(result.UsedRegionalSource);
+        Assert.Equal(114.625, result.Track.DurationSeconds, 3);
+        Assert.Equal(0, local.StreamCalls);
+        Assert.Equal("regional-authorization", region.ReceivedAuthorization);
+    }
+
+    [Fact]
+    public async Task HealthyPrimaryNeverContactsRegionalProvider()
+    {
+        var region = new Source(Track("regional"));
+        var result = await new SoundCloudStreamResolver(new Source(Track("local")), region).ResolveAsync(42);
+        Assert.False(result.UsedRegionalSource);
+        Assert.Equal(0, region.MetadataCalls);
+    }
+
+    [Fact]
+    public async Task AllRegionalPreviewsRemainUnavailableAndNeverResolveAudio()
+    {
+        var local = new Source(new() { Id = 42, Policy = "SNIP" });
+        var region = new Source(new() { Id = 42, Policy = "SNIP" });
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(local, region).ResolveAsync(42));
+        Assert.True(error.TrackUnavailable);
+        Assert.Equal(0, local.StreamCalls + region.StreamCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RegionalNetworkFailureDoesNotPoisonTrackAvailability(bool timeout)
+    {
+        var local = new Source(new() { Id = 42, Policy = "SNIP" });
+        var region = new Source(Track("region")) { NetworkFailure = timeout ? new TaskCanceledException() : new HttpRequestException("Proxy unavailable") };
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(local, region).ResolveAsync(42));
+        Assert.False(error.TrackUnavailable);
+        Assert.Equal(1, region.MetadataCalls);
+        Assert.Contains("региональное соединение", error.Message);
+        var final = new Source(Track("final"));
+        var recovered = await new SoundCloudStreamResolver(local, region, final).ResolveAsync(42);
+        Assert.True(recovered.UsedRegionalSource);
+        Assert.Equal("final", final.ReceivedAuthorization);
+    }
+
+    [Fact]
+    public async Task UserCancellationDuringFallbackIsNeverSwallowed()
+    {
+        using var stop = new CancellationTokenSource();
+        var region = new Source(Track("region")) { OnMetadata = stop.Cancel, NetworkFailure = new TaskCanceledException() };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new SoundCloudStreamResolver(new Source(new() { Id = 42, Policy = "SNIP" }), region).ResolveAsync(42, stop.Token));
+    }
+
+    [Theory]
     [InlineData("https://playback.media-streaming.soundcloud.cloud/x", true)]
     [InlineData("https://playback.media-streaming.soundcloud.cloud.evil.test/x", false)]
     [InlineData("https://evil.soundcloud.cloud/x", false)]
@@ -121,6 +179,55 @@ public sealed class StreamResolverTests
     [InlineData("https://playback.media-streaming.soundcloud.cloud:444/x", false)]
     public void OnlyExactProtectedMediaHostIsAccepted(string url, bool accepted) =>
         Assert.Equal(accepted, SoundCloudWebClient.IsMediaUri(new(url)));
+
+    [Theory]
+    [InlineData("ALLOW", true, false)]
+    [InlineData("ALLOW", false, false)]
+    [InlineData("SNIP", false, true)]
+    [InlineData("BLOCK", false, true)]
+    public async Task AutomaticPoolOnlyRunsForFreshRegionalRestrictions(string policy, bool playable, bool expected)
+    {
+        var pool = new Pool();
+        var track = Track("account") with { Policy = policy, Media = playable ? Track("account").Media : null };
+        var resolver = new SoundCloudStreamResolver(new Source(track)) { RegionalResolver = pool };
+        if (policy == "ALLOW" && !playable) await Assert.ThrowsAsync<SoundCloudException>(() => resolver.ResolveAsync(42));
+        else Assert.Equal(expected, (await resolver.ResolveAsync(42)).UsedRegionalSource);
+        Assert.Equal(expected ? 1 : 0, pool.Calls);
+    }
+
+    [Fact]
+    public async Task PoolCancellationPropagatesWithoutChangingTrackAvailability()
+    {
+        using var cancel = new CancellationTokenSource();
+        var pool = new Pool { Resolve = token => { cancel.Cancel(); return Task.FromCanceled<ResolvedPlayback>(token); } };
+        var resolver = new SoundCloudStreamResolver(new Source(new() { Id = 42, Policy = "SNIP" })) { RegionalResolver = pool };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resolver.ResolveAsync(42, cancel.Token));
+    }
+
+    private sealed class Pool : ISoundCloudPlaybackResolver
+    {
+        internal int Calls;
+        internal Func<CancellationToken, Task<ResolvedPlayback>>? Resolve;
+        public Task<ResolvedPlayback> ResolveAsync(long id, CancellationToken cancellationToken = default, string[]? protocols = null)
+        {
+            Calls++;
+            Assert.Contains("progressive", protocols!);
+            return Resolve?.Invoke(cancellationToken) ?? Task.FromResult(new ResolvedPlayback(Track("regional"), new(new("https://cf-media.sndcdn.com/full"), "progressive", 120)));
+        }
+    }
+
+    [Theory]
+    [InlineData("https://evil.test/full", "ALLOW", 42)]
+    [InlineData("https://cf-media.sndcdn.com/full", "SNIP", 42)]
+    [InlineData("https://cf-media.sndcdn.com/full", "ALLOW", 99)]
+    public async Task PoolCannotReturnUntrustedHostPreviewOrDifferentTrack(string url, string policy, long id)
+    {
+        var pool = new Pool { Resolve = _ => Task.FromResult(new ResolvedPlayback(Track("regional") with { Id = id, Policy = policy },
+            new(new(url), "progressive", 120))) };
+        var resolver = new SoundCloudStreamResolver(new Source(new() { Id = 42, Policy = "SNIP" })) { RegionalResolver = pool };
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => resolver.ResolveAsync(42));
+        Assert.False(error.TrackUnavailable);
+    }
 
     private static SoundCloudTrack Track(string authorization) => new()
     {
@@ -130,12 +237,18 @@ public sealed class StreamResolverTests
 
     private sealed class Source(SoundCloudTrack track) : ISoundCloudPlaybackSource
     {
-        public int StreamCalls;
+        public int StreamCalls, MetadataCalls;
+        public Exception? NetworkFailure;
+        public Action? OnMetadata;
         public string? ReceivedAuthorization;
         public SoundCloudException? Failure;
         public SoundCloudException? MetadataFailure;
-        public Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default) =>
-            MetadataFailure != null ? Task.FromException<SoundCloudTrack>(MetadataFailure) : Task.FromResult(track);
+        public Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default)
+        {
+            MetadataCalls++; OnMetadata?.Invoke();
+            var error = (Exception?)MetadataFailure ?? NetworkFailure;
+            return error != null ? Task.FromException<SoundCloudTrack>(error) : Task.FromResult(track);
+        }
         public Task<SoundCloudStream?> ResolveTranscodingAsync(SoundCloudTrack value, Transcoding transcoding, CancellationToken cancellationToken = default)
         {
             StreamCalls++; ReceivedAuthorization = value.TrackAuthorization;

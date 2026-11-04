@@ -57,7 +57,7 @@ internal sealed partial class MainWindow
         {
             row.RepostMenu = root.ContextMenu!.Items.OfType<MenuItem>().Last();
             row.More = TrackButtons.Icon(Icons.View("dots-three", 20), () => { }, TrackButtons.Text, 32).CenterVertical().Column(2);
-            row.More.Click += () => root.ContextMenu!.Show(row.More);
+            row.More.Click += () => PopupAppearance.MenuFor(root).Show(row.More);
             root.Children(row.More);
         }
         AttachUserLink(author, () => row.Track?.User);

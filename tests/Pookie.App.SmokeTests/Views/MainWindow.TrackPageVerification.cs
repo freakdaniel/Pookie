@@ -51,6 +51,32 @@ internal sealed partial class MainWindow
             { await ProbeDetailScrollingAsync(); return; }
             if (trackDescriptionUiSmoke)
             { await VerifyDescriptionFocusScrollAsync(); return; }
+            if (trackPlaybackUiSmoke)
+            { VerifyCommentTextPixels(); await VerifyTrackPlaybackVisibilityAsync(); return; }
+            if (waveformUiSmoke)
+            {
+                await VerifyWaveformRevealAsync(trackDetailWaveform, "track");
+                await MoveNavigationAsync(-1);
+                await WaitForLoginFrameAsync();
+                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && likedRows.Values.Any(row => row.Track?.Id == fixtures[1].Id &&
+                    likedList.IsAncestorOf(row.Root) && row.Waveform.ActualWidth > 100 && row.Waveform.Bounds.IntersectsWith(shellScroll.Bounds)));
+                var row = likedRows.Values.First(row => row.Track?.Id == fixtures[1].Id && likedList.IsAncestorOf(row.Root));
+                await VerifyWaveformRevealAsync(row.Waveform, "list");
+                var bound = row.Track!;
+                revealedWaveforms.Remove(bound.Id);
+                row.Waveform.SetSamples([]);
+                await LoadLikedWaveformAsync(row, bound);
+                await WaitForLoginFrameAsync();
+                await WaitForLikedLayoutAsync(() => row.Waveform.RevealProgress == 1);
+                row.Waveform.SetSamples([]);
+                await LoadLikedWaveformAsync(row, bound);
+                await WaitForLoginFrameAsync();
+                if (!row.Waveform.HasSamples || row.Waveform.RevealProgress != 1)
+                    throw new InvalidOperationException("A previously revealed list track lost its waveform or replayed its entrance after rebinding.");
+                await VerifyWaveformMotionAsync(row);
+                Console.WriteLine("WAVEFORM_UI_OK: track/list entrance, retained list reveal history, hover/play/progress/seek and recycling");
+                return;
+            }
             if (current?.Id != originalPlayback || playGeneration != originalGeneration)
                 throw new InvalidOperationException("Opening a title started playback.");
             await VerifyPlayerLinksAndWaveCommentsAsync(fixtures[0]);

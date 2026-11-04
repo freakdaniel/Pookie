@@ -27,6 +27,91 @@ internal sealed partial class MainWindow
             playerBackdrop.SetPalette(new(Color.FromRgb(35, 47, 62), Color.FromRgb(43, 40, 60), Color.FromRgb(51, 37, 47)));
             await WaitForLikedLayoutAsync(() => Window.IsActive && workspace.IsVisible && startupHeader.Opacity > .999 &&
                 queueButton.ActualWidth > 0 && playerChrome.ActualHeight >= PlayerBarHeight - 1);
+            MoveActionPointer(new Point(2, 2));
+            var context = PopupAppearance.CreateMenu();
+            var contextCommand = new Command("pookie.menu.style-probe", "Настройки меню");
+            var contextExecutions = 0;
+            profileButton.Commands.Register(contextCommand, () => contextExecutions++);
+            context.Item(contextCommand);
+            var disabledCommand = new Command("pookie.menu.disabled-probe", "Недоступный пункт");
+            profileButton.Commands.Register(disabledCommand, () => throw new InvalidOperationException("Disabled menu command executed."), () => false);
+            context.Item(disabledCommand);
+            var contextFrames = new List<double>();
+            var openingPixels = false;
+            void ContextFrame()
+            {
+                contextFrames.Add(context.Reveal);
+                if (!openingPixels && context.Reveal is > .15 and < .8 && context.Card.ActualWidth > 0)
+                { VerifyMenuSurfaceAlpha(context); openingPixels = true; CaptureUiPreview("menu-context-opening", context); }
+            }
+            Window.FrameRendered += ContextFrame;
+            context.Show(profileButton);
+            await WaitForLikedLayoutAsync(() => context.Card.ActualWidth > 100 && context.Reveal == 1);
+            Window.FrameRendered -= ContextFrame;
+            if (context.Parent != Window.Content || context.FindVisualRoot() != Window)
+                throw new InvalidOperationException("Context menu created a separate popup surface instead of the chat overlay.");
+            if (!openingPixels || contextFrames.Count(value => value > 0 && value < 1) < 3)
+                throw new InvalidOperationException("Context menu skipped its animated entrance.");
+            if (context.Card.Background != PopupAppearance.Surface || context.Card.CornerRadius != PopupAppearance.Radius ||
+                context.Buttons.Any(button => button.Height != PopupAppearance.RowHeight) || context.Card.FontSize != 14 || context.Card.Padding != new Thickness(PopupAppearance.Padding))
+                throw new InvalidOperationException("Framework context menu did not inherit the shared popup appearance.");
+            CaptureUiPreview("menu-context", context);
+            var contextButton = context.Buttons[0];
+            MoveActionPointer(new Point(2, 2));
+            await WaitForLikedLayoutAsync(() => contextButton.Background == Color.Transparent);
+            var hover = TrackButtons.HoverColor(Color.Transparent, TrackButtons.OnSurface);
+            var hoverFrames = new List<Color>();
+            void HoverFrame() => hoverFrames.Add(contextButton.Background);
+            Window.FrameRendered += HoverFrame;
+            try
+            {
+                MoveActionPointer(Center(contextButton));
+                await WaitForLikedLayoutAsync(() => contextButton.Background == hover);
+                if (!hoverFrames.Any(value => value != Color.Transparent && value != hover))
+                    throw new InvalidOperationException("Context menu hover colour skipped intermediate rendered frames.");
+            }
+            catch (InvalidOperationException error)
+            {
+                throw new InvalidOperationException($"Menu hover failed: open={context.IsOpen}, visible={context.IsVisible}, focus={Window.FocusManager.FocusedElement?.GetType().Name}, bounds={contextButton.Bounds}, over={contextButton.IsMouseOver}, colour={contextButton.Background}, hit={Window.HitTest(Center(contextButton))?.GetType().Name}, frames={hoverFrames.Count}.", error);
+            }
+            finally { Window.FrameRendered -= HoverFrame; }
+            CaptureUiPreview("menu-context-hover", context);
+            var contextClicks = 0;
+            contextButton.Click += () => contextClicks++;
+            var closingFrames = new List<double>(); var closingPixels = false;
+            void ClosingFrame()
+            {
+                if (context.IsOpen) return;
+                closingFrames.Add(context.Reveal);
+                if (!closingPixels && context.Reveal is > .15 and < .8)
+                { VerifyMenuSurfaceAlpha(context); closingPixels = true; CaptureUiPreview("menu-context-closing", context); }
+            }
+            Window.FrameRendered += ClosingFrame;
+            RouteSettingsOptionClick(contextButton);
+            try { await WaitForLikedLayoutAsync(() => !context.IsOpen && contextExecutions == 1); }
+            catch (InvalidOperationException error)
+            {
+                throw new InvalidOperationException($"Context command failed: open={context.IsOpen}, clicks={contextClicks}, executed={contextExecutions}, enabled={contextButton.IsEnabled}/{contextButton.IsEffectivelyEnabled}, ownerCan={Window.CommandRouter.CanExecute(contextCommand, CommandTarget.From(profileButton))}, rowCan={Window.CommandRouter.CanExecute(contextCommand, CommandTarget.From(contextButton))}, root={contextButton.FindVisualRoot()?.GetType().Name}.", error);
+            }
+            await WaitForLikedLayoutAsync(() => !context.IsVisible && context.Parent == null);
+            Window.FrameRendered -= ClosingFrame;
+            if (!closingPixels || closingFrames.Count(value => value > 0 && value < 1) < 3)
+                throw new InvalidOperationException("Context menu detached before its closing animation completed.");
+            Console.WriteLine("CONTEXT_MENU_SURFACE_OK: same main-window overlay as chat; opening/closing alpha pixels without opaque backing");
+            Console.WriteLine("CONTEXT_MENU_MOTION_OK: intermediate entrance and hover colours, original owner command executes once and dismisses popup");
+            var contextRows = context.Buttons.ToArray();
+            PopupAppearance.Attach(profileButton, context);
+            var trigger = Center(profileButton);
+            SendLikedActionMouse(0x204, 2, trigger); SendLikedActionMouse(0x205, 0, trigger);
+            await WaitForLikedLayoutAsync(() => context.IsOpen && context.Reveal == 1);
+            if (context.Model.FindVisualRoot() is Window || !context.Buttons.SequenceEqual(contextRows) || context.Buttons[1].IsEffectivelyEnabled)
+                throw new InvalidOperationException("Right click opened the native fallback, rebuilt rows, or enabled a disabled command.");
+            RouteSettingsKey(Key.End);
+            await WaitForLikedLayoutAsync(() => contextButton.IsFocused);
+            RouteSettingsKey(Key.Enter);
+            await WaitForLikedLayoutAsync(() => !context.IsOpen && contextExecutions == 2);
+            Console.WriteLine("CONTEXT_MENU_INPUT_OK: native right click, reused rows, disabled-command skipping and keyboard Enter use the original command scope");
+            await WaitForLikedLayoutAsync(() => !context.IsVisible);
             foreach (var (button, state, name) in new[] {
                 (profileButton, profileOpen, "profile"), (queueButton, queueOpen, "queue") })
             {
@@ -54,7 +139,7 @@ internal sealed partial class MainWindow
                     await ClickMenuAsync(Center(button));
                     await WaitForLikedLayoutAsync(() => layer.Reveal > .999 && layer.Card.ActualWidth > 0);
                     if (!state.Value || layer.Card.BorderThickness != 0 ||
-                        layer is FloatingMenuLayer && (layer.Card.Background != FloatingMenuLayer.Surface || layer.Card.CornerRadius != 14))
+                        layer is FloatingMenuLayer && (layer.Card.Background != PopupAppearance.Surface || layer.Card.CornerRadius != PopupAppearance.Radius))
                         throw new InvalidOperationException(name + " menu lost its surface styling.");
                     if (layer is PlayerQueueDrawer drawer && (drawerHeights.Distinct().Count() < 3 || drawer.ContentReveal < .99 ||
                         drawer.RenderedGradient != playerBackdrop.CurrentGradient))
@@ -193,4 +278,20 @@ internal sealed partial class MainWindow
         finally { CloseShellMenus(true); Window.Close(); }
         static Point Center(FrameworkElement element) => new(element.Bounds.X + element.ActualWidth / 2, element.Bounds.Y + element.ActualHeight / 2);
     }
+    private void VerifyMenuSurfaceAlpha(AnimatedContextMenu menu)
+    {
+        var scale = Window.DpiScale;
+        var pixels = (int)Math.Ceiling(8 * scale);
+        using var surface = Window.GraphicsFactory.CreateSurface(
+            Aprillz.MewUI.Rendering.RenderSurfaceDescriptor.CpuPixels(pixels, pixels, scale, premultiplied: true));
+        using var context = Window.GraphicsFactory.CreateContext(surface);
+        context.BeginFrame(surface); context.Clear(Color.Transparent);
+        context.Translate(-menu.Card.Bounds.X - 16, -menu.Card.Bounds.Y - 8);
+        menu.Render(context); context.EndFrame();
+        var bytes = ((Aprillz.MewUI.Rendering.ICpuPixelSurface)surface).CopyPixels();
+        var alpha = Enumerable.Range(0, bytes.Length / 4).Max(index => bytes[index * 4 + 3]);
+        if (alpha == 0 || alpha > menu.Reveal * 255 + 8)
+            throw new InvalidOperationException($"Menu backing does not fade with its content: alpha={alpha}, reveal={menu.Reveal:F3}.");
+    }
+
 }

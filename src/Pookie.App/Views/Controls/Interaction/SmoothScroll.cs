@@ -76,6 +76,10 @@ internal sealed class SmoothScroll : IDisposable
                 return true;
             }
         }
+        // A reversed notch cancels the unconsumed distance and velocity from
+        // the previous direction. Otherwise several notches are spent braking
+        // toward an old destination before the page follows the new input.
+        if (running && (delta * (target - viewer.VerticalOffset) < 0 || delta * velocity < 0)) Stop();
         return Scroll(delta);
     }
 

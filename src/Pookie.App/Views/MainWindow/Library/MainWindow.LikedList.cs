@@ -12,6 +12,7 @@ internal sealed partial class MainWindow
     private readonly Storage.AsyncResourceCache<string, float[]> waveformRequests = new(256, new Storage.CacheBudget(4 * 1024 * 1024), samples => samples.LongLength * sizeof(float));
     private readonly SemaphoreSlim waveformGate = new(3);
     private double likedPlaybackPosition;
+    private readonly HashSet<long> revealedWaveforms = [];
 
     private ItemsControl CreateLikedList()
     {
@@ -133,7 +134,8 @@ internal sealed partial class MainWindow
     private async Task LoadLikedWaveformAsync(LikedTrackRow row, SoundCloudTrack track)
     {
         var samples = await GetTrackWaveformAsync(track);
-        if (samples != null && !disposed && ReferenceEquals(row.Track, track)) row.Waveform.SetSamples(samples);
+        if (samples != null && !disposed && ReferenceEquals(row.Track, track))
+            row.Waveform.SetSamples(samples, () => revealedWaveforms.Add(track.Id));
     }
 
     private async Task<float[]?> GetTrackWaveformAsync(SoundCloudTrack track)

@@ -6,7 +6,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private FloatingMenuLayer chatAttachMenu = null!;
-    private Border chatAttachMenuPanel = null!;
+    private GlassCard chatAttachMenuPanel = null!;
     private bool chatFilePickerOpen;
     private FloatingMenuHover chatAttachInteraction = null!;
     private FrameworkElement ChatAttachMenuView()

@@ -495,7 +495,8 @@ internal sealed partial class MainWindow
         context.BeginFrame(surface);
         context.FillRectangle(new Rect(0, 0, Window.ClientSize.Width, Window.ClientSize.Height), HeaderSurface);
         Window.Content?.Render(context);
-        popup?.Render(context);
+        // In-window menus were already painted with the main visual tree.
+        if (popup != null && Window.Content?.IsAncestorOf(popup) != true) popup.Render(context);
         context.EndFrame();
         if (surface is not Aprillz.MewUI.Rendering.ICpuPixelSurface cpu) throw new InvalidOperationException("Preview surface is not readable");
         var pixels = cpu.GetReadOnlyPixelSpan();

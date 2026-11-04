@@ -35,7 +35,7 @@ internal sealed partial class MainWindow
         Action("favorite", "bookmark-simple", "В избранное"); Action("select", "selection", "Выделить");
         Action("save", "download-simple", "Сохранить вложение"); Action("retry", "arrows-clockwise", "Повторить отправку");
         Action("discard", "trash", "Убрать отправку");
-        var actionsCard = new GlassCard(Surface) { HoverEnabled = false }.Background(ChatGlassSurface).CornerRadius(16).Padding(4).Width(224).Left().Child(chatMessageMenuBody);
+        var actionsCard = new GlassCard(Surface) { HoverEnabled = false }.Background(ChatGlassSurface).CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding).Width(224).Left().Child(chatMessageMenuBody);
         var content = new StackPanel().Vertical().Spacing(6).Width(288).Children(reactionCard, actionsCard);
         content.Focusable = true;
         chatMessageMenu = new ChatPopupLayer(content, () => chatMenuContext is { } c ? new Rect(c.Point.X, c.Point.Y, 0, 0) : Rect.Empty, () => chatColumns.Bounds, atPointer: true).Initialize();

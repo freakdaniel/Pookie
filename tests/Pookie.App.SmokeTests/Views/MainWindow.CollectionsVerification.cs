@@ -93,7 +93,7 @@ internal sealed partial class MainWindow
                 likedRows.Values.Any(row => row.Root.FindVisualRoot() == Window && row.Track?.Id == 9000))
                 throw new InvalidOperationException("Playlist rows did not use compact unnumbered tracks and trailing actions.");
             RouteWaveformClick(new(compact.More.Bounds.X + compact.More.ActualWidth / 2, compact.More.Bounds.Y + compact.More.ActualHeight / 2));
-            if (compact.Root.ContextMenu!.PlacementTarget != compact.More) throw new InvalidOperationException("Playlist row menu did not open from its button.");
+            if (PopupAppearance.MenuFor(compact.Root).PlacementTarget != compact.More) throw new InvalidOperationException("Playlist row menu did not open from its button.");
             RouteWaveformClick(new(collectionMeta.Bounds.X + 4, collectionMeta.Bounds.Y + 4));
             var savedDescription = collectionDescription.Text;
             collectionDescription.Text = string.Join("\n", Enumerable.Repeat("Подробное описание подборки.", 35));

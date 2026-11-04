@@ -296,6 +296,35 @@ public sealed class HttpTransportTests
     }
 
     [Fact]
+    public async Task RegionalListenUsesFreshAccountAuthorizationAndFullTrackLengthInHistory()
+    {
+        var plays = 0;
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            Assert.Equal("private-token", request.Headers.Authorization?.Parameter);
+            var path = request.RequestUri!.AbsolutePath;
+            Assert.Equal("api-v2.soundcloud.com", request.RequestUri.Host);
+            if (request.Method == HttpMethod.Get) return path == "/me" ? Json("{\"id\":7}") : Json("""
+                {"id":42,"user_id":9,"policy":"SNIP","duration":30000,"full_duration":114625,"track_authorization":"fresh-account-auth"}
+                """);
+            if (path == "/me")
+            {
+                plays++;
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsByteArrayAsync(token));
+                Assert.Equal("private-token", body.RootElement.GetProperty("auth_token").GetString());
+                var payload = body.RootElement.GetProperty("events")[0].GetProperty("payload");
+                Assert.Equal(114625, payload.GetProperty("track_length").GetDouble());
+                Assert.Equal("fresh-account-auth", payload.GetProperty("track_authorization").GetString());
+                Assert.Equal("soundcloud:users:7", payload.GetProperty("user").GetString());
+            }
+            return new(HttpStatusCode.NoContent);
+        }));
+        using var transport = new SoundCloudHttpTransport(http, Session);
+        await transport.RecordPlaybackAsync(42);
+        Assert.Equal(1, plays);
+    }
+
+    [Fact]
     public async Task BrowserSignsFollowButHttpSendsTheMutation()
     {
         var browser = new Verification(); var calls = 0;

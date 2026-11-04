@@ -39,6 +39,7 @@ internal sealed partial class MainWindow
     private double renderedCommentsDuration;
     private long renderedCommentsViewer;
     private SoundCloudComment[] renderedComments = [];
+    private bool trackTimelineVisible;
 
     private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview, bool reload = false)
     {
@@ -217,10 +218,29 @@ internal sealed partial class MainWindow
     private void RefreshTrackDetailPosition()
     {
         if (page.Value != Page.Track || trackDetailState is not { } state) return;
+        if (!TrackTimelineInViewport())
+        {
+            trackTimelineVisible = false;
+            AdvanceTrackCommentPreview(0, false);
+            return;
+        }
         var selected = state.Track.Id == current?.Id;
         trackDetailWaveform.Progress = selected && state.Track.DurationSeconds > 0 ? likedPlaybackPosition / state.Track.DurationSeconds : 0;
         trackDetailPosition.Text = FormatTime(selected ? likedPlaybackPosition : 0);
         AdvanceTrackCommentPreview(selected ? likedPlaybackPosition : 0, selected && isPlaying.Value && !expandedOpen && Window.IsActive && Window.WindowState != WindowState.Minimized);
+    }
+
+    private bool TrackTimelineInViewport() => page.Value == Page.Track && workspace.IsVisible &&
+        trackDetailWaveform.Bounds.IntersectsWith(trackDetailScroll.Bounds.Intersect(shellScroll.Bounds));
+
+    private void RefreshTrackTimelineViewport()
+    {
+        var visible = TrackTimelineInViewport();
+        if (visible == trackTimelineVisible) return;
+        trackTimelineVisible = visible;
+        // Hidden text changes dirty the hero's layout. Retain playback position
+        // in the model and catch up when scrolling reveals the hero again.
+        RefreshTrackDetailPosition();
     }
 
     private void RenderTrackDetailRelated()

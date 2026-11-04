@@ -8,7 +8,7 @@ internal sealed partial class MainWindow
     private Button profileButton = null!, settingsButton = null!, queueButton = null!;
     private readonly List<(ObservableValue<bool> State, MenuLayer Layer, Button Anchor)> shellMenus = [];
 
-    private FloatingMenuLayer ShellMenu(Button anchor, Border card, ObservableValue<bool> state, FloatingMenuPlacement placement)
+    private FloatingMenuLayer ShellMenu(Button anchor, GlassCard card, ObservableValue<bool> state, FloatingMenuPlacement placement)
     {
         var layer = new FloatingMenuLayer(anchor, card, placement).Initialize();
         RegisterShellMenu(anchor, layer, state);
@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
     {
         // Check after focus routing has completed, including moves between items in the card.
         foreach (var menu in shellMenus)
-            if (menu.State.Value && !menu.Anchor.IsFocusWithin && !menu.Layer.IsFocusWithin)
+            if (menu.State.Value && !menu.Anchor.IsFocusWithin && !menu.Layer.IsFocusWithin && !InAppPopup.HasFocusFor(menu.Layer))
                 menu.State.Value = false;
     }
 
@@ -60,7 +60,7 @@ internal sealed partial class MainWindow
     {
         var button = TrackButtons.Action(new StackPanel().Horizontal().Spacing(12).Children(
             Icons.View(icon, 21).CenterVertical(), new TextBlock().Text(text).FontSize(14).CenterVertical()),
-            action, TrackButtons.Text, 42).Padding(12, 0);
+            action, TrackButtons.Text, PopupAppearance.RowHeight).Padding(12, 0);
         ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         return button;
     }

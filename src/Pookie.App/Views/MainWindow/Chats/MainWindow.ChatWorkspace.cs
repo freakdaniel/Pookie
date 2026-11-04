@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
             var tab = (Button)chatFolderTabs.Children.Last();
             var edit = new Command("chat.folder.edit", "Изменить папку");
             tab.Commands.Register(edit, () => OpenChatFolderEditor(folder));
-            tab.ContextMenu = new ContextMenu().Item(edit);
+            PopupAppearance.Attach(tab, PopupAppearance.CreateMenu().Item(edit));
         }
         chatFolderTabs.Add(TrackButtons.Icon(Icons.View("plus", 16), () => OpenChatFolderEditor(null), TrackButtons.Text, 30).ToolTip("Создать папку"));
     }

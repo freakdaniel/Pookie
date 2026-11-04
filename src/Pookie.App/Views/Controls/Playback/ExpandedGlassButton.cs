@@ -96,6 +96,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
 
 internal sealed class ExpandedGlassSurface : ContentControl
 {
+    internal bool IsResizing { get; set; }
     private readonly GlassGeometry geometry = new();
     private readonly GlassSheenRaster sheen = new();
     private CoverGlassBackdrop? backdrop;
@@ -115,7 +116,7 @@ internal sealed class ExpandedGlassSurface : ContentControl
             Background.A > 0 ? GlassSheen.AdaptTint(Background, backdrop?.Brightness(Bounds) ?? 0) :
             GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
         context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, tint);
-        sheen.Draw(context, Bounds, corners, .35, GetDpi() / 96d);
+        sheen.Draw(context, Bounds, corners, .35, GetDpi() / 96d, resizing: IsResizing);
     }
 
     protected override void RenderSubtree(IGraphicsContext context)

@@ -17,7 +17,7 @@ internal static class ApplicationEmojiText
         public bool Equals(TextKey other) => ReferenceEquals(Source, other.Source) && Start == other.Start && Length == other.Length;
         public override int GetHashCode() => HashCode.Combine(RuntimeHelpers.GetHashCode(Source), Start, Length);
     }
-    private sealed record Scan(IReadOnlyList<(int Start, int Length, string Value)> Matches, long Bytes);
+    private sealed record Scan(IReadOnlyList<(int Start, int Length, string Value)> Matches, IReadOnlyList<(int Start, int Length)> HiddenMarks, long Bytes);
     private static readonly ResourceCache<TextKey, Scan> scans = new(512, new CacheBudget(2 * 1024 * 1024), value => value.Bytes);
     [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "PookieTextLayoutTransform")]
     private static extern ref Func<TextLayoutRequest, TextLayoutRequest>? Transform(TextLayoutRequest? declaringType);
@@ -26,18 +26,20 @@ internal static class ApplicationEmojiText
     internal static TextLayoutRequest Project(TextLayoutRequest request)
     {
         IReadOnlyList<(int Start, int Length, string Value)> matches;
+        IReadOnlyList<(int Start, int Length)> hidden;
         if (MemoryMarshal.TryGetString(request.Text, out var source, out var start, out var length) && source != null)
         {
             var key = new TextKey(source, start, length);
             if (!scans.TryGetValue(key, out var scan))
             {
                 matches = ChatEmojiCatalog.Spans(request.Text.Span);
-                scans[key] = scan = new(matches, source.Length * 2L + matches.Count * 48 + 64);
+                hidden = CombiningText.HiddenRuns(request.Text.Span);
+                scans[key] = scan = new(matches, hidden, source.Length * 2L + matches.Count * 48 + hidden.Count * 16 + 64);
             }
-            matches = scan.Matches;
+            matches = scan.Matches; hidden = scan.HiddenMarks;
         }
-        else matches = ChatEmojiCatalog.Spans(request.Text.Span);
-        if (matches.Count == 0) return request;
+        else { matches = ChatEmojiCatalog.Spans(request.Text.Span); hidden = CombiningText.HiddenRuns(request.Text.Span); }
+        if (matches.Count == 0 && hidden.Count == 0) return request;
         List<InlineRun>? additions = null;
         foreach (var match in matches)
         {
@@ -48,7 +50,20 @@ internal static class ApplicationEmojiText
             if (!objects.TryGetValue(key, out var inline)) objects[key] = inline = new(match.Value, size);
             (additions ??= []).Add(new(match.Start, match.Length, inline, true));
         }
+        foreach (var run in hidden)
+        {
+            if (request.Inlines.Any(existing => run.Start < existing.Position + existing.Length && run.Start + run.Length > existing.Position)) continue;
+            (additions ??= []).Add(new(run.Start, run.Length, HiddenMarks.Instance, true));
+        }
         return additions == null ? request : request with { Inlines = request.Inlines.Concat(additions).OrderBy(i => i.Position).ToArray() };
+    }
+
+    private sealed class HiddenMarks : IInlineTextObject
+    {
+        internal static readonly HiddenMarks Instance = new();
+        public InlineMetrics Measure() => new(0, 0, 0);
+        // These original document characters deliberately contribute no glyphs.
+        public void Draw(ITextRenderContext context, Point origin) { }
     }
 
     private sealed class Inline(string value, double fontSize) : IInlineTextObject

@@ -16,7 +16,9 @@ internal sealed partial class MainWindow
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             using var savedVault = SessionVault.Open(new AppDataPaths());
             var account = savedVault.Load() ?? throw new InvalidOperationException("No saved account for the live track page check.");
-            AttachBrowser(new NativeBrowserSession(account));
+            // Use the saved account with a private browser profile so this
+            // probe can run while the user's normal Pookie session is open.
+            AttachBrowser(new NativeBrowserSession(account, profilePath: Path.Combine(dataPaths.Browser, "LiveProbe")));
             me = await browser!.GetMeAsync(timeout.Token);
             api.Session = browser.Account; signedIn.Value = true;
             await ShowWorkspaceAsync();
@@ -46,6 +48,33 @@ internal sealed partial class MainWindow
             ClickLiveTrackElement(playButton);
             await WaitForTrackPageLiveAsync(() => current?.Id == track.Id && audioReady && progress.Value > .1);
             Console.WriteLine("TRACK_PAGE_LIVE_PLAY_OK: native play click, real audio decoding and advancing position");
+            if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_LIVE") == "1")
+            {
+                for (var batch = 0; batch < 20 && trackDetailState.Comments.Comments.Length < 500 && trackDetailState.Comments.NextHref != null; batch++)
+                {
+                    var count = trackDetailState.Comments.Comments.Length;
+                    await MoreTrackCommentsAsync();
+                    if (trackDetailState.Comments.Comments.Length <= count) break;
+                }
+                await WaitForTrackPageLiveAsync(() => shellPageScroll.IsReady && audioReady);
+                Console.WriteLine($"LIVE_SCROLL_SETUP comments={trackDetailState.Comments.Comments.Length}; real audio, comments and avatars; muted");
+                void Avatars(string phase)
+                {
+                    var sources = new HashSet<ImageSource>();
+                    VisualTree.Visit(trackDetailComments, element =>
+                    { if (element is Image { Source: ImageSource image } && image.PixelWidth >= 48) sources.Add(image); });
+                    Console.WriteLine($"LIVE_AVATAR_PIXELS {phase} unique={sources.Count}; rgba_bytes={sources.Sum(ArtworkBytes)}; max_side={sources.Select(image=>Math.Max(image.PixelWidth,image.PixelHeight)).DefaultIfEmpty().Max()}");
+                }
+                Avatars("before");
+                await MeasureCommentMotionAsync("live");
+                await ProbeWheelReactivationAsync();
+                if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PRESENTATION") == "1")
+                    await ProbeNativeTouchpadScrollingAsync("live-wheel-" + trackDetailState.Comments.Comments.Length, wheelNotches: true);
+                await ProbeContinuousScrollAsync("live-track-" + trackDetailState.Comments.Comments.Length);
+                Avatars("after");
+                Console.WriteLine("LIVE_SCROLL_OK");
+                return;
+            }
             var waveformPoint = new Point(trackDetailWaveform.Bounds.X + trackDetailWaveform.Bounds.Width * .25,
                 trackDetailWaveform.Bounds.Y + trackDetailWaveform.Bounds.Height / 2);
             SendLikedActionMouse(0x201, 1, waveformPoint); SendLikedActionMouse(0x202, 0, waveformPoint);

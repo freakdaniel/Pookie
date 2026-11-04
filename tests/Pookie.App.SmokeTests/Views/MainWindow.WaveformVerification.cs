@@ -23,6 +23,7 @@ internal sealed partial class MainWindow
             waveform.SetSamples(WaveformData.Parse(json.RootElement));
             waveform.Progress = 0; waveform.IsPlaying = false;
             CaptureWaveformBar(waveform, .2);
+            await WaitForLikedLayoutAsync(() => waveform.RevealProgress == 1);
             async Task Fade(Action change, int from, int to, string label)
             {
                 var colors = new List<int>();

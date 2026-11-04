@@ -15,6 +15,7 @@ internal class GlassCard : ContentControl
     private double emphasis, from, target;
     private bool emphasized;
     internal bool HoverEnabled { get; init; } = true;
+    internal bool ShadowEnabled { get; init; } = true;
 
     internal GlassCard(Color? underlay = null)
     {
@@ -37,7 +38,7 @@ internal class GlassCard : ContentControl
 
     protected override void OnRender(IGraphicsContext context)
     {
-        shadow.Draw(context, Bounds, CornerRadius, (byte)(65 + emphasis * 25) / 90d);
+        if (ShadowEnabled) shadow.Draw(context, Bounds, CornerRadius, (byte)(65 + emphasis * 25) / 90d);
         // Drawers keep the shared translucent finish without leaking underlying text.
         if (underlay is { } color) context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, color);
         base.OnRender(context);

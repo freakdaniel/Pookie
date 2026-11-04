@@ -17,6 +17,8 @@ internal sealed class CommentTextBlock : TextBlock
         TextTrimming Trimming, TextAlignment Alignment, double Spacing, LineBoxTrim Trim, string Culture, string Text);
     private ParagraphKey key;
     private long revision;
+    private bool clipInk;
+    protected override void OnTextChanged() { clipInk = CombiningText.ContainsMark(Text.AsSpan()); base.OnTextChanged(); }
 
     private TextWrapping Wrapping => TextWrapping == TextWrapping.NoWrap && (Text.Contains('\n') || Text.Contains('\r'))
         ? TextWrapping.Wrap : TextWrapping;
@@ -32,7 +34,7 @@ internal sealed class CommentTextBlock : TextBlock
         if (layout != null && key == next && factory == graphics) return layout;
         // A short single line measured in a larger slot needs no reshaping
         // when its parent then gives it just its natural width.
-        if (layout != null && factory == graphics && key with { Width = width } == next && layout.Lines.Count == 1 &&
+        if (TextTrimming == TextTrimming.None && layout != null && factory == graphics && key with { Width = width } == next && layout.Lines.Count == 1 &&
             layout.MeasuredSize.Width <= width && layout.MeasuredSize.Width < key.Width - .5) return layout;
         key = next; factory = graphics;
         return layout = graphics.TextEngine.GetOrCreateLayout(new TextLayoutRequest
@@ -58,9 +60,10 @@ internal sealed class CommentTextBlock : TextBlock
 
     protected override void OnRender(IGraphicsContext context)
     {
-        // Ellipsis is width-dependent; retain the framework's separate render
-        // layout for names that can be clipped instead of reusing measurement.
-        if (TextTrimming != TextTrimming.None) { base.OnRender(context); return; }
+        // Ellipsis is width-dependent too. Cache its render paragraph by width,
+        // rather than the alternating rounded row heights during scrolling.
+        // Wrapped ellipsis also depends on the available height.
+        if (TextTrimming != TextTrimming.None && Wrapping != TextWrapping.NoWrap) { base.OnRender(context); return; }
         if (Text.Length == 0) return;
         var paragraph = Paragraph(Bounds.Width);
         var options = new TextDrawOptions(Foreground, default, default, this);
@@ -71,7 +74,7 @@ internal sealed class CommentTextBlock : TextBlock
             _ => 0
         });
         var origin = new Point(Bounds.X, y);
-        if (paragraph.MeasuredSize.Width <= Bounds.Width + .5 && paragraph.ContentHeight <= Bounds.Height + .5)
+        if (!clipInk && paragraph.MeasuredSize.Width <= Bounds.Width + .5 && paragraph.ContentHeight <= Bounds.Height + .5)
         { context.Text.Draw(paragraph, origin, in options); return; }
         context.Save();
         try { context.SetClip(Bounds); context.Text.Draw(paragraph, origin, in options); }

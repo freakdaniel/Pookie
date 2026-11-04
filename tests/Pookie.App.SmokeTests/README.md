@@ -331,6 +331,20 @@ preserve every enclosing scroll offset while keyboard selection remains availabl
 `--scrolling-ui-smoke-test --no-audio` additionally checks that a stalled spring
 and window deactivation/reactivation discard old destinations before the next input.
 
+`--track-playback-ui-smoke-test --no-audio` checks playback with 500 comments:
+the model and footer advance while the offscreen hero's label/waveform stay stable;
+scrolling back and closing the expanded player catch up from the retained position,
+including pause and a track change. It also runs pixel comparisons of cached comment
+text against TextBlock, including ellipsis, Unicode and repeated fractional widths.
+The same check verifies that a small avatar uses its DPI-dependent pixel budget,
+shares repeated requests and does not replace a full-size cover in the artwork cache.
+
+`--waveform-ui-smoke-test --no-audio` checks the 620ms left-to-right spring reveal
+in a list row and the track hero. Pixel readbacks verify intermediate frames,
+unchanged layout, identical settled pixels and stopped recycled animations.
+It also checks first-paint reveal history through the real list loader, unchanged
+data without restart, and the existing hover/play/progress/seek color transitions.
+
 `--likes-filter-ui-smoke-test --no-audio` checks library-only title/author filtering
 in grid and list views. It follows six delayed metadata pages, including three
 empty pages and more matches after a full viewport, without global search or writes.
@@ -374,9 +388,29 @@ It makes no account writes.
 comments/replies and pagination, sidebar fans/collections, all four subsection endpoints and their next pages, related tracks and waveform through the production browser
 transport. `--track-page-live-ui-probe` additionally opens the real "Этажи" track in
 an isolated application window, clicks title/play/pause/waveform/comment timestamps,
-decodes actual audio at zero volume and checks back/forward. Close the normal app
-first: these two probes preserve and lease the saved SoundCloud browser profile.
+decodes actual audio at zero volume and checks back/forward. The UI probe uses
+the saved account with an isolated browser profile, so the normal app can stay
+open. The network probe still leases the saved browser profile and needs the
+normal app closed.
 They do not change likes or write to the clipboard.
+
+`POOKIE_SCROLL_LIVE=1` with `--track-page-live-ui-probe` loads up to 500 real
+comments, plays the real stream at zero volume, and measures 540 scroll frames
+across the hero, middle and end. It reports unique decoded avatar dimensions and
+RGBA byte counts before and after scrolling. It also measures six composer
+open/close cycles and native wheel direction changes before and after eight
+seconds in an inactive native window. It neither substitutes the audio player
+nor generates comment/portrait fixtures. Add `POOKIE_SCROLL_PRESENTATION=1` to
+send another 540 native wheel notches and verify each presented state through
+DWM desktop pixels, including hovering a timed comment. Those timings include
+desktop readback and are separate from application frame intervals.
+
+`POOKIE_COMMENT_PROBE=1` with `--comments-ui-smoke-test --no-audio` measures the
+same composer and wheel paths with 500 local comments and an advancing fixture
+player. It prints frame interval percentiles and UI-thread allocations across
+the opening/closing cycles; the ordinary comments test retains the pixel-level
+in-place action opacity, fixed button bounds, nonoverlapping width transition,
+focus, reversal, draft and send checks.
 
 Run from the repository root:
 
@@ -555,6 +589,33 @@ For actual EME PCM validation with the saved Pookie session and a protected trac
 ```powershell
 dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test TRACK_URL --analysis-probe
 ```
+
+Regional playback uses the authenticated primary connection first. Only fresh
+`SNIP`/`BLOCK` metadata activates the anonymous pool. It discovers ProxyScrape and
+Proxifly JSON lists and the current public relay configuration of Sound Unblocker
+from Mozilla's extension API. The extension is read as data, never installed or
+executed. Lists refresh on demand after ten minutes; cached working exits remain
+usable during a list outage. Each attempt resolves full metadata and a usable
+transcoding, with at most four concurrent candidates, 24 candidates per resolution,
+an eight-second candidate timeout and a forty-second overall budget. TLS validation
+stays enabled. Audio segments and DRM licenses use the existing direct player path.
+No account OAuth, cookies or DataDome session go through pool exits.
+
+`POOKIE_REGIONAL_PROXY=off` disables discovery/fallback; an explicit HTTP, HTTPS or
+SOCKS5 URI selects a fixed exit. Isolated UI fixtures do not enable discovery by
+default. The protected audio smoke uses the automatic production pool when the
+variable is unset. Add `--isolated-browser-profile` to avoid leasing the user's
+browser profile and `--default-stream-selection` to use normal format ordering.
+`--analysis-probe` verifies non-silent decoded PCM. These probes are muted.
+`--regional-cache-probe` resolves a fresh link a second time through the same pool
+and reports the warm resolution time before playing it.
+
+`--record-playback-history` is an explicit opt-in **real account write**, only
+after actual playback exceeds one second. It submits one authenticated play through
+the normal account API and reads back the remote history to verify the track is
+first. It never submits plays for seek/restart checks. Production uses the existing
+listened-time guard and respects the SendPlaybackHistory preference; history reads
+fresh account metadata/authorization independently of anonymous regional tokens.
 
 Use `history` instead of `TRACK_URL` to select an accessible protected track from
 the saved account's first 20 history entries. The probe stays muted, verifies a non-silent neural embedding from browser PCM,

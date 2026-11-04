@@ -333,6 +333,7 @@ internal sealed partial class MainWindow
 
     private void ClearLibraryData()
     {
+        revealedWaveforms.Clear();
         ClearWaveData();
         ++overviewRefreshGeneration;
         collectionDetails.Clear(); ResetCollectionActions();

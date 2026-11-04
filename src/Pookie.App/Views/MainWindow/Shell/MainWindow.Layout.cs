@@ -37,7 +37,7 @@ internal sealed partial class MainWindow
     private readonly List<Action> navVisualRefreshers = [];
 
     private static readonly Color Muted = Color.FromRgb(151, 151, 151);
-    private static readonly Color Surface = Color.FromRgb(24, 24, 24);
+    private static readonly Color Surface = PopupAppearance.AppBackground;
     private static readonly Color HeaderSurface = Surface;
     private static readonly Color Raised = Color.FromRgb(43, 43, 43);
     private static readonly Color Edge = Color.FromRgb(61, 61, 61);

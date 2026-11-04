@@ -31,18 +31,44 @@ internal sealed partial class MainWindow
             });
             await WaitForLikedLayoutAsync(() => trackCommentInput.ActualWidth > 80 && trackCommentOwnAvatar.Source is ImageSource);
             VerifyCommentTextPixels();
+            if (Environment.GetEnvironmentVariable("POOKIE_COMMENT_PROBE") == "1")
+            { await ProbeCommentComposerAsync(); return; }
+            // Reproduce a selected like and an unselected repost on nonuniform
+            // artwork. Empty backgrounds hide a frozen off-card glass sample.
+            trackDetailBackdrop.Source = TrackArtFixture(); trackDetailBackdrop.Opacity = 1;
+            trackDetailState = trackDetailState! with { Track = track with { LikesCount = 645, RepostsCount = 6 } };
+            likedIds.Add(track.Id); RefreshTrackDetailPlayback();
+            RouteWaveformPointer(new Point(1, 1));
+            await WaitForLikedLayoutAsync(() => trackDetailGlass!.IsCurrent && trackDetailLike.Background == TrackButtons.SelectedSurface);
             if (trackCommentSend.IsEnabled || !trackCommentInput.IsEnabled) throw new InvalidOperationException("Empty composer availability is incorrect.");
             if (trackCommentInput.Placeholder != "Твой комментарий") throw new InvalidOperationException("Unexpected comment placeholder.");
             var restingWidth = trackCommentComposer.ActualWidth;
             var expansionFrames = new List<double>();
-            var edgeMaskVerified = false;
+            var fadeVerified = false;
+            var fadeFrames = 0;
+            var leadingBounds = ((FrameworkElement)trackCommentActions.Children[0]).Bounds;
+            var trailingBounds = ((FrameworkElement)trackCommentActions.Children[2]).Bounds;
+            var returningSamples = 0;
+            var returnVerified = false;
             void SampleExpansion()
             {
                 expansionFrames.Add(trackCommentComposer.ActualWidth);
-                if (!edgeMaskVerified && trackCommentActions.Expansion is > .02 and < .75)
+                var leading = (FrameworkElement)trackCommentActions.Children[0];
+                var trailing = (FrameworkElement)trackCommentActions.Children[2];
+                if (leading.Bounds != leadingBounds || trailing.Bounds != trailingBounds)
+                    throw new InvalidOperationException("Comment actions moved instead of fading in place.");
+                if (leading.Opacity > 0 && Math.Abs(trackCommentComposer.ActualWidth - restingWidth) > 1)
+                    throw new InvalidOperationException("The growing editor overlaps still-visible actions.");
+                if (leading.Opacity is > 0 and < 1)
                 {
-                    VerifyCommentActionFadePixels(); edgeMaskVerified = true;
-                    CaptureUiPreview("comments-edge-fade");
+                    fadeFrames++;
+                    if (!trackCommentActions.Expanded) returningSamples++;
+                    if (leading.Opacity is > .15 and < .85 && (!fadeVerified || !trackCommentActions.Expanded && !returnVerified))
+                    {
+                        VerifyCommentActionOpacityPixels(); fadeVerified = true;
+                        if (!trackCommentActions.Expanded) returnVerified = true;
+                        CaptureUiPreview(trackCommentActions.Expanded ? "comments-fade-out" : "comments-fade-in");
+                    }
                 }
             }
             Window.FrameRendered += SampleExpansion;
@@ -53,8 +79,8 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => trackCommentActions.Expansion > .999999 &&
                     Math.Abs(trackCommentComposer.ActualWidth - trackCommentActions.ActualWidth) < 1);
                 if (trackDetailLike.Opacity != 1 || trackDetailLike.Parent is not FrameworkElement { Opacity: 0, IsHitTestVisible: false, IsVisible: false } ||
-                    expansionFrames.Count(w => w > restingWidth + 1 && w < trackCommentActions.ActualWidth - 1) < 3 || !edgeMaskVerified)
-                    throw new InvalidOperationException($"Composer expansion snapped or left actions interactive: edge={edgeMaskVerified}, frames={expansionFrames.Count}, widths={string.Join(',', expansionFrames.Select(w => Math.Round(w)))}.");
+                    expansionFrames.Count(w => w > restingWidth + 1 && w < trackCommentActions.ActualWidth - 1) < 3 || !fadeVerified || fadeFrames < 3)
+                    throw new InvalidOperationException($"Composer expansion snapped or left actions interactive: fade={fadeVerified}, frames={expansionFrames.Count}, widths={string.Join(',', expansionFrames.Select(w => Math.Round(w)))}.");
                 CaptureUiPreview("comments-expanded");
                 var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", throwOnError: true)!;
                 var escape = new KeyEventArgs(Key.Escape, 0);
@@ -63,6 +89,8 @@ internal sealed partial class MainWindow
                 if (!escape.Handled) router.GetMethod("KeyDown", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
                     .Invoke(null, [Window, escape]);
                 await WaitForLikedLayoutAsync(() => trackCommentActions.Expansion == 0 && Math.Abs(trackCommentComposer.ActualWidth - restingWidth) < 1);
+                if (returningSamples < 3 || !returnVerified) throw new InvalidOperationException("Returning buttons were not checked across intermediate frames.");
+                Console.WriteLine("COMMENT_ACTION_FADE_OK: fixed button bounds, intermediate opacity, no editor overlap and unchanged selected/repost glass on coloured artwork");
                 if (trackCommentComposer.IsFocusWithin || trackCommentInput.Text != "Новый комментарий 🎧")
                     throw new InvalidOperationException("Escape lost the draft or retained editing focus.");
                 trackCommentInput.Focus(); await WaitForLikedLayoutAsync(() => trackCommentActions.Expansion is > 0 and < 1);
@@ -144,6 +172,23 @@ internal sealed partial class MainWindow
             }
             MoveActionPointer(new(1, 1));
             await WaitForLikedLayoutAsync(() => !time.IsMouseOver && time.Background == TrackButtons.CommentTimeSurface);
+            var commentMenus = new List<Button>();
+            VisualTree.Visit(trackDetailComments, e =>
+            {
+                if (e is Button { ContextMenu: not null } button && button.FindVisualRoot() == Window &&
+                    button.Bounds.Y > trackDetailScroll.Bounds.Y && button.Bounds.Bottom < trackDetailScroll.Bounds.Bottom)
+                    commentMenus.Add(button);
+            });
+            var commentMore = commentMenus.First();
+            RouteWaveformClick(new Point(commentMore.Bounds.X + commentMore.ActualWidth / 2, commentMore.Bounds.Y + commentMore.ActualHeight / 2));
+            var commentMenu = PopupAppearance.MenuFor(commentMore);
+            await WaitForLikedLayoutAsync(() => commentMenu.IsOpen && commentMenu.Reveal == 1);
+            if (commentMenu.Parent != Window.Content || commentMenu.Buttons.Count < 2)
+                throw new InvalidOperationException("Track comment menu did not use the chat overlay or lost its commands.");
+            CaptureUiPreview("comments-menu-open");
+            RouteSettingsKey(Key.Escape);
+            await WaitForLikedLayoutAsync(() => !commentMenu.IsVisible && commentMenu.Parent == null);
+            Console.WriteLine("COMMENTS_MENU_OVERLAY_OK: actual comment More button opens in main-window chat layer and fades out on Escape");
             await DeleteTrackCommentAsync(track, other);
             if (browser.Deletes != 0) throw new InvalidOperationException("Another user's comment was deleted.");
             var deleting = DeleteTrackCommentAsync(track, own);
@@ -174,7 +219,7 @@ internal sealed partial class MainWindow
         finally { Window.Close(); }
     }
 
-    private void VerifyCommentActionFadePixels()
+    private void VerifyCommentActionOpacityPixels()
     {
         var scale = Window.DpiScale;
         var width = (int)Math.Ceiling(trackCommentActions.ActualWidth * scale);
@@ -188,37 +233,38 @@ internal sealed partial class MainWindow
             element.Render(context); context.EndFrame();
             return ((Aprillz.MewUI.Rendering.ICpuPixelSurface)surface).CopyPixels();
         }
-        var masked = Pixels(trackCommentActions);
-        var paintedEdges = 0;
+        var actual = Pixels(trackCommentActions);
+        var painted = 0;
         foreach (var index in new[] { 0, 2 })
         {
-            var unmasked = Pixels((FrameworkElement)trackCommentActions.Children[index]);
-            var x = index == 0 ? 0 : width - 1;
-            var pixel = ((int)(22 * scale) * width + x) * 4 + 3;
-            // The edge can cross a transparent gap between moving buttons.
-            // Empty pixels must stay empty; compare attenuation where there is ink.
-            if (unmasked[pixel] < 8)
+            var group = (FrameworkElement)trackCommentActions.Children[index];
+            var reference = Pixels(group);
+            var left = Math.Max(0, (int)((group.Bounds.X - trackCommentActions.Bounds.X + 6) * scale));
+            var right = Math.Min(width, (int)((group.Bounds.Right - trackCommentActions.Bounds.X - 6) * scale));
+            for (var x = left; x < right; x += 7)
+            foreach (var y in new[] { 9, 22, 35 })
             {
-                if (masked[pixel] > unmasked[pixel] + 1)
-                    throw new InvalidOperationException("The action fade painted over a transparent button gap.");
-                continue;
+                var pixel = ((int)(y * scale) * width + x) * 4;
+                if (reference[pixel + 3] < 8) continue;
+                painted++;
+                for (var channel = 0; channel < 4; channel++)
+                    if (Math.Abs(actual[pixel + channel] - reference[pixel + channel]) > 6)
+                        throw new InvalidOperationException($"In-place fade changed action colour/coverage: group={index}, x={x}, y={y}, channel={channel}, actual={actual[pixel + channel]}, reference={reference[pixel + channel]}.");
             }
-            paintedEdges++;
-            if (masked[pixel] > unmasked[pixel] / 4)
-                throw new InvalidOperationException($"Moving comment actions retain a hard edge instead of dissolving: group={index}, raw={unmasked[pixel]}, masked={masked[pixel]}, expansion={trackCommentActions.Expansion:F4}, bounds={trackCommentActions.Bounds}.");
         }
-        if (paintedEdges == 0) throw new InvalidOperationException("The fade fixture sampled only empty button gaps.");
+        if (painted == 0) throw new InvalidOperationException("Action fade pixel check sampled no visible ink.");
         var editor = Pixels(trackCommentComposer);
         var middle = (int)((trackCommentComposer.Bounds.X + trackCommentComposer.ActualWidth / 2 - trackCommentActions.Bounds.X) * scale);
         var editorPixel = ((int)(22 * scale) * width + middle) * 4;
         for (var channel = 0; channel < 4; channel++)
-            if (Math.Abs(masked[editorPixel + channel] - editor[editorPixel + channel]) > 1)
-                throw new InvalidOperationException("Action edge mask changed the comment editor.");
+            if (Math.Abs(actual[editorPixel + channel] - editor[editorPixel + channel]) > 1)
+                throw new InvalidOperationException("Fading actions changed the comment editor.");
     }
 
     private sealed class CommentFixtureBrowser : ISoundCloudBrowserTransport
     {
         public SoundCloudComment[] Comments = [];
+        public SoundCloudTrack? PlaybackTrack;
         public readonly List<TrackReadRequest> Reads = [];
         public int Creates, Deletes;
         public bool DelayOldest;
@@ -227,8 +273,17 @@ internal sealed partial class MainWindow
         public CancellationToken WriteToken;
         private CommentWriteRequest? lastCreate;
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default) => Task.FromResult(JsonDocument.Parse(
-            uri.AbsolutePath.EndsWith("/ids") ? "[]" : """{"collection":[],"next_href":null}"""));
+        public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
+        {
+            if (PlaybackTrack is { } track && uri.AbsolutePath == $"/tracks/{track.Id}")
+                return Task.FromResult(JsonDocument.Parse(JsonSerializer.Serialize(track with
+                {
+                    Media = new() { Transcodings = [new() { Url = "https://api-v2.soundcloud.com/fixture-stream", Format = new() { Protocol = "progressive" } }] }
+                }, SoundCloudJson.Default.SoundCloudTrack)));
+            if (uri.AbsolutePath == "/fixture-stream")
+                return Task.FromResult(JsonDocument.Parse("""{"url":"https://cf-media.sndcdn.com/fixture"}"""));
+            return Task.FromResult(JsonDocument.Parse(uri.AbsolutePath.EndsWith("/ids") ? "[]" : """{"collection":[],"next_href":null}"""));
+        }
         public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
         {
             Reads.Add(request);

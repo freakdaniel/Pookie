@@ -84,8 +84,9 @@ internal sealed partial class MainWindow
         if (disposed) return;
         ClearUnboundExpandedQueueRows();
         if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
-        if (!workspace.IsVisible) return;
+        if (!workspace.IsVisible) { trackTimelineVisible = false; return; }
         shellPageScroll.Refresh();
+        RefreshTrackTimelineViewport();
         UpdateScrolledChrome();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
         var frameWidth = page.Value == Page.Chats ? Window.ClientSize.Width : Math.Min(1440, Window.ClientSize.Width);

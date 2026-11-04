@@ -6,9 +6,8 @@ using Aprillz.MewUI.Text;
 
 namespace Pookie.App;
 
-// Keep the framework's popup placement, focus ownership and outside-click policy.
-// Only the trigger, option rows and reveal are owned by the app.
-internal sealed class MaterialSelect : DropDownBase
+// The trigger and its dropdown share the main window's chat popup compositor.
+internal sealed class MaterialSelect : ContentControl
 {
     private readonly string[] options;
     private readonly AnimationClock stateMotion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
@@ -18,10 +17,16 @@ internal sealed class MaterialSelect : DropDownBase
     private (string Text, uint Dpi, TextRunStyle Style, double Width) labelKey;
     private Color stateFrom, stateTarget = TrackButtons.TonalSurface;
     private bool keyboardInteraction, headerHovered;
-    private Window? pendingPopupWindow;
-    private int popupGeneration;
+    private InAppPopup? popup;
+    private bool isDropDownOpen;
+    internal double MaxDropDownHeight { get; set; } = 320;
+    internal bool IsDropDownOpen
+    {
+        get => isDropDownOpen;
+        set { if (isDropDownOpen == value) return; isDropDownOpen = value; UpdatePopup(); }
+    }
     internal event Action<int>? SelectionChanged;
-    internal double MenuReveal => menu?.Reveal ?? 0;
+    internal double MenuReveal => popup?.Reveal ?? 0;
     internal MaterialSelectMenu? Menu => menu;
     internal string SelectedText => selectedIndex >= 0 ? options[selectedIndex] : "";
     internal int SelectedIndex
@@ -41,18 +46,20 @@ internal sealed class MaterialSelect : DropDownBase
         Background = stateTarget; Foreground = TrackButtons.OnSurface;
         BorderThickness = 0; BorderBrush = Color.Transparent; CornerRadius = 12;
         Height = 48; FontSize = 16; Padding = new Thickness(16, 0, 12, 0);
-        MaxDropDownHeight = 320;
+        Focusable = true;
+        Content = Icons.View("caret-down", 20, TrackButtons.OnSurface).Right().CenterVertical();
         KeyboardFocusFeedback.Attach(this);
         stateMotion.TickCallback = amount => Background = stateFrom.Lerp(stateTarget, amount);
     }
 
-    protected override double ArrowAreaWidth => 40;
-    protected override Size MeasureHeader(Size availableSize) => new(Math.Min(220, availableSize.Width), 48);
+    protected override Size MeasureContent(Size availableSize)
+    { base.MeasureContent(availableSize); return new(Math.Min(220, availableSize.Width), 48); }
 
-    protected override void RenderHeaderContent(IGraphicsContext context, Rect headerRect, Rect innerHeaderRect)
+    protected override void OnRender(IGraphicsContext context)
     {
-        var area = new Rect(innerHeaderRect.X + Padding.Left, innerHeaderRect.Y,
-            Math.Max(0, innerHeaderRect.Width - Padding.Left - ArrowAreaWidth), innerHeaderRect.Height);
+        base.OnRender(context);
+        var area = new Rect(Bounds.X + Padding.Left, Bounds.Y,
+            Math.Max(0, Bounds.Width - Padding.Left - 40), Bounds.Height);
         var style = GetTextRunStyle();
         var key = (SelectedText, GetDpi(), style, area.Width);
         if (label == null || labelKey != key)
@@ -66,68 +73,46 @@ internal sealed class MaterialSelect : DropDownBase
         }
         context.Text.Draw(label, new Point(area.X, area.Y + (area.Height - label.MeasuredSize.Height) / 2),
             new TextDrawOptions(Foreground, Owner: this));
-        ArrowForeground = Foreground;
     }
 
-    protected override UIElement CreatePopupContent() => menu = new MaterialSelectMenu(options, index =>
+    private void UpdatePopup()
     {
-        SelectedIndex = index; IsDropDownOpen = false;
-    }, () => IsDropDownOpen = false, keyboard =>
-    {
-        keyboardInteraction = keyboard;
-        if (!keyboard) { headerHovered = false; RefreshState(); }
-    });
-
-    protected override void SyncPopupContent(UIElement popup) => menu?.Select(SelectedIndex);
-    protected override UIElement GetPopupFocusTarget(UIElement popup) => menu!.FocusTarget(SelectedIndex);
-
-    protected override void OnIsDropDownOpenChanged(bool oldValue, bool newValue)
-    {
-        ++popupGeneration;
-        CancelPendingPopup();
-        if (newValue) menu?.ResetReveal();
-        if (newValue && OperatingSystem.IsWindows() && FindVisualRoot() is Window owner)
+        if (IsDropDownOpen)
         {
-            // Focus can scroll the trigger's ancestors. Their extent is refined
-            // at the frame boundary; creating the native popup before that pass
-            // lets its scroll-dismiss policy immediately close the new menu.
-            pendingPopupWindow = owner;
-            owner.FrameRendered += OpenAfterLayout;
-            owner.InvalidateVisual();
-            RefreshState();
-            return;
+            if (FindVisualRoot() is not Window) { isDropDownOpen = false; return; }
+            if (menu == null)
+            {
+                menu = new MaterialSelectMenu(options, index =>
+                {
+                    SelectedIndex = index; IsDropDownOpen = false;
+                }, () => IsDropDownOpen = false, keyboard =>
+                {
+                    keyboardInteraction = keyboard;
+                    if (!keyboard) { headerHovered = false; RefreshState(); }
+                });
+                popup = new InAppPopup();
+                popup.InitializePopup(menu, () => Bounds, () => MenuPlacement.Below);
+                popup.Dismissing = () => IsDropDownOpen = false;
+            }
+            menu.Width = ActualWidth; menu.MaxHeight = MaxDropDownHeight;
+            menu.Select(SelectedIndex);
+            popup!.ShowPopup(this, menu.FocusTarget(SelectedIndex));
         }
-        base.OnIsDropDownOpenChanged(oldValue, newValue);
-        if (newValue) menu?.Open(); else menu?.Stop();
-        if (!newValue) KeyboardFocusFeedback.Set(this, keyboardInteraction);
-        RefreshState();
-    }
-
-    private void CancelPendingPopup()
-    {
-        if (pendingPopupWindow is not { } owner) return;
-        owner.FrameRendered -= OpenAfterLayout; pendingPopupWindow = null;
-    }
-
-    private void OpenAfterLayout()
-    {
-        var owner = pendingPopupWindow!; var generation = popupGeneration;
-        CancelPendingPopup();
-        Application.Current.Dispatcher!.BeginInvoke(() =>
+        else
         {
-            if (generation != popupGeneration || !IsDropDownOpen || FindVisualRoot() != owner) return;
-            owner.PerformLayout();
-            base.OnIsDropDownOpenChanged(false, true);
-            menu?.Open(); RefreshState();
-        });
+            popup?.Close();
+            KeyboardFocusFeedback.Set(this, keyboardInteraction);
+        }
+        RefreshState();
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
-        keyboardInteraction = false;
-        headerHovered = IsHeaderHit(e);
-        KeyboardFocusFeedback.Set(this, false);
         base.OnMouseDown(e);
+        if (e.Handled || !IsEffectivelyEnabled || e.Button != MouseButton.Left) return;
+        keyboardInteraction = false; headerHovered = IsHeaderHit(e);
+        KeyboardFocusFeedback.Set(this, false);
+        Focus(); IsDropDownOpen = !IsDropDownOpen; e.Handled = true;
     }
 
     protected override void OnMouseEnter() { base.OnMouseEnter(); headerHovered = true; RefreshState(); }
@@ -140,10 +125,13 @@ internal sealed class MaterialSelect : DropDownBase
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        keyboardInteraction = true;
-        KeyboardFocusFeedback.Set(this, true);
-        if (!e.Handled && IsEffectivelyEnabled && (e.Key is Key.Up or Key.Down) && !IsDropDownOpen)
-        { IsDropDownOpen = true; e.Handled = true; return; }
+        if (!e.Handled && IsEffectivelyEnabled)
+        {
+            keyboardInteraction = true; KeyboardFocusFeedback.Set(this, true);
+            if (e.Key is Key.Space or Key.Enter) { IsDropDownOpen = !IsDropDownOpen; e.Handled = true; }
+            else if (e.Key is Key.Up or Key.Down) { IsDropDownOpen = true; e.Handled = true; }
+            else if (e.Key == Key.Escape && IsDropDownOpen) { IsDropDownOpen = false; e.Handled = true; }
+        }
         base.OnKeyDown(e);
     }
 
@@ -163,22 +151,20 @@ internal sealed class MaterialSelect : DropDownBase
         if (FindVisualRoot() is Window) stateMotion.Start(); else Background = next;
     }
 
-    protected override void OnDispose() { ++popupGeneration; CancelPendingPopup(); stateMotion.Stop(); base.OnDispose(); }
+    protected override void OnDispose() { popup?.Dispose(); stateMotion.Stop(); base.OnDispose(); }
 }
 
 internal sealed class MaterialSelectMenu : Panel
 {
     internal const double ItemHeight = 48;
-    private readonly AnimationClock opening = new(TimeSpan.FromMilliseconds(220), Easing.CubicBezier(.2, 0, 0, 1));
     private readonly Button[] buttons;
     private readonly Image[] checks;
-    private readonly Border card;
+    private readonly GlassCard card;
     private readonly Action dismiss;
     private readonly Action<bool> interaction;
     private int focusedIndex;
-    internal double Reveal { get; private set; }
     internal IReadOnlyList<Button> Options => buttons;
-    internal Border Card => card;
+    internal GlassCard Card => card;
 
     internal MaterialSelectMenu(string[] options, Action<int> choose, Action dismiss, Action<bool> interaction)
     {
@@ -191,25 +177,21 @@ internal sealed class MaterialSelectMenu : Panel
             var item = index;
             var check = checks[index] = Icons.View("check", 20, TrackButtons.OnSurface);
             var content = new Grid().Columns("*,20").Rows("*").Spacing(12).Children(
-                new TextBlock().Text(options[index]).FontSize(16).Foreground(TrackButtons.OnSurface)
+                new TextBlock().Text(options[index]).FontSize(14).Foreground(TrackButtons.OnSurface)
                     .TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical().Column(0), check.CenterVertical().Column(1));
             var button = TrackButtons.Action(content, () => choose(item), TrackButtons.Text, ItemHeight)
-                .Padding(12, 0).CornerRadius(4);
+                .Padding(12, 0).CornerRadius(12);
             content.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.MouseDown += _ => interaction(false);
             button.KeyDown += e => { if (e.Key != Key.Escape) interaction(true); };
             buttons[index] = button; rows.Add(button);
         }
-        card = new Border().Background(FloatingMenuLayer.Surface).BorderThickness(0).CornerRadius(4).Padding(4, 8)
+        card = new GlassCard(PopupAppearance.AppBackground) { HoverEnabled = false }
+            .Background(PopupAppearance.Surface).CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding, 8)
             .Child(new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(rows));
-        Add(card); ResetReveal();
-        opening.TickCallback = value => { Reveal = value; Opacity = value; InvalidateVisual(); };
-        opening.CompletedCallback = () => { Reveal = Opacity = 1; InvalidateVisual(); };
+        Add(card);
     }
 
-    internal void ResetReveal() { opening.Stop(); Reveal = Opacity = 0; }
-    internal void Open() { opening.Start(); InvalidateVisual(); }
-    internal void Stop() => opening.Stop();
     internal UIElement FocusTarget(int selected)
     { focusedIndex = Math.Clamp(selected, 0, buttons.Length - 1); return buttons[focusedIndex]; }
 
@@ -230,15 +212,6 @@ internal sealed class MaterialSelectMenu : Panel
     protected override Size ArrangeOverride(Size finalSize)
     { card.Arrange(new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height)); return finalSize; }
 
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        // Fixed layout prevents rows jumping while the top-anchored menu unfolds.
-        context.Save();
-        context.IntersectClip(new Rect(Bounds.X, Bounds.Y, Bounds.Width, Bounds.Height * (.85 + .15 * Reveal)));
-        context.Translate(0, -6 * (1 - Reveal));
-        base.RenderSubtree(context); context.Restore();
-    }
-
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (e.Key != Key.Escape) interaction(true);
@@ -254,5 +227,4 @@ internal sealed class MaterialSelectMenu : Panel
         }
         base.OnKeyDown(e);
     }
-    protected override void OnDispose() { opening.Stop(); base.OnDispose(); }
 }

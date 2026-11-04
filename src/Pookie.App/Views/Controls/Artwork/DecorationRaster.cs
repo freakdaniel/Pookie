@@ -63,7 +63,7 @@ internal sealed class GlassSheenRaster : IDisposable
     private double edgeEmphasis = double.NaN;
     private Pen? edgePen;
 
-    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0)
+    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0, bool resizing = false)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         var graphics = Application.Current.GraphicsFactory;
@@ -72,7 +72,9 @@ internal sealed class GlassSheenRaster : IDisposable
         var scale = Math.Max(context.DpiScale, minimumScale);
         var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
         var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
-        if (image == null || factory != graphics || image.PixelWidth != width || image.PixelHeight != height)
+        // During a short width transition, compose the existing reflection.
+        // Recreate it once at the final size, preserving static pixel dithering.
+        if (image == null || factory != graphics || image.PixelHeight != height || !resizing && image.PixelWidth != width)
         {
             Dispose(); factory = graphics;
             bitmap = new WriteableBitmap(width, height, clear: false);
@@ -81,7 +83,7 @@ internal sealed class GlassSheenRaster : IDisposable
         if (paintedEmphasis != emphasis)
         {
             using var write = bitmap!.LockForWrite();
-            FillPixels(write.PixelsBgra32, width, height, emphasis, OperatingSystem.IsWindows());
+            FillPixels(write.PixelsBgra32, image.PixelWidth, image.PixelHeight, emphasis, OperatingSystem.IsWindows());
             paintedEmphasis = emphasis;
         }
         // Quantize only at the final physical pixel size. Stretching a small

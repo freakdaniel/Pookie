@@ -54,7 +54,7 @@ internal sealed partial class MainWindow
                     collectionMeta.Column(1).CenterVertical())));
         var coverFrame = new Border().CornerRadius(10).ClipToBounds().Child(ArtworkLayer(collectionCover));
         var more = TrackButtons.Icon(Icons.View("dots-three", 22), () => { }, TrackButtons.Glass, 44);
-        var menu = new ContextMenu();
+        var menu = PopupAppearance.CreateMenu();
         void MenuItem(string id, string label, Action execute, Func<bool> enabled)
         {
             var command = new Command("pookie.collection." + id, label);
@@ -63,7 +63,7 @@ internal sealed partial class MainWindow
         MenuItem("queue", "Добавить в очередь", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
         MenuItem("open", "Открыть в SoundCloud", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
             () => TrackLink(displayedCollection?.Playlist?.PermalinkUrl) != null);
-        more.ContextMenu = menu; more.OnClick(() => menu.Show(more));
+        PopupAppearance.Attach(more, menu); more.OnClick(() => menu.Show(more));
         CreateCollectionActionButtons();
         var hero = new TrackPageColumns(
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),

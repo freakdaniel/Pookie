@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private static readonly Color ChatGlassSurface = Color.FromRgb(30, 30, 34);
+    private static readonly Color ChatGlassSurface = PopupAppearance.Surface;
     private readonly ObservableValue<string> chatsStatus = new(""), chatThreadStatus = new("");
     private ItemsControl chatInbox = null!, chatMessagesView = null!;
     private ChatViewport chatViewport = null!;
@@ -23,8 +23,8 @@ internal sealed partial class MainWindow
     private GlassCard chatComposer = null!, chatIdentityCard = null!;
     private readonly ChatComposerGlyph chatSendGlyph = new();
     private Button chatOptions = null!;
-    private ContextMenu chatSidebarMenu = null!;
-    private ContextMenu chatOptionsMenu = null!;
+    private AnimatedContextMenu chatSidebarMenu = null!;
+    private AnimatedContextMenu chatOptionsMenu = null!;
     private ChatColumns chatColumns = null!;
     private DispatcherTimer chatTimer = null!, chatSearchTimer = null!, chatDraftTimer = null!;
     private ChatMediaHosting chatMedia = new();
@@ -73,7 +73,7 @@ internal sealed partial class MainWindow
         {
             if (chatSidebarSearching) CloseChatGlobalSearch(); else chatSidebarMenu.Show(chatSidebarBack);
         }, TrackButtons.Text,40).ToolTip("Меню / вернуться к диалогам");
-        chatSidebarMenu = new ContextMenu { Placement = MenuPlacement.Below };
+        chatSidebarMenu = PopupAppearance.CreateMenu(MenuPlacement.Below);
         var savedCommand = new Command("chat.sidebar.saved", "Избранное");
         var folderCommand = new Command("chat.sidebar.folder", "Создать папку");
         chatSidebarBack.Commands.Register(savedCommand, OpenChatFavorites); chatSidebarBack.Commands.Register(folderCommand, () => OpenChatFolderEditor(null));
@@ -157,7 +157,7 @@ internal sealed partial class MainWindow
         chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
             .CornerRadius(18).ToolTip("Действия с диалогом");
         ((Grid)chatNormalIdentity).Add(chatOptions.Column(3).CenterVertical());
-        chatOptionsMenu = new ContextMenu { Placement = MenuPlacement.Below, PlacementOffset = new Point(0, 6) };
+        chatOptionsMenu = PopupAppearance.CreateMenu(MenuPlacement.Below, new Point(0, 6));
         var profileCommand = new Command("pookie.chat.profile", "Профиль собеседника");
         var refreshCommand = new Command("pookie.chat.refresh", "Обновить переписку");
         var settingsCommand = new Command("pookie.chat.settings", "Настройки чатов");
@@ -171,7 +171,7 @@ internal sealed partial class MainWindow
         var pendingCommand=new Command("pookie.chat.pending","Проверить незавершённую отправку");
         chatOptions.Commands.Register(pendingCommand,()=>Run(CheckPendingChatAsync),()=>chatRecipient!=null&&chatPending.ContainsKey(chatRecipient.Id)&&!chatSending);
         chatOptionsMenu.Item(searchCommand).Item(mediaCommand).Item(profileCommand).Item(refreshCommand).Item(pendingCommand).Item(settingsCommand);
-        chatOptions.ContextMenu = chatOptionsMenu;
+        PopupAppearance.Attach(chatOptions, chatOptionsMenu);
         FrameworkElement ReadingChrome(FrameworkElement content) => new ChatMessageColumn(content, () => chatColumns.ScrollGutter).Initialize()
             .Bind(UIElement.IsVisibleProperty,content,UIElement.IsVisibleProperty);
         var threadStatus = new TextBlock().BindText(chatThreadStatus).BindIsVisible(chatThreadStatus, value => value.Length > 0)
@@ -236,7 +236,7 @@ internal sealed partial class MainWindow
         ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         var pin=new Command("chat.pin","Закрепить / открепить");
         button.Commands.Register(pin,()=>{if(chatInboxBindings.TryGetValue(button,out var dialog))ToggleChatPin(dialog.Recipient.Id);});
-        button.ContextMenu=new ContextMenu().Item(pin);
+        PopupAppearance.Attach(button, PopupAppearance.CreateMenu().Item(pin));
         context.Register("button", button); context.Register("avatar", avatar); context.Register("name", name); context.Register("preview", preview); context.Register("unread", unread);
         chatInboxVisuals.Add(button, new(time, checks, thumbnail, thumbnailFrame, previewIcon, preview, unread, unreadText));
         return button;

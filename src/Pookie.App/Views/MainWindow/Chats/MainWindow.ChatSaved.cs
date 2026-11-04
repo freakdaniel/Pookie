@@ -36,7 +36,7 @@ internal sealed partial class MainWindow
             var original = new Command("chat.saved.original", "Перейти к сообщению"); root.Commands.Register(original, () => Run(() => JumpChatMessageAsync(favorite.PeerId, favorite.Message.Id)));
             var remove = new Command("chat.saved.remove", "Убрать из избранного"); root.Commands.Register(remove, () =>
             { chatWorkspace = chatWorkspace with { Favorites = chatWorkspace.Favorites.Where(f => f.PeerId != favorite.PeerId || f.Message.Id != favorite.Message.Id).ToArray() }; SaveChatWorkspace(); RefreshChatFavoriteMedia(); RefreshChatSaved(); });
-            root.ContextMenu = new ContextMenu().Item(original).Item(copy).Item(remove);
+            PopupAppearance.Attach(root, PopupAppearance.CreateMenu().Item(original).Item(copy).Item(remove));
         });
         chatSavedEmpty = new StackPanel().Vertical().Spacing(12).Center().Children(Icons.View("bookmark-simple", 44, ChatAccent).CenterHorizontal(),
             new TextBlock().Text("Избранное").FontSize(21).SemiBold().CenterHorizontal(),

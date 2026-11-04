@@ -16,6 +16,7 @@ internal sealed class ShellPageScroll : Panel
     private ScrollViewer? inner;
     private double prefix, tail, extent, collapse;
     private bool applyingOffset;
+    private bool layoutFrameQueued;
     internal bool IsReady => ReferenceEquals(inner, current()) && !IsMeasureDirty && !IsArrangeDirty &&
         Math.Abs(extent - ContentExtent()) < .5;
 
@@ -34,6 +35,7 @@ internal sealed class ShellPageScroll : Panel
 
     internal void Refresh()
     {
+        var layoutChanged = false;
         var selected = current();
         if (!ReferenceEquals(inner, selected))
         {
@@ -56,7 +58,7 @@ internal sealed class ShellPageScroll : Panel
                 viewer.ScrollChanged += Changed; viewer.MouseWheel += Wheel;
                 handlers.Add(viewer, (Changed, Wheel));
             }
-            InvalidateMeasure();
+            layoutChanged = true;
         }
         if (inner != null)
         {
@@ -66,9 +68,26 @@ internal sealed class ShellPageScroll : Panel
             if (VerticalBar(inner) is { } bar) { bar.Opacity = 0; bar.IsHitTestVisible = false; }
         }
         var nextCollapse = inner == null ? 0 : Math.Min(owner.VerticalOffset, prefix);
-        if (Math.Abs(collapse - nextCollapse) > .001) { collapse = nextCollapse; InvalidateMeasure(); }
+        if (Math.Abs(collapse - nextCollapse) > .001) { collapse = nextCollapse; layoutChanged = true; }
         var next = ContentExtent();
-        if (Math.Abs(extent - next) > .5) { extent = next; InvalidateMeasure(); }
+        if (Math.Abs(extent - next) > .5) { extent = next; layoutChanged = true; }
+        // A descendant can request another arrange while an ancestor is still
+        // completing this pass. The ancestor then clears its own dirty flag.
+        // Reissue that pending request at the frame boundary, including when
+        // the content extent has not changed and no animation will wake us.
+        if (!layoutChanged && !IsMeasureDirty && !IsArrangeDirty) return;
+        if (layoutChanged) InvalidateMeasure();
+        else if (IsMeasureDirty) owner.InvalidateMeasure();
+        else owner.InvalidateArrange();
+        // Refresh runs after rendering. Commit the updated extent on a new
+        // dispatcher turn even if playback/other animations are currently idle.
+        if (layoutFrameQueued) return;
+        layoutFrameQueued = true;
+        Application.Current.Dispatcher!.BeginInvoke(() =>
+        {
+            layoutFrameQueued = false;
+            if (FindVisualRoot() is Window window) window.InvalidateVisual();
+        });
     }
 
     private double ContentExtent()

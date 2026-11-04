@@ -224,7 +224,7 @@ internal sealed partial class MainWindow
 
     private void AttachTrackQueueMenu(FrameworkElement root, Func<SoundCloudTrack?> track, Func<long?>? entryId = null, bool extraActions = false)
     {
-        var menu = new ContextMenu();
+        var menu = PopupAppearance.CreateMenu();
         void Item(string id, string label, Action execute, Func<bool> enabled)
         {
             var command = new Command("pookie.queue." + id, label);
@@ -249,7 +249,7 @@ internal sealed partial class MainWindow
                 () => Index() >= 0 && Index() < playbackQueue.Snapshot.ManualUpcoming.Count - 1);
             Item("remove", "Убрать из очереди", () => ChangeManualQueue(() => playbackQueue.RemoveManual(entryId()!.Value)), () => Index() >= 0);
         }
-        root.ContextMenu = menu;
+        PopupAppearance.Attach(root, menu);
     }
 
     private ItemsControl CreatePlaybackQueueList()
