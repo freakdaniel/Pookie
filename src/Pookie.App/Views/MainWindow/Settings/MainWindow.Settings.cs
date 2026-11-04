@@ -5,7 +5,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum SettingsSection { General, Interface, Playback, Wave, Chats, Data, About }
+    private enum SettingsSection { General, Interface, Playback, Chats, Data, About }
     private readonly ObservableValue<SettingsSection> settingsSection = new(SettingsSection.General);
     private readonly ObservableValue<string> settingsMessage = new("");
     private readonly List<Action> settingsRefreshers = [];
@@ -14,7 +14,6 @@ internal sealed partial class MainWindow
     private readonly Dictionary<SettingsSection, Button> settingsTabs = [];
     private readonly List<(Button Button, Func<bool> Enabled)> settingsActions = [];
     private ScrollViewer settingsScroll = null!;
-    private StackPanel settingsBlockedList = null!;
     private CacheUsageView settingsCacheUsage = null!;
     private bool refreshingSettings, settingsBusy;
     private long settingsDataGeneration;
@@ -25,7 +24,7 @@ internal sealed partial class MainWindow
         var body = new Grid().Columns("*").Rows("Auto");
         foreach (var (section, title, content) in new (SettingsSection, string, Func<FrameworkElement>)[] {
             (SettingsSection.General, "Общие", GeneralSettingsView), (SettingsSection.Interface, "Интерфейс", InterfaceSettingsView),
-            (SettingsSection.Playback, "Воспроизведение", PlaybackSettingsView), (SettingsSection.Wave, "Волна", WavePreferencesView),
+            (SettingsSection.Playback, "Воспроизведение", PlaybackSettingsView),
             (SettingsSection.Chats, "Чаты", ChatSettingsView), (SettingsSection.Data, "Данные", DataSettingsView),
             (SettingsSection.About, "О приложении", AboutSettingsView) })
         {

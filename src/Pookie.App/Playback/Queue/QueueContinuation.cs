@@ -3,51 +3,65 @@ using Pookie.App.Home;
 
 namespace Pookie.App.Playback;
 
-// Network candidates stay scoped to the original playback source, not the page.
+internal readonly record struct RecommendationBatch(SoundCloudTrack[] Tracks, bool Exhausted = false);
+
+// Consume each SoundCloud stream in its original order. A new seed is used only
+// after the current stream ends, never to interleave or rerank its remaining pages.
 internal sealed class QueueContinuation
 {
-    private long version = -1;
-    private readonly Dictionary<long, SoundCloudTrack> candidates = [];
-    private readonly Dictionary<long, string?> cursors = [];
-
-    internal static SoundCloudTrack[] Seeds(PlaybackQueueSnapshot state)
+    private sealed class Stream(long seed)
     {
-        var played = state.History.Concat(state.Current != null ? [state.Current] : []).ToArray();
-        var original = played.Where(entry => entry.Origin == PlaybackEntryOrigin.Context).TakeLast(2).Select(entry => entry.Track);
-        if (!original.Any()) original = state.Source.TakeLast(2).Select(entry => entry.Track);
-        var latest = played.LastOrDefault(entry => entry.Origin == PlaybackEntryOrigin.Recommendation)?.Track;
-        return original.Concat(latest != null ? [latest] : []).Where(HomeRecommendations.Playable).DistinctBy(track => track.Id).Take(3).ToArray();
+        internal readonly long Seed = seed;
+        internal readonly Queue<SoundCloudTrack> Buffer = new();
+        internal readonly HashSet<string> Cursors = new(StringComparer.Ordinal);
+        internal string? Cursor;
+        internal bool Finished;
     }
 
-    internal async Task<SoundCloudTrack[]> FetchAsync(PlaybackQueueSnapshot state, WaveTaste taste,
+    private long version = -1;
+    private Stream? stream;
+    private readonly HashSet<long> started = [];
+
+    internal async Task<RecommendationBatch> FetchAsync(PlaybackQueueSnapshot state, Func<SoundCloudTrack, bool> allowed,
         Func<long, string?, CancellationToken, Task<TrackPage>> fetch, CancellationToken token)
     {
-        if (version != state.SourceVersion) { version = state.SourceVersion; candidates.Clear(); cursors.Clear(); }
-        var requestedVersion = version;
-        var seeds = Seeds(state).Where(track => !taste.IsBlocked(track) && !taste.IsUnavailable(track)).ToArray();
-        var reserved = state.Source.Concat(state.History).Concat(state.ManualUpcoming).Concat(state.Forward)
-            .Concat(state.Recommendations).Concat(state.Current != null ? [state.Current] : []).Select(entry => entry.Track).ToArray();
-        SoundCloudTrack[] Rank() => taste.RankContinuation(candidates.Values,
-            state.History.Select(entry => entry.Track).Concat(state.Current != null ? [state.Current.Track] : []),
-            reserved, PlaybackQueue.WaveUpcomingLimit - state.Recommendations.Count, DateTimeOffset.UtcNow);
-        for (var round = 0; round < 3; round++)
+        if (version != state.SourceVersion)
+        { version = state.SourceVersion; stream = null; started.Clear(); }
+        var played = state.History.Append(state.Current).OfType<PlaybackEntry>();
+        var seeds = state.Context?.Kind == PlaybackContextKind.Radio
+            ? state.Source.Take(1).Concat(played.Where(entry => entry.Origin == PlaybackEntryOrigin.Recommendation).Reverse())
+            : played.Where(entry => entry.Origin != PlaybackEntryOrigin.Manual).Reverse().Take(3).Concat(state.Source.TakeLast(2).Reverse());
+        var reserved = new TrackIdentity(state.Source.Concat(state.History).Concat(state.ManualUpcoming)
+            .Concat(state.Forward).Concat(state.Recommendations).Append(state.Current).OfType<PlaybackEntry>().Select(entry => entry.Track));
+        var limit = PlaybackQueue.RecommendationLimit - state.Recommendations.Count;
+        var result = new List<SoundCloudTrack>();
+        var requests = 0;
+        while (result.Count < limit)
         {
-            var fetched = false;
-            foreach (var seed in seeds)
+            token.ThrowIfCancellationRequested();
+            if (stream == null || stream.Finished && stream.Buffer.Count == 0)
             {
-                token.ThrowIfCancellationRequested();
-                if (cursors.TryGetValue(seed.Id, out var cursor) && cursor == null) continue;
-                var page = await fetch(seed.Id, cursor, token);
-                token.ThrowIfCancellationRequested();
-                if (requestedVersion != version) return [];
-                fetched = true; cursors[seed.Id] = page.NextHref == cursor ? null : page.NextHref;
-                foreach (var track in page.Tracks.Where(HomeRecommendations.Playable)) candidates[track.Id] = track;
+                var next = seeds.FirstOrDefault(entry => !started.Contains(entry.Track.Id) &&
+                    HomeRecommendations.Playable(entry.Track));
+                if (next == null) return new(result.ToArray(), Exhausted: true);
+                stream = new(next.Track.Id); started.Add(next.Track.Id);
             }
-            if (candidates.Count > 800)
-                foreach (var id in candidates.Keys.Take(candidates.Count - 800).ToArray()) candidates.Remove(id);
-            var result = Rank();
-            if (result.Length > 0 || !fetched) return result;
+            var active = stream;
+            while (active.Buffer.TryDequeue(out var track))
+            {
+                if (HomeRecommendations.Playable(track) && allowed(track) && reserved.Add(track)) result.Add(track);
+                if (result.Count == limit) return new(result.ToArray());
+            }
+            if (result.Count > 0) return new(result.ToArray());
+            if (active.Finished) continue;
+            if (requests++ == 8) return new(result.ToArray());
+            var page = await fetch(active.Seed, active.Cursor, token);
+            token.ThrowIfCancellationRequested();
+            if (state.SourceVersion != version || active != stream) return new([]);
+            active.Cursor = page.NextHref;
+            active.Finished = string.IsNullOrEmpty(active.Cursor) || !active.Cursors.Add(active.Cursor);
+            foreach (var item in page.Tracks) active.Buffer.Enqueue(item);
         }
-        return [];
+        return new(result.ToArray());
     }
 }

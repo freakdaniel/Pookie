@@ -62,11 +62,11 @@ internal sealed partial class MainWindow
             likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(heart.CenterVertical(), likeCount),
                 () => { if (Track is { } track) like(track); }, actionVariant, TrackRowLayout.ActionSize);
             copyButton = TrackButtons.Icon(Icons.View("copy", 18, TrackButtons.OnSurface),
-                () => { if (Track is { } track) copy(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Скопировать ссылку");
+                () => { if (Track is { } track) copy(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Скопировать ссылку");
             repostButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(repostIcon.CenterVertical(), repostCount),
-                () => { if (Track is { } track) repost(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Сделать репост");
+                () => { if (Track is { } track) repost(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Сделать репост");
             var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 18, TrackButtons.OnSurface),
-                () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).ToolTip("Добавить в плейлист");
+                () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Добавить в плейлист");
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                 Icons.View("play-solid", 12, Muted).CenterVertical(), playsCount);
             commentsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
@@ -160,7 +160,7 @@ internal sealed partial class MainWindow
 
         public void AddQueueAction(Action<SoundCloudTrack> enqueue) => actionButtons.Add(
             TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface), () => { if (Track is { } track) enqueue(track); }, actionVariant,
-                embedded ? 40 : TrackRowLayout.ActionSize).ToolTip("Добавить в очередь"));
+                embedded ? 40 : TrackRowLayout.ActionSize).Hint("Добавить в очередь"));
 
         public void ReserveFooter(double width)
         {
@@ -206,8 +206,8 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(heart, liked ? "heart-filled" : "heart", liked ? TrackButtons.OnSelected : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetTextColor(likeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetLiked(likeButton, liked, actionVariant);
-            PlayButton.ToolTip(selected && playing ? "Приостановить" : "Воспроизвести");
-            likeButton.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+            PlayButton.Hint(selected && playing ? "Приостановить" : "Воспроизвести");
+            likeButton.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
             TrackButtons.SetAvailability(likeButton, canLike, pending);
             snapActionColors = false;
             Waveform.IsPlaying = selected && playing;
@@ -232,7 +232,7 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(repostIcon, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetTextColor(repostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetAvailability(repostButton, available, pending);
-            repostButton.ToolTip(reposted ? "Убрать репост" : "Сделать репост");
+            repostButton.Hint(reposted ? "Убрать репост" : "Сделать репост");
         }
 
         public void SetTrackArt(ImageSource? source)

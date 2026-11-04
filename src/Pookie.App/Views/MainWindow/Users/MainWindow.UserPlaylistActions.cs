@@ -17,10 +17,10 @@ internal sealed partial class MainWindow
         var like = TrackButtons.Icon(heart, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, false)), TrackButtons.Glass, size);
         var repost = TrackButtons.Icon(repeat, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, true)), TrackButtons.Glass, size);
         var copy = TrackButtons.Icon(Icons.View("copy", 20, TrackButtons.OnSurface), () =>
-        { if (TrackLink(item.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, size).ToolTip("Скопировать ссылку");
+        { if (TrackLink(item.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, size).Hint("Скопировать ссылку");
         copy.IsEnabled = TrackLink(item.Playlist?.PermalinkUrl) != null;
         var queue = TrackButtons.Icon(Icons.View("queue", 20, TrackButtons.OnSurface),
-            () => Run(() => EnqueueUserPlaylistAsync(item)), TrackButtons.Glass, size).ToolTip("Добавить в очередь");
+            () => Run(() => EnqueueUserPlaylistAsync(item)), TrackButtons.Glass, size).Hint("Добавить в очередь");
         var root = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Height(size).Left()
             .Children(TrackButtons.Connected(like, repost), copy, queue);
         (views ?? userPlaylistActionViews).Add(new(item, root, like, repost, heart, repeat, queue));
@@ -43,8 +43,8 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(view.Repeat, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(view.Like, available && !likePending, likePending);
             TrackButtons.SetAvailability(view.Repost, available && playlist.User?.Id != me?.Id && !repostPending, repostPending);
-            view.Like.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
-            view.Repost.ToolTip(reposted ? "Убрать репост" : "Сделать репост");
+            view.Like.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+            view.Repost.Hint(reposted ? "Убрать репост" : "Сделать репост");
         }
     }
 

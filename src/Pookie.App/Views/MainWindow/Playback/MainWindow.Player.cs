@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
     private readonly List<HoverReveal> hoverReveals = [];
     private TextBlock positionLabel = null!, durationLabel = null!;
     private Slider volumeSlider = null!;
-    private Button playerDislikeButton = null!;
+    private Button playerRepostButton = null!;
 
     private readonly LoadingTrack loadingTrack = new();
     private readonly BufferedTrack bufferedTrack = new();
@@ -59,12 +59,12 @@ internal sealed partial class MainWindow
             .OnMouseLeave(() => { heartHovered = false; RefreshHeart(); })
             .OnClick(() => Run(ToggleLikeAsync));
         RefreshHeart();
-        heartButton.ToolTip("Нравится");
-        playerDislikeButton = PlayerButton(new Grid().Columns("*").Rows("*").Children(
-                Icons.View("thumbs-down", 19, Color.FromRgb(190, 190, 190)).Center().BindIsVisible(isDisliked, value => !value),
-                Icons.View("thumbs-down-filled", 19, LikedHeart).Center().BindIsVisible(isDisliked)),
-            () => Run(RejectWaveTrackAsync), isDisliked).BindIsEnabled(likeAvailable)
-            .ToolTip("Не нравится — исключить из волны. Нажми ещё раз, чтобы отменить.");
+        heartButton.Hint("Нравится");
+        playerRepostButton = PlayerButton(PlayerRepostGlyph(19, Color.FromRgb(190, 190, 190)),
+            () => Run(ToggleCurrentTrackRepostAsync), isReposted).BindIsEnabled(repostAvailable);
+        void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? "Убрать репост" : "Сделать репост");
+        isReposted.Changed += RefreshRepostHint;
+        RefreshRepostHint();
 
         playerArtworkOverlay = new Border().Background(Color.FromArgb(140, 0, 0, 0))
             .Child(Icons.View("arrows-out", 23, Color.White).Center());
@@ -111,7 +111,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("48,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
                 playerArtworkButton.Column(0),
                 playerTrackInfo.Column(1),
-                heartButton.CenterVertical().Column(2), playerDislikeButton.Column(3)),
+                heartButton.CenterVertical().Column(2), playerRepostButton.Column(3)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
                     PlayerButton(Icons.View("skip-back-solid", 18), () => Run(() => SkipAsync(-1))).CenterVertical(),

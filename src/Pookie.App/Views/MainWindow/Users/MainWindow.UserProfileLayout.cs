@@ -50,7 +50,7 @@ internal sealed partial class MainWindow
         userName = new TextBlock().FontSize(34).Bold().TextTrimming(TextTrimming.CharacterEllipsis);
         userVerified = new Grid().Columns("*").Rows("*").Width(28).Height(28).Children(
             Icons.View("seal-fill", 28, Color.FromRgb(111, 183, 255)).Center(),
-            Icons.View("check", 13, Color.FromRgb(15, 39, 64)).Center()).ToolTip("Подтверждённый пользователь");
+            Icons.View("check", 13, Color.FromRgb(15, 39, 64)).Center()).Hint("Подтверждённый пользователь");
         userCountryFlagImage = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.StretchMode(Stretch.UniformToFill);
         userCountryFlag = new Border().Width(24).Height(18).CornerRadius(3).ClipToBounds()
             .BorderBrush(Color.FromArgb(48, 255, 255, 255)).BorderThickness(.5).Child(userCountryFlagImage);
@@ -59,7 +59,7 @@ internal sealed partial class MainWindow
             .Background(Color.FromArgb(120, 59, 42, 22)).BorderBrush(Color.FromArgb(45, 255, 205, 143)).BorderThickness(1)
             .Child(new StackPanel().Horizontal().Spacing(5).Children(Icons.View("crown-simple-fill", 13, proColor).CenterVertical(),
                 new TextBlock().Text("Artist Pro").FontSize(11).SemiBold().Foreground(proColor).CenterVertical()))
-            .ToolTip("Подписка SoundCloud Artist Pro");
+            .Hint("Подписка SoundCloud Artist Pro");
         userFullName = new TextBlock().FontSize(15).Foreground(TrackButtons.OnSurface).TextTrimming(TextTrimming.CharacterEllipsis);
         userFollowerCount = new TextBlock(); userFollowingCount = new TextBlock(); userTrackCount = new TextBlock();
         Button Counter(TextBlock value, string title, UserSection section)

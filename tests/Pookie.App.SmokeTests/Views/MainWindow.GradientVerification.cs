@@ -1,6 +1,5 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Rendering;
-using System.Numerics;
 
 namespace Pookie.App;
 
@@ -42,17 +41,6 @@ internal sealed partial class MainWindow
             }
             if (mixed < count * .75) throw new InvalidOperationException($"Glass still contains broad flat bands at {scale}x DPI: {mixed}/{count} columns blend shades; renderer={renderer.GetType().Name}, samples={pixels[80 * cpu.StrideBytes + 200 * 4]}/{pixels[80 * cpu.StrideBytes + 800 * 4]}/{pixels[80 * cpu.StrideBytes + 1200 * 4]}.");
         }
-        var samples = Enumerable.Range(0, 160 * 64).Select(i => new Vector3(20 + i % 160 / 159f * 20)).ToArray();
-        var wave = new byte[1600 * 96 * 4];
-        WaveBackdrop.FillPixels(wave, 1600, 96, samples);
-        var mixedWave = 0;
-        for (var x = 20; x < 1580; x++)
-        {
-            var levels = Enumerable.Range(0, 96).Select(y => wave[(y * 1600 + x) * 4]).ToArray();
-            if (levels.Max() - levels.Min() > 1) throw new InvalidOperationException("Wave gradient introduced visible noise.");
-            if (levels.Max() != levels.Min()) mixedWave++;
-        }
-        if (mixedWave < 1400) throw new InvalidOperationException("Upscaling the wave gradient lost its fractional colours.");
-        Console.WriteLine("SMOOTH_GRADIENTS_OK: native glass pixels at 1x/1.5x/2x DPI, stable neutral one-level dithering and fractional wave upscaling");
+        Console.WriteLine("SMOOTH_GRADIENTS_OK: native glass pixels at 1x/1.5x/2x DPI, stable neutral one-level dithering");
     }
 }

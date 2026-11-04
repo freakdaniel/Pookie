@@ -61,11 +61,10 @@ internal sealed partial class MainWindow
                 Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
                 Icons.View("heart-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isLiked)),
             () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable);
-        var dislike = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
-                Icons.View("thumbs-down", 24, Color.White).Center().BindIsVisible(isDisliked, value => !value),
-                Icons.View("thumbs-down-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isDisliked)),
-            () => Run(RejectWaveTrackAsync), 38, isDisliked).BindIsEnabled(likeAvailable);
-        ((ExpandedGlassButton)like).Connect(true); ((ExpandedGlassButton)dislike).Connect(false);
+        var repost = ExpandedActionButton(PlayerRepostGlyph(24, Color.White),
+            () => Run(ToggleCurrentTrackRepostAsync), 38, isReposted).BindIsEnabled(repostAvailable);
+        ((ExpandedGlassButton)like).Connect(true);
+        ((ExpandedGlassButton)repost).Connect(false, TrackButtons.RepostedSurface);
         var shuffleControl = ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle);
         var repeatControl = ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive);
         var playbackTint = Color.FromRgb(28, 76, 76);
@@ -80,7 +79,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
-                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, dislike)));
+                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>
@@ -214,12 +213,10 @@ internal sealed partial class MainWindow
         if (disposed || expandedOpen == open || open && (!playerVisible.Value || current == null)) return;
         expandedAnimation.Stop();
         expandedOpen = open;
-        RefreshWaveMotion();
         SetLyricsPanelActive(open && expandedPanelMode == PlayerPanel.Lyrics);
         if (open)
         {
             ResetTrackCommentPreview();
-            waveSettingsOpen.Value = false;
             if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
             {

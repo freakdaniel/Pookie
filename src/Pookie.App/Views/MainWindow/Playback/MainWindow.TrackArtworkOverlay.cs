@@ -8,23 +8,26 @@ internal sealed partial class MainWindow
 {
     private sealed class TrackArtworkOverlay : ContentControl
     {
-        private readonly Image play = Icons.View("play-solid", 23, true).CenterHorizontal().CenterVertical();
-        private readonly Image pause = Icons.View("pause-solid", 22, true).CenterHorizontal().CenterVertical().IsVisible(false);
+        private const double DefaultButtonSize = 46;
+        private readonly Image play, pause;
         private bool hovered, active;
         internal Button? PlaybackButton { get; }
         internal bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
-        public TrackArtworkOverlay(Action? onPlay = null)
+        public TrackArtworkOverlay(Action? onPlay = null, double buttonSize = DefaultButtonSize)
         {
+            var scale = buttonSize / DefaultButtonSize;
+            play = Icons.View("play-solid", (int)Math.Round(23 * scale), true).CenterHorizontal().CenterVertical();
+            pause = Icons.View("pause-solid", (int)Math.Round(22 * scale), true).CenterHorizontal().CenterVertical().IsVisible(false);
             Background = Color.FromArgb(64, 0, 0, 0);
             Padding = new Thickness(0); BorderThickness = 0; CornerRadius = 0;
             var glyphs = new Grid().Columns("*").Rows("*").Children(play, pause);
             if (onPlay == null)
-                Content = new Border().Width(46).Height(46).CornerRadius(23).Background(Color.White)
+                Content = new Border().Width(buttonSize).Height(buttonSize).CornerRadius(buttonSize / 2).Background(Color.White)
                     .CenterHorizontal().CenterVertical().Child(glyphs);
             else
             {
-                PlaybackButton = TrackButtons.Icon(glyphs, onPlay, TrackButtons.Filled, 46).Center();
+                PlaybackButton = TrackButtons.Icon(glyphs, onPlay, TrackButtons.Filled, buttonSize).Center();
                 Content = PlaybackButton;
             }
             Opacity = 0;

@@ -213,7 +213,7 @@ internal sealed partial class MainWindow
             Spinner.IsVisible = Spinner.IsActive = own && state == ChatDelivery.Sending;
             Checks.IsVisible = own && state == ChatDelivery.Sent;
             Error.IsVisible = own && state == ChatDelivery.Failed;
-            Error.ToolTip = new TextBlock().Text(owner.ChatOutgoing(Message)?.Error ?? "Повторить отправку");
+            Error.Hint(owner.ChatOutgoing(Message)?.Error ?? "Повторить отправку");
             Footer.IsHitTestVisible = Error.IsVisible;
             UpdateMediaHover(Bubble.IsMouseOver);
         }

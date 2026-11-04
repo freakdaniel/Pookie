@@ -4,6 +4,31 @@ namespace Pookie.SoundCloud;
 
 public sealed partial class SoundCloudWebClient
 {
+    public async Task<SoundCloudDiscoverShelves> GetDiscoverShelvesAsync(long userId, CancellationToken token = default)
+    {
+        ValidateDetailTrackId(userId);
+        using var document = await GetJsonAsync(Api("mixed-selections"), token);
+        var shelves = DiscoverData.Shelves(document.RootElement, userId);
+        if (shelves.Mixes.Length > 0 && shelves.MadeForYou.Length > 0 ||
+            Session?.MobileIdentity == null || Transport is not ISoundCloudMobileApi mobile) return shelves;
+
+        // The web selection supplies the reference order. Some mobile sessions
+        // receive only public web selections, so fill missing personal shelves from SDUI.
+        try
+        {
+            using var home = await mobile.GetMobileSduiAsync(cancellationToken: token);
+            var personal = DiscoverData.GroupShelves(DiscoverData.MobilePersonalMixes(home.RootElement, userId));
+            return shelves with
+            {
+                Mixes = shelves.Mixes.Length == 0 ? personal.Mixes : shelves.Mixes,
+                MadeForYou = shelves.MadeForYou.Length == 0 ? personal.MadeForYou : shelves.MadeForYou
+            };
+        }
+        catch (Exception error) when (!token.IsCancellationRequested &&
+            error is NotSupportedException or SoundCloudException or HttpRequestException or JsonException or OperationCanceledException)
+        { return shelves; }
+    }
+
     public async Task<LibraryItem[]> GetPersonalMixesAsync(long userId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId);
@@ -30,6 +55,8 @@ public sealed partial class SoundCloudWebClient
     }
 }
 
+public sealed record SoundCloudDiscoverShelves(LibraryItem[] Mixes, LibraryItem[] MadeForYou, LibraryItem[] Trending);
+
 public static class DiscoverData
 {
     public static LibraryItem[] MobilePersonalMixes(JsonElement root, long userId)
@@ -54,10 +81,35 @@ public static class DiscoverData
         }
     }
 
-    public static LibraryItem[] PersonalMixes(JsonElement root, long userId)
+    public static LibraryItem[] PersonalMixes(JsonElement root, long userId) =>
+        SelectionPlaylists(root, userId).Where(item => Kind(item) is Shelf.Mixes or Shelf.MadeForYou).ToArray();
+
+    public static SoundCloudDiscoverShelves Shelves(JsonElement root, long userId) =>
+        GroupShelves(SelectionPlaylists(root, userId));
+
+    internal static SoundCloudDiscoverShelves GroupShelves(IEnumerable<LibraryItem> items)
     {
-        var result = new List<LibraryItem>();
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("collection", out var selections) || selections.ValueKind != JsonValueKind.Array) return [];
+        var groups = items.ToLookup(Kind);
+        return new(groups[Shelf.Mixes].ToArray(), groups[Shelf.MadeForYou].ToArray(), groups[Shelf.Trending].ToArray());
+    }
+
+    private enum Shelf { Other, Mixes, MadeForYou, Trending }
+
+    private static Shelf Kind(LibraryItem item)
+    {
+        var urn = item.Playlist?.Urn ?? "";
+        const string prefix = "soundcloud:system-playlists:";
+        if (urn.StartsWith(prefix + "your-moods:", StringComparison.Ordinal)) return Shelf.Mixes;
+        if (urn.StartsWith(prefix + "new-for-you:", StringComparison.Ordinal) ||
+            urn.StartsWith(prefix + "weekly:", StringComparison.Ordinal)) return Shelf.MadeForYou;
+        return urn.StartsWith(prefix + "trending-by-genre:", StringComparison.Ordinal) ? Shelf.Trending : Shelf.Other;
+    }
+
+    private static IEnumerable<LibraryItem> SelectionPlaylists(JsonElement root, long userId)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("collection", out var selections) || selections.ValueKind != JsonValueKind.Array)
+            yield break;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var selection in selections.EnumerateArray())
         {
             if (selection.ValueKind != JsonValueKind.Object || !selection.TryGetProperty("items", out var items)) continue;
@@ -66,14 +118,10 @@ public static class DiscoverData
             foreach (var entry in items.EnumerateArray())
             {
                 if (entry.ValueKind != JsonValueKind.Object || entry.TryGetProperty("ad_urn", out _) || entry.TryGetProperty("promoted_by", out _)) continue;
-                if (LibraryData.ParseItem(entry) is not { Playlist: { } playlist } item) continue;
-                var urn = playlist.Urn;
-                if (!urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal)) continue;
-                if (playlist.MadeFor != null && playlist.MadeFor.Id != userId) continue;
-                if (urn.Contains(":your-moods:", StringComparison.Ordinal) || urn.Contains(":new-for-you:", StringComparison.Ordinal) ||
-                    urn.Contains(":weekly:", StringComparison.Ordinal)) result.Add(item);
+                if (LibraryData.ParseItem(entry) is not { Playlist: { } playlist } item ||
+                    playlist.MadeFor != null && playlist.MadeFor.Id != userId) continue;
+                if (seen.Add(item.Key)) yield return item;
             }
         }
-        return result.DistinctBy(item => item.Key).ToArray();
     }
 }

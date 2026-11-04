@@ -57,7 +57,7 @@ internal sealed partial class MainWindow
             TrackButtons.SetConfirmed(button, following, inactive);
             TrackButtons.SetGlyph(icon, following ? "user-check" : "user-plus", following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(button, !demo && user is { Id: > 0 } && me != null && api.Session != null && !pending, pending);
-            button.ToolTip(following ? "Отписаться" : "Подписаться");
+            button.Hint(following ? "Отписаться" : "Подписаться");
             if (button.Content is StackPanel content && content.Children.OfType<TextBlock>().FirstOrDefault() is { } label)
             { label.Text = following ? "Вы подписаны" : "Подписаться"; label.Foreground = following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface; }
         }

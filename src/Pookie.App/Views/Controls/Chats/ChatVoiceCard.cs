@@ -19,7 +19,7 @@ internal sealed class ChatVoiceCard : ContentControl
     internal ChatVoiceCard(string key, ChatVoiceMetadata metadata, Action activate, Action<double> seek)
     {
         Key = key; duration = metadata.Duration; Padding = new Thickness(0); BorderThickness = 0; Background = Color.Transparent;
-        play = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(playGlyph,pauseGlyph), activate, TrackButtons.Text, 44).ToolTip("Прослушать / пауза");
+        play = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(playGlyph,pauseGlyph), activate, TrackButtons.Text, 44).Hint("Прослушать / пауза");
         ((MaterialTrackButton)play).SuppressStateLayer();
         time = new TextBlock().Text(Clock(duration)).FontSize(11).Foreground(Color.FromRgb(171, 189, 204));
         wave = new ChatVoiceWave { Peaks = metadata.Peaks, Seek = seek };

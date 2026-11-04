@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ChatGlobalSearchField()
     {
-        chatGlobalSearchClear = TrackButtons.Icon(Icons.View("x-mark", 16, Muted), () => { chatSearch.Text = ""; chatSearch.Focus(); }, TrackButtons.Text, 28).IsVisible(false).ToolTip("Очистить поиск");
+        chatGlobalSearchClear = TrackButtons.Icon(Icons.View("x-mark", 16, Muted), () => { chatSearch.Text = ""; chatSearch.Focus(); }, TrackButtons.Text, 28).IsVisible(false).Hint("Очистить поиск");
         chatSearch.Padding = new Thickness(0);
         chatGlobalSearchIcon = Icons.View("magnifying-glass",20,Muted).Center();
         chatGlobalSearchBusy = new LoadingSpinner().Width(16).Height(16).IsActive(false).IsVisible(false).Center();
@@ -130,9 +130,9 @@ internal sealed partial class MainWindow
         });
         chatThreadSearchBusy = new LoadingSpinner().Width(12).Height(12).IsActive(false).IsVisible(false).CenterVertical();
         chatSearchCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
-        chatSearchPrevious = TrackButtons.Icon(Icons.View("arrow-left", 17, Muted), () => Run(() => NavigateChatSearchAsync(-1)), TrackButtons.Text, 30).ToolTip("Предыдущий результат · Shift+Enter");
-        chatSearchNext = TrackButtons.Icon(Icons.View("arrow-right", 17, Muted), () => Run(() => NavigateChatSearchAsync(1)), TrackButtons.Text, 30).ToolTip("Следующий результат · Enter");
-        var close = TrackButtons.Icon(Icons.View("x-mark", 18, Muted), () => { if (chatMessageSearch.Text.Length > 0) chatMessageSearch.Text = ""; else CloseChatSearch(); }, TrackButtons.Text, 30).ToolTip("Очистить / закрыть поиск");
+        chatSearchPrevious = TrackButtons.Icon(Icons.View("arrow-left", 17, Muted), () => Run(() => NavigateChatSearchAsync(-1)), TrackButtons.Text, 30).Hint("Предыдущий результат · Shift+Enter");
+        chatSearchNext = TrackButtons.Icon(Icons.View("arrow-right", 17, Muted), () => Run(() => NavigateChatSearchAsync(1)), TrackButtons.Text, 30).Hint("Следующий результат · Enter");
+        var close = TrackButtons.Icon(Icons.View("x-mark", 18, Muted), () => { if (chatMessageSearch.Text.Length > 0) chatMessageSearch.Text = ""; else CloseChatSearch(); }, TrackButtons.Text, 30).Hint("Очистить / закрыть поиск");
         chatSearchIdentity = new Grid().Columns("20,*,Auto,30,30,30").Rows("*").Spacing(4).Children(Icons.View("magnifying-glass", 20, Muted).Center().Column(0), chatMessageSearch.Column(1).CenterVertical(), new StackPanel().Horizontal().Spacing(5).Children(chatThreadSearchBusy,chatSearchCount).Column(2).CenterVertical(), chatSearchPrevious.Column(3).CenterVertical(), chatSearchNext.Column(4).CenterVertical(), close.Column(5).CenterVertical()).IsVisible(false);
         return chatSearchIdentity;
     }

@@ -5,25 +5,31 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private bool RememberUnavailableWaveTrack(SoundCloudTrack track, Exception error)
+    private readonly Dictionary<long, DateTimeOffset> unavailableRecommendations = [];
+
+    private bool AllowsRecommendation(SoundCloudTrack track) =>
+        unavailableRecommendations.GetValueOrDefault(track.Id) <= DateTimeOffset.UtcNow;
+
+    private bool RememberUnavailableRecommendation(SoundCloudTrack track, Exception error)
     {
         if (error is not SoundCloudException { TrackUnavailable: true, RequiresBrowserVerification: false } failure) return false;
-        EnsureWaveTaste();
         // Deletion is stable; access restrictions can change much sooner.
-        waveTaste.MarkUnavailable(track, DateTimeOffset.UtcNow + (failure.StatusCode is 404 or 410 ? TimeSpan.FromDays(30) : TimeSpan.FromHours(1)));
-        waveCandidates.Remove(track.Id);
+        unavailableRecommendations[track.Id] = DateTimeOffset.UtcNow + (failure.StatusCode is 404 or 410 ? TimeSpan.FromDays(30) : TimeSpan.FromHours(1));
         playbackQueue.RemoveUnavailableRecommendation(track.Id);
-        ScheduleWaveSave(); RerankWaveQueue(); RefreshQueue();
-        Pookie.Logging.AppLog.For("Pookie.Wave").Information("Недоступный трек {TrackId} исключён из рекомендаций; HTTP {StatusCode}", track.Id, failure.StatusCode);
+        RefreshQueue();
+        Pookie.Logging.AppLog.For("Pookie.Radio").Information("Недоступный трек {TrackId} исключён из рекомендаций; HTTP {StatusCode}", track.Id, failure.StatusCode);
         return true;
     }
 
-    private async Task ContinueAfterUnavailableWaveTrackAsync(long generation, int skipped)
+    private async Task ContinueAfterUnavailableRecommendationAsync(long generation, int skipped)
     {
         if (skipped >= 5) { status.Value = "Несколько рекомендованных треков недоступны. Попробуй продолжить позже."; return; }
         var version = playbackQueue.SourceVersion;
-        if (!playbackQueue.Snapshot.Upcoming.Any())
+        for (var attempt = 0; attempt < 3 && !playbackQueue.Snapshot.Upcoming.Any() && playbackQueue.Snapshot.CanLoadRecommendations; attempt++)
+        {
             await queueLoader.EnsureAheadAsync(force: true);
+            if (disposed || generation != playGeneration || version != playbackQueue.SourceVersion) return;
+        }
         if (disposed || generation != playGeneration || version != playbackQueue.SourceVersion) return;
         var next = playbackQueue.Next();
         if (next != null) await PlayAsync(next.Track, queueAdvance: true, unavailableSkips: skipped + 1);

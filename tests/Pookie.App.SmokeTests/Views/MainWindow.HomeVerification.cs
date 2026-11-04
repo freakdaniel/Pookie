@@ -26,8 +26,10 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Slow recommendation request hid the loaded recent section or lost its skeleton.");
             transport.RelatedReady.SetResult(); await load;
             await WaitForLikedLayoutAsync(() => homeSections.All(section => section.Root.IsVisible) && libraryColumns == 6 &&
-                collectionCards.Keys.Any(root => homeSections[0].Cards.IsAncestorOf(root) && root.ActualWidth > 100));
-            if (HomeItems("recommendations").Length != 12 || HomeItems("releases").Length != 6 || HomeItems("mixes").Length != 3 || homePending.Count != 0)
+                collectionCards.Keys.Any(root => homeSections[0].Cards!.IsAncestorOf(root) && root.ActualWidth > 100));
+            if (HomeItems("recommendations").Length != 12 || HomeItems("releases").Length != 6 || HomeItems("mixes").Length != 7 ||
+                !HomeItems("made-for-you").Select(item => item.Title).SequenceEqual(new[] { "Daily Drops", "Weekly Wave" }) ||
+                !HomeItems("trends").Select(item => item.Title).Take(3).SequenceEqual(new[] { "Hip Hop", "All Genres", "Electronic" }) || homePending.Count != 0)
                 throw new InvalidOperationException("Personal Home did not bind the expected independent sections.");
             if (homeSections.Any(section => section.Key == "recent"))
                 throw new InvalidOperationException("Removed Continue section is still on Home.");
@@ -35,127 +37,106 @@ internal sealed partial class MainWindow
             if (homeLikesCard.CornerRadius != 16 || homeLikesCard.Height != 88 || homeHistoryCard.CornerRadius != 16 ||
                 homeLikesSubtitle.Text != "6 треков" || homeHistorySubtitle.Text.Length == 0)
                 throw new InvalidOperationException("Home shortcuts lost their card shape or personal captions.");
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.ActualHeight > 290 && homeMixCarousel.MotionActive && homeChartRows.Count == 10);
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-wide");
+            player = null;
+            var mixPoint = FindHomeMixPoint(homeMixCarousel.FrontIndex);
+            RouteWaveformPointer(mixPoint);
+            await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
+            homeMixCarousel.Focus();
+            var still = homeMixCarousel.FrontIndex;
+            RouteWaveformPointer(new Point(homeMixCarousel.Bounds.X + 8, mixPoint.Y));
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex != still && homeMixCarousel.MotionActive);
+            RouteWaveformPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
+            await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
+
+            var neighbor = (homeMixCarousel.FrontIndex + 1) % 7;
+            var selectedMix = HomeItems("mixes")[neighbor];
+            RouteWaveformClick(FindHomeMixPoint(neighbor));
+            await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryCollection && displayedCollection?.Key == selectedMix.Key);
+            if (playbackQueue.Context != null) throw new InvalidOperationException("Opening a front-row mix launched playback.");
+            await NavigateHomeAsync();
+            shellScroll.SetScrollOffsets(0, 0);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && homeMixCarousel.ActualHeight > 290);
+            RouteWaveformPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
+            await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
+            var rear = (homeMixCarousel.FrontIndex + 3) % 7;
+            RouteWaveformClick(FindHomeMixPoint(rear));
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex == rear);
+            if (page.Value != Page.Home || playbackQueue.Context != null)
+                throw new InvalidOperationException("Selecting a rear cover opened a page or started playback.");
+
+            RouteWaveformPointer(FindHomeMixPoint(rear));
+            await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
+            var playIndex = (rear + 1) % 7;
+            var sidePlay = FindHomeMixPoint(playIndex, play: true);
+            RouteWaveformPointer(sidePlay);
+            RouteWaveformClick(sidePlay);
+            await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == HomeItems("mixes")[playIndex].Key && homeMixCarousel.FrontIndex == playIndex);
+            current = playbackQueue.Current!.Track;
+            isPlaying.Value = true;
+            RefreshHomeMixPlayback();
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.PlayingEmphasis > .99 && !homeMixCarousel.MotionActive);
+            homeMixCarousel.Focus();
+            RouteSettingsKey(Key.Right);
+            var manualIndex = (playIndex + 1) % 7;
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex == manualIndex && homeMixCarousel.FrontCoverEmphasis > .99 && !homeMixCarousel.MotionActive);
+            var rest = System.Diagnostics.Stopwatch.StartNew();
+            await Task.Delay(1200);
+            if (homeMixCarousel.FrontIndex != manualIndex || homeMixCarousel.MotionActive)
+                throw new InvalidOperationException("Orbit returned early or redrew during its waiting period.");
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex == playIndex && !homeMixCarousel.MotionActive);
+            if (rest.Elapsed < TimeSpan.FromSeconds(3))
+                throw new InvalidOperationException("Orbit did not wait three seconds after manual scrolling settled.");
+            current = null;
+            isPlaying.Value = false;
+            playbackQueue.Clear();
+            RefreshHomeMixPlayback();
+            mixPoint = FindHomeMixPoint(homeMixCarousel.FrontIndex);
+            RouteWaveformPointer(mixPoint);
+            RouteHomeCarouselDrag(mixPoint, new Point(mixPoint.X - 160, mixPoint.Y));
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex != playIndex);
+            if (playbackQueue.Context != null)
+                throw new InvalidOperationException("Dragging a mix launched playback.");
+            CaptureUiPreview("home-mixes");
+            shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + homeChart.Bounds.Y - startupHeader.Bounds.Bottom - 20);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !homeMixCarousel.MotionActive && homeChartOpen.Bounds.Y > startupHeader.Bounds.Bottom &&
+                homeChartOpen.Bounds.Bottom < homeScroll.Bounds.Bottom);
+            var picker = homeChartGenreSlot.Children.OfType<MaterialSelect>().Single();
+            if (picker.SelectedText != "Все жанры" || !homeChartRows.Select(row => row.Track!.Id).SequenceEqual(transport.Chart.Take(10).Select(track => track.Id)) ||
+                homeChartLeft.Children.Count != 5 || homeChartRight.Children.Count != 5)
+                throw new InvalidOperationException("Home did not default to the general chart in SoundCloud order.");
+            CaptureUiPreview("home-trending");
+            var chartScroll = shellScroll.VerticalOffset;
+            picker.SelectedIndex = 0;
+            await WaitForLikedLayoutAsync(() => homeChartRows.Count == 10 && homeChartRows[0].Track?.Id == transport.Chart[^1].Id && shellPageScroll.IsReady);
+            if (Math.Abs(shellScroll.VerticalOffset - chartScroll) > 1)
+                throw new InvalidOperationException("Switching genres moved the page vertically.");
+            ClickHomeElement(homeChartOpen);
+            await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryCollection &&
+                displayedCollection?.Key == "playlist:soundcloud:system-playlists:trending-by-genre:genre-0" &&
+                activeCollection?.Items.Length == transport.Chart.Length);
+            await NavigateHomeAsync();
+            shellScroll.SetScrollOffsets(0, 0);
+            await WaitForLoginFrameAsync();
             homeScroll.SetScrollOffsets(0, 400); await WaitForLoginFrameAsync(); CaptureUiPreview("home-recommendations");
             if (homeScroll.VerticalOffset < 350) throw new InvalidOperationException("Home sections are not vertically scrollable.");
-            homeScroll.SetScrollOffsets(0, 0);
+            shellScroll.SetScrollOffsets(0, 0);
             Window.WindowSize = WindowSize.Resizable(1000, 980, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => libraryColumns == 4 && Math.Abs(homeSections[0].Cards.Height - 3 * (likedArtworkSize + 90)) < 1);
+            var recommendations = homeSections.Single(section => section.Key == "recommendations");
+            await WaitForLikedLayoutAsync(() => libraryColumns == 4 && homeMixCarousel.ActualHeight == 258 &&
+                recommendations.Cards!.ItemsSource.Count == 4);
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => libraryColumns == 6);
-            player = null; // Exercise actual mouse routing without requesting audio.
-            await WaitForLikedLayoutAsync(() => wavePlay.ActualWidth > 40);
-            if (Math.Abs(homeHero.ActualHeight - 320) > 1 / Window.DpiScale || homeHero.ActualWidth < 1200)
-                throw new InvalidOperationException($"Wave hero no longer fills the available width: hero={homeHero.Bounds}, client={Window.ClientSize}, content={contentSurface.Bounds}.");
-            ClickHomeElement(wavePlay);
-            await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == WaveQueueKey && !homeHeroPlaying);
-            if (page.Value != Page.Home || playbackQueue.Snapshot.Source.Count < 3)
-                throw new InvalidOperationException("Wave play navigated or failed to create a ranked queue.");
-            if (waveCandidateFetch != null) await waveCandidateFetch;
-            current = playbackQueue.Current!.Track; isPlaying.Value = true; RefreshLikedPlayback();
-            if (wavePlayLabel.Text != "Пауза" || !waveBackdrop.Running) throw new InvalidOperationException("Wave ignored player state.");
-            var selected = playbackQueue.Current;
-            var manual = playbackQueue.Enqueue(transport.Recent[5]);
-            ClickHomeElement(waveSettingsButton);
-            await WaitForLikedLayoutAsync(() => waveSettingsOpen.Value && homeWaveLayout.Expansion > .999999 && waveModeButtons[WaveMode.Favorites].ActualWidth > 60);
-            VerifyWaveDrawerBounds();
-            var paletteBefore = waveBackdrop.Colors;
-            var paletteFrames = new HashSet<PlayerGradient>();
-            void SampleWaveColor() => paletteFrames.Add(waveBackdrop.Colors);
-            Window.FrameRendered += SampleWaveColor;
-            try
-            {
-                ClickHomeElement(waveModeButtons[WaveMode.Favorites]);
-                if (waveBackdrop.Colors != paletteBefore || !waveBackdrop.ChangingColor)
-                    throw new InvalidOperationException("Wave color changed immediately instead of transitioning.");
-                if (playbackQueue.Current != selected || !playbackQueue.Snapshot.ManualUpcoming.Contains(manual) ||
-                    playbackQueue.Snapshot.ContextUpcoming.Any(entry => entry.Track.Id is < 101 or > 106))
-                    throw new InvalidOperationException("Favorite mode changed the current/manual queue or included unknown music.");
-                RouteWaveformPointer(new(homeHero.Bounds.X + 12, homeHero.Bounds.Y + 12));
-                await WaitForLikedLayoutAsync(() => !waveBackdrop.ChangingColor);
-                if (paletteFrames.Count < 4 || waveBackdrop.Colors == paletteBefore)
-                    throw new InvalidOperationException($"Wave color transition did not render intermediate colors: frames={paletteFrames.Count}; unchanged={waveBackdrop.Colors == paletteBefore}; window={Window.WindowState}.");
-                await WaitForLoginFrameAsync(); CaptureUiPreview("wave-settings");
-                // Retarget an unfinished transition while paused; colors must stay continuous.
-                isPlaying.Value = false; RefreshHomeHeroPlayback();
-                var favoritePalette = waveBackdrop.Colors;
-                SetWaveMode(WaveMode.Balance);
-                await WaitForLikedLayoutAsync(() => waveBackdrop.ChangingColor && waveBackdrop.Colors != favoritePalette);
-                var interruptedPalette = waveBackdrop.Colors;
-                ClickHomeElement(waveModeButtons[WaveMode.Discoveries]);
-                if (waveBackdrop.Colors != interruptedPalette || !waveBackdrop.ChangingColor || waveBackdrop.Running)
-                    throw new InvalidOperationException("Retargeting a paused wave snapped its color or restarted motion.");
-                if (playbackQueue.Snapshot.ContextUpcoming.Any(entry => entry.Track.Id is >= 101 and <= 106))
-                    throw new InvalidOperationException("Discovery mode included familiar tracks.");
-                await WaitForLikedLayoutAsync(() => !waveBackdrop.ChangingColor);
-                // Native windows may cap the requested height to the monitor work area.
-                var tallHeight = Math.Min(980, Window.ClientSize.Height);
-                for (var index = 0; index < 9; index++)
-                {
-                    var width = index == 8 ? 1600 : index % 2 == 0 ? 1000 : 1400;
-                    var height = index == 8 ? tallHeight : index % 2 == 0 ? 680 : tallHeight;
-                    Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
-                    await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(Window.ClientSize.Height - height) < 1 &&
-                        Math.Abs(homeWaveLayout.ActualHeight - waveSettingsPanel.ActualHeight - HomeWaveLayout.HeaderInset - HomeWaveLayout.DrawerInset * 2) < 1);
-                    VerifyWaveDrawerBounds();
-                    if (index == 8)
-                    {
-                        await WaitForLoginFrameAsync(); CaptureUiPreview("wave-settings-wide");
-                        if (waveSettingsPanel.Bounds.Right <= contentFrame.Bounds.Right)
-                            throw new InvalidOperationException($"Wave drawer followed the capped content frame instead of the outer surface: panel={waveSettingsPanel.Bounds}, frame={contentFrame.Bounds}, frameWidth={contentFrame.Width}, surface={contentSurface.Bounds}.");
-                    }
-                    if (index == 0)
-                    {
-                        await WaitForLoginFrameAsync(); CaptureUiPreview("wave-settings-short");
-                        // Force overflow even when the current settings fit the minimum window.
-                        var settingsHeight = waveSettingsScroll.Height;
-                        waveSettingsScroll.Height = 160;
-                        await WaitForLikedLayoutAsync(() => waveSettingsScroll.ViewportHeight <= 160 && SmoothScroll.Maximum(waveSettingsScroll) > 0);
-                        var mainOffset = homeScroll.VerticalOffset;
-                        waveSettingsScroll.SetScrollOffsets(0, 1000);
-                        await WaitForLikedLayoutAsync(() => waveSettingsScroll.VerticalOffset > 0);
-                        if (homeScroll.VerticalOffset != mainOffset)
-                            throw new InvalidOperationException("Scrolling settings moved the Home page.");
-                        waveSettingsScroll.SetScrollOffsets(0, 0);
-                        waveSettingsScroll.Height = settingsHeight;
-                    }
-                }
-                ClickHomeElement(waveSettingsClose);
-                await WaitForLikedLayoutAsync(() => homeWaveLayout.Expansion < .000001);
-                if (waveSettingsPanel.IsVisible || waveSettingsPanel.IsHitTestVisible || waveSettingsOpen.Value)
-                    throw new InvalidOperationException("Closing the inline drawer left an invisible interactive layer.");
-                ClickHomeElement(waveSettingsButton);
-                await WaitForLikedLayoutAsync(() => homeWaveLayout.Expansion > .999999);
-                var escape = new KeyEventArgs(Key.Escape, 0);
-                typeof(Window).GetMethod("RaisePreviewKeyDown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-                    .Invoke(Window, [escape]);
-                await WaitForLikedLayoutAsync(() => homeWaveLayout.Expansion < .000001);
-                if (!escape.Handled || waveSettingsOpen.Value)
-                    throw new InvalidOperationException("Escape did not close the inline wave drawer.");
-                isPlaying.Value = true; RefreshHomeHeroPlayback();
-            }
-            finally { Window.FrameRendered -= SampleWaveColor; }
-            var rejected = current;
-            await RejectWaveTrackAsync();
-            if (waveTaste.Rank([rejected], [], 10, DateTimeOffset.UtcNow).Length != 0 || playbackQueue.Current?.EntryId != manual.EntryId)
-                throw new InvalidOperationException("Dislike did not exclude the song or skipped a manually queued track.");
-            // Exhaust the initial discoveries; the provider must find another source and refill.
-            var firstIds = playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).ToHashSet();
-            while (playbackQueue.Snapshot.Upcoming.Any())
-            {
-                var entry = playbackQueue.Next()!;
-                waveTaste.Record(entry.Track, 90, false, DateTimeOffset.UtcNow);
-            }
-            current = playbackQueue.Current!.Track;
-            await queueLoader.EnsureAheadAsync(force: true);
-            if (!playbackQueue.Snapshot.Upcoming.Any(entry => !firstIds.Contains(entry.Track.Id)))
-                throw new InvalidOperationException("Wave stopped after the initial candidate pool.");
-            SaveWaveProfile();
-            if (waveStore.Load(42).Mode != WaveMode.Discoveries) throw new InvalidOperationException("Wave settings were not persisted.");
-            SetWaveMode(WaveMode.Balance);
-            current = null; isPlaying.Value = false; playbackQueue.Clear(); RefreshLikedPlayback();
-            var root = collectionCards.Keys.First(root => homeSections[0].Cards.IsAncestorOf(root) && root.ActualWidth > 100);
+            await WaitForLikedLayoutAsync(() => libraryColumns == 6 && recommendations.Cards!.ItemsSource.Count == 6);
+            shellScroll.SetScrollOffsets(0, 0);
+            await WaitForLoginFrameAsync();
+            if (homeChart.Bounds.Bottom > recommendations.Root.Bounds.Top)
+                throw new InvalidOperationException("The chart must appear above the discovery shelf.");
+            shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + recommendations.Root.Bounds.Y - startupHeader.Bounds.Bottom - 20);
+            await WaitForLoginFrameAsync();
+            await WaitForLikedLayoutAsync(() => collectionCards.Keys.Any(root => recommendations.Cards!.IsAncestorOf(root) && root.ActualWidth > 100));
+            var root = collectionCards.Keys.First(root => recommendations.Cards!.IsAncestorOf(root) && root.ActualWidth > 100);
             var card = CollectionCard(root)!; var id = card.Item!.Track!.Id;
             CaptureUiPreview("home-card-before-hover");
             RouteWaveformPointer(new(card.Frame.Bounds.X + 12, card.Frame.Bounds.Y + 12));
@@ -177,31 +158,26 @@ internal sealed partial class MainWindow
             transport.FailMixes = true;
             await NavigateHomeAsync(force: true);
             if (!homeErrors.Contains("mixes") || HomeItems("recent").Length != 6 || HomeItems("recommendations").Length != 12 ||
-                homeSections.Any(section => !section.Root.IsVisible))
+                homeSections.Any(section => section.Shelf == null && !section.Root.IsVisible))
                 throw new InvalidOperationException("One failed section cleared other Home content or has no retry indication.");
             transport.FailMixes = false;
             await NavigateHomeAsync(force: true);
-            if (homeErrors.Count != 0 || HomeItems("mixes").Length != 3) throw new InvalidOperationException("Home refresh did not recover a failed section.");
-
-            transport.FailMixes = true; await NavigateHomeAsync(force: true);
-            ClickHomeElement(wavePlay);
-            await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == WaveQueueKey);
-            if (playbackQueue.Snapshot.Source.Count < 3 || page.Value != Page.Home)
-                throw new InvalidOperationException("Missing personalized mixes stopped the wave.");
-            transport.FailMixes = false;
-            if (waveCandidateFetch != null) await waveCandidateFetch;
+            if (homeErrors.Count != 0 || HomeItems("mixes").Length != 7) throw new InvalidOperationException("Home refresh did not recover a failed section.");
 
             // Compact rows now live in the feed's recent sidebar; the former
             // standalone list is no longer attached to the feed page.
             localRecent.Clear();localRecent.AddRange(transport.Recent.Select(track=>LibraryItem.FromTrack(track)));
             await OpenFeedAsync(force:true);
-            await WaitForLikedLayoutAsync(() => feedSidebarRows.Any(row => row.Track?.Id == 101 && row.Root.ActualWidth > 100));
+            shellScroll.SetScrollOffsets(0, 0);
+            await WaitForLoginFrameAsync();
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && feedSidebarRows.Any(row => row.Track?.Id == 101 && row.Root.ActualWidth > 100));
             var row = feedSidebarRows.First(row => row.Track?.Id == 101);
             if (row.Title.ActualWidth > row.Root.ActualWidth / 2) throw new InvalidOperationException("Short compact title stretches across the row.");
             RouteWaveformPointer(new(row.Title.Bounds.Right + 60, row.Title.Bounds.Y + 8));
             if (row.Title.Opacity != 1) throw new InvalidOperationException("Empty row space triggers the title link hover.");
             var restingTitle = row.Title.Foreground;
-            RouteWaveformPointer(new(row.Title.Bounds.X + 10, row.Title.Bounds.Y + 8));
+            var titlePoint = SettingsCenter(row.Title);
+            RouteWaveformPointer(titlePoint);
             var hoveredTitle = Color.FromArgb((byte)Math.Round(restingTitle.A*.72),restingTitle.R,restingTitle.G,restingTitle.B);
             await WaitForLikedLayoutAsync(() => row.Title.Foreground == hoveredTitle);
             if (row.Title.Opacity != 1)
@@ -229,30 +205,38 @@ internal sealed partial class MainWindow
             api.Session = new("otherfixture", "fixture-token", "Test"); me = new() { Id = 43 }; ClearLibraryData();
             transport.RelatedReady.SetResult(); await late;
             if (homeContent != null || homeSession != null) throw new InvalidOperationException("Cleared account retained personal Home data.");
-            if (waveTaste.Snapshot().Tracks.Length > 0 || waveCandidates.Count > 0 || waveStore.Load(43).Snapshot().Tracks.Length > 0)
-                throw new InvalidOperationException("Another account inherited wave preferences or stale candidates.");
-            await VerifyWaveJournalAsync();
-            Console.WriteLine("HOME_UI_OK: personal shortcut cards, inline responsive drawer with independent scrolling, continuous and interrupted wave color transitions while playing/paused, animated wave, favorite/discovery settings, preserved current/manual queue, dislike, continuous refill, account persistence, fallback without mixes, bounded compact title links, independent sections and loading, responsive grids, scrolling, cache, partial failure/retry, stale account replies and real card/play clicks for Home, compact rows and liked tiles");
+            Console.WriteLine("HOME_UI_OK: responsive orbit, hover drift, front-row navigation, cover playback, ranked genre charts, independent loading, responsive grids, shortcuts, cache/retry, account isolation and track links");
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("HOME_UI_FAILED: " + error); }
         finally { player = originalPlayer; Window.Close(); }
     }
 
+    private Point FindHomeMixPoint(int index, bool play = false)
+    {
+        var bounds = homeMixCarousel.Bounds;
+        bool Hits(double x, double y) => homeMixCarousel.CardAt(new Point(x, y), out var badge) == index && badge == play;
+        var inset = play ? 4 : 10;
+        for (var y = bounds.Y + inset; y < bounds.Bottom - inset; y += 4)
+            for (var x = bounds.X + inset; x < bounds.Right - inset; x += 4)
+                if (Hits(x, y) && Hits(x - inset, y - inset) && Hits(x + inset, y + inset))
+                    return new Point(x, y);
+        throw new InvalidOperationException($"Mix {index} has no visible {(play ? "Play" : "body")} hit area.");
+    }
+
+    private void RouteHomeCarouselDrag(Point from, Point to)
+    {
+        var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", throwOnError: true)!;
+        var methods = router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var button = methods.Single(method => method.Name == "MouseButton" && method.GetParameters().Length == 10);
+        var move = methods.Single(method => method.Name == "MouseMove" && method.GetParameters().Length == 7);
+        button.Invoke(null, [Window, from, new Point(0, 0), MouseButton.Left, true, true, false, false, 1, ModifierKeys.None]);
+        move.Invoke(null, [Window, to, new Point(0, 0), true, false, false, ModifierKeys.None]);
+        button.Invoke(null, [Window, to, new Point(0, 0), MouseButton.Left, false, false, false, false, 1, ModifierKeys.None]);
+    }
+
     private void ClickHomeElement(FrameworkElement element) =>
         RouteWaveformClick(new(element.Bounds.X + element.ActualWidth / 2, element.Bounds.Y + element.ActualHeight / 2));
-
-    private void VerifyWaveDrawerBounds()
-    {
-        var viewport = homeWaveLayout.Bounds; var panel = waveSettingsPanel.Bounds;
-        if (!contentSurface.IsAncestorOf(homeWaveLayout) || viewport != contentSurface.Bounds ||
-            Math.Abs(panel.Y - contentSurface.Bounds.Y - HomeWaveLayout.HeaderInset - HomeWaveLayout.DrawerInset) > 1 ||
-            Math.Abs(contentSurface.Bounds.Right - panel.Right - HomeWaveLayout.DrawerInset) > 1 ||
-            !homeWaveLayout.IsAncestorOf(waveSettingsPanel) || panel.X < viewport.X || panel.Y < viewport.Y ||
-            panel.Right > viewport.Right || panel.Bottom > viewport.Bottom || Math.Abs(panel.Width - 360) > 1 ||
-            waveSettingsClose.Bounds.Right > panel.Right || waveSettingsClose.Bounds.Y < panel.Y || waveSettingsScroll.ActualHeight <= 0)
-            throw new InvalidOperationException($"Wave drawer escaped its content viewport: viewport={viewport}, panel={panel}.");
-    }
 
     private sealed class HomeFixtureTransport : ISoundCloudBrowserTransport
     {
@@ -262,6 +246,8 @@ internal sealed partial class MainWindow
         internal TaskCompletionSource RelatedReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal SoundCloudTrack[] Recent { get; } = Enumerable.Range(101, 6).Select(id => Track(id, id - 100,
             new[] { "Тихая гавань", "Там, где свет", "Волны", "После полуночи", "Новый день", "До весны" }[id - 101])).ToArray();
+        internal SoundCloudTrack[] Chart { get; } = Enumerable.Range(1, 12)
+            .Select(index => Track(600 + index, 30 + index, "Трек из чарта " + index)).ToArray();
         private static SoundCloudTrack Track(long id, long artist, string title) => new()
         { Id = id, Title = title, Duration = 180000, ArtworkUrl = Artwork, CreatedAt = DateTimeOffset.UtcNow.AddDays(-2).ToString("O"),
           User = new() { Id = artist, Username = "Исполнитель " + artist }, PermalinkUrl = "https://soundcloud.com/fixture/track-" + id };
@@ -278,8 +264,21 @@ internal sealed partial class MainWindow
             if (path == "/mixed-selections")
             {
                 if (FailMixes) throw new HttpRequestException("Fixture: mixes unavailable");
-                return JsonDocument.Parse("{\"collection\":[{\"items\":{\"collection\":[" + string.Join(',', Enumerable.Range(1, 3).Select(id =>
-                    "{\"kind\":\"system-playlist\",\"id\":\"soundcloud:system-playlists:your-moods:42:" + id + "\",\"title\":\"Your Mix " + id + "\",\"artwork_url\":\"" + Artwork + "\",\"track_count\":30}")) + "]}}]}");
+                static object Playlist(string urn, string title, string description) => new
+                {
+                    kind = "system-playlist", id = "soundcloud:system-playlists:" + urn, title,
+                    short_description = description, artwork_url = Artwork, track_count = 30
+                };
+                var genres = new[] { "Hip Hop", "All Genres", "Electronic", "Trap", "Indie", "Dance", "Pop", "Rock", "Ambient", "Techno", "Jazz", "Metal" };
+                return JsonSerializer.SerializeToDocument(new
+                {
+                    collection = new[]
+                    {
+                        new { items = Enumerable.Range(1, 7).Select(id => Playlist($"your-moods:42:{id}", $"Your Mix {id}", "Fixture artists")).ToArray() },
+                        new { items = new[] { Playlist("new-for-you::test", "Daily Drops", "New releases"), Playlist("weekly::test", "Weekly Wave", "Weekly discoveries") } },
+                        new { items = genres.Select((genre, index) => Playlist("trending-by-genre:" + (index == 1 ? "all-genres" : "genre-" + index), genre, "Trending")).ToArray() }
+                    }
+                });
             }
             if (path.EndsWith("/related"))
             {
@@ -291,8 +290,11 @@ internal sealed partial class MainWindow
             if (path.StartsWith("/system-playlists/"))
             {
                 var urn = Uri.UnescapeDataString(path["/system-playlists/".Length..]);
-                var mix = new SoundCloudPlaylist { Urn = urn, Title = "Your Mix " + urn.Split(':')[^1], Tracks = Recent,
-                    TrackCount = Recent.Length, ArtworkUrl = Artwork };
+                var hipHop = urn.EndsWith(":genre-0");
+                var general = urn.EndsWith(":all-genres");
+                var entries = hipHop ? Chart.Reverse().ToArray() : general ? Chart : Recent;
+                var mix = new SoundCloudPlaylist { Urn = urn, Title = hipHop ? "Hip Hop" : general ? "All Genres" : "Your Mix " + urn.Split(':')[^1],
+                    Tracks = entries, TrackCount = entries.Length, ArtworkUrl = Artwork };
                 return JsonDocument.Parse(JsonSerializer.Serialize(mix, SoundCloudJson.Default.SoundCloudPlaylist));
             }
             if (path.StartsWith("/tracks/"))

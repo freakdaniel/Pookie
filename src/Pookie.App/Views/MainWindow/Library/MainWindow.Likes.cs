@@ -129,7 +129,7 @@ internal sealed partial class MainWindow
         var image = Icons.View(icon, 20);
         image.Bind(Image.SourceProperty, likesAsList, value => Icons.Source(icon, value == showList ? TrackButtons.OnPrimary : TrackButtons.OnSurface));
         var button = TrackButtons.Icon(image, () => { if (likesAsList.Value != showList) likesAsList.Value = showList; }, TrackButtons.Text, 32)
-            .Width(44).ToolTip(showList ? "Список" : "Карточки");
+            .Width(44).Hint(showList ? "Список" : "Карточки");
         void Refresh() => TrackButtons.SetVariant(button, likesAsList.Value == showList ? TrackButtons.Filled : TrackButtons.Text);
         likesAsList.Changed += Refresh; Refresh();
         return button;
@@ -175,22 +175,25 @@ internal sealed partial class MainWindow
         // Native scrollbars overlay the viewport and do not reduce its layout width.
         var available = Math.Max(200, width);
         var columns = Math.Clamp((int)Math.Floor((available + 24) / (170 + 24)), 1, 6);
-        if (libraryColumns != columns) searchLayoutPending = true;
+        var columnsChanged = libraryColumns != columns;
+        if (columnsChanged) searchLayoutPending = true;
         libraryColumns = columns;
         var cellWidth = Math.Floor(available / columns);
         var artworkSize = cellWidth - 24;
-        if (Math.Abs(artworkSize - likedArtworkSize) < 0.1) return;
+        if (!columnsChanged && Math.Abs(artworkSize - likedArtworkSize) < 0.1) return;
         likedArtworkSize = artworkSize;
+        if (columnsChanged && homeSections.FirstOrDefault(section => section.Key == "recommendations") is { } discovery)
+            BindHomeSectionItems(discovery);
         foreach (var view in libraryLoadingViews)
             view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : (view == likesLoadingView && likesAsList.Value || view == collectionLoadingView && playlistCollectionVisible.Value)));
         foreach (var grid in new[] { libraryGrid, likedGrid })
             if (grid != null) { grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure(); }
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetSize(artworkSize);
         if (libraryGrid != null) libraryGrid.Height = Math.Max(1, Math.Ceiling(Math.Min(6, tracks.Count) / (double)columns)) * (artworkSize + 90);
-        foreach (var (grid, preview) in collectionGrids)
+        foreach (var (grid, preview, compactRows) in collectionGrids)
         {
-            grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure();
-            if (preview) grid.Height = Math.Max(1, Math.Ceiling(grid.ItemsSource.Count / (double)columns)) * (artworkSize + 90);
+            grid.WrapPresenter(cellWidth, CollectionRowHeight(compactRows)); grid.InvalidateMeasure();
+            if (preview) SetCollectionPreviewHeight(grid, compactRows);
         }
         foreach (var (root, card) in collectionCards) SetCollectionCardSize(root, card.Cover, card.Frame);
     }
@@ -199,8 +202,8 @@ internal sealed partial class MainWindow
     {
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id, isPlaying.Value);
         RefreshCollectionCardsPlayback();
+        RefreshHomeMixPlayback();
         RefreshUserProfilePlayback();
-        RefreshHomeHeroPlayback();
         RefreshLikedRows();
     }
 

@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
         { if (chatReply is { } reply) Run(() => JumpChatMessageAsync(reply.PeerId,reply.MessageId,keepDetails:true)); },TrackButtons.Text,40).Padding(0).CornerRadius(8);
         chatReplyQuote.HorizontalAlignment = HorizontalAlignment.Stretch;
         chatReplyCancel = TrackButtons.Icon(Icons.View("x-mark",18,ChatAccent), () =>
-        { chatReply = null; RefreshChatReply(); SaveChatDraft(); chatInput.Focus(); },TrackButtons.Text,36).ToolTip("Отменить ответ");
+        { chatReply = null; RefreshChatReply(); SaveChatDraft(); chatInput.Focus(); },TrackButtons.Text,36).Hint("Отменить ответ");
         chatReplyBar = new Grid().Columns("40,*,40").Rows("40").Spacing(4).Padding(0,4).Height(48).Children(
             Icons.View("arrow-bend-up-left",22,ChatAccent).Center().Column(0),quote.Column(1),chatReplyCancel.Center().Column(2)).IsVisible(false);
         return chatReplyBar;

@@ -50,7 +50,7 @@ internal sealed partial class MainWindow
             foreach (var user in (followers ?? []).Select(item => item.User).OfType<SoundCloudUser>().Take(7))
             {
                 var avatar = UserSidebarAvatar(user, 38, state.User.Id);
-                userSidebarFollowers.Add(TrackButtons.Icon(avatar, () => Run(() => OpenUserProfileAsync(user)), TrackButtons.Text, 38).Margin(0, 0, -2, 0).ToolTip(user.Username));
+                userSidebarFollowers.Add(TrackButtons.Icon(avatar, () => Run(() => OpenUserProfileAsync(user)), TrackButtons.Text, 38).Margin(0, 0, -2, 0).Hint(user.Username));
             }
         }
         if (updateFollowing)

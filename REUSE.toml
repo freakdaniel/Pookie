@@ -40,27 +40,6 @@ SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie configuration containing literal advertising and analytics request hosts and path prefixes."
 
 [[annotations]]
-path = ["src/Pookie.Recommendations/Models/musicnn-msd.onnx", "src/Pookie.Recommendations/Models/musicnn-moods.onnx"]
-precedence = "closest"
-SPDX-FileCopyrightText = ["Music Technology Group, Universitat Pompeu Fabra", "2026 Daniel Freak"]
-SPDX-License-Identifier = "CC-BY-NC-SA-4.0"
-SPDX-FileComment = """
-MSD MusiCNN, MTG mood classifiers and DEAM arousal/valence regression converted
-by Pookie to ONNX without retraining weights. The embedding head retains 200 outputs.
-Original MSD model: https://essentia.upf.edu/models/feature-extractors/musicnn/msd-musicnn-1.pb
-Mood heads: relaxed, party, sad and aggressive; author Pablo Alonso, Music Technology
-Group, Universitat Pompeu Fabra. Sources: https://essentia.upf.edu/models/classification-heads/
-DEAM: https://essentia.upf.edu/models/classification-heads/deam/deam-msd-musicnn-2.pb
-Original model licensing: https://essentia.upf.edu/models/LICENSE
-Full license and disclaimer: licenses/CC-BY-NC-SA-4.0.txt.
-Conversion and numerical verification: tools/audio-embeddings/prepare_musicnn.py
-and prepare_moods.py. Source hashes, class indices and conversion errors:
-src/Pookie.Recommendations/Models/musicnn-msd.json and musicnn-moods.json.
-Reference: Pons, J. and Serra, X. (2019), musicnn: Pre-trained convolutional neural
-networks for music audio tagging. https://arxiv.org/abs/1909.06654
-"""
-
-[[annotations]]
 path = "src/Pookie.App/Assets/Icons/*.svg"
 precedence = "closest"
 SPDX-FileCopyrightText = "2023 Phosphor Icons"
@@ -85,7 +64,7 @@ SPDX-FileCopyrightText = "Icons8"
 SPDX-License-Identifier = "LicenseRef-Icons8"
 SPDX-FileComment = """
 User-supplied, unmodified Icons8 Stickle PNGs: heart.png, star.png, tranding.png,
-pixel-heart.png and pixel-clock.png, scaled proportionally in Wave and Home cards.
+pixel-heart.png and pixel-clock.png, scaled proportionally in Home cards.
 User-identified source: https://icons8.com/i; individual download URLs and account
 plan were not supplied. Application settings include a clickable Icons8 credit:
 https://icons8.com/license. Full terms: licenses/LicenseRef-Icons8.txt, Universal

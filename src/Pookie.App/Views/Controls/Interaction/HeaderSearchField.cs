@@ -49,7 +49,7 @@ internal sealed class HeaderSearchField : ContentControl
         else linkPreview.Clear();
         linkPreview.IsVisible = data != null;
         input.Opacity = data == null ? 1 : 0;
-        linkPreview.ToolTip = data == null ? null : new TextBlock().Text(data.Url);
+        linkPreview.Hint(data?.Url);
     }
 
     internal void ShowMissingLink(string url) => linkPreview.Update(LinkPreviewData.Missing(url));

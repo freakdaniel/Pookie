@@ -84,6 +84,7 @@ internal sealed partial class MainWindow
         if (disposed) return;
         ClearUnboundExpandedQueueRows();
         if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
+        RefreshHomeMixMotion();
         if (!workspace.IsVisible) { trackTimelineVisible = false; return; }
         shellPageScroll.Refresh();
         RefreshTrackTimelineViewport();
@@ -111,7 +112,7 @@ internal sealed partial class MainWindow
         if (page.Value is Page.Home or Page.Library or Page.Search)
         {
             DisablePreviewGridScrolling(libraryGrid);
-            foreach (var (grid, preview) in collectionGrids)
+            foreach (var (grid, preview, _) in collectionGrids)
                 if (preview) DisablePreviewGridScrolling(grid);
         }
         foreach (var viewer in new[] { NavigationScroll(), queueList.FindVisualChild<ScrollViewer>() as ScrollViewer })

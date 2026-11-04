@@ -54,7 +54,6 @@ internal sealed partial class MainWindow
         if (preferences == before) return;
         ApplyChatPreferences(before);
         ApplyPlaybackPreferences(before);
-        ApplyWavePreferences(before);
         if (before.ShowCommentMarkers != preferences.ShowCommentMarkers && trackDetailWaveformLayer != null) RenderTrackCommentMarkers();
         foreach (var scroll in smoothScrolls.Values) scroll.Enabled = preferences.SmoothScrolling;
         configurationTimer.Stop(); configurationTimer.Start();

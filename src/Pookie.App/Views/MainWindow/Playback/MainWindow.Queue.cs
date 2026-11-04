@@ -25,7 +25,6 @@ internal sealed partial class MainWindow
         playbackQueue.SetAutoContinue(preferences.AutoContinue);
         queueLoader = new(playbackQueue, async (context, cursor, token) =>
         {
-            if (context.Kind == PlaybackContextKind.Wave) return await GetWavePageAsync(token);
             if (context.Kind == PlaybackContextKind.Feed)
             {
                 var feed = await api.GetFeedActivitiesAsync(cursor, token);
@@ -72,13 +71,13 @@ internal sealed partial class MainWindow
             ResourceUrn: page.Value == Page.LibraryCollection ? PlaybackHistoryContextUrn(route.Item) : null), data, first, selectedIndex);
     }
 
-    private void StartQueueContext(PlaybackContext context, SoundCloudTrack[] data, SoundCloudTrack first, int? selectedIndex = null)
+    private void StartQueueContext(PlaybackContext context, SoundCloudTrack[] data, SoundCloudTrack first, int? selectedIndex = null, bool preserveManual = false)
     {
         var index = selectedIndex is { } position && position >= 0 && position < data.Length && data[position].Id == first.Id ? position :
             Array.FindIndex(data, track => ReferenceEquals(track, first));
         if (index < 0) index = Array.FindIndex(data, track => track.Id == first.Id);
         if (index < 0) { data = [.. data, first]; index = data.Length - 1; }
-        playbackQueue.StartContext(context, data, index);
+        playbackQueue.StartContext(context, data, index, preserveManual);
         queueLoader.ContextChanged(); RefreshQueue();
     }
 
@@ -100,7 +99,7 @@ internal sealed partial class MainWindow
         if (entry != null) await PlayAsync(entry.Track);
     }
 
-    private void RefreshQueue(bool dissolveWave = false)
+    private void RefreshQueue()
     {
         if (queueList == null) return;
         var state = playbackQueue.Snapshot;
@@ -111,40 +110,32 @@ internal sealed partial class MainWindow
             data.Add(new("now", QueueBlockKind.Upcoming, Title: "Сейчас играет"));
             data.Add(TrackBlock(selected));
         }
-        var wave = state.Context?.Kind == PlaybackContextKind.Wave;
         if (state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: "Добавлено тобой"));
         data.AddRange(state.ManualUpcoming.Select(TrackBlock));
-        if (wave || state.Forward.Count + state.ContextUpcoming.Count > 0)
-            data.Add(new(wave ? "wave" : "next", QueueBlockKind.Context, Title: wave ? "Далее на твоей волне" : "Далее"));
+        if (state.Forward.Count + state.ContextUpcoming.Count > 0)
+            data.Add(new("next", QueueBlockKind.Context, Title: "Далее"));
         data.AddRange(state.Forward.Concat(state.ContextUpcoming).Select(TrackBlock));
         if (state.Recommendations.Count > 0)
         {
-            data.Add(new("recommendations", QueueBlockKind.Context, Title: "Похожие дальше"));
+            data.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? "Далее на радио" : "Похожие дальше"));
             data.AddRange(state.Recommendations.Select(TrackBlock));
         }
-        RefreshPopupQueue(data.ToArray(), wave, dissolveWave);
+        RefreshPopupQueue(data.ToArray());
         queueStatus.Value = state.Context?.Title ?? "Очередь воспроизведения";
-        RefreshExpandedQueue(dissolveWave); UpdateSystemMedia();
+        RefreshExpandedQueue(); UpdateSystemMedia();
     }
 
-    private void RefreshPopupQueue(QueueBlock[] data, bool wave, bool dissolveWave)
+    private void RefreshPopupQueue(QueueBlock[] data)
     {
         if (popupQueueData.SequenceEqual(data)) return;
         if (popupQueueData.Select(block => block.Key).SequenceEqual(data.Select(block => block.Key)))
         { popupQueueData = data; popupQueueSource.SetData(data); return; }
         popupQueuePositions.Clear();
-        if (wave && queueOpen.Value)
+        if (queueOpen.Value)
             foreach (var (row, block) in popupQueueBlocks)
                 if (block != null) popupQueuePositions[block.Key] = row.VisualY;
-        popupQueueAnimation.Begin(dissolveWave ? 220 : 280);
+        popupQueueAnimation.Begin(280);
         popupQueueEntering = data.Select(block => block.Key).Except(popupQueueData.Select(block => block.Key)).ToHashSet();
-        if (dissolveWave)
-            foreach (var entry in playbackQueue.Snapshot.ContextUpcoming)
-            {
-                var key = $"entry:{entry.EntryId}";
-                if (Array.FindIndex(data, block => block.Key == key) != Array.FindIndex(popupQueueData, block => block.Key == key))
-                { popupQueueEntering.Add(key); popupQueuePositions.Remove(key); }
-            }
         popupQueueChangedAt = Environment.TickCount64;
         popupQueueData = data; popupQueueSource.SetData(data);
         foreach (var (row, block) in popupQueueBlocks)
@@ -153,7 +144,7 @@ internal sealed partial class MainWindow
 
     private void RetargetPopupQueueRow(QueueRowMotion row, QueueBlock block) =>
         row.Retarget(popupQueuePositions.TryGetValue(block.Key, out var y) ? y : null,
-            queueOpen.Value && playbackQueue.Context?.Kind == PlaybackContextKind.Wave &&
+            queueOpen.Value &&
             Environment.TickCount64 - popupQueueChangedAt < 500 && popupQueueEntering.Contains(block.Key));
 
     private async Task SkipAsync(int offset, bool naturalEnd = false)
@@ -165,12 +156,10 @@ internal sealed partial class MainWindow
             {
                 progress.Value = 0; FlushSeek(); return;
             }
-            FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Previous);
             var previous = playbackQueue.Previous();
             if (previous != null) await PlayAsync(previous.Track);
             return;
         }
-        FinishWaveListening(skipped: !naturalEnd, reason: naturalEnd ? Pookie.Recommendations.ListeningEndReason.NaturalEnd : Pookie.Recommendations.ListeningEndReason.Skip);
         // Never wrap past an unloaded page. The loading token belongs to this
         // context and survives navigation away from its originating screen.
         var sourceVersion = playbackQueue.SourceVersion;
@@ -181,7 +170,8 @@ internal sealed partial class MainWindow
             await queueLoader.EnsureAheadAsync(force: true);
             if (disposed || sourceVersion != playbackQueue.SourceVersion || selectionGeneration != playGeneration) return;
         }
-        if (!playbackQueue.Snapshot.Upcoming.Any() && !(naturalEnd && playbackQueue.Repeat == RepeatMode.Track))
+        for (var attempt = 0; attempt < 3 && !playbackQueue.Snapshot.Upcoming.Any() &&
+            playbackQueue.Snapshot.CanLoadRecommendations && !(naturalEnd && playbackQueue.Repeat == RepeatMode.Track); attempt++)
         {
             await queueLoader.EnsureAheadAsync(force: true);
             if (disposed || sourceVersion != playbackQueue.SourceVersion || selectionGeneration != playGeneration) return;
@@ -193,7 +183,6 @@ internal sealed partial class MainWindow
 
     private void EndPlayback()
     {
-        FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Stopped);
         ++playGeneration; playLoading?.Cancel(); CancelSeek(); if (player != null) Run(player.StopAsync);
         audioReady = audioPreparing = paused = false;
         isPlaying.Value = playbackLoading.Value = false;
@@ -232,6 +221,8 @@ internal sealed partial class MainWindow
             menu.Item(command);
         }
         Item("open", "Открыть страницу трека", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
+        Item("radio", "Запустить радио по треку", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
+            () => track() is { } item && CanStartTrackRadio(item));
         Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
         Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
         Item("playlist", "Добавить в плейлист", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);

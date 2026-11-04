@@ -15,13 +15,13 @@ internal sealed partial class MainWindow
             api.Session = new("continuationfixture", "fixture-token", "Test");
             var transport = new ContinuationFixtureTransport(); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Continuation fixture" }; signedIn.Value = true; likedIdsReady = true;
-            EnsureWaveTaste(); await ShowWorkspaceAsync();
+            await ShowWorkspaceAsync();
             static SoundCloudTrack Track(long id) => new() { Id = id, Title = "Fixture " + id, Duration = 12000, User = new() { Id = id, Username = "Artist " + id } };
             var source = new[] { Track(101), Track(102) };
             StartQueueContext(new("fixture:playlist", "Исходный плейлист", "Сейчас играет из плейлиста", Kind: PlaybackContextKind.Playlist), source, source[0]);
             var version = playbackQueue.SourceVersion;
             await PlayAsync(source[0]); await queueLoader.EnsureAheadAsync();
-            if (AssertRecommendations().Single().Track.Id != 201 || !playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(new long[] { 101, 102 }))
+            if (AssertRecommendations()[0].Track.Id != 201 || !playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(new long[] { 101, 102 }))
                 throw new InvalidOperationException("Default continuation replaced the original source or was not prefetched.");
             var manual = playbackQueue.Enqueue(Track(800)); RefreshQueue();
             await SkipAsync(1, naturalEnd: true);
@@ -30,9 +30,8 @@ internal sealed partial class MainWindow
             if (current?.Id != 102) throw new InvalidOperationException("Continuation jumped ahead of the source tail.");
             await SkipAsync(1, naturalEnd: true); await queueLoader.EnsureAheadAsync();
             if (playbackQueue.Current?.Origin != PlaybackEntryOrigin.Recommendation || current?.Id is 101 or 102 or 201 or 800 ||
-                !audioReady || !isPlaying.Value || !waveTaste.IsUnavailable(Track(201)) || playbackQueue.SourceVersion != version ||
-                playbackQueue.Context?.Title != "Исходный плейлист" || playbackHistoryContext != null ||
-                WaveListeningSource(playbackQueue.Current) != Pookie.Recommendations.ListeningSource.Autoplay)
+                !audioReady || !isPlaying.Value || AllowsRecommendation(Track(201)) || playbackQueue.SourceVersion != version ||
+                playbackQueue.Context?.Title != "Исходный плейлист" || playbackHistoryContext != null)
                 throw new InvalidOperationException("Source completion or missing recommendation did not continue with independent playback/history identity.");
             AssertRecommendations();
             queueOpen.Value = true;
@@ -58,8 +57,8 @@ internal sealed partial class MainWindow
                 !playbackQueue.Snapshot.Recommendations.SequenceEqual(retained))
                 throw new InvalidOperationException("Repeat played a retained recommendation instead of restarting the original source.");
             await HandleMediaCommandAsync(new(Pookie.Media.MediaAction.Stop));
-            if (waveListening.Track != null || audioReady || isPlaying.Value)
-                throw new InvalidOperationException("System Stop did not finish the listening observation.");
+            if (audioReady || isPlaying.Value)
+                throw new InvalidOperationException("System Stop did not stop playback.");
             Console.WriteLine("UI_QUEUE_CONTINUATION_OK: default prefetch, manual/source/recommendation priority, missing-track advance, retained source/history identity, popup/expanded sections and repeat priority");
         }
         catch (Exception error)

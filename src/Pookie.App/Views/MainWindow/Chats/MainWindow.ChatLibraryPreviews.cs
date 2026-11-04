@@ -26,7 +26,7 @@ internal sealed partial class MainWindow
             {
                 if (preview.Ready) Run(() => JumpChatMessageAsync(peer,message.Id));
                 else if (!preview.Loading) { preview.Retry(); QueueChatLibraryPreviews(); }
-            }, TrackButtons.Text,94).Padding(0).CornerRadius(8).ToolTip(name);
+            }, TrackButtons.Text,94).Padding(0).CornerRadius(8).Hint(name);
         ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         return button;
     }

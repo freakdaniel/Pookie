@@ -57,7 +57,7 @@ internal sealed partial class MainWindow
             tab.Commands.Register(edit, () => OpenChatFolderEditor(folder));
             PopupAppearance.Attach(tab, PopupAppearance.CreateMenu().Item(edit));
         }
-        chatFolderTabs.Add(TrackButtons.Icon(Icons.View("plus", 16), () => OpenChatFolderEditor(null), TrackButtons.Text, 30).ToolTip("Создать папку"));
+        chatFolderTabs.Add(TrackButtons.Icon(Icons.View("plus", 16), () => OpenChatFolderEditor(null), TrackButtons.Text, 30).Hint("Создать папку"));
     }
 
     private FrameworkElement CreateChatDetails()
@@ -172,8 +172,8 @@ internal sealed partial class MainWindow
     {
         chatSelectionLabel = new TextBlock().FontSize(13).CenterVertical();
         chatSelectionBar = new StackPanel().Horizontal().Spacing(6).Children(chatSelectionLabel,
-            TrackButtons.Icon(Icons.View("copy", 18), () => CopyText(string.Join(Environment.NewLine, chatMessageItems.Where(m => chatSelected.Contains(m.Id)).Select(m => ChatCopyText(m.Message)))), TrackButtons.Glass, 34).ToolTip("Копировать по порядку"),
-            TrackButtons.Icon(Icons.View("heart", 18), () => { foreach (var item in chatMessageItems.Where(m => chatSelected.Contains(m.Id))) if (!chatWorkspace.Favorites.Any(f => f.PeerId == chatRecipient?.Id && f.Message.Id == item.Id)) ChatFavoriteMessage(item.Message); ClearChatSelection(); }, TrackButtons.Glass, 34).ToolTip("В избранное"),
+            TrackButtons.Icon(Icons.View("copy", 18), () => CopyText(string.Join(Environment.NewLine, chatMessageItems.Where(m => chatSelected.Contains(m.Id)).Select(m => ChatCopyText(m.Message)))), TrackButtons.Glass, 34).Hint("Копировать по порядку"),
+            TrackButtons.Icon(Icons.View("heart", 18), () => { foreach (var item in chatMessageItems.Where(m => chatSelected.Contains(m.Id))) if (!chatWorkspace.Favorites.Any(f => f.PeerId == chatRecipient?.Id && f.Message.Id == item.Id)) ChatFavoriteMessage(item.Message); ClearChatSelection(); }, TrackButtons.Glass, 34).Hint("В избранное"),
             TrackButtons.Icon(Icons.View("x-mark", 18), ClearChatSelection, TrackButtons.Text, 34));
         chatSelectionBar.IsVisible = false; return chatSelectionBar;
     }

@@ -19,7 +19,6 @@ public sealed class AppConfigurationTests
             var saved = new ConfigurationStore(paths).Load();
             Assert.Equal(34, saved.Volume); Assert.False(saved.DiscordEnabled); Assert.True(saved.LikesAsList);
             Assert.True(saved.AutoContinue); Assert.True(saved.NormalizeVolume); Assert.True(saved.ChatSaveDrafts);
-            Assert.True(saved.WaveLearningEnabled); Assert.Equal(90, saved.JournalRetentionDays);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -37,12 +36,12 @@ public sealed class AppConfigurationTests
             var store = new ConfigurationStore(paths);
             store.Save(store.Load() with { StartupPage = "library", AutoContinue = false, LyricsEnabled = false,
                 ShowCommentMarkers = false, CommentSort = "TIMESTAMP", ChatSendOnEnter = true, ChatAutoLoad = false,
-                ChatAnimateGifs = false, ChatAutoPlayVideo = false, WaveLearningEnabled = false, JournalRetentionDays = 30,
+                ChatAnimateGifs = false, ChatAutoPlayVideo = false,
                 RememberSearchSection = true, LastSearchSection = 4, SendPlaybackHistory = false, SystemMediaEnabled = false });
             var saved = new ConfigurationStore(paths).Load();
             Assert.Equal("library", saved.StartupPage); Assert.False(saved.AutoContinue); Assert.False(saved.LyricsEnabled);
             Assert.True(saved.ChatSendOnEnter); Assert.False(saved.ChatAutoLoad); Assert.False(saved.ChatAnimateGifs);
-            Assert.False(saved.ChatAutoPlayVideo); Assert.False(saved.WaveLearningEnabled); Assert.Equal(30, saved.JournalRetentionDays);
+            Assert.False(saved.ChatAutoPlayVideo);
             Assert.Equal("TIMESTAMP", saved.CommentSort); Assert.False(saved.ShowCommentMarkers); Assert.Equal(4, saved.LastSearchSection);
             Assert.False(saved.SendPlaybackHistory); Assert.False(saved.SystemMediaEnabled);
             using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(paths.Config, "settings.json")));
@@ -56,10 +55,9 @@ public sealed class AppConfigurationTests
     public void Invalid_selection_values_normalize_to_supported_choices()
     {
         var saved = new AppConfiguration() with { SchemaVersion = -1, StartupPage = "invalid", LastSearchSection = 999,
-            CommentSort = "invalid", JournalRetentionDays = -1 };
+            CommentSort = "invalid" };
         var normalized = saved.Normalize();
         Assert.Equal(2, normalized.SchemaVersion); Assert.Equal("home", normalized.StartupPage);
         Assert.Equal(0, normalized.LastSearchSection); Assert.Equal("NEWEST", normalized.CommentSort);
-        Assert.Equal(90, normalized.JournalRetentionDays);
     }
 }

@@ -75,14 +75,11 @@ internal sealed partial class MainWindow
             return Math.Abs(shellScroll.VerticalOffset - before) > .01;
         }, () => page.Value != Page.Chats ? ContentBottomFade.FadeHeight : 0);
         shellScroll.Content = shellPageScroll;
-        homeWaveLayout = new HomeWaveLayout(shellScroll, WaveSettingsView());
-        waveSettingsOpen.Changed += () => homeWaveLayout.SetOpen(waveSettingsOpen.Value);
         page.Changed += () =>
         {
-            if (page.Value != Page.Home) waveSettingsOpen.Value = false;
             UpdateContentFrameWidth(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
         };
-        contentSurface = new Border().Background(Surface).Child(homeWaveLayout);
+        contentSurface = new Border().Background(Surface).Child(shellScroll);
         headerGlass = new ShellChromeGlass(glassContent, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
         shellScroll.ScrollChanged += UpdateScrolledChrome;
         contentBottomFade = new ContentBottomFade(Surface).Height(ContentBottomFade.FadeHeight).Bottom().IsHitTestVisible(false);

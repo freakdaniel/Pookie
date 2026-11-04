@@ -72,7 +72,7 @@ internal sealed partial class MainWindow
         chatSidebarBack = TrackButtons.Icon(Icons.View("list",22,Muted), () =>
         {
             if (chatSidebarSearching) CloseChatGlobalSearch(); else chatSidebarMenu.Show(chatSidebarBack);
-        }, TrackButtons.Text,40).ToolTip("Меню / вернуться к диалогам");
+        }, TrackButtons.Text,40).Hint("Меню / вернуться к диалогам");
         chatSidebarMenu = PopupAppearance.CreateMenu(MenuPlacement.Below);
         var savedCommand = new Command("chat.sidebar.saved", "Избранное");
         var folderCommand = new Command("chat.sidebar.folder", "Создать папку");
@@ -80,7 +80,7 @@ internal sealed partial class MainWindow
         chatSidebarMenu.Item(savedCommand).Item(folderCommand);
         var inbox = new DockPanel().LastChildFill().Spacing(12).Children(
             new Grid().Columns("40,*,40").Rows("40").Spacing(6).Children(chatSidebarBack.Column(0), ChatGlobalSearchField().Column(1),
-                TrackButtons.Icon(Icons.View("bookmark-simple",21,Muted), OpenChatFavorites, TrackButtons.Text,40).ToolTip("Избранное").Column(2)).DockTop(),
+                TrackButtons.Icon(Icons.View("bookmark-simple",21,Muted), OpenChatFavorites, TrackButtons.Text,40).Hint("Избранное").Column(2)).DockTop(),
             new TextBlock().BindText(chatsStatus).BindIsVisible(chatsStatus, text => text.Length > 0).FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).DockTop(),
             chatMore.DockBottom(), chatSidebarTransition);
 
@@ -123,7 +123,7 @@ internal sealed partial class MainWindow
         chatEmojiEditor = new(chatInput);
         chatAttach = TrackButtons.Icon(Icons.View("paperclip", 22), () => Run(() => PickChatFilesAsync()), TrackButtons.Text, 40);
         chatGif = TrackButtons.Icon(Icons.View("smiley", 23), () => Run(OpenChatGifsAsync), TrackButtons.Text, 40);
-        chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).ToolTip("Отправить · Ctrl+Enter");
+        chatSend = TrackButtons.Icon(Icons.View("paper-plane-tilt", 21, TrackButtons.OnPrimary), () => Run(ActivateChatSendAsync), TrackButtons.Filled, 40).Hint("Отправить · Ctrl+Enter");
         chatSend.Content = chatSendGlyph;
         chatAttachmentLabel = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         var clearAttachments = TrackButtons.Icon(Icons.View("x", 16), ClearChatAttachments, TrackButtons.Text, 28);
@@ -151,11 +151,11 @@ internal sealed partial class MainWindow
             chatName.Column(1).Left().CenterVertical()), () => { if (chatFavoritesOpen) OpenChatSavedInfo(); else OpenChatInfo(); }, TrackButtons.Text, 46).Padding(0);
         ((FrameworkElement)identity.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         ((MaterialTrackButton)identity).SuppressStateLayer();
-        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, Muted), OpenChatThreadSearch, TrackButtons.Text, 36).ToolTip("Поиск в переписке");
+        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, Muted), OpenChatThreadSearch, TrackButtons.Text, 36).Hint("Поиск в переписке");
         chatNormalIdentity = new Grid().Columns("Auto,*,36,36").Rows("*").Spacing(8).Children(chatBack.Column(0).CenterVertical(), identity.Column(1).CenterVertical(), find.Column(2).CenterVertical());
         chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
         chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
-            .CornerRadius(18).ToolTip("Действия с диалогом");
+            .CornerRadius(18).Hint("Действия с диалогом");
         ((Grid)chatNormalIdentity).Add(chatOptions.Column(3).CenterVertical());
         chatOptionsMenu = PopupAppearance.CreateMenu(MenuPlacement.Below, new Point(0, 6));
         var profileCommand = new Command("pookie.chat.profile", "Профиль собеседника");

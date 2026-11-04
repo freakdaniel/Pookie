@@ -24,7 +24,7 @@ internal sealed partial class MainWindow
             var transport = new ChatFixtureTransport();
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
-            preferences = preferences with { WaveLearningEnabled = false, WaveAnalysisEnabled = false, ChatBackgroundRefresh = true, LyricsEnabled = true };
+            preferences = preferences with { ChatBackgroundRefresh = true, LyricsEnabled = true };
             const string url = "https://soundcloud.com/fixture/track";
             var track = new SoundCloudTrack { Id = 101, Title = "Фоновое воспроизведение", Duration = (seconds+30)*1000,
                 PermalinkUrl = url, WaveformUrl = "https://wave.sndcdn.com/chat-track-fixture.json", User = new() { Id = 7, Username = "Pookie local PCM" } };

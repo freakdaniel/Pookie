@@ -36,7 +36,7 @@ public sealed class PlaybackPreferenceTests
         var queue = new PlaybackQueue();
         queue.StartContext(new("track", "Track", "Source"), [Track(1)], 0);
         var started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var response = new TaskCompletionSource<SoundCloudTrack[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var response = new TaskCompletionSource<RecommendationBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var loader = new PlaybackQueueLoader(queue, (_, _, _) => throw new InvalidOperationException(),
             () => { }, CancellationToken.None, (_, token) => { started.TrySetResult(token); return response.Task; });
         var request = loader.EnsureAheadAsync();
@@ -44,21 +44,21 @@ public sealed class PlaybackPreferenceTests
         queue.SetAutoContinue(false); loader.PolicyChanged();
         queue.SetAutoContinue(true); loader.PolicyChanged();
         Assert.True(token.IsCancellationRequested);
-        response.SetResult([Track(2)]);
+        response.SetResult(new([Track(2)]));
         await request;
         Assert.Empty(queue.Snapshot.Recommendations);
     }
 
     [Fact]
-    public async Task DisabledContinuationStillLoadsTheSelectedPlaylistAndWave()
+    public async Task DisabledContinuationStillLoadsTheSelectedPlaylist()
     {
-        foreach (var kind in new[] { PlaybackContextKind.Playlist, PlaybackContextKind.Wave })
+        foreach (var kind in new[] { PlaybackContextKind.Playlist })
         {
             var queue = new PlaybackQueue(); queue.SetAutoContinue(false);
             queue.StartContext(new("source", "Source", "Source", "page2", Kind: kind), [Track(1)], 0);
             var calls = 0;
             using var loader = new PlaybackQueueLoader(queue, (_, _, _) => Task.FromResult(new TrackPage([Track(2)], null)),
-                () => { }, CancellationToken.None, (_, _) => { calls++; return Task.FromResult(new[] { Track(3) }); });
+                () => { }, CancellationToken.None, (_, _) => { calls++; return Task.FromResult(new RecommendationBatch([Track(3)])); });
             await loader.EnsureAheadAsync();
             Assert.Equal(2, queue.Next()!.Track.Id); Assert.Equal(0, calls);
         }

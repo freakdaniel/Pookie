@@ -7,20 +7,6 @@ namespace Pookie.Playback.Tests;
 
 public sealed class QueueContinuationTests
 {
-    [Theory]
-    [InlineData(Pookie.Recommendations.ListeningSource.Autoplay, Pookie.Recommendations.ListeningEndReason.Skip, true)]
-    [InlineData(Pookie.Recommendations.ListeningSource.Autoplay, Pookie.Recommendations.ListeningEndReason.Stopped, false)]
-    [InlineData(Pookie.Recommendations.ListeningSource.Autoplay, Pookie.Recommendations.ListeningEndReason.PlaybackError, false)]
-    [InlineData(Pookie.Recommendations.ListeningSource.Manual, Pookie.Recommendations.ListeningEndReason.Skip, false)]
-    public void OnlyIntentionalAutoplaySkipsTeachAnImplicitNegative(Pookie.Recommendations.ListeningSource source,
-        Pookie.Recommendations.ListeningEndReason reason, bool expected)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var track = new Pookie.Recommendations.WaveTrack(42, "Song", "Artist", 7, "", 120000, null, null, null);
-        var observation = new Pookie.Recommendations.ListeningObservation(Guid.NewGuid(), Guid.NewGuid(), track,
-            now, now.AddSeconds(2), 2, source, reason, Pookie.Recommendations.WaveMode.Balance);
-        Assert.Equal(expected, observation.EarlySkip);
-    }
     private static SoundCloudTrack Track(long id, string? title = null) => new() { Id = id, Title = title ?? "Track " + id,
         Duration = 120000, User = new() { Id = id, Username = "Artist " + id } };
     private static PlaybackQueue Queue(params long[] ids)
@@ -79,14 +65,16 @@ public sealed class QueueContinuationTests
         Assert.Equal(1, queue.Previous()!.Track.Id); Assert.Empty(queue.Snapshot.Forward);
     }
     [Fact]
-    public void SourceSwitchRejectsOldResponsesAndWaveUsesItsOwnRefill()
+    public void SourceSwitchRejectsOldResponsesAndRadioWorksWithAutoplayDisabled()
     {
         var queue = Queue(1); var old = queue.SourceVersion;
         queue.StartContext(new("other", "Other", ""), [Track(10)], 0);
         Assert.False(queue.AppendRecommendations(old, [Track(2)]));
-        queue.StartContext(new("wave", "Wave", "", Kind: PlaybackContextKind.Wave), [Track(20)], 0);
-        Assert.False(queue.Snapshot.CanLoadRecommendations);
-        Assert.False(queue.AppendRecommendations(queue.SourceVersion, [Track(21)]));
+        queue.SetAutoContinue(false);
+        queue.StartContext(new("radio:20", "Radio", "", Kind: PlaybackContextKind.Radio), [Track(20)], 0);
+        Assert.True(queue.Snapshot.CanLoadRecommendations);
+        Assert.True(queue.AppendRecommendations(queue.SourceVersion, [Track(21)]));
+        Assert.Equal(21, queue.Next()!.Track.Id);
     }
     [Fact]
     public void SelectionOfContinuationSkipsSourceTailAndKeepsManualAdditions()
@@ -104,7 +92,7 @@ public sealed class QueueContinuationTests
         var calls = new List<string>();
         using var loader = new PlaybackQueueLoader(queue, (_, _, _) =>
             { calls.Add("source"); return Task.FromResult(new TrackPage([Track(2)], null)); }, () => { }, CancellationToken.None,
-            (state, _) => { calls.Add("recommend"); Assert.Null(state.Context!.NextHref); return Task.FromResult(new[] { Track(3) }); });
+            (state, _) => { calls.Add("recommend"); Assert.Null(state.Context!.NextHref); return Task.FromResult(new RecommendationBatch([Track(3)])); });
         await loader.EnsureAheadAsync();
         Assert.Equal(new[] { "source", "recommend" }, calls);
         Assert.Equal(2, Assert.Single(queue.Snapshot.ContextUpcoming).Track.Id);
@@ -114,12 +102,12 @@ public sealed class QueueContinuationTests
     public async Task ContinuationIsSingleFlightAndNavigationCancelsItsResult()
     {
         var queue = Queue(1); var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var ready = new TaskCompletionSource<SoundCloudTrack[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ready = new TaskCompletionSource<RecommendationBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var loader = new PlaybackQueueLoader(queue, (_, _, _) => throw new InvalidOperationException(), () => { }, CancellationToken.None,
             (_, _) => { requested.TrySetResult(); return ready.Task; });
         var first = loader.EnsureAheadAsync(); Assert.Same(first, loader.EnsureAheadAsync()); await requested.Task;
         queue.StartContext(new("other", "Other", ""), [Track(10)], 0); loader.ContextChanged();
-        ready.SetResult([Track(2)]); await first;
+        ready.SetResult(new([Track(2)])); await first;
         Assert.Empty(queue.Snapshot.Recommendations); Assert.Equal(10, queue.Current!.Track.Id);
     }
     [Fact]
@@ -127,40 +115,45 @@ public sealed class QueueContinuationTests
     {
         var queue = Queue(1); var calls = 0;
         using var loader = new PlaybackQueueLoader(queue, (_, _, _) => throw new InvalidOperationException(), () => { }, CancellationToken.None,
-            (_, _) => ++calls == 1 ? Task.FromException<SoundCloudTrack[]>(new IOException("Offline")) : Task.FromResult(Array.Empty<SoundCloudTrack>()));
+            (_, _) => ++calls == 1 ? Task.FromException<RecommendationBatch>(new IOException("Offline")) : Task.FromResult(new RecommendationBatch([], Exhausted: true)));
         await Assert.ThrowsAsync<IOException>(() => loader.EnsureAheadAsync());
         await loader.EnsureAheadAsync(); await loader.EnsureAheadAsync();
         Assert.Equal(2, calls); Assert.True(queue.Snapshot.RecommendationsExhausted); Assert.Null(queue.Next());
     }
     [Fact]
-    public async Task ContinuationUsesRelatedContextAndIgnoresWaveModeWhileRespectingExclusions()
+    public async Task FiltersReuploadsWithoutReorderingSoundCloudPagesOrCollapsingSpeedEdits()
     {
-        var queue = Queue(1, 2); var taste = new WaveTaste(); taste.SetMode(WaveMode.Favorites);
-        taste.Block(Track(4)); taste.MarkUnavailable(Track(5), DateTimeOffset.UtcNow.AddDays(1));
-        var manual = queue.Enqueue(Track(6)); var continuation = new QueueContinuation(); var seeds = new List<long>();
-        var result = await continuation.FetchAsync(queue.Snapshot, taste, (id, _, _) =>
-        { seeds.Add(id); return Task.FromResult(new TrackPage([Track(1), Track(2), Track(4), Track(5), Track(6), Track(7)], null)); }, CancellationToken.None);
-        Assert.Equal(new long[] { 1 }, seeds); Assert.Equal(7, Assert.Single(result).Id);
-        Assert.Equal(manual, Assert.Single(queue.Snapshot.ManualUpcoming));
+        var seed = Track(1, "Artist — Song");
+        var queue = new PlaybackQueue();
+        queue.StartContext(new("radio:1", "Radio", "", Kind: PlaybackContextKind.Radio), [seed], 0);
+        var manual = queue.Enqueue(Track(9, "Manual"));
+        var calls = new List<(long Id, string? Cursor)>();
+        var continuation = new QueueContinuation();
+        Task<TrackPage> Fetch(long id, string? cursor, CancellationToken token)
+        {
+            calls.Add((id, cursor));
+            return Task.FromResult(cursor == null
+                ? new TrackPage([Track(20, "Song (re-upload)") with { Duration = 121000 }, Track(4), Track(5) with { Access = "blocked" },
+                    Track(6), Track(21, "Artist - Song (sped up)") with { Duration = 100000 }, Track(8), Track(9), Track(10)], "page2")
+                : new TrackPage([Track(11)], null));
+        }
+        var first = await continuation.FetchAsync(queue.Snapshot, track => track.Id is not (4 or 6), Fetch, CancellationToken.None);
+        Assert.Equal(new long[] { 21, 8, 10 }, first.Tracks.Select(t => t.Id));
+        Assert.Equal(new[] { (1L, (string?)null) }, calls);
+        queue.AppendRecommendations(queue.SourceVersion, first.Tracks, first.Exhausted);
+        Assert.Equal(manual, queue.Next());
+        Assert.Equal(21, queue.Next()!.Track.Id);
+        var next = await continuation.FetchAsync(queue.Snapshot, _ => true, Fetch, CancellationToken.None);
+        Assert.Equal(11, Assert.Single(next.Tracks).Id);
+        Assert.Equal((1L, "page2"), calls[1]);
     }
+
     [Fact]
     public async Task DuplicateOnlyRelatedPagesDoNotPrematurelyEndContinuation()
     {
         var queue = Queue(1); var calls = 0;
-        var result = await new QueueContinuation().FetchAsync(queue.Snapshot, new WaveTaste(), (_, cursor, _) =>
+        var result = await new QueueContinuation().FetchAsync(queue.Snapshot, _ => true, (_, cursor, _) =>
         { calls++; return Task.FromResult(cursor == null ? new TrackPage([Track(1)], "page2") : new TrackPage([Track(2)], null)); }, CancellationToken.None);
-        Assert.Equal(2, calls); Assert.Equal(2, Assert.Single(result).Id);
-    }
-    [Fact]
-    public async Task PrefetchedPoolRefillsWithoutReplayingHistoryAndExpandsFromTheNewRecommendation()
-    {
-        var queue = Queue(1); var continuation = new QueueContinuation(); var taste = new WaveTaste(); var seeds = new List<long>();
-        Task<TrackPage> Fetch(long id, string? _, CancellationToken token)
-        { seeds.Add(id); return Task.FromResult(new TrackPage(Enumerable.Range(2, 12).Select(id => Track(id)).ToArray(), null)); }
-        queue.AppendRecommendations(queue.SourceVersion, await continuation.FetchAsync(queue.Snapshot, taste, Fetch, CancellationToken.None));
-        var played = queue.Next()!;
-        var result = await continuation.FetchAsync(queue.Snapshot, taste, Fetch, CancellationToken.None);
-        Assert.Contains(played.Track.Id, seeds); Assert.DoesNotContain(result, track => track.Id == played.Track.Id);
-        Assert.DoesNotContain(result, track => queue.Snapshot.Upcoming.Any(entry => entry.Track.Id == track.Id));
+        Assert.Equal(2, calls); Assert.Equal(2, Assert.Single(result.Tracks).Id);
     }
 }

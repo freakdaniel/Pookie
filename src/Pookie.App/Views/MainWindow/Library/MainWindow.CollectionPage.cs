@@ -42,7 +42,7 @@ internal sealed partial class MainWindow
             if (CollectionAuthor is { } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, "Исполнитель", user.AvatarUrl, User: user)));
         }, TrackButtons.Text, 20).Padding(0).Left();
         collectionCopy = TrackButtons.Icon(Icons.View("copy", 20), () =>
-        { if (TrackLink(displayedCollection?.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, 44).ToolTip("Скопировать ссылку");
+        { if (TrackLink(displayedCollection?.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, 44).Hint("Скопировать ссылку");
         collectionDescriptionToggle = TrackButtons.Action(new TextBlock().Text("Подробнее").FontSize(13), () =>
         {
             collectionDescriptionExpanded = !collectionDescriptionExpanded;

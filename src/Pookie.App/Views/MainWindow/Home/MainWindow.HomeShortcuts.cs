@@ -16,6 +16,8 @@ internal sealed partial class MainWindow
     private string? homeHistoryFrontKey, homeHistoryRearKey;
     private int homeHistoryCoverGeneration;
     private int? homeLikesCount;
+    private SoundCloudTrack[] homeLikesPreview = [];
+    private long homeAccountGeneration;
     private string? homeHistoryTitle;
     private int homeHistoryTitleGeneration;
 
@@ -70,7 +72,7 @@ internal sealed partial class MainWindow
         if (homeLikesSubtitle == null) return;
         var count = likedIdsReady ? likedIds.Count : homeLikesCount;
         homeLikesSubtitle.Text = count is { } total ? DetailCount(total) + " " + RussianPlural(total, "трек", "трека", "треков") : "Сохранённые треки";
-        var likes = (libraryLikes?.Tracks ?? waveTaste.Snapshot().Tracks.Where(item => item.Liked).Select(item => item.Track.ToTrack()).ToArray())
+        var likes = (libraryLikes?.Tracks ?? homeLikesPreview)
             .Take(2).Select(LibraryItem.FromTrack).ToArray();
         var history = localRecent.Concat(HomeItems("recent")).Where(item => item.Track != null || item.Playlist != null)
             .DistinctBy(item => item.Key).Take(2).ToArray();
@@ -107,13 +109,13 @@ internal sealed partial class MainWindow
                 image.Source = null;
                 continue;
             }
-            var slot = index; var generation = waveGeneration;
+            var slot = index; var generation = homeAccountGeneration;
             var oldCoverVisible = image.Source != null;
             if (oldCoverVisible) frame.Opacity = 0;
             Run(async () => {
                 if (oldCoverVisible) await Task.Delay(190, lifetime.Token);
                 var source = await GetCollectionArtworkAsync(item);
-                if (disposed || generation != waveGeneration || homeLikesCoverKeys[slot] != item.Key) return;
+                if (disposed || generation != homeAccountGeneration || homeLikesCoverKeys[slot] != item.Key) return;
                 image.Source = source;
                 frame.IsVisible = source != null;
                 frame.Opacity = source == null ? 0 : slot == 0 ? 1 : .45;

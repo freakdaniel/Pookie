@@ -24,22 +24,6 @@ internal sealed partial class MainWindow
     private void RefreshSettingsData()
     {
         var generation = ++settingsDataGeneration;
-        if (settingsSection.Value == SettingsSection.Wave && settingsBlockedList != null)
-        {
-            settingsBlockedList.Clear();
-            var blocked = me == null ? [] : WaveBlockedTracks();
-            if (blocked.Length == 0) settingsBlockedList.Add(new TextBlock().Text("Исключённых треков пока нет").FontSize(13).Foreground(Muted).Margin(0, 12));
-            foreach (var track in blocked)
-            {
-                var account = me?.Id;
-                settingsBlockedList.Add(SettingsRow(track.Title, track.Author,
-                    TrackButtons.Action(new TextBlock().Text("Восстановить").FontSize(14).SemiBold(), () =>
-                    {
-                        if (me?.Id != account) return;
-                        UnblockWaveTrack(track); RefreshSettingsData(); RefreshSettingsControls();
-                    }, TrackButtons.Tonal)));
-            }
-        }
         if (settingsSection.Value == SettingsSection.Data && settingsCacheUsage != null)
             Run(async () =>
             {
@@ -56,20 +40,6 @@ internal sealed partial class MainWindow
         RefreshSettingsData();
         return result.RemainingBytes == 0 ? $"Освобождено {FormatSettingsBytes(result.DeletedBytes)}" :
             $"Освобождено {FormatSettingsBytes(result.DeletedBytes)}; часть файлов используется или уже загружена повторно";
-    });
-
-    private Task ConfirmWaveDataActionAsync(bool resetLearning) => SettingsOperationAsync(async () =>
-    {
-        if (me is not { } account || demo) return "Войди в SoundCloud, чтобы управлять данными аккаунта";
-        var title = resetLearning ? "Удалить накопленное обучение?" : "Очистить локальную историю Pookie?";
-        var detail = resetLearning ? "Будут удалены локальные события, обученная модель и анализ звучания этого аккаунта; режим Волны, лайки и исключения сохранятся; история SoundCloud не изменится" :
-            "Будут удалены локальные события прослушивания этого аккаунта; обученная модель, исключения и история SoundCloud сохранятся; серверная история может снова отображаться в библиотеке";
-        if (!await MessageBox.AskYesNoAsync(title, detail: detail, owner: Window)) return "";
-        if (me?.Id != account.Id) return "Аккаунт изменился; повтори действие";
-        var cleared = resetLearning ? await ResetWaveLearningAsync(account.Id) : await ClearLocalWaveHistoryAsync(account.Id);
-        RefreshSettingsData();
-        return !cleared ? "Аккаунт изменился или операция уже выполняется; повтори действие" :
-            resetLearning ? "Накопленное обучение удалено; явные предпочтения сохранены" : "Локальная история очищена; история SoundCloud не изменена";
     });
 
     private Task ConfirmChatClearAsync(bool drafts) => SettingsOperationAsync(async () =>

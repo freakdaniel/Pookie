@@ -26,6 +26,19 @@ Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated 
 directory when the production app is open: MewUI's extracted font files otherwise
 share the same cache and another process can remove them when it exits.
 
+`--tooltips-ui-smoke-test --no-audio` checks the shared Material 3 plain hints:
+inverse surface, wrapped text/emoji, anchor-centred placement and edge fallback,
+96/110/144/192 DPI, pixel-verified enter/exit opacity, uninterrupted reversal,
+hover-delay cancellation, keyboard focus/Escape, dynamic and recycled labels,
+scroll/disable/deactivation/click dismissal, input transparency and overlay cleanup.
+App controls register/update plain text with `.Hint(text)`; `.Hint(null)` removes
+it. Native `.ToolTip` popups are intentionally not used for these hints.
+The window owns one reusable surface; its small bitmap cache is released on close.
+Appearance follows [Material 3 plain tooltip tokens](https://github.com/androidx/androidx/blob/androidx-main/compose/material3/material3/src/commonMain/kotlin/androidx/compose/material3/tokens/PlainTooltipTokens.kt)
+and [tooltip layout/scale](https://github.com/androidx/androidx/blob/androidx-main/compose/material3/material3/src/commonMain/kotlin/androidx/compose/material3/Tooltip.kt).
+Desktop timing is 500 ms initial hover, 100 ms when switching between hints,
+150 ms entrance and 75 ms exit. Each transition reverses from its current state.
+
 `--chat-drawer-ui-smoke-test --no-audio` runs the fixture navigation setup and
 checks opening/closing the profile drawer in overlay, docked and compact layouts
 at 96/110/144/192 DPI. Physical widths and glass/profile raster identities must
@@ -195,7 +208,7 @@ repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
 `--expanded-glass-ui-smoke-test` checks fullscreen glass controls with a synthetic
 cover: actual pixel softening, fresh samples after artwork replacement, connected
-like/dislike selection shapes, a native shuffle click and pointer-focus feedback.
+like/repost selection shapes, a native shuffle click and pointer-focus feedback.
 It also verifies fullscreen opening/closing, cover hover and repeated paused reentry.
 Transport controls must share a vertical center, and rendered glass buttons keep
 at least 4.5:1 foreground contrast on both white and nearly black artwork fixtures.
@@ -214,7 +227,7 @@ counts/shape without identities or credentials, and makes no account writes.
 
 `--settings-ui-smoke-test --no-audio` checks the settings gear through native
 clicks, all seven library-style tabs at 1000×680, back/forward section and scroll
-restoration, the persistent likes view, real playback/lyrics/history/Wave policy
+restoration, the persistent likes view, real playback/lyrics/history policy
 switches, preserved current/manual queue entries, and configuration round trips.
 It also verifies native Material switch geometry, animated travel and pressed size,
 cancelled/disabled input, dropdown mouse/keyboard interaction, and the cache chart's
@@ -231,71 +244,19 @@ separate "Похожие дальше" sections in both queues, and repeat takin
 It uses isolated account data and fixture metadata/streams with a fake audio player.
 Queue unit tests also cover stale/cancelled results, single-flight prefetch,
 source pagination, deduplication, explicit recommendation selection, transient
-retry, empty results, related-page traversal and Wave mode isolation.
+retry, empty results, ordered related-page traversal and explicit radio with autoplay disabled.
 
 `--chat-media-ui-smoke-test --no-audio` runs the full rich-attachment checks
 independently of composer layout: file/image/video fixtures, draft previews,
 viewer playback and controls, and music fading/restoration. It uses isolated
 account data and fixture transports; no real messages or uploads are sent.
 
-`--home-ui-smoke-test` checks personal shortcut cards, the inline settings drawer
-across repeated width/height changes, its independent scroll and close behavior,
-continuous/interrupted palette transitions while playing and paused, the animated wave hero and native settings clicks,
-favorite/discovery boundaries, current/manual queue preservation, dislike, continuous
-refill and account-scoped persistence, fallback without mixes, independent sections, skeleton-to-card
-transitions, responsive grids and scrolling, account-scoped cache, partial failures
-and refresh, stale account replies, and native play/card clicks for Home, compact
-rows and liked tiles, including compact title hit bounds. It uses local account
-data and requests no real audio.
-
-`--wave-queue-ui-smoke-test` checks the actual three-track committed horizon in the
-popup and fullscreen queue. Background checkpoints leave rows/keys/animations alone;
-advancing retains remaining rows, animates their movement and adds one candidate.
-Manual entries have a separate heading, mode changes dissolve changed recommendations,
-and advancing does not move a viewport reading playback history. It uses isolated demo
-data and a fixture player, with no SoundCloud requests or account writes.
-It also checks a current track plus three recommendations without a phantom
-scrollbar, actual overflow with a scrollbar at the surface edge, and unchanged
-visible row identities across all repeat modes.
-
-The Home scenario also checks the local wave journal: native dislike, like/unlike,
-reset exclusions, actual listened time, shutdown classification and account isolation.
-Journal/storage regression checks run in `tests/Pookie.Playback.Tests` without a window.
-
-`--wave-journal-ui-smoke-test` runs the journal integration independently of Home
-layout: native dislike, like/unlike, reset blocks, counted listening and account
-switch. It uses isolated data, no real audio or SoundCloud requests.
-Deleted-track fixtures verify automatic Wave advancement, persistent availability
-exclusions without taste penalties, rejection of stale imports, unchanged handling
-of rate limits, stale playback responses, and bounded failure chains.
-It also checks captured PCM reaching the MusiCNN vector index and the learned
-account checkpoint through the production journal pipeline, the actual player
-dislike icon, cancellation outside Wave, mutual exclusion with Like, and restoring
-a rejected song through Like. Home checks native wave mode selection while preserving
-the current track and manual queue, including the settings drawer at narrow widths.
-The journal scenario also verifies audio-vector updates reranking the queue at an
-unchanged model checkpoint, without replacing current/manual entries. Cached mood
-metadata must not affect the base wave's order or eligibility.
-The journal scenario also checks sequential background candidate analysis,
-nonblocking scheduling, 24 attempts per session, cancellation in Favorites,
-unchanged listening/rewards and preserved current/manual entries. All previews
-use injected local PCM; no real media is downloaded by UI checks.
-
-`--wave-quality-report [days]` reads the existing wave journal without changing it
-or contacting SoundCloud. The default is 7 days; allowed periods are 1-90 days.
-JSON groups actual automatic Wave plays by account, algorithm version, mode and
-familiar/new/unknown cohort, with early skips, >=60% listening, natural ends,
-rejections, linked likes, distinct tracks/artists and prediction audio coverage.
-Short interrupted plays are excluded from the evaluated denominator. Older
-versions have null like rates because their feedback lacked playback identities.
-This describes retained observations; it is not a causal A/B quality comparison.
-
-`--audio-mood-probe URL... [--preview] [--cache-results]` uses the saved account
-and production resolver/decoder to inspect short audio excerpts of real tracks.
-Preview samples start at min(30 seconds, duration / 4); protected tracks use
-ordinary silent playback instead. Without `--cache-results` the wave database
-is untouched; that flag refreshes only vectors, never listening rewards or likes.
-Console output contains public track identity and scores, no session/stream tokens.
+`--home-ui-smoke-test --no-audio` checks official SoundCloud mixes and trending
+tracks, independent loading and retry, responsive grids, cached Home content,
+account isolation, and native radio/play/card clicks. Radio and continuation use
+SoundCloud's related-track order and filter exclusions, unavailable tracks and
+likely reuploads. Explicit speed edits remain distinct. Exclusions from the
+former Wave profile are imported into the account's radio settings.
 
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
 centred player metadata and animated title/artist links, artist navigation and
@@ -417,7 +378,6 @@ Run from the repository root:
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --memory-ui-smoke-test
-dotnet run --project tests/Pookie.App.SmokeTests -- --wave-queue-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --scrolling-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --track-page-ui-smoke-test
 dotnet run --project tests/Pookie.App.SmokeTests -- --likes-edits-ui-smoke-test
@@ -564,13 +524,7 @@ Ordinary audio and the Linux native Widevine/SoundFlow route remain unchanged.
 
 `--browser-audio-state-smoke-test` uses local fake transports without a website
 or CDM. It verifies routing, volume, seek, pause, one-shot end, ignored stale-track
-events, worker failure and cancellation when switching tracks. It also verifies
-bounded PCM transfer into the real MusiCNN encoder and rejection of stale chunks.
-
-`--browser-audio-capture-smoke-test` uses real Chromium to decode a local WAV,
-the production analysis Worklet, the paired browser pipe and WindowsAudioPlayer.
-It verifies a real neural embedding while master volume is zero and track gain is
-negative. The local media transport substitutes for EME; it does not validate a CDM.
+events, worker failure and cancellation when switching tracks.
 
 `--browser-drm-capability-probe` reports AAC/MSE and Widevine key-system support
 in an isolated local fixture without real credentials, media or license requests.
@@ -583,12 +537,6 @@ exit code on unsupported APIs or failed acquisition, without exposing credential
 or payloads. It does not claim to verify playback. The official SoundCloud player
 and VMP lab probes, observations and current limitations are documented in
 [`tools/drm-probe/README.md`](../../tools/drm-probe/README.md).
-
-For actual EME PCM validation with the saved Pookie session and a protected track:
-
-```powershell
-dotnet run --project tests/Pookie.App.SmokeTests -- --protected-audio-smoke-test TRACK_URL --analysis-probe
-```
 
 Regional playback uses the authenticated primary connection first. Only fresh
 `SNIP`/`BLOCK` metadata activates the anonymous pool. It discovers ProxyScrape and
@@ -606,7 +554,7 @@ SOCKS5 URI selects a fixed exit. Isolated UI fixtures do not enable discovery by
 default. The protected audio smoke uses the automatic production pool when the
 variable is unset. Add `--isolated-browser-profile` to avoid leasing the user's
 browser profile and `--default-stream-selection` to use normal format ordering.
-`--analysis-probe` verifies non-silent decoded PCM. These probes are muted.
+These probes are muted.
 `--regional-cache-probe` resolves a fresh link a second time through the same pool
 and reports the warm resolution time before playing it.
 

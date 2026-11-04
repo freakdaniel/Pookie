@@ -24,10 +24,10 @@ internal sealed partial class MainWindow
             api.BrowserTransport = new ContinuationFixtureTransport();
             me = new() { Id = 42, Username = "Settings fixture" };
             profile.Value = me.Username; signedIn.Value = true; likedIdsReady = true;
-            EnsureWaveTaste(); await ShowWorkspaceAsync();
+            await ShowWorkspaceAsync();
             await VerifySettingsDraftCleanupBeforeOpeningChatsAsync();
-            if (settingsButton.ToolTip != null || settingsToggles.Values.Any(control => control.ToolTip != null) ||
-                settingsChoices.Values.Any(control => control.ToolTip != null))
+            if (settingsButton.ToolTip != null || TooltipHints.TextFor(settingsButton) != null || settingsToggles.Values.Any(control => control.ToolTip != null || TooltipHints.TextFor(control) != null) ||
+                settingsChoices.Values.Any(control => control.ToolTip != null || TooltipHints.TextFor(control) != null))
                 throw new InvalidOperationException("Settings gear, switches or selects retained tooltips.");
             Window.Activate();
             Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
@@ -46,8 +46,8 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Settings opened with a shell popup covering its page.");
 
             var sections = Enum.GetValues<SettingsSection>();
-            if (sections.Length != 7 || settingsTabs.Count != sections.Length)
-                throw new InvalidOperationException("The settings page does not expose all seven sections.");
+            if (sections.Length != 6 || settingsTabs.Count != sections.Length)
+                throw new InvalidOperationException("The settings page does not expose all six sections.");
             foreach (var section in sections)
             {
                 await SelectSettingsTabAsync(section);
@@ -122,23 +122,6 @@ internal sealed partial class MainWindow
             if (!preferences.LyricsAutoScroll || !lyricsFollow)
                 throw new InvalidOperationException("Enabling lyrics following did not resume its actual policy.");
 
-            await SelectSettingsTabAsync(SettingsSection.Wave);
-            var analysisCancellation = waveAudioCancellation.Token;
-            await SetSettingsToggleAsync("wave_analysis", false);
-            if (preferences.WaveAnalysisEnabled || CanAnalyzeWave || audio.AnalysisEnabled || !analysisCancellation.IsCancellationRequested)
-                throw new InvalidOperationException("Disabling Wave analysis did not cancel work and release audio capture.");
-            await SetSettingsToggleAsync("wave_analysis", true);
-            if (!CanAnalyzeWave || !audio.AnalysisEnabled)
-                throw new InvalidOperationException("Enabling Wave analysis did not resume audio capture.");
-            var learningCancellation = waveObservationCancellation.Token;
-            await SetSettingsToggleAsync("wave_learning", false);
-            if (preferences.WaveLearningEnabled || CanLearnWave || CanAnalyzeWave || audio.AnalysisEnabled || !learningCancellation.IsCancellationRequested)
-                throw new InvalidOperationException("Disabling Wave learning left observations or analysis active.");
-            await SetSettingsToggleAsync("wave_learning", true);
-            if (!CanLearnWave || !CanAnalyzeWave || !audio.AnalysisEnabled)
-                throw new InvalidOperationException("Enabling Wave learning did not restore the active capture policy.");
-            CheckSettingsQueue();
-
             await SelectSettingsTabAsync(SettingsSection.Data);
             BeginPlaybackHistory(playbackQueue.Current!);
             if (playbackHistorySubmitted) throw new InvalidOperationException("The fixture did not begin a fresh history occurrence.");
@@ -155,9 +138,6 @@ internal sealed partial class MainWindow
             await SelectSettingsTabAsync(SettingsSection.Playback);
             await SetSettingsToggleAsync("auto_continue", false);
             await SetSettingsToggleAsync("lyrics", false);
-            await SelectSettingsTabAsync(SettingsSection.Wave);
-            await SetSettingsToggleAsync("wave_analysis", false);
-            await SetSettingsToggleAsync("wave_learning", false);
             await SelectSettingsTabAsync(SettingsSection.Chats);
             await SetSettingsChoiceAsync("chat_send", 1);
             await SetSettingsChoiceAsync("chat_download", 1);
@@ -168,18 +148,17 @@ internal sealed partial class MainWindow
             SaveConfiguration();
             await configuration.FlushAsync();
             var saved = configuration.Load();
-            if (saved.AutoContinue || saved.LyricsEnabled || saved.SendPlaybackHistory || saved.WaveLearningEnabled || saved.WaveAnalysisEnabled ||
+            if (saved.AutoContinue || saved.LyricsEnabled || saved.SendPlaybackHistory ||
                 !saved.LikesAsList || saved.StartupPage != "library" || !saved.ChatSendOnEnter || saved.ChatAutoLoad || saved.ChatBackgroundRefresh || saved.KlipyEnabled)
                 throw new InvalidOperationException("The settings controls did not survive configuration save/reload.");
             CheckSettingsQueue();
 
-            await VerifySettingsWaveMaintenanceAsync();
 
             Window.WindowSize = WindowSize.Resizable(1280, 840, minWidth: 1000, minHeight: 680);
             await WaitForSettingsLayoutAsync(() => Math.Abs(Window.ClientSize.Width - 1280) < 1 && Math.Abs(Window.ClientSize.Height - 840) < 1);
             await SettleSettingsPresentationAsync();
             CheckSettingsTabBounds(); CaptureUiPreview("settings-general-1280x840");
-            Console.WriteLine("UI_SETTINGS_OK: native gear/tab/toggle/select clicks, animated borderless menu, keyboard selection/dismissal, category dividers, external-link icons, seven sections at 1000x680, history section/scroll restoration, persistent likes view, real playback/lyrics/history/Wave policies, preserved current/manual entries, configuration round trip and no reduced-animation preference");
+            Console.WriteLine("UI_SETTINGS_OK: native gear/tab/toggle/select clicks, animated borderless menu, keyboard selection/dismissal, category dividers, external-link icons, six sections at 1000x680, history section/scroll restoration, persistent likes view, real playback/lyrics/history policies, preserved current/manual entries, configuration round trip and no reduced-animation preference");
 
             void CheckSettingsQueue()
             {
@@ -196,40 +175,6 @@ internal sealed partial class MainWindow
             Console.Error.WriteLine("UI_SETTINGS_FAILED: " + error);
         }
         finally { player = originalPlayer; Window.Close(); }
-    }
-
-    private async Task VerifySettingsWaveMaintenanceAsync()
-    {
-        var source = SettingsFixtureTrack(501);
-        var candidates = Enumerable.Range(600, 15).Select(id => SettingsFixtureTrack(id)).ToArray();
-        AddWaveCandidates(candidates);
-        StartQueueContext(new(WaveQueueKey, "Волна", "Волна", "pookie:wave:maintenance", Kind: PlaybackContextKind.Wave), [source], source);
-        var manual = playbackQueue.Enqueue(SettingsFixtureTrack(900));
-        var currentEntry = playbackQueue.Current!.EntryId;
-        var sourceVersion = playbackQueue.SourceVersion;
-        var generation = waveGeneration;
-        var epoch = waveLearningEpoch;
-        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        waveCandidateFetch = held.Task;
-        var refill = queueLoader.EnsureAheadAsync(force: true);
-        await Task.Delay(50, lifetime.Token);
-        if (refill.IsCompleted) throw new InvalidOperationException("Maintenance fixture did not hold the source refill.");
-        try
-        {
-            if (!await ResetWaveLearningAsync(me!.Id)) throw new InvalidOperationException("Account maintenance was not accepted.");
-            if (waveGeneration != generation || waveLearningEpoch == epoch)
-                throw new InvalidOperationException("Learning reset invalidated the source refill generation.");
-        }
-        finally { held.TrySetResult(); }
-        await refill;
-        if (playbackQueue.SourceVersion != sourceVersion || playbackQueue.Current?.EntryId != currentEntry ||
-            !playbackQueue.Snapshot.ManualUpcoming.Contains(manual) || playbackQueue.Context?.NextHref == null ||
-            playbackQueue.Snapshot.Source.Count <= 1)
-            throw new InvalidOperationException("Reset during a pending source refill discarded its cursor, current track or manual queue.");
-        var stored = waveStore.Load(me!.Id).Snapshot();
-        if (stored.Tracks.Any(item => item.Plays > 0 || item.GoodPlays > 0 || item.ListenedSeconds > 0))
-            throw new InvalidOperationException("Completed maintenance retained implicit statistics on disk.");
-        Console.WriteLine("UI_SETTINGS_WAVE_MAINTENANCE_OK: pending source refill survives learning reset; durable JSON has no prior listening statistics.");
     }
 
     private async Task VerifySettingsDraftCleanupBeforeOpeningChatsAsync()
@@ -622,10 +567,8 @@ internal sealed partial class MainWindow
 
     private sealed class SettingsVerificationPlayer : IAudioPlayer
     {
-        internal bool AnalysisEnabled { get; private set; } = true;
         public Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SeekAsync(double seconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public void SetAnalysisCaptureEnabled(bool enabled) => AnalysisEnabled = enabled;
         public AudioState Poll() => new(0, 12, true, false, false);
         public void Pause(bool paused) { }
         public void Volume(double percent) { }

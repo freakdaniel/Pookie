@@ -64,6 +64,8 @@ internal sealed class LibrarySkeleton : Control
     internal bool Running => shimmer.IsRunning;
     public bool Preview { get; set; }
     public int PreviewItems { get; set; } = 6;
+    public int PreviewCardFooter { get; set; } = 90;
+    public int PreviewCardRowGap { get; set; }
     public bool ListView { get; set; }
     public bool CompactList { get; set; }
     public bool ArtworkOnly { get; set; }
@@ -121,8 +123,10 @@ internal sealed class LibrarySkeleton : Control
     {
         if (active && FindVisualRoot() is Window) shimmer.Start(); else shimmer.Stop();
     }
+    private double PreviewCardStride => artworkSize + PreviewCardFooter + PreviewCardRowGap;
+
     protected override Size MeasureContent(Size availableSize) => new(0,
-        Preview ? Math.Ceiling(PreviewItems / (double)columns) * (artworkSize + 90) : 0);
+        Preview ? Math.Max(0, Math.Ceiling(PreviewItems / (double)columns) * PreviewCardStride - PreviewCardRowGap) : 0);
 
     protected override void OnRender(IGraphicsContext context)
     {
@@ -173,7 +177,7 @@ internal sealed class LibrarySkeleton : Control
             }
             return;
         }
-        var rowHeight = ListView ? TrackRowLayout.Stride : artworkSize + 90;
+        var rowHeight = ListView ? TrackRowLayout.Stride : PreviewCardStride;
         var rows = Preview ? (int)Math.Ceiling(PreviewItems / (double)columns) : (int)Math.Ceiling(bounds.Height / rowHeight);
         for (var row = 0; row < rows; row++)
         {

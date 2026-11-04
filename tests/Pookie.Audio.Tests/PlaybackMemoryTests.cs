@@ -19,7 +19,7 @@ public sealed class PlaybackMemoryTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         using var cache = new EncodedTrackCache(http);
         using var provider = new StreamingProvider(http,
-            new("https://fixture.invalid/forty-minutes.wav", AudioTransport.Progressive, 40*60) { CaptureAnalysis = true },
+            new("https://fixture.invalid/forty-minutes.wav", AudioTransport.Progressive, 40*60),
             0, uri => uri.Host == "fixture.invalid", timeout.Token, cache);
         try
         {
@@ -35,8 +35,6 @@ public sealed class PlaybackMemoryTests
                 warmHeap ??= heap;
                 Assert.True(heap-warmHeap < 8*1024*1024, $"Decoded/HTTP buffers grew by {(heap-warmHeap)/1048576d:F1} MiB at {provider.Seconds:F0}s.");
                 nextCheck += 120;
-                if (provider.TakeAnalysisSample() is { } analysis)
-                    Assert.InRange(analysis.Mono.Length, 48000, 16000*9);
             }
             await provider.Completion.WaitAsync(timeout.Token);
             Assert.Null(provider.Error);

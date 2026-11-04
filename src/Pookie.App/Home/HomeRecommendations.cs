@@ -2,7 +2,7 @@ using Pookie.SoundCloud;
 
 namespace Pookie.App.Home;
 
-internal sealed record HomeContent(LibraryItem[] Recent, LibraryItem[] Recommendations, LibraryItem[] Releases, LibraryItem[] Mixes, string[] Seeds);
+internal sealed record HomeContent(LibraryItem[] Recent, LibraryItem[] Recommendations, LibraryItem[] Releases, string[] Seeds, SoundCloudDiscoverShelves? Discover = null);
 
 internal static class HomeRecommendations
 {
@@ -19,12 +19,12 @@ internal static class HomeRecommendations
             .DistinctBy(item => item.Key).Take(6).ToArray();
         var keys = recent.Select(item => item.Key).ToHashSet();
         return content with { Recent = recent, Recommendations = content.Recommendations.Where(item => !keys.Contains(item.Key)).ToArray(),
-            Releases = content.Releases.Where(item => !keys.Contains(item.Key)).ToArray(), Mixes = content.Mixes.Where(item => !keys.Contains(item.Key)).ToArray() };
+            Releases = content.Releases.Where(item => !keys.Contains(item.Key)).ToArray() };
     }
 
     internal static HomeContent Build(LibraryItem[] recent, LibraryItem[] history, SoundCloudTrack[] likes,
         SoundCloudTrack[] seeds, TrackPage[] related, SoundCloudTrack[] feed, IReadOnlySet<long> following,
-        LibraryItem[] mixes, DateTimeOffset now, IReadOnlySet<long>? knownLikedIds = null)
+        DateTimeOffset now, IReadOnlySet<long>? knownLikedIds = null)
     {
         var resume = recent.Concat(history).Where(item => item.Playlist != null || item.Track is { } track && Playable(track))
             .DistinctBy(item => item.Key).Take(6).ToArray();
@@ -47,7 +47,6 @@ internal static class HomeRecommendations
                 DateTimeOffset.TryParse(track.CreatedAt, out var created) && created <= now && created >= now.AddDays(-30))
             .DistinctBy(track => track.Id).OrderByDescending(track => DateTimeOffset.Parse(track.CreatedAt!))
             .Where(track => used.Add("track:" + track.Id)).Take(6).Select(LibraryItem.FromTrack).ToArray();
-        var personal = mixes.Where(item => used.Add(item.Key)).Take(6).ToArray();
-        return new(resume, recommendations.ToArray(), releases, personal, seeds.Select(track => track.Title).Take(2).ToArray());
+        return new(resume, recommendations.ToArray(), releases, seeds.Select(track => track.Title).Take(2).ToArray());
     }
 }

@@ -202,7 +202,7 @@ internal sealed partial class MainWindow
         if (page.Value != Page.Track || trackDetailState is not { } state) return;
         var track = state.Track; var selected = track.Id == current?.Id;
         trackDetailPlayIcon.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
-        trackDetailPlay.ToolTip(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
+        trackDetailPlay.Hint(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
         trackDetailWaveform.IsPlaying = selected && isPlaying.Value;
         RefreshTrackDetailPosition();
         var liked = likedIds.Contains(track.Id);
@@ -210,7 +210,7 @@ internal sealed partial class MainWindow
         TrackButtons.SetTextColor(trackDetailLikeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
         TrackButtons.SetLiked(trackDetailLike, liked, TrackButtons.Glass);
         RefreshRepostState();
-        trackDetailLike.ToolTip(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+        trackDetailLike.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
         trackDetailLikeCount.Text = DetailCount(track.LikesCount);
         TrackButtons.SetAvailability(trackDetailLike, CanLikeTrack(track), IsLikePending(track));
     }

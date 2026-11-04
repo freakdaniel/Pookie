@@ -26,7 +26,6 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private float volume = .7f;
     private bool paused;
     private bool endedReported;
-    private bool analysisCaptureEnabled = true;
     private bool disposed;
     private Task? release;
 
@@ -82,7 +81,6 @@ public sealed class SoundFlowPlayer : IAudioPlayer
             }
             lock (stateSync)
             {
-                target = target with { CaptureAnalysis = target.CaptureAnalysis && analysisCaptureEnabled };
                 next = new StreamingProvider(http, target, position, allowed, operationToken, cache);
                 preparingProvider = next;
             }
@@ -104,7 +102,6 @@ public sealed class SoundFlowPlayer : IAudioPlayer
                 {
                     if (request != generation || disposed) throw new OperationCanceledException();
                     provider = next; preparingProvider = null;
-                    if (!analysisCaptureEnabled) provider.DisableAnalysisCapture();
                     source = target; endedReported = false;
                     nextPlayer.Volume = volume;
                     if (!paused) nextPlayer.Play();
@@ -167,21 +164,6 @@ public sealed class SoundFlowPlayer : IAudioPlayer
                 BufferedEnd = source?.Transport == AudioTransport.File ? provider?.Duration ?? 0 : provider?.BufferedEnd ?? 0,
                 NormalizationGainDb = provider?.NormalizationGainDb
             };
-        }
-    }
-    public Pookie.Recommendations.Audio.AudioSample? TakeAnalysisSample()
-    {
-        lock (stateSync) return provider?.TakeAnalysisSample();
-    }
-    public void SetAnalysisCaptureEnabled(bool enabled)
-    {
-        lock (stateSync)
-        {
-            analysisCaptureEnabled = enabled;
-            if (enabled) return;
-            provider?.DisableAnalysisCapture();
-            preparingProvider?.DisableAnalysisCapture();
-            if (source != null) source = source with { CaptureAnalysis = false };
         }
     }
     private void CancelPreparation()

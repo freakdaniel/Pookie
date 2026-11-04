@@ -1,6 +1,5 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
-using Pookie.App.Home;
 using Pookie.App.Storage;
 using Pookie.Logging;
 
@@ -56,33 +55,6 @@ internal sealed partial class MainWindow
             SettingsToggle("lyrics_follow", "Автопрокрутка текста", "Следовать за текущей строкой; после ручной прокрутки следование возобновляется",
                 () => preferences.LyricsAutoScroll, value => UpdatePreferences(p => p with { LyricsAutoScroll = value }))));
 
-    private FrameworkElement WavePreferencesView()
-    {
-        settingsBlockedList = new StackPanel().Vertical().Spacing(10);
-        return SettingsGroups(
-            SettingsGroup("Подбор музыки",
-                SettingsChoice("wave_mode", "Характер Волны", "Тот же выбор доступен на главной; изменения применяются к следующим трекам",
-                    () => waveTaste.Mode, SetWaveMode, ("Баланс", WaveMode.Balance), ("Любимое", WaveMode.Favorites), ("Открытия", WaveMode.Discoveries)),
-                SettingsToggle("wave_learning", "Учитывать новые прослушивания и пропуски", "Обучать Волну на музыке из разных разделов Pookie; прежнее обучение и лайки сохраняются",
-                    () => preferences.WaveLearningEnabled, value => UpdatePreferences(p => p with { WaveLearningEnabled = value })),
-                SettingsToggle("wave_analysis", "Фоновый анализ звучания", "Загружать короткие фрагменты кандидатов для подбора музыки; выключение также прекращает новый анализ играющего аудио",
-                    () => preferences.WaveAnalysisEnabled, value => UpdatePreferences(p => p with { WaveAnalysisEnabled = value }))),
-            SettingsGroup("Исключённые треки",
-                new TextBlock().Text("Восстанови отдельное произведение или сбрось все исключения; обучение и лайки сохранятся").FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap),
-                settingsBlockedList,
-                SettingsAction("Вернуть все исключённые треки", "Снова разрешить их подбор в Волне", "Сбросить исключения",
-                    () => Run(() => SettingsOperationAsync(async () =>
-                    {
-                        var account = me?.Id;
-                        if (!await MessageBox.AskYesNoAsync("Сбросить исключения?", detail: "Все исключённые произведения снова смогут попасть в Волну", owner: Window)) return "";
-                        if (me?.Id != account) return "Аккаунт изменился; повтори действие";
-                        ResetWaveBlocks(); RefreshSettingsData(); return "Исключения сброшены";
-                    })), () => me != null && WaveBlockedTracks().Length > 0)),
-            SettingsGroup("Накопленное обучение",
-                SettingsAction("Удалить накопленное обучение", "Удалить локальные события, обученную модель и анализ звучания этого аккаунта; характер Волны, лайки и исключения сохранятся", "Удалить обучение",
-                    () => Run(() => ConfirmWaveDataActionAsync(resetLearning: true)), () => me != null && !demo)));
-    }
-
     private FrameworkElement ChatSettingsView() => SettingsGroups(
         SettingsGroup("Сообщения",
             SettingsChoice("chat_send", "Отправлять сообщение", "При отправке по Enter новая строка — Shift+Enter. Ctrl+Enter также отправляет сообщение",
@@ -120,22 +92,17 @@ internal sealed partial class MainWindow
         return SettingsGroups(
             SettingsGroup("",
                 settingsCacheUsage,
-                SettingsAction("Обложки, звуковые волны и тексты", "Производные файлы можно загрузить повторно; сессия, чаты и обучение Волны сохранятся", "Очистить кэш",
+                SettingsAction("Обложки, звуковые волны и тексты", "Производные файлы можно загрузить повторно; сессия и чаты сохранятся", "Очистить кэш",
                     () => Run(ClearSettingsCacheAsync))),
             SettingsGroup("История прослушиваний",
-                SettingsToggle("soundcloud_history", "Отправлять прослушивания в SoundCloud", "Отдельно от локального обучения Волны; выключение действует сразу; после включения запись начнётся со следующего трека",
-                    () => preferences.SendPlaybackHistory, value => UpdatePreferences(p => p with { SendPlaybackHistory = value })),
-                SettingsChoice("journal_retention", "Хранить локальный журнал", "Срок сырых событий прослушивания; обученная модель хранится отдельно",
-                    () => preferences.JournalRetentionDays, value => UpdatePreferences(p => p with { JournalRetentionDays = value }),
-                    ("30 дней", 30), ("90 дней", 90), ("180 дней", 180)),
-                SettingsAction("Очистить локальную историю Pookie", "Удалить события этого аккаунта на устройстве; история SoundCloud и обучение останутся", "Очистить историю",
-                    () => Run(() => ConfirmWaveDataActionAsync(resetLearning: false)), () => me != null && !demo)),
+                SettingsToggle("soundcloud_history", "Отправлять прослушивания в SoundCloud", "Выключение действует сразу; после включения запись начнётся со следующего трека",
+                    () => preferences.SendPlaybackHistory, value => UpdatePreferences(p => p with { SendPlaybackHistory = value }))),
             SettingsGroup("Папки и диагностика",
                 SettingsAction("Данные приложения", "Настройки, локальные данные аккаунтов и кэш", "Открыть папку", () => OpenSettingsPath(dataPaths.Root)),
                 SettingsAction("Диагностические журналы", "Технические события помогают разобраться с ошибкой", "Открыть папку", () => OpenSettingsPath(AppLog.DirectoryPath ?? Path.Combine(dataPaths.Root, "Logs"))),
                 SettingsAction("Сведения для отчёта", "Версия приложения, ОС и аудиодвижок без токенов и текстов сообщений", "Скопировать", CopySettingsDiagnostics)),
             SettingsGroup("Предпочтения",
-                SettingsAction("Сбросить настройки приложения", "Восстановить исходные предпочтения; аккаунт, очередь и накопленное обучение не удаляются", "Сбросить настройки",
+                SettingsAction("Сбросить настройки приложения", "Восстановить исходные предпочтения; аккаунт и очередь сохранятся", "Сбросить настройки",
                     () => Run(ResetSettingsAsync))));
     }
 

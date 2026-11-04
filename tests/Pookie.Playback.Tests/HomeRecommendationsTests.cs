@@ -10,8 +10,8 @@ public sealed class HomeRecommendationsTests
     private static SoundCloudTrack Track(long id, long artist = 1) => new() { Id = id, Title = "Track " + id,
         User = new() { Id = artist, Username = "Artist " + artist }, CreatedAt = Now.AddDays(-1).ToString("O") };
     private static HomeContent Build(TrackPage[] related, LibraryItem[]? recent = null, LibraryItem[]? history = null,
-        SoundCloudTrack[]? likes = null, SoundCloudTrack[]? feed = null, LibraryItem[]? mixes = null, IReadOnlySet<long>? known = null) =>
-        HomeRecommendations.Build(recent ?? [], history ?? [], likes ?? [], [], related, feed ?? [], new HashSet<long> { 1 }, mixes ?? [], Now, known);
+        SoundCloudTrack[]? likes = null, SoundCloudTrack[]? feed = null, IReadOnlySet<long>? known = null) =>
+        HomeRecommendations.Build(recent ?? [], history ?? [], likes ?? [], [], related, feed ?? [], new HashSet<long> { 1 }, Now, known);
 
     [Fact]
     public void RecommendationsInterleaveSeedsLimitAuthorsAndExcludeKnownAndBlockedTracks()
@@ -36,11 +36,10 @@ public sealed class HomeRecommendationsTests
     {
         var playlist = new LibraryItem("playlist:1", "Mix", "", null, Playlist: new() { Id = 1 });
         var content = Build([new([Track(1), Track(2), Track(3)], null)], recent: [LibraryItem.FromTrack(Track(1)), playlist],
-            history: [LibraryItem.FromTrack(Track(4))], feed: [Track(3), Track(5)], mixes: [playlist]);
+            history: [LibraryItem.FromTrack(Track(4))], feed: [Track(3), Track(5)]);
         Assert.Equal(new long[] { 2, 3 }, content.Recommendations.Select(item => item.Track!.Id));
         Assert.Equal(5, Assert.Single(content.Releases).Track!.Id);
-        Assert.Empty(content.Mixes);
-        var all = content.Recent.Concat(content.Recommendations).Concat(content.Releases).Concat(content.Mixes).Select(item => item.Key).ToArray();
+        var all = content.Recent.Concat(content.Recommendations).Concat(content.Releases).Select(item => item.Key).ToArray();
         Assert.Equal(all.Length, all.Distinct().Count());
     }
 
@@ -66,6 +65,6 @@ public sealed class HomeRecommendationsTests
     public void NewAccountsDoNotAcquireSyntheticRecommendations()
     {
         var content = Build([]);
-        Assert.Empty(content.Recent); Assert.Empty(content.Recommendations); Assert.Empty(content.Releases); Assert.Empty(content.Mixes);
+        Assert.Empty(content.Recent); Assert.Empty(content.Recommendations); Assert.Empty(content.Releases);
     }
 }

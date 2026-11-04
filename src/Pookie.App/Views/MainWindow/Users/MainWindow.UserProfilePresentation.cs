@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
         userArtistPro.IsVisible = user.HasArtistPro;
         userCountryFlagImage.Source = Icons.CountryFlag(user.CountryCode);
         userCountryFlag.IsVisible = userCountryFlagImage.Source != null;
-        if (userCountryFlag.IsVisible) userCountryFlag.ToolTip(UserLocation(user));
+        if (userCountryFlag.IsVisible) userCountryFlag.Hint(UserLocation(user));
         userFullName.Text = user.FullName ?? ""; userFullName.IsVisible = !string.IsNullOrWhiteSpace(user.FullName) && user.FullName != user.Username;
         userFollowerCount.Text = UserMetricCount(user.FollowersCount);
         userFollowingCount.Text = UserMetricCount(user.FollowingsCount);

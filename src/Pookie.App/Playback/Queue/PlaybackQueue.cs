@@ -3,7 +3,7 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Playback;
 
 internal enum RepeatMode { Off, Context, Track }
-internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Wave }
+internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Radio }
 internal enum PlaybackEntryOrigin { Context, Manual, Recommendation }
 internal enum PlaybackPreparation { Preparing, Ready, Failed, Stopped }
 internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null);
@@ -15,10 +15,10 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
     IReadOnlyList<PlaybackEntry> Recommendations, bool RecommendationsExhausted, bool AutoContinue = true)
 {
     internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming).Concat(Recommendations);
-    internal bool CanLoadRecommendations => AutoContinue && Context is { Kind: not PlaybackContextKind.Wave, NextHref: null } &&
-        Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.WaveUpcomingLimit;
+    internal bool CanLoadRecommendations => (AutoContinue || Context?.Kind == PlaybackContextKind.Radio) && Context is { NextHref: null } &&
+        Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.RecommendationLimit;
     internal bool CanNext => ManualUpcoming.Count + Forward.Count + ContextUpcoming.Count > 0 ||
-        AutoContinue && Repeat == RepeatMode.Off && Recommendations.Count > 0 ||
+        (AutoContinue || Context?.Kind == PlaybackContextKind.Radio) && Repeat == RepeatMode.Off && Recommendations.Count > 0 ||
         Context?.NextHref != null || Repeat == RepeatMode.Context && Source.Count > 0;
     internal bool CanPrevious => Current != null;
 }
@@ -27,12 +27,11 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
 // snapshot; a track ID is metadata, never the identity of a queue position.
 internal sealed class PlaybackQueue
 {
-    internal const int WaveUpcomingLimit = 3;
+    internal const int RecommendationLimit = 3;
     private readonly Random random;
     private readonly List<PlaybackEntry> source = [], upcoming = [], manual = [], history = [], forward = [], recommendations = [];
     private bool recommendationsExhausted;
     private long entrySequence;
-    private long waveRevision;
     private PlaybackQueueSnapshot? snapshot;
     internal long SourceVersion { get; private set; }
     internal PlaybackContext? Context { get; private set; }
@@ -47,21 +46,16 @@ internal sealed class PlaybackQueue
         Copy(source), Copy(manual), Copy(upcoming), Copy(history), Copy(forward), Repeat, Shuffle, Preparation,
         Copy(recommendations), recommendationsExhausted, AutoContinue);
 
-    internal PlaybackEntry StartContext(PlaybackContext context, IEnumerable<SoundCloudTrack> tracks, int selectedIndex)
+    internal PlaybackEntry StartContext(PlaybackContext context, IEnumerable<SoundCloudTrack> tracks, int selectedIndex, bool preserveManual = false)
     {
         var data = tracks.ToArray();
         if (selectedIndex < 0 || selectedIndex >= data.Length) throw new ArgumentOutOfRangeException(nameof(selectedIndex));
-        Clear(); Context = context;
+        var retainedManual = preserveManual ? manual.ToArray() : [];
+        Clear(); Context = context; manual.AddRange(retainedManual);
         source.AddRange(data.Select((track, index) => NewEntry(track, PlaybackEntryOrigin.Context, index)));
         Current = source[selectedIndex];
         upcoming.AddRange(Shuffle ? source.Where(entry => entry != Current) : source.Skip(selectedIndex + 1));
         if (Shuffle) Mix(upcoming);
-        if (context.Kind == PlaybackContextKind.Wave)
-        {
-            upcoming.RemoveRange(Math.Min(WaveUpcomingLimit, upcoming.Count), Math.Max(0, upcoming.Count - WaveUpcomingLimit));
-            var retained = upcoming.Select(entry => entry.EntryId).Append(Current.EntryId).ToHashSet();
-            source.RemoveAll(entry => !retained.Contains(entry.EntryId));
-        }
         Preparation = PlaybackPreparation.Preparing; Changed();
         return Current;
     }
@@ -90,7 +84,7 @@ internal sealed class PlaybackQueue
     }
     internal PlaybackEntry Enqueue(SoundCloudTrack track, bool next = false)
     {
-        recommendations.RemoveAll(entry => entry.Track.Id == track.Id);
+        recommendations.RemoveAll(entry => TrackIdentity.Matches(entry.Track, track));
         var entry = NewEntry(track, PlaybackEntryOrigin.Manual);
         if (next) manual.Insert(0, entry); else manual.Add(entry);
         Changed(); return entry;
@@ -112,21 +106,12 @@ internal sealed class PlaybackQueue
     {
         if (AutoContinue == enabled) return;
         AutoContinue = enabled;
-        recommendations.Clear(); recommendationsExhausted = false; Changed();
-    }
-    internal void PruneRecommendations(Func<SoundCloudTrack, bool> keep)
-    {
-        if (recommendations.RemoveAll(entry => !keep(entry.Track)) > 0) Changed();
+        if (Context?.Kind != PlaybackContextKind.Radio) recommendations.Clear();
+        recommendationsExhausted = false; Changed();
     }
     internal void RemoveUnavailableRecommendation(long trackId)
     {
-        var removed = recommendations.RemoveAll(entry => entry.Track.Id == trackId) > 0;
-        if (Context?.Kind != PlaybackContextKind.Wave) { if (removed) Changed(); return; }
-        removed |= upcoming.RemoveAll(entry => entry.Track.Id == trackId) > 0;
-        // Current is retained independently. Remove it from the repeat source as
-        // well, otherwise Repeat Context would resurrect a failed recommendation.
-        removed |= source.RemoveAll(entry => entry.Track.Id == trackId) > 0;
-        if (removed) Changed();
+        if (recommendations.RemoveAll(entry => entry.Track.Id == trackId) > 0) Changed();
     }
 
     internal PlaybackEntry? Next(bool naturalEnd = false)
@@ -142,7 +127,7 @@ internal sealed class PlaybackQueue
             if (Shuffle) Mix(cycle);
             upcoming.AddRange(cycle); next = TakeFirst(upcoming);
         }
-        if (next == null && AutoContinue && Context?.NextHref == null && Repeat == RepeatMode.Off) next = TakeFirst(recommendations);
+        if (next == null && (AutoContinue || Context?.Kind == PlaybackContextKind.Radio) && Context?.NextHref == null && Repeat == RepeatMode.Off) next = TakeFirst(recommendations);
         if (next == null) { Preparation = PlaybackPreparation.Stopped; Changed(); return null; }
         if (Current != null && Preparation != PlaybackPreparation.Failed) history.Add(Current);
         Current = next; recommendationsExhausted = false; Preparation = PlaybackPreparation.Preparing; Changed(); return next;
@@ -195,72 +180,30 @@ internal sealed class PlaybackQueue
         Current = selected; forward.Clear(); recommendationsExhausted = false; Preparation = PlaybackPreparation.Preparing; Changed(); return selected;
     }
 
-    internal bool AppendRecommendations(long version, IEnumerable<SoundCloudTrack> tracks)
+    internal bool AppendRecommendations(long version, IEnumerable<SoundCloudTrack> tracks, bool? exhausted = null)
     {
-        if (!AutoContinue || version != SourceVersion || Context is not { Kind: not PlaybackContextKind.Wave, NextHref: null } || Repeat != RepeatMode.Off) return false;
+        if (version != SourceVersion || !Snapshot.CanLoadRecommendations) return false;
         var data = tracks.ToArray();
-        var reserved = source.Concat(manual).Concat(history).Concat(forward).Concat(recommendations)
-            .Select(entry => entry.Track.Id).ToHashSet();
-        if (Current != null) reserved.Add(Current.Track.Id);
+        var reserved = new TrackIdentity(source.Concat(manual).Concat(history).Concat(forward).Concat(recommendations)
+            .Append(Current).OfType<PlaybackEntry>().Select(entry => entry.Track));
         foreach (var track in data)
         {
-            if (recommendations.Count >= WaveUpcomingLimit) break;
-            if (track.Id > 0 && reserved.Add(track.Id)) recommendations.Add(NewEntry(track, PlaybackEntryOrigin.Recommendation));
+            if (recommendations.Count >= RecommendationLimit) break;
+            if (track.Id > 0 && reserved.Add(track)) recommendations.Add(NewEntry(track, PlaybackEntryOrigin.Recommendation));
         }
-        recommendationsExhausted = data.Length == 0;
+        recommendationsExhausted = exhausted ?? data.Length == 0;
         Changed(); return true;
     }
 
     internal bool Append(long version, string cursor, TrackPage page)
     {
         if (version != SourceVersion || Context?.NextHref != cursor) return false;
-        if (Context.Kind == PlaybackContextKind.Wave)
-        {
-            UpdateWaveUpcoming(page.Tracks, rebuild: false);
-            Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
-            Changed(); return true;
-        }
         var added = page.Tracks.Select((track, index) => NewEntry(track, PlaybackEntryOrigin.Context, source.Count + index)).ToList();
         source.AddRange(added);
         if (Shuffle) Mix(added);
         upcoming.AddRange(added);
         Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
         Changed(); return true;
-    }
-    internal bool ReplaceRecommendations(long version, IEnumerable<SoundCloudTrack> tracks, bool rebuild = false)
-    {
-        if (version != SourceVersion || Context?.Kind != PlaybackContextKind.Wave) return false;
-        var changed = UpdateWaveUpcoming(tracks, rebuild);
-        // Ordinary model updates leave both displayed entries and an in-flight refill alone.
-        // Explicit mode/dislike changes invalidate old fetches, even if their retained rows match.
-        if (rebuild || Context.NextHref == null)
-        {
-            Context = Context with { NextHref = "pookie:wave:rerank:" + ++waveRevision };
-            changed = true;
-        }
-        if (changed) Changed();
-        return true;
-    }
-
-    private bool UpdateWaveUpcoming(IEnumerable<SoundCloudTrack> tracks, bool rebuild)
-    {
-        var previous = upcoming.ToArray();
-        var next = rebuild ? new List<PlaybackEntry>() : previous.ToList();
-        var reserved = manual.Concat(forward).Concat(next).Select(entry => entry.Track.Id).ToHashSet();
-        if (Current != null) reserved.Add(Current.Track.Id);
-        foreach (var track in tracks)
-        {
-            if (next.Count >= WaveUpcomingLimit) break;
-            if (!reserved.Add(track.Id)) continue;
-            var retained = previous.FirstOrDefault(entry => entry.Track.Id == track.Id);
-            next.Add(retained == null ? NewEntry(track, PlaybackEntryOrigin.Context, source.Count + next.Count)
-                : retained with { Track = track });
-        }
-        if (previous.SequenceEqual(next)) return false;
-        var removed = previous.Select(entry => entry.EntryId).ToHashSet();
-        source.RemoveAll(entry => removed.Contains(entry.EntryId));
-        source.AddRange(next); upcoming.Clear(); upcoming.AddRange(next);
-        return true;
     }
     internal void SetPreparation(long entryId, PlaybackPreparation state, SoundCloudTrack? resolved = null)
     {

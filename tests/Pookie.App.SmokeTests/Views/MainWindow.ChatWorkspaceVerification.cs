@@ -26,7 +26,7 @@ internal sealed partial class MainWindow
         VisualTree.Visit(chatSidebarNormal, element => { if (element is TextBlock { Text: "Избранное" } label) savedRows.Add(label); });
         if (savedRows.Count != 0) throw new InvalidOperationException("Saved messages still occupy a row in the dialog list.");
         var savedShortcut = new List<Button>();
-        VisualTree.Visit((FrameworkElement)chatColumns.Children[0], element => { if (element is Button { ToolTip: TextBlock { Text: "Избранное" } } button) savedShortcut.Add(button); });
+        VisualTree.Visit((FrameworkElement)chatColumns.Children[0], element => { if (element is Button button && TooltipHints.TextFor(button) == "Избранное") savedShortcut.Add(button); });
         if (savedShortcut.Count != 1) throw new InvalidOperationException("The saved-messages shortcut is missing from the sidebar toolbar.");
         var target=chatMessages.Last();ChatFavoriteMessage(target);RouteWaveformClick(SettingsCenter(savedShortcut[0]));
         await WaitForLikedLayoutAsync(() => chatFavoritesOpen && chatSavedMessages.ActualHeight > 0 && !chatColumns.Animating);

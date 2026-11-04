@@ -59,7 +59,7 @@ public sealed record BrowserRequestCommand(string Id, string Operation, long Use
 }
 
 public sealed record BrowserAudioCommand(string Action, string PlaybackId, string? Source = null, string? Authorization = null,
-    double Position = 0, double Volume = 70, bool Paused = false, double NormalizationGainDb = 0, bool CaptureAnalysis = false, string? PageUrl = null)
+    double Position = 0, double Volume = 70, bool Paused = false, double NormalizationGainDb = 0, string? PageUrl = null)
 {
     public bool IsValid() => (PageUrl == null || Action == "start" && PageUrl.Length <= 8192 && Uri.TryCreate(PageUrl, UriKind.Absolute, out var page) &&
         page.GetLeftPart(UriPartial.Authority) == "https://soundcloud.com" && page.UserInfo == "" && page.Query == "" && page.Fragment == "") &&
@@ -68,7 +68,7 @@ public sealed record BrowserAudioCommand(string Action, string PlaybackId, strin
         ? Source is { Length: > 0 and <= 8192 } && Uri.TryCreate(Source, UriKind.Absolute, out var uri) &&
           SoundCloudWebClient.IsMediaUri(uri) && uri.Fragment == "" && Authorization is { Length: > 0 and <= 16384 } &&
           !Authorization.Any(c => c < 32 || c == 127)
-        : Source == null && Authorization == null && Action is "stop" or "pause" or "volume" or "seek" or "analysis");
+        : Source == null && Authorization == null && Action is "stop" or "pause" or "volume" or "seek");
     public override string ToString() => $"Browser audio ({Action}; source and authorization redacted)";
 }
 
@@ -97,23 +97,11 @@ public sealed record BrowserAudioState(double Position, double Duration, bool Pl
 }
 
 public sealed record BrowserRequestEvent(string Kind, string RequestId = "", int Status = 0, bool Interactive = false,
-    SoundCloudUser? User = null, string? ChallengeType = null, long[]? Ids = null, string? DataDomeClientId = null, string? Chunk = null, int ChunkIndex = 0, BrowserAudioState? Audio = null, BrowserAudioSample? Sample = null)
+    SoundCloudUser? User = null, string? ChallengeType = null, long[]? Ids = null, string? DataDomeClientId = null, string? Chunk = null, int ChunkIndex = 0, BrowserAudioState? Audio = null)
 {
     [JsonIgnore] public string? Json { get; init; }
     public WebSession? Session { get; init; }
     public override string ToString() => $"Browser event ({Kind}, HTTP {Status}; session redacted)";
-}
-
-// Little-endian float32 mono at 16 kHz. Each message fits the existing 10 KB bridge limit.
-public sealed record BrowserAudioSample(int Offset, string Data)
-{
-    public bool IsValid()
-    {
-        if (Offset is < 0 or >= 144000 || Data is not { Length: > 0 and <= 5464 }) return false;
-        Span<byte> bytes = stackalloc byte[4096];
-        return Convert.TryFromBase64String(Data, bytes, out var length) && length is > 0 and <= 4096 &&
-            length % 4 == 0 && Offset + length / 4 <= 144000;
-    }
 }
 
 public static class BrowserRequestProtocol
@@ -138,14 +126,13 @@ public static class BrowserRequestProtocol
             if (message.Kind == "protection-session" && !WebSession.IsDataDomeClientId(message.DataDomeClientId)) return null;
             if (message.Kind != "protection-session" && message.DataDomeClientId != null) return null;
             if (message.Kind == "blocked" && (message.ChallengeType != "hard_block" || !message.Interactive)) return null;
-            if (message.Kind is "complete" or "ids" or "json-chunk" or "audio-state" or "audio-sample" && !Guid.TryParseExact(message.RequestId, "N", out _)) return null;
-            if (message.Kind == "audio-sample" ? message.Sample?.IsValid() != true : message.Sample != null) return null;
+            if (message.Kind is "complete" or "ids" or "json-chunk" or "audio-state" && !Guid.TryParseExact(message.RequestId, "N", out _)) return null;
             if (message.Audio != null && (message.Kind is not ("audio-state" or "complete") || !message.Audio.IsValid())) return null;
             if (message.Kind == "audio-state" && message.Audio == null) return null;
             if (message.Kind == "json-chunk" && (message.Chunk is not { Length: > 0 and <= 1024 } || message.ChunkIndex is < 0 or >= 4096)) return null;
             if (message.Kind != "json-chunk" && message.Chunk != null) return null;
             if (message.Ids is { } ids && (ids.Length > 200 || ids.Any(id => id is <= 0 or > 9007199254740991))) return null;
-            return message.Kind is "ready" or "complete" or "ids" or "json-chunk" or "audio-state" or "audio-sample" or "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" ? message : null;
+            return message.Kind is "ready" or "complete" or "ids" or "json-chunk" or "audio-state" or "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" ? message : null;
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or FormatException) { return null; }
     }

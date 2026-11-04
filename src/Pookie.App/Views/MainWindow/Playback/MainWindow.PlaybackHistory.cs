@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Pookie.App.Playback;
 using Pookie.Logging;
 using Pookie.SoundCloud;
@@ -6,7 +7,9 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private bool playbackHistorySubmitted;
+    private bool playbackHistorySubmitted, historyAudible;
+    private double historySeconds, historyPosition;
+    private long historyTimestamp;
     private string? playbackHistoryContext;
     private WebSession? playbackHistorySession;
 
@@ -21,15 +24,21 @@ internal sealed partial class MainWindow
     {
         playbackHistorySubmitted = demo || !preferences.SendPlaybackHistory;
         playbackHistorySession = api.Session;
+        historySeconds = historyPosition = 0; historyAudible = false; historyTimestamp = Stopwatch.GetTimestamp();
         playbackHistoryContext = entry.Origin == PlaybackEntryOrigin.Context ? playbackQueue.Context?.ResourceUrn : null;
     }
 
-    private void PollPlaybackHistory()
+    private void PollPlaybackHistory(double position, bool audible)
     {
-        // Match the website's minimum play time using actual listened seconds.
-        // WaveListening already excludes pause, buffering and seek position jumps.
-        if (!preferences.SendPlaybackHistory || playbackHistorySubmitted || waveListening.Seconds < 1 || waveListening.Track is not { } track ||
+        if (!preferences.SendPlaybackHistory || playbackHistorySubmitted || current is not { } track ||
             api.Session is not { } session || session != playbackHistorySession) return;
+        var now = Stopwatch.GetTimestamp();
+        var elapsed = Stopwatch.GetElapsedTime(historyTimestamp, now).TotalSeconds;
+        var delta = position - historyPosition;
+        if (audible && historyAudible && elapsed is > 0 and < 3 && delta > 0 && delta <= elapsed * 1.5 + .3)
+            historySeconds += Math.Min(delta, elapsed);
+        historyTimestamp = now; historyPosition = position; historyAudible = audible;
+        if (historySeconds < 1) return;
         playbackHistorySubmitted = true;
         var context = playbackHistoryContext;
         Run(() => RecordPlaybackHistoryAsync(track, context, session));

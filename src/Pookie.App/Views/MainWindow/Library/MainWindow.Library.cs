@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
     private readonly Dictionary<string, Task<LibraryPage>> libraryLoads = [];
     private readonly Dictionary<string, DateTimeOffset> libraryLoadedAt = [];
     private readonly Dictionary<string, string> overviewErrors = [];
-    private readonly List<(ItemsControl Grid, bool Preview)> collectionGrids = [];
+    private readonly List<(ItemsControl Grid, bool Preview, bool CompactRows)> collectionGrids = [];
     private readonly Dictionary<string, (ItemsControl Grid, TextBlock Empty)> overviewSections = [];
     private readonly Dictionary<Button, (LibraryItem Item, Image Cover, Border Frame, TextBlock Title, TextBlock Author, TrackArtworkOverlay Playback)> collectionCards = [];
     private readonly Dictionary<Button, int> collectionCardPositions = [];
@@ -77,13 +77,24 @@ internal sealed partial class MainWindow
         return collectionLoadingView.Root;
     }
 
-    private ItemsControl CreateCollectionGrid(bool preview)
+    private const int CompactCardFooter = 48, CompactCardRowGap = 16;
+
+    private double CollectionRowHeight(bool compactRows) =>
+        likedArtworkSize + (compactRows ? CompactCardFooter + CompactCardRowGap : 90);
+
+    private void SetCollectionPreviewHeight(ItemsControl grid, bool compactRows)
+    {
+        var rows = Math.Max(1, Math.Ceiling(grid.ItemsSource.Count / (double)libraryColumns));
+        grid.Height = rows * CollectionRowHeight(compactRows) - (compactRows ? CompactCardRowGap : 0);
+    }
+
+    private ItemsControl CreateCollectionGrid(bool preview, bool compactRows = false)
     {
         var grid = new ItemsControl().Items(Array.Empty<LibraryItem>(), item => item.Title)
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 24, 0))
-            .WrapPresenter(likedArtworkSize + 24, likedArtworkSize + 90);
-        collectionGrids.Add((grid, preview));
-        if (preview) grid.Height = likedArtworkSize + 90;
+            .WrapPresenter(likedArtworkSize + 24, CollectionRowHeight(compactRows));
+        collectionGrids.Add((grid, preview, compactRows));
+        if (preview) SetCollectionPreviewHeight(grid, compactRows);
         grid.ItemTemplate = new DelegateTemplate<LibraryItem>(context =>
         {
             var visual = CreateCollectionCardView();
@@ -334,7 +345,7 @@ internal sealed partial class MainWindow
     private void ClearLibraryData()
     {
         revealedWaveforms.Clear();
-        ClearWaveData();
+        unavailableRecommendations.Clear();
         ++overviewRefreshGeneration;
         collectionDetails.Clear(); ResetCollectionActions();
         userProfileState = null; userArtworkKey = default; userArtworkReady = false;

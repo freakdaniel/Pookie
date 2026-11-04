@@ -10,10 +10,12 @@ internal sealed partial class MainWindow
     {
         var buttons = new List<ExpandedGlassButton>();
         VisualTree.Visit(expandedCover, element => { if (element is ExpandedGlassButton button) buttons.Add(button); });
-        var feedback = buttons.Where(button => button.IsConnected && button.SelectionTint==Color.FromRgb(75,28,44)).ToArray();
+        var feedback = buttons.Where(button => button.IsConnected &&
+            (button.SelectionTint == Color.FromRgb(75, 28, 44) || button.SelectionTint == TrackButtons.RepostedSurface))
+            .OrderBy(button => button.Bounds.X).ToArray();
         var modes = buttons.Where(button => button.IsConnected && button.SelectionTint==Color.FromRgb(28,76,76)).OrderBy(button=>button.Bounds.X).ToArray();
         if(modes.Length!=2 || Math.Abs(modes[1].Bounds.X-modes[0].Bounds.Right-2)>1 ||
-            Math.Abs(modes[0].Bounds.Y-modes[1].Bounds.Y)>1 || modes.Any(button=>button.ToolTip!=null) || feedback.Any(button=>button.ToolTip!=null))
+            Math.Abs(modes[0].Bounds.Y-modes[1].Bounds.Y)>1 || modes.Any(button=>button.ToolTip!=null || TooltipHints.TextFor(button)!=null) || feedback.Any(button=>button.ToolTip!=null || TooltipHints.TextFor(button)!=null))
             throw new InvalidOperationException("Playback modes did not form a teal connected pair without tooltips.");
         var transportButtons = buttons.Where(button => button.Height is 42 or 60).ToArray();
         if (transportButtons.Length != 3 || transportButtons.Max(button => button.Bounds.Y + button.ActualHeight / 2) -
@@ -54,15 +56,17 @@ internal sealed partial class MainWindow
             blurred.Max() - blurred.Min() < 25)
             throw new InvalidOperationException($"Fullscreen controls did not blur the artwork: raw edge={Edge(raw)}, blurred edge={Edge(blurred)}.");
 
-        var liked = isLiked.Value; var disliked = isDisliked.Value; var shuffled = shuffle.Value;
+        var liked = isLiked.Value; var reposted = isReposted.Value; var shuffled = shuffle.Value;
         var source = expandedArtwork.Source;
         try
         {
-            isLiked.Value = false; isDisliked.Value = false;
+            isLiked.Value = false; isReposted.Value = false;
             await WaitForLikedLayoutAsync(() => Math.Abs(feedback[0].GlassCorners.TopRight - 7) < .01 &&
                 Math.Abs(feedback[1].GlassCorners.TopLeft - 7) < .01);
             isLiked.Value = true;
             await WaitForLikedLayoutAsync(() => Math.Abs(feedback[0].GlassCorners.TopRight - 19) < .01);
+            isReposted.Value = true;
+            await WaitForLikedLayoutAsync(() => Math.Abs(feedback[1].GlassCorners.TopLeft - 19) < .01);
             var shuffleButton = buttons.Single(button => button.Content is Image glyph && ReferenceEquals(glyph.Source, Icons.Source("shuffle", Color.White)));
             RouteExpandedPointer(SettingsCenter(shuffleButton));
             RouteWaveformClick(SettingsCenter(shuffleButton));
@@ -105,7 +109,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
-            isLiked.Value = liked; isDisliked.Value = disliked; shuffle.Value = shuffled;
+            isLiked.Value = liked; isReposted.Value = reposted; shuffle.Value = shuffled;
             if (source is ImageSource original) SetPlayerArtwork(original, playGeneration);
             RouteExpandedPointer(new Point(1, 1));
         }

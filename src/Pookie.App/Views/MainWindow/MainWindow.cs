@@ -50,6 +50,7 @@ internal sealed partial class MainWindow : IDisposable
     private readonly Image artwork;
     private readonly Image profileAvatar;
     private readonly ItemsControl queueList;
+    private readonly MaterialTooltipLayer tooltipLayer;
     private IAudioPlayer? player;
     private PresenceService? presence;
     private ISessionVault? vault;
@@ -106,7 +107,6 @@ internal sealed partial class MainWindow : IDisposable
         api = new(http) { RequireSessionTransport = true };
         regionalPlayback = RegionalPlaybackPool.FromEnvironment(enabledByDefault: !isolatedRun);
         playbackResolver = new(api) { RegionalResolver = regionalPlayback };
-        InitializeWave();
         InitializePlaybackQueue();
         InitializeLyrics();
         if (options.AudioEnabled)
@@ -146,6 +146,7 @@ internal sealed partial class MainWindow : IDisposable
             .Content(Layout())
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
+        tooltipLayer = new MaterialTooltipLayer(Window);
         Window.Closing += args =>
         {
             var deferral=args.GetDeferral();
@@ -180,16 +181,16 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && chatMusicOpen.Value) { e.Handled = true; CloseChatMusicPicker(); return; }
             if (e.Key == Key.Escape && chatGifsOpen.Value) { e.Handled = true; CloseChatGifs(); return; }
             if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
-            if (e.Key == Key.Escape && waveSettingsOpen.Value) { e.Handled = true; waveSettingsOpen.Value = false; return; }
             if (e.Key == Key.Escape && CancelTrackCommentInput()) { e.Handled = true; return; }
             if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
         };
         InitializeChatComposer(); InitializeSearchInput();
-        Window.Deactivated += () => { foreach (var motion in smoothScrolls.Values) motion.Stop(); CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
+        Window.Deactivated += () => { RefreshHomeMixMotion(); foreach (var motion in smoothScrolls.Values) motion.Stop(); CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
         chatTimer.Start();
         Window.Activated += () =>
         {
+            RefreshHomeMixMotion();
             foreach (var motion in smoothScrolls.Values) motion.Stop();
             chatNextPoll = default;
             trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
@@ -197,8 +198,8 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.WindowStateChanged += state =>
         {
+            RefreshHomeMixMotion();
             if (state == WindowState.Minimized) { progressAnimation.Stop(); ResetTrackCommentPreview(); }
-            RefreshWaveMotion();
             if (Window.Content is UIElement content) content.InvalidateVisual();
         };
     }
@@ -254,7 +255,7 @@ internal sealed partial class MainWindow : IDisposable
         if (skipSessionRestore) { StartupLog.Event("session.restore-skipped"); return; }
         if (demo)
         {
-            heading.Value = "На твоей волне";
+            heading.Value = "Главная";
             ReplaceTracks(new TrackPage(Enumerable.Range(1, 3).Select(i => new SoundCloudTrack
             { Id = i, Title = $"Тестовый звук {i}", Duration = 12000, User = new() { Username = "Pookie audio test" } }).ToArray(), null));
             await LoadHomeAsync();
@@ -291,7 +292,7 @@ internal sealed partial class MainWindow : IDisposable
                     var connected = CreateBrowserSession(saved);
                     AttachBrowser(connected);
                     var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => api.GetMeAsync(lifetime.Token));
-                    await RestoreWaveProfileAsync(restoredProfile.Id,lifetime.Token);
+                    lifetime.Token.ThrowIfCancellationRequested();
                     me = restoredProfile;
                     api.Session = connected.Account;
                     profile.Value = me.Username;
@@ -405,7 +406,6 @@ internal sealed partial class MainWindow : IDisposable
         if (!CanUseWorkspace) return;
         if (player == null) { status.Value = audioStatus.Value; return; }
         var selectionStarted = System.Diagnostics.Stopwatch.GetTimestamp();
-        FinishWaveListening();
         CancelSeek();
         var generation = ++playGeneration;
         playLoading?.Cancel(); playLoading?.Dispose();
@@ -416,7 +416,7 @@ internal sealed partial class MainWindow : IDisposable
         var queueEntry = SelectPlaybackTrack(track);
         playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
         current = track;
-        RerankWaveQueue();
+        RefreshPlayerRepostState();
         BeginLyricsTrack(track);
         audioPreparing = true; audioReady = false;
         paused = false; isPlaying.Value = true; playbackLoading.Value = true;
@@ -471,7 +471,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
-            source = source with { CaptureAnalysis = !demo && preferences.WaveLearningEnabled && preferences.WaveAnalysisEnabled && waveLearning?.Vectors.GetValueOrDefault(track.Id)?.Model != Pookie.Recommendations.Audio.MusicnnEncoder.ModelId, BrowserPage = track.PermalinkUrl };
+            source = source with { BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -479,14 +479,8 @@ internal sealed partial class MainWindow : IDisposable
                 track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(audioStarted).TotalMilliseconds);
             var readyStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             current = track;
-            EnsureWaveTaste();
-            waveTaste.RestoreAvailability(track); ScheduleWaveSave();
-            waveListening.Begin(track, playbackQueue.Context?.Kind == PlaybackContextKind.Wave && queueEntry.Origin == PlaybackEntryOrigin.Context,
-                waveTime.Elapsed, WaveListeningSource(queueEntry), waveTaste.Mode,
-                selection: queueAdvance ? Pookie.Recommendations.PlaybackSelection.QueueAdvance : Pookie.Recommendations.PlaybackSelection.TrackSelection,
-                features: waveLearning?.Evaluate(Pookie.App.Home.WaveTrack.From(track), likedIds.Contains(track.Id), session: waveListening.SessionId),
-                familiarAtSelection: waveTaste.IsFamiliar(track));
-            waveAnalyzedTrack = null;
+            RefreshPlayerRepostState();
+            unavailableRecommendations.Remove(track.Id);
             BeginPlaybackHistory(queueEntry);
             RefreshLyricsMetadata(track);
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Ready, track);
@@ -512,9 +506,9 @@ internal sealed partial class MainWindow : IDisposable
             if (generation != playGeneration || disposed) return;
             playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Failed);
             audioReady = false; isPlaying.Value = false; RefreshLikedPlayback();
-            if (RememberUnavailableWaveTrack(track, error) && (playbackQueue.Context?.Kind == PlaybackContextKind.Wave || queueEntry.Origin == PlaybackEntryOrigin.Recommendation))
+            if (RememberUnavailableRecommendation(track, error) && (playbackQueue.Context?.Kind == PlaybackContextKind.Radio || queueEntry.Origin == PlaybackEntryOrigin.Recommendation))
             {
-                await ContinueAfterUnavailableWaveTrackAsync(generation, unavailableSkips);
+                await ContinueAfterUnavailableRecommendationAsync(generation, unavailableSkips);
                 return;
             }
             throw;
@@ -602,8 +596,6 @@ internal sealed partial class MainWindow : IDisposable
             token.ThrowIfCancellationRequested();
         }
         catch { await connectedBrowser.DisposeAsync(); throw; }
-        try { await RestoreWaveProfileAsync(connectedProfile.Id,token); }
-        catch { await connectedBrowser.DisposeAsync(); throw; }
         AttachBrowser(connectedBrowser);
         likedLoading?.Cancel(); likedTask = null;
         likedIds.Clear(); likedIdsReady = false; ResetReposts(); ResetFollowing();
@@ -674,7 +666,7 @@ internal sealed partial class MainWindow : IDisposable
             expandedBuffer.Reset();
             artwork.Source = Icons.Source("music-notes");
             playerBackdrop.Reset();
-            page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
+            page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
             ReplaceTracks(new TrackPage([], null));
             status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
             await ShowLoginScreenAsync();
@@ -701,16 +693,8 @@ internal sealed partial class MainWindow : IDisposable
         if (player == null || current == null || disposed || audioPreparing || !audioReady) return;
         RunSync(() =>
         {
-            AudioState state;
-            try { state = player.Poll(); }
-            catch
-            {
-                FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.PlaybackError);
-                throw;
-            }
-            waveListening.Poll(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null, waveTime.Elapsed);
-            AnalyzePlayingWaveTrack();
-            PollPlaybackHistory();
+            var state = player.Poll();
+            PollPlaybackHistory(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null);
             UpdateSystemMedia(state);
             if (Window.WindowState == WindowState.Minimized)
             {
@@ -739,7 +723,6 @@ internal sealed partial class MainWindow : IDisposable
                 expandedBuffer.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
             }
             SyncExpandedTimeline();
-            RefreshWaveMotion();
             presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
                 state.Position, progress.Maximum, state.Playing));
             if (state.Ended && !advancing)
@@ -796,8 +779,8 @@ internal sealed partial class MainWindow : IDisposable
     public void Dispose()
     {
         if (disposed) return;
-        FinishWaveListening(reason: Pookie.Recommendations.ListeningEndReason.Shutdown); SaveWaveProfile(); waveSaveTimer.Dispose();
         disposed = true;
+        tooltipLayer.Dispose();
         ResetExpandedPlayer();
         DisposeFeed();
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
@@ -826,6 +809,8 @@ internal sealed partial class MainWindow : IDisposable
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();
         foreach (var hover in hoverReveals) hover.Dispose();
+        CancelHomeChartRequest();
+        homeMixCarousel?.SetMotionActive(false);
         foreach (var view in libraryLoadingViews) view.Dispose();
         searchInput?.Dispose(); windowClipboard?.Dispose(); clipboardTimer?.Dispose();
         query.Changed -= RefreshSearchLinkPreview; ClearSearchLink();
@@ -848,10 +833,8 @@ internal sealed partial class MainWindow : IDisposable
     internal async Task FinishShutdownAsync()
     {
         Dispose();
-        await FinishWaveJournalAsync().ConfigureAwait(false);
         await FlushChatPersistenceAsync().ConfigureAwait(false);
         await configuration.FlushAsync().ConfigureAwait(false);
-        await waveStore.FlushAsync().ConfigureAwait(false);
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
         await browserClosing.ConfigureAwait(false);
         if (player != null) await player.DisposeAsync().ConfigureAwait(false);

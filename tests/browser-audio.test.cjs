@@ -99,42 +99,9 @@ function normalizationFixture(db, blockedModule=false, emeError=null) {
     setInterval:()=>1,clearInterval:()=>{},setTimeout,clearTimeout});
   const id='2'.repeat(32);
   const command=(action,values={})=>window.__pookieAudioRequest({id,audio:{action,playback_id:id,position:0,volume:70,...values}},m=>messages.push(m));
-  const start=(paused=false,capture=false)=>command('start',{source:'https://media.sndcdn.com/track.m3u8',authorization:'fixture',normalization_gain_db:db,paused,capture_analysis:capture});
+  const start=(paused=false)=>command('start',{source:'https://media.sndcdn.com/track.m3u8',authorization:'fixture',normalization_gain_db:db,paused});
   return {command,start,messages,audios,contexts,sessions,get node(){return node;}};
 }
-
-test('the analysis graph transmits bounded little-endian PCM and rejects stale or out-of-order chunks',async()=>{
-  const f=normalizationFixture(-12);await f.start(false,true);
-  assert.equal(f.contexts.length,1);assert.equal(f.audios[0].volume,1);
-  const samples=new Float32Array(1024).fill(.25);
-  f.node.port.onmessage({data:{offset:0,samples}});
-  const message=f.messages.findLast(m=>m.kind==='audio-sample');
-  assert.equal(message.request_id,'2'.repeat(32));assert.equal(message.sample.offset,0);
-  const bytes=Buffer.from(message.sample.data,'base64');assert.equal(bytes.length,4096);assert.equal(bytes.readFloatLE(0),.25);
-  assert.ok(JSON.stringify(message).length<10000);
-  f.node.port.onmessage({data:{offset:0,samples}});f.node.port.onmessage({data:{offset:2048,samples}});
-  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
-  f.node.port.onmessage({data:{offset:1024,samples}});assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,2);
-  await f.command('stop');f.node.port.onmessage({data:{offset:2048,samples}});
-  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,2);
-});
-
-test('turning off analysis stops sample delivery without pausing protected audio',async()=>{
-  const f=normalizationFixture(-12);await f.start(false,true);
-  const samples=new Float32Array(1024).fill(.25);
-  f.node.port.onmessage({data:{offset:0,samples}});
-  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
-  const playing=f.messages.findLast(m=>m.kind==='audio-state').audio;
-  await f.command('analysis',{capture_analysis:false});
-  assert.equal(f.messages.at(-1).status,200);
-  f.node.port.onmessage({data:{offset:1024,samples}});
-  assert.equal(f.messages.filter(m=>m.kind==='audio-sample').length,1);
-  assert.equal(f.audios[0].paused,false);
-  const state=f.messages.findLast(m=>m.kind==='audio-state').audio;
-  assert.equal(state.normalization_gain_db,playing.normalization_gain_db);
-  assert.equal(state.playing,true);
-  await f.command('stop');
-});
 
 test('missing or disabled Widevine is reported as unsupported at EME instead of a decoding failure',async()=>{
   for(const error of ['NotSupportedError','NotAllowedError','SecurityError']){

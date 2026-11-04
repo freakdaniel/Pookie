@@ -35,17 +35,17 @@ internal sealed partial class MainWindow
         }) };
         chatRecordingDot = new Border().Width(8).Height(8).CornerRadius(4).Background(Color.FromRgb(245,91,105)).Center();
         chatRecordingDot.Transitions = [Transition.Create(UIElement.OpacityProperty,200)];
-        chatVoicePause = TrackButtons.Icon(Icons.View("pause", 20), () => Run(StopChatVoiceAsync), TrackButtons.Text, 36).ToolTip("Приостановить запись");
+        chatVoicePause = TrackButtons.Icon(Icons.View("pause", 20), () => Run(StopChatVoiceAsync), TrackButtons.Text, 36).Hint("Приостановить запись");
         chatVoiceDraftPlay = Icons.PlaybackDisc(false,28,14,TrackButtons.OnSurface).Center();
         chatVoiceDraftPause = Icons.PlaybackDisc(true,28,14,TrackButtons.OnSurface).Center().IsVisible(false);
-        chatVoicePreview = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(chatVoiceDraftPlay,chatVoiceDraftPause), () => Run(PlayChatVoiceDraftAsync), TrackButtons.Text, 28).ToolTip("Прослушать / пауза");
+        chatVoicePreview = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(chatVoiceDraftPlay,chatVoiceDraftPause), () => Run(PlayChatVoiceDraftAsync), TrackButtons.Text, 28).Hint("Прослушать / пауза");
         ((MaterialTrackButton)chatVoicePreview).SuppressStateLayer();
-        chatVoiceContinue = TrackButtons.Icon(Icons.View("microphone",20), () => Run(ContinueChatVoiceAsync), TrackButtons.Text,36).ToolTip("Продолжить запись");
+        chatVoiceContinue = TrackButtons.Icon(Icons.View("microphone",20), () => Run(ContinueChatVoiceAsync), TrackButtons.Text,36).Hint("Продолжить запись");
         var lead = new Grid().Columns("*").Rows("*").Children(chatRecordingDot,chatVoicePreview.Center());
         var pill = new Border().CornerRadius(20).Background(Color.FromRgb(39,57,73)).Padding(8,0,12,0).Height(36).Child(
             new Grid().Columns("28,*,Auto").Rows("*").Spacing(8).Children(lead.Column(0),chatVoiceWave.Column(1).CenterVertical(),chatVoiceTime.Column(2)));
         chatVoiceBar = new Grid().Columns("36,*,36").Rows("40").Spacing(4).Children(
-            TrackButtons.Icon(Icons.View("trash",20), () => Run(DeleteChatVoiceAsync),TrackButtons.Text,36).ToolTip("Удалить запись").Column(0).CenterVertical(),
+            TrackButtons.Icon(Icons.View("trash",20), () => Run(DeleteChatVoiceAsync),TrackButtons.Text,36).Hint("Удалить запись").Column(0).CenterVertical(),
             pill.Column(1).CenterVertical(),new Grid().Columns("*").Rows("*").Children(chatVoicePause.Center(),chatVoiceContinue.Center()).Column(2));
         chatVoiceBar.IsVisible = false;
         chatVoiceTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(33));

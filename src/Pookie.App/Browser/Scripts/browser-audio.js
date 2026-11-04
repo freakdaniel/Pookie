@@ -23,11 +23,10 @@
   function valid(c) {
     return c && /^[a-f0-9]{32}$/.test(c.playback_id || '') && Number.isFinite(c.position) && c.position >= 0 && c.position <= 86400 &&
       Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 100 &&
-      (c.capture_analysis == null || typeof c.capture_analysis === 'boolean') &&
       (c.normalization_gain_db == null || Number.isFinite(c.normalization_gain_db) && c.normalization_gain_db >= -24 && c.normalization_gain_db <= 6) && (c.action === 'start'
       ? typeof c.source === 'string' && c.source.length <= 8192 && typeof c.authorization === 'string' &&
         c.authorization.length > 0 && c.authorization.length <= 16384 && !/[\x00-\x1f\x7f]/.test(c.authorization)
-      : ['stop','pause','volume','seek','analysis'].includes(c.action) && c.source == null && c.authorization == null);
+      : ['stop','pause','volume','seek'].includes(c.action) && c.source == null && c.authorization == null);
   }
   function state(st) {
     let bufferedStart = 0, bufferedEnd = 0;
@@ -83,7 +82,6 @@
     audio.addEventListener('error',()=>{if(st.audio===audio)fail(st,new Error('decode'));});
     for(const name of ['playing','pause','waiting','ended','seeked'])
       audio.addEventListener(name,()=>{if(st.audio===audio) {
-        st.normalization?.node.port.postMessage({active:name!=='waiting' && !st.paused && !audio.paused && !audio.ended && audio.readyState>=3});
         publish(st);
       }});
   }
@@ -93,7 +91,7 @@
   async function setupNormalization(st) {
     // Attenuation stays in the media element: it needs neither PCM access nor
     // a Worklet and applies equally to every protected frame from the start.
-    if (st.gainDb <= 0 && !st.captureAnalysis || !window.AudioContext || !window.AudioWorkletNode) return;
+    if (st.gainDb <= 0 || !window.AudioContext || !window.AudioWorkletNode) return;
     const context = new AudioContext();
     let source;
     const url = URL.createObjectURL(new Blob([normalizationModule], {type:'text/javascript'}));
@@ -101,17 +99,7 @@
       await context.audioWorklet.addModule(url);
       await context.resume();
       if (current !== st || st.controller.signal.aborted) { await context.close(); return; }
-      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb,captureAnalysis:st.captureAnalysis}});
-      let sampleOffset=0;
-      node.port.onmessage=event=>{
-        const {offset,samples}=event.data ?? {};
-        if(current!==st || !st.captureAnalysis || offset!==sampleOffset || !(samples instanceof Float32Array) ||
-          !samples.length || samples.length>1024 || offset+samples.length>144000 || samples.some(v=>!Number.isFinite(v))) return;
-        const bytes=new Uint8Array(samples.length*4), view=new DataView(bytes.buffer);
-        for(let i=0;i<samples.length;i++) view.setFloat32(i*4,samples[i],true);
-        sampleOffset+=samples.length;
-        st.send({kind:'audio-sample',request_id:st.id,status:200,sample:{offset,data:btoa(String.fromCharCode(...bytes))}});
-      };
+      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb}});
       const master = context.createGain(); master.gain.value = st.volume / 100;
       source = context.createMediaElementSource(st.audio);
       source.connect(node).connect(master).connect(context.destination);
@@ -341,7 +329,7 @@
     try {
       if (c.action === 'start') {
         mediaUrl(c.source); stop(current);
-        st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, captureAnalysis:c.capture_analysis === true, duration:0, index:0,
+        st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, duration:0, index:0,
           controller:new AbortController(), operations:Promise.resolve(), error:null, stage:'manifest', seekRevision:0};
         st.keys = new Promise((resolve, reject) => { st.resolveKeys = resolve; st.rejectKeys = reject; }); st.keys.catch(() => {});
         st.ready = new Promise((resolve, reject) => { st.resolveReady = resolve; st.rejectReady = reject; }); st.ready.catch(() => {});
@@ -359,14 +347,6 @@
         st = current;
         if (!st || st.id !== c.playback_id) { send({kind:'complete', request_id:request.id, status:200}); return; }
         if (c.action === 'stop') stop(st);
-        else if (c.action === 'analysis') {
-          // An existing tap can be shut down without touching EME or playback.
-          // Enabling is deferred until the next track so samples stay contiguous.
-          if (!c.capture_analysis) {
-            st.captureAnalysis = false;
-            st.normalization?.node.port.postMessage({captureAnalysis:false});
-          }
-        }
         else if (c.action === 'volume') {
           st.volume = c.volume;
           if (st.normalization) {

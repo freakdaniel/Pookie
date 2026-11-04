@@ -40,13 +40,13 @@ internal sealed partial class MainWindow
             () => { if (trackDetailState is { } state) Run(() => ToggleTrackLikeAsync(state.Track)); }, TrackButtons.Glass, height: 44);
         var comment = TrackCommentComposerView();
         var copy = TrackButtons.Icon(Icons.View("copy", 20).Center(),
-            () => { if (trackDetailState is { } state) CopyTrackLink(state.Track); }, TrackButtons.Glass, size: 44).ToolTip("Скопировать ссылку");
+            () => { if (trackDetailState is { } state) CopyTrackLink(state.Track); }, TrackButtons.Glass, size: 44).Hint("Скопировать ссылку");
         var queue = TrackButtons.Icon(Icons.View("queue", 20).Center(),
-            () => { if (trackDetailState is { } state) EnqueueTrack(state.Track, false); }, TrackButtons.Glass, size: 44).ToolTip("Добавить в очередь");
+            () => { if (trackDetailState is { } state) EnqueueTrack(state.Track, false); }, TrackButtons.Glass, size: 44).Hint("Добавить в очередь");
         trackDetailRepostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
         trackDetailRepostCount = new TextBlock().FontSize(14).Bold().CenterVertical();
         trackDetailRepost = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(trackDetailRepostIcon.CenterVertical(), trackDetailRepostCount),
-            () => { if (trackDetailState is { } state) Run(() => ToggleTrackRepostAsync(state.Track)); }, TrackButtons.Glass, height: 44).ToolTip("Сделать репост");
+            () => { if (trackDetailState is { } state) Run(() => ToggleTrackRepostAsync(state.Track)); }, TrackButtons.Glass, height: 44).Hint("Сделать репост");
         AttachTrackQueueMenu(queue, () => trackDetailState?.Track);
         var playlist = AddToPlaylistButton(() => trackDetailState?.Track, TrackButtons.Glass, 44);
         var actions = trackCommentActions = new TrackCommentActionRow(TrackButtons.Connected(trackDetailLike, trackDetailRepost), comment,

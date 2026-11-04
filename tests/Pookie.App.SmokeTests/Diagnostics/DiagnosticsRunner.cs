@@ -32,18 +32,6 @@ internal static class DiagnosticsRunner
         { await Pookie.App.Platform.ExternalBrowser.OpenAsync(args[1], CancellationToken.None); return true; }
         if (args.Length is 2 or 3 && args[0] == "--chat-media-hosting-live-probe")
         { await ChatMediaHostingLiveProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
-        if (args.Length is 1 or 2 && args[0] == "--wave-quality-report")
-        {
-            var days = args.Length == 2 && int.TryParse(args[1], out var value) ? value : args.Length == 1 ? 7 : 0;
-            if (days is < 1 or > 90) throw new ArgumentException("Укажи период отчёта от 1 до 90 дней.");
-            var until = DateTimeOffset.UtcNow;
-            var path = Path.Combine(new AppDataPaths().Root, "Wave", "events.sqlite3");
-            Console.WriteLine(Pookie.Recommendations.Storage.WaveQualityReportReader.ToJson(
-                Pookie.Recommendations.Storage.WaveQualityReportReader.Read(path, until.AddDays(-days), until)));
-            return true;
-        }
-        if (args.Length > 1 && args[0] == "--audio-mood-probe")
-        { await AudioMoodProbe.RunAsync(args[1..].Where(arg => arg is not "--cache-results" and not "--preview").ToArray(), args.Contains("--cache-results"), args.Contains("--preview")); return true; }
         if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }
         if (args.Length is 2 or 3 && args[0] == "--playback-history-network-probe") { await PlaybackHistoryNetworkProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }
@@ -74,7 +62,6 @@ internal static class DiagnosticsRunner
         if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
-        if (args.Contains("--browser-audio-capture-smoke-test")) { await BrowserAudioCaptureSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-drm-capability-probe")) { await BrowserDrmCapabilityProbe.RunAsync(); return true; }
         if (args.Contains("--protected-audio-smoke-test"))
         {
@@ -101,7 +88,7 @@ internal static class DiagnosticsRunner
                         audioStage = stage;
                         Console.WriteLine($"DRM_BROWSER_AUDIO_STAGE: {stage}; credentials redacted");
                     }
-                    else if (message.Kind is not ("json-chunk" or "audio-state" or "audio-sample"))
+                    else if (message.Kind is not ("json-chunk" or "audio-state"))
                         Console.WriteLine($"DRM_BROWSER_EVENT: {message.Kind}; http={message.Status}; interactive={message.Interactive}");
                 };
             var protectedApi = new SoundCloudWebClient(protectedHttp)
@@ -184,22 +171,11 @@ internal static class DiagnosticsRunner
             await using var player = protectedPlayer;
             player.Volume(args.Contains("--system-audio") ? 15 : 0);
             var protectedSource = new AudioSource(resolved.Stream.Uri.AbsoluteUri, AudioTransport.WidevineHls, resolved.Stream.Duration)
-                { LicenseAuthToken = resolved.Stream.LicenseAuthToken, CaptureAnalysis = args.Contains("--analysis-probe"), BrowserPage = track.PermalinkUrl,
+                { LicenseAuthToken = resolved.Stream.LicenseAuthToken, BrowserPage = track.PermalinkUrl,
                   NormalizationGainDb = args.Contains("--normalization-probe")
                     ? await new WaveformGainResolver(protectedHttp, new AppDataPaths()).ResolveAsync(track.WaveformUrl, timeout.Token) : 0 };
             await player.PlayAsync(protectedSource, timeout.Token);
             await WaitForPlaybackAsync(player);
-            if (args.Contains("--analysis-probe"))
-            {
-                using var analysisTimeout = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-                analysisTimeout.CancelAfter(TimeSpan.FromSeconds(20));
-                using var sampleTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
-                while (player.Poll().Position < 10) await sampleTimer.WaitForNextTickAsync(analysisTimeout.Token);
-                var sample = player.TakeAnalysisSample() ?? throw new InvalidOperationException("The protected browser player supplied no PCM.");
-                using var encoder = new Pookie.Recommendations.Audio.MusicnnEncoder();
-                var vector = encoder.Encode(sample) ?? throw new InvalidOperationException("The protected browser player supplied silence instead of audio.");
-                Console.WriteLine($"BROWSER_ANALYSIS_PROBE_OK: {sample.Mono.Length} mono PCM samples; {vector.Values.Length} embedding dimensions; volume remains zero");
-            }
             if (args.Contains("--normalization-probe"))
             {
                 using var meterTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));

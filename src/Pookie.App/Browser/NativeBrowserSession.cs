@@ -399,7 +399,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         if (bodies.Remove(message.RequestId, out var body)) message = message with { Json = body.Text.ToString() };
                         pending.TrySetResult(message);
                     }
-                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state" or "audio-sample")
+                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state")
                         try { changed(message); } catch (InvalidOperationException) { }
                 }
             }

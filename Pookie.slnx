@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Pookie.App/Pookie.App.csproj" />
-    <Project Path="src/Pookie.Recommendations/Pookie.Recommendations.csproj" />
     <Project Path="src/Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
   </Folder>
   <Folder Name="/tests/">

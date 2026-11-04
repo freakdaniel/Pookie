@@ -11,6 +11,7 @@ internal sealed partial class MainWindow
     private bool chatMusicUiSmoke;
     private bool chatMediaUiSmoke;
     private bool menusUiSmoke;
+    private bool tooltipsUiSmoke;
     private bool chromeUiSmoke;
     private bool settingsUiSmoke;
     private bool queueContinuationUiSmoke;
@@ -28,7 +29,7 @@ internal sealed partial class MainWindow
     private bool trackPageUiSmoke, trackDescriptionUiSmoke, trackPlaybackUiSmoke, waveformUiSmoke;
     private bool trackPageLiveUi;
     private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
-    private bool waveJournalUiSmoke, memoryUiSmoke, waveQueueUiSmoke, playbackMemoryUiSmoke;
+    private bool memoryUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
 
@@ -40,6 +41,7 @@ internal sealed partial class MainWindow
         chatMusicUiSmoke = args.Contains("--chat-music-ui-smoke-test");
         chatMediaUiSmoke = args.Contains("--chat-media-ui-smoke-test");
         menusUiSmoke = args.Contains("--menus-ui-smoke-test");
+        tooltipsUiSmoke = args.Contains("--tooltips-ui-smoke-test");
         chromeUiSmoke = args.Contains("--chrome-ui-smoke-test");
         settingsUiSmoke = args.Contains("--settings-ui-smoke-test");
         queueContinuationUiSmoke = args.Contains("--queue-continuation-ui-smoke-test");
@@ -48,7 +50,6 @@ internal sealed partial class MainWindow
         chatNavigationUiSmoke = chatDrawerUiSmoke || args.Contains("--chat-navigation-ui-smoke-test");
         chatEmojiUiSmoke = args.Contains("--chat-emoji-ui-smoke-test");
         chatVideoLiveUi = args.Contains("--chat-video-live-ui-probe");
-        waveQueueUiSmoke = args.Contains("--wave-queue-ui-smoke-test");
         memoryUiSmoke = args.Contains("--memory-ui-smoke-test");
         playbackMemoryUiSmoke = args.Contains("--playback-memory-ui-smoke-test");
         uiSmoke = args.Contains("--ui-smoke-test");
@@ -71,7 +72,6 @@ internal sealed partial class MainWindow
         likesFilterUiSmoke = args.Contains("--likes-filter-ui-smoke-test");
         commentsUiSmoke = args.Contains("--comments-ui-smoke-test");
         homeUiSmoke = args.Contains("--home-ui-smoke-test");
-        waveJournalUiSmoke = args.Contains("--wave-journal-ui-smoke-test");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));
@@ -98,13 +98,13 @@ internal sealed partial class MainWindow
         if (feedUiSmoke) Run(VerifyFeedAsync);
         if (chatsUiSmoke) Run(VerifyChatsUiAsync);
         if (menusUiSmoke) Run(VerifyFloatingMenusAsync);
+        if (tooltipsUiSmoke) Run(VerifyMaterialTooltipsAsync);
         if (chromeUiSmoke) Run(VerifyShellChromeAsync);
         if (settingsUiSmoke) Run(VerifySettingsUiAsync);
         if (queueContinuationUiSmoke) Run(VerifyQueueContinuationAsync);
         if (chatNavigationUiSmoke) Run(VerifyChatNavigationUiAsync);
         if (chatEmojiUiSmoke) Run(VerifyChatEmojiUiAsync);
         if (chatVideoLiveUi) Run(VerifyChatVideoLiveUiAsync);
-        if (waveQueueUiSmoke) Run(VerifyWaveQueueUiAsync);
         if (memoryUiSmoke) Run(VerifyArtworkLifetimeAsync);
         if (playbackMemoryUiSmoke) Run(VerifyBackgroundPlaybackMemoryAsync);
         if (uiSmoke) Run(VerifyUiAsync);
@@ -123,7 +123,6 @@ internal sealed partial class MainWindow
         if (likesFilterUiSmoke) Run(VerifyLikesFilterUiAsync);
         if (commentsUiSmoke) Run(VerifyCommentsUiAsync);
         if (homeUiSmoke) Run(VerifyHomeUiAsync);
-        if (waveJournalUiSmoke) Run(VerifyWaveJournalOnlyUiAsync);
     }
 
     private sealed class EmptyLyricsProvider : Pookie.Lyrics.ILyricsProvider

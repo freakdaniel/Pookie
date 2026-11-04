@@ -56,40 +56,6 @@ public sealed class PlaybackTests
     }
 
     [Fact]
-    public async Task DisablingAnalysisDuringDecodeDropsPcmCaptureAndKeepsAudioFlowing()
-    {
-        await using var server = await MediaServer.StartAsync(2, 48000);
-        using var http = new HttpClient();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using var provider = new StreamingProvider(http, new(server.Url + "/track.wav", AudioTransport.Progressive)
-            { CaptureAnalysis = true }, 0, uri => uri.IsLoopback, timeout.Token);
-        await provider.Ready.WaitAsync(timeout.Token);
-        provider.DisableAnalysisCapture();
-        var buffer = new float[8192];
-        var audible = false;
-        while (await provider.WaitForDataAsync(timeout.Token))
-        { provider.ReadBytes(buffer); audible |= buffer.Any(value => Math.Abs(value) > .001); }
-        Assert.True(audible); Assert.Null(provider.TakeAnalysisSample()); Assert.Null(provider.Error);
-        provider.Dispose(); await provider.Completion;
-    }
-
-    [Fact]
-    public async Task DecodedPlaybackCanProvideABoundedMonoAnalysisSampleWithoutExtraDownloads()
-    {
-        await using var server = await MediaServer.StartAsync(2, 48000);
-        using var http = new HttpClient();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using var provider = new StreamingProvider(http, new(server.Url + "/track.wav", AudioTransport.Progressive)
-            { CaptureAnalysis = true }, 0, uri => uri.IsLoopback, timeout.Token);
-        await provider.Ready.WaitAsync(timeout.Token);
-        var buffer = new float[8192];
-        while (await provider.WaitForDataAsync(timeout.Token)) provider.ReadBytes(buffer);
-        var sample = provider.TakeAnalysisSample()!;
-        Assert.Equal(16000, sample.SampleRate); Assert.Equal(144000, sample.Mono.Length);
-        Assert.Contains(sample.Mono, value => Math.Abs(value) > .001); Assert.Null(provider.TakeAnalysisSample());
-        provider.Dispose(); await provider.Completion;
-    }
-    [Fact]
     public async Task DecoderProducesFloatPcmWithTheOriginalMonoSampleRate()
     {
         await using var server = await MediaServer.StartAsync(1, 22050);
@@ -279,21 +245,6 @@ public sealed class PlaybackTests
         player.Pause(true); await player.SeekAsync(4.5);
         Assert.False(player.Poll().Playing);
         player.Pause(false); await WaitAsync(player, state => state.Playing && state.Position > 4.6);
-        Assert.Single(server.SegmentRequests, item => item == "init");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CandidatePreviewHandlesInitializationMapsWithoutAnEncodedCache(bool range)
-    {
-        await using var server = await MediaServer.StartAsync(2, 44100);
-        using var http = new HttpClient();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var sample = await AudioPreviewSampler.CaptureAsync(http,
-            new(server.Url + (range ? "/map-range.m3u8" : "/map.m3u8"), AudioTransport.Hls, 6), uri => uri.IsLoopback, timeout.Token);
-        Assert.NotNull(sample); Assert.InRange(sample.Mono.Length, 48000, 144000);
-        Assert.Contains(sample.Mono, value => Math.Abs(value) > .001);
         Assert.Single(server.SegmentRequests, item => item == "init");
     }
 

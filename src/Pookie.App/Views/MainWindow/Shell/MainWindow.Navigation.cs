@@ -18,7 +18,6 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> shuffle = new(false);
     private readonly ObservableValue<bool> isPlaying = new(false);
     private readonly ObservableValue<bool> isLiked = new(false);
-    private readonly ObservableValue<bool> isDisliked = new(false);
     private readonly ObservableValue<bool> likeAvailable = new(false);
     private readonly ObservableValue<bool> muted = new(false);
     private readonly ObservableValue<double> volume = new(70);
@@ -58,12 +57,9 @@ internal sealed partial class MainWindow
 
     private void UpdateLikeState()
     {
-        isDisliked.Value = current != null && waveTaste.IsBlocked(current);
-        isLiked.Value = current != null && !isDisliked.Value && likedIds.Contains(current.Id);
+        isLiked.Value = current != null && likedIds.Contains(current.Id);
         likeAvailable.Value = current != null && CanLikeTrack(current);
         RefreshLikedRows();
-        if (page.Value == Page.Settings && settingsSection.Value == SettingsSection.Wave)
-        { RefreshSettingsData(); RefreshSettingsControls(); }
     }
 
     private Task LoadLikedIdsAsync()
@@ -86,7 +82,6 @@ internal sealed partial class MainWindow
         token.ThrowIfCancellationRequested();
         if (api.Session != session) return;
         likedIds.Clear(); likedIds.UnionWith(ids); likedIdsReady = true;
-        EnsureWaveTaste(); waveTaste.SyncLikes(likedIds); ScheduleWaveSave(); RerankWaveQueue();
         UpdateLikeState();
     }
 
@@ -97,20 +92,19 @@ internal sealed partial class MainWindow
         if (demo || me == null || api.Session == null || !pendingLikes.Add((api.Session, track.Id))) return;
         likedActionError.Value = "";
         var user = me; var session = api.Session;
-        var playbackId = waveListening.Track?.Id == track.Id ? waveListening.PlaybackId : null;
         UpdateLikeState();
         try
         {
             if (!likedIdsReady) await LoadLikedIdsAsync();
             if (api.Session != session) return;
-            var liked = waveTaste.IsBlocked(track) || !likedIds.Contains(track.Id);
+            var liked = !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
             if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
-            WaveLikeChanged(track, liked, playbackId);
+            RefreshHomeShortcuts();
             UpdateLikeState();
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
             await ApplyLibraryLikeAsync(track, liked, session);

@@ -178,7 +178,7 @@ internal sealed partial class MainWindow
         page.Value = Page.Home;
         query.Value = ""; likedFilter.Text = "";
         ReplaceTracks(new([], null));
-        eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "На твоей волне";
+        eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
         RefreshNavVisuals(); RefreshHistoryButtons();
     }
 

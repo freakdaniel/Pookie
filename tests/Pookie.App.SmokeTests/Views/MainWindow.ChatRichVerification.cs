@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
         Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
         await WaitForLikedLayoutAsync(() => videoFrame.Playing);
         await WaitForLikedLayoutAsync(() => !videoRow.Content.IsResizing && videoRow.Motion.Opacity > .99);
-        if (!videoRow.Content.PhotoMode || videoFrame.ActualHeight < 470 || videoFrame.Picture.ToolTip != null)
+        if (!videoRow.Content.PhotoMode || videoFrame.ActualHeight < 470 || videoFrame.Picture.ToolTip != null || TooltipHints.TextFor(videoFrame.Picture) != null)
             throw new InvalidOperationException("Portrait video lost its media geometry or acquired a tooltip.");
         CaptureUiPreview("chats-video-inline");
         var focusProbe = new Window().Title("Pookie video focus test").Fixed(240, 120).Content(new Border());

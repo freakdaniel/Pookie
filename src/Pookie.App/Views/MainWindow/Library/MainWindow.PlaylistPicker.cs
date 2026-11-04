@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
 
     private Button AddToPlaylistButton(Func<SoundCloudTrack?> track, string style = TrackButtons.Tonal, double size = 40) =>
         TrackButtons.Icon(Icons.View("playlist-plus", 20, TrackButtons.OnSurface),
-            () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, style, size).ToolTip("Добавить в плейлист");
+            () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, style, size).Hint("Добавить в плейлист");
 
     private FrameworkElement PlaylistPickerView()
     {

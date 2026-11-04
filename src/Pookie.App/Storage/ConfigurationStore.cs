@@ -33,9 +33,6 @@ internal sealed record AppConfiguration
     public bool NormalizeVolume { get; set; } = true;
     public bool LyricsEnabled { get; set; } = true;
     public bool LyricsAutoScroll { get; set; } = true;
-    public bool WaveLearningEnabled { get; set; } = true;
-    public bool WaveAnalysisEnabled { get; set; } = true;
-    public int JournalRetentionDays { get; set; } = 90;
     public bool SendPlaybackHistory { get; set; } = true;
     public bool ChatSendOnEnter { get; set; }
     public bool ChatAutoLoad { get; set; } = true;
@@ -56,7 +53,6 @@ internal sealed record AppConfiguration
         StartupPage = StartupPage is "home" or "library" ? StartupPage : "home",
         LastSearchSection = LastSearchSection is >= 0 and <= 4 ? LastSearchSection : 0,
         CommentSort = CommentSort is "NEWEST" or "OLDEST" or "TIMESTAMP" ? CommentSort : "NEWEST",
-        JournalRetentionDays = JournalRetentionDays is 30 or 90 or 180 ? JournalRetentionDays : 90
     };
 }
 

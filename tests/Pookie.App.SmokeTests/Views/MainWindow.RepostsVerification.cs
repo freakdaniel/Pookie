@@ -24,20 +24,30 @@ internal sealed partial class MainWindow
         }
         if (!repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Reposted)
             throw new InvalidOperationException("Existing repost did not appear selected.");
-        var remove = ToggleTrackRepostAsync(first);
-        if (Action(first.Id).IsEnabled || !Action(other.Id).IsEnabled || transport.LastReposted)
+        current = first;
+        playerVisible.Value = true;
+        RefreshPlayerRepostState();
+        await WaitForLikedLayoutAsync(() => playerRepostButton.IsEnabled && playerChrome.Height > PlayerBarHeight - 1);
+        if (!isReposted.Value) throw new InvalidOperationException("The player missed the current track's existing repost.");
+        RouteWaveformClick(SettingsCenter(playerRepostButton));
+        await WaitForLikedLayoutAsync(() => transport.RepostRequests == 1);
+        if (playerRepostButton.IsEnabled || Action(first.Id).IsEnabled || !Action(other.Id).IsEnabled || transport.LastReposted)
             throw new InvalidOperationException("Pending repost disabled other rows or sent the wrong state.");
         if (Action(first.Id).Opacity != 1) throw new InvalidOperationException("Pending repost flashed a faded disabled state.");
         await ToggleTrackRepostAsync(first);
         if (transport.RepostRequests != 1) throw new InvalidOperationException("Duplicate repost sent.");
-        transport.Complete(first.Id); await remove;
+        transport.Complete(first.Id);
+        await WaitForLikedLayoutAsync(() => !isReposted.Value && playerRepostButton.IsEnabled);
         if (repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Glass || !Action(first.Id).IsEnabled)
             throw new InvalidOperationException("Repost removal failed to update the row.");
         var add = ToggleTrackRepostAsync(first);
         if (!transport.LastReposted) throw new InvalidOperationException("Add repost sent DELETE.");
         transport.Complete(first.Id); await add;
-        if (!repostedIds.Contains(first.Id) || Action(first.Id).StyleName != TrackButtons.Reposted)
-            throw new InvalidOperationException("Repost addition did not update the row.");
+        if (!repostedIds.Contains(first.Id) || !isReposted.Value || Action(first.Id).StyleName != TrackButtons.Reposted)
+            throw new InvalidOperationException("Repost addition did not update the player and row.");
+        current = null;
+        playerVisible.Value = false;
+        RefreshPlayerRepostState();
         var failed = ToggleTrackRepostAsync(other); transport.Fail(other.Id);
         try { await failed; throw new InvalidOperationException("Fixture error swallowed."); } catch (HttpRequestException) { }
         if (repostedIds.Contains(other.Id) || !Action(other.Id).IsEnabled)

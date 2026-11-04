@@ -7,6 +7,8 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private readonly ObservableValue<bool> isReposted = new(false);
+    private readonly ObservableValue<bool> repostAvailable = new(false);
     private readonly HashSet<long> repostedIds = [];
     private readonly HashSet<(WebSession Session, long Track)> pendingReposts = [];
     private CancellationTokenSource? repostLoading;
@@ -22,6 +24,7 @@ internal sealed partial class MainWindow
     {
         repostLoading?.Cancel(); repostLoading?.Dispose(); repostLoading = null;
         repostTask = null; repostSession = null; repostedIdsReady = false; repostedIds.Clear();
+        RefreshPlayerRepostState();
     }
 
     private Task LoadRepostedIdsAsync()
@@ -42,8 +45,21 @@ internal sealed partial class MainWindow
         repostedIds.UnionWith(ids); repostedIdsReady = true; RefreshRepostState();
     }
 
+    private void RefreshPlayerRepostState()
+    {
+        isReposted.Value = current != null && repostedIds.Contains(current.Id);
+        repostAvailable.Value = current != null && CanRepostTrack(current);
+    }
+
+    private FrameworkElement PlayerRepostGlyph(double size, Color idle) => new Grid().Columns("*").Rows("*").Children(
+        Icons.View("repeat", size, idle).Center().BindIsVisible(isReposted, value => !value),
+        Icons.View("repeat", size, TrackButtons.OnReposted).Center().BindIsVisible(isReposted));
+
+    private Task ToggleCurrentTrackRepostAsync() => current is { } track ? ToggleTrackRepostAsync(track) : Task.CompletedTask;
+
     private void RefreshRepostState()
     {
+        RefreshPlayerRepostState();
         foreach (var row in likedRows.Values)
             if (row.Track is { } track) row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
         foreach (var row in compactTrackRows.Where(row => row.RepostMenu != null)) RefreshCompactTrackRow(row);
@@ -55,7 +71,7 @@ internal sealed partial class MainWindow
             state.Track.RepostsCount is > 0 ? DetailCount(state.Track.RepostsCount) : "");
         TrackButtons.SetTextColor(trackDetailRepostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
         TrackButtons.SetAvailability(trackDetailRepost, CanRepostTrack(state.Track), IsRepostPending(state.Track));
-        trackDetailRepost.ToolTip(me != null && state.Track.User?.Id == me.Id ? "Это твой трек" : reposted ? "Убрать репост" : "Сделать репост");
+        trackDetailRepost.Hint(me != null && state.Track.User?.Id == me.Id ? "Это твой трек" : reposted ? "Убрать репост" : "Сделать репост");
     }
 
     private async Task ToggleTrackRepostAsync(SoundCloudTrack track)
