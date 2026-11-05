@@ -84,14 +84,19 @@ internal sealed partial class MainWindow
 
             await SelectSettingsTabAsync(SettingsSection.Interface);
             await SetSettingsChoiceAsync("likes", 1);
-            if (!likesAsList.Value) throw new InvalidOperationException("The likes choice did not update the shared library preference.");
+            if (likesMode.Value != TrackViewMode.Waveform) throw new InvalidOperationException("The likes choice did not update the shared library preference.");
             RouteWaveformClick(SettingsCenter(backButton));
             await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.About);
-            if (!likesAsList.Value) throw new InvalidOperationException("Back navigation restored a stale likes view preference.");
+            if (likesMode.Value != TrackViewMode.Waveform) throw new InvalidOperationException("Back navigation restored a stale likes view preference.");
             RouteWaveformClick(SettingsCenter(forwardButton));
             await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.Interface);
-            if (!likesAsList.Value || settingsChoices["likes"].SelectedIndex != 1)
+            if (likesMode.Value != TrackViewMode.Waveform || settingsChoices["likes"].SelectedIndex != 1)
                 throw new InvalidOperationException("Forward navigation restored a stale likes view preference.");
+            await SetSettingsChoiceAsync("likes", 2);
+            if (likesMode.Value != TrackViewMode.List) throw new InvalidOperationException("The third settings choice did not select compact library rows.");
+            SaveConfiguration(); await configuration.FlushAsync();
+            if (configuration.Load().LikesView != TrackViewMode.List) throw new InvalidOperationException("The compact library preference did not persist.");
+            await SetSettingsChoiceAsync("likes", 1);
 
             var source = new[] { SettingsFixtureTrack(101), SettingsFixtureTrack(102) };
             StartQueueContext(new("settings:playlist", "Проверка настроек", "Текущая очередь", Kind: PlaybackContextKind.Playlist), source, source[0]);

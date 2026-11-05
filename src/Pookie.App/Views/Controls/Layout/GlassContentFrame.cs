@@ -47,12 +47,13 @@ internal sealed class GlassContentFrame : Panel
         }
         var version = (raster as IRasterSource)?.Version;
         renderer!.BeginFrame(raster!);
+        using var captureViewport = WindowPresentation.CaptureViewport(raster!);
         try
         {
             renderer.Clear(BackdropSurface.ClearColor(background));
             renderer.Translate(-region.X, -region.Y);
             renderer.SetClip(region);
-            base.RenderSubtree(renderer);
+            content.Render(renderer);
         }
         finally { renderer.EndFrame(); }
         if (BackdropSurface.UsesCpuCapture && raster is IExternalWritableGpuSurface completed &&

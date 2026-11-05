@@ -74,13 +74,14 @@ internal sealed partial class MainWindow
         finally { coverGate.Release(); }
     }
 
-    private int FirstArtworkCount(bool preview = false, bool rows = false) => preview ? 6 :
-        rows ? Math.Max(1, (int)Math.Ceiling(Math.Max(196, Window.ClientSize.Height - 240) / 196)) :
+    private int FirstArtworkCount(bool preview = false, bool rows = false, double stride = 196) => preview ? 6 :
+        rows ? Math.Max(1, (int)Math.Ceiling(Math.Max(196, Window.ClientSize.Height - 240) / stride)) :
         libraryColumns * Math.Max(1, (int)Math.Ceiling(Math.Max(200, Window.ClientSize.Height - 240) / (likedArtworkSize + 90)));
 
     private async Task PrepareTrackArtworkAsync(IEnumerable<SoundCloudTrack> items, CancellationToken token, bool preview = false)
     {
-        await Task.WhenAll(items.Take(FirstArtworkCount(preview, page.Value == Page.LibraryTracks && likesAsList.Value))
+        await Task.WhenAll(items.Take(FirstArtworkCount(preview, page.Value == Page.LibraryTracks && likesMode.Value != TrackViewMode.Cards,
+                likesMode.Value == TrackViewMode.List ? 64 : 196))
             .Select(GetLibraryArtworkAsync)).WaitAsync(token);
     }
 

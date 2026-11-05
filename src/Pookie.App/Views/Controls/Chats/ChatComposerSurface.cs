@@ -51,7 +51,10 @@ internal sealed class ChatComposerSurface : Panel
         {
             var restarting = resize.IsRunning;
             if (!restarting) ResizeStarted?.Invoke();
-            fromHeight = resize.IsRunning ? fromHeight + (targetHeight - fromHeight) * resizeAmount : ActualHeight;
+            // Resume from the measured height that produced the current parent
+            // size. The pixel-rounded inner slot can be one pixel smaller; using
+            // ActualHeight briefly shrinks the composer before growth begins.
+            fromHeight = resize.IsRunning ? fromHeight + (targetHeight - fromHeight) * resizeAmount : targetHeight;
             resize.Stop(); targetHeight = nextHeight; resizeAmount = 0;
             resize.Duration = TimeSpan.FromMilliseconds(replyResize ? 250 : 220);
             resize.EasingFunction = replyResize ? Easing.CubicBezier(.4,0,.2,1) : Easing.CubicBezier(.2,0,0,1);

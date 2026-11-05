@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -80,11 +81,12 @@ internal sealed class QueueRowMotion : ContentControl
         // with a steep velocity, exaggerating even a single delayed first frame.
         offset = from * (1 - QueueRowAnimation.Ease(amount));
         if (entering) Opacity = QueueRowAnimation.Ease(Math.Clamp((amount - .18) / .82, 0, 1));
+        InvalidateVisual();
     }
 
     internal void FinishMotion() { offset = from = 0; previousY = null; entering = false; Opacity = 1; }
 
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
         if (previousY is { } oldY)
         {
@@ -97,8 +99,9 @@ internal sealed class QueueRowMotion : ContentControl
             }
             else from = offset = 0;
         }
-        context.Save(); context.Translate(0, offset);
-        base.RenderSubtree(context); context.Restore();
+
+        transform = Matrix3x2.CreateTranslation((float)0, (float)offset);
+        return !transform.IsIdentity;
     }
 
     protected override UIElement? OnHitTest(Point point)

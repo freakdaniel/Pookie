@@ -6,13 +6,15 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private readonly ObservableValue<bool> likesAsList = new(false);
+    private readonly ObservableValue<TrackViewMode> likesMode = new(TrackViewMode.Cards);
     private readonly ObservableValue<bool> likedEmpty = new(false);
     private readonly ObservableValue<string> likedActionError = new("");
     private readonly Dictionary<Button, LikedTrackTile> likedTiles = [];
     private readonly Dictionary<Image, long> likedArtworkTracks = [];
     private ItemsControl likedGrid = null!;
     private ItemsControl likedList = null!;
+    private ItemsControl likedCompactList = null!;
+    private ItemsControl LikedTrackView => likesMode.Value switch { TrackViewMode.Waveform => likedList, TrackViewMode.List => likedCompactList, _ => likedGrid };
     private TextBox likedFilter = null!;
     private StackPanel likedFilterNotice = null!;
     private TextBlock likedFilterStatus = null!;
@@ -86,11 +88,18 @@ internal sealed partial class MainWindow
     {
         likedGrid = CreateLikedGrid(likedTiles);
         likedList = CreateLikedList();
+        likedCompactList = CreateLikedCompactList();
         likesLoadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(
-            likedGrid.BindIsVisible(likesAsList, value => !value), likedList.BindIsVisible(likesAsList)));
-        likesAsList.Changed += () =>
+            likedGrid.BindIsVisible(likesMode, value => value == TrackViewMode.Cards),
+            likedList.BindIsVisible(likesMode, value => value == TrackViewMode.Waveform),
+            likedCompactList.IsVisible(false)));
+        likesLoadingView.Skeleton.CompactList = likesMode.Value == TrackViewMode.List;
+        likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesMode.Value != TrackViewMode.Cards);
+        likesMode.Changed += () =>
         {
-            likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesAsList.Value);
+            likesLoadingView.Skeleton.CompactList = likesMode.Value == TrackViewMode.List;
+            likesLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, likesMode.Value != TrackViewMode.Cards);
+            RefreshLikedFilterState();
             if (paginationLoading.Value && page.Value == Page.LibraryTracks) RefreshPaginationSkeletons(true);
         };
         likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
@@ -107,10 +116,7 @@ internal sealed partial class MainWindow
             .Children(likedFilterStatus, likedFilterRetry);
         paginationLoading.Changed += RefreshLikedFilterState;
         likesLoadingView.ContentRevealed += RefreshLikedFilterState;
-        var viewSwitch = new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
-            LikesViewButton("squares-four", false), LikesViewButton("list-bullets", true)));
-        var tools = new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
-            new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(), viewSwitch);
+        var tools = TrackViewSwitch(likesMode);
         var filterField = MaterialSearchField.CreateGlass(likedFilter);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
@@ -124,14 +130,21 @@ internal sealed partial class MainWindow
                     .TextWrapping(TextWrapping.Wrap).Top().Margin(0, 24).BindIsVisible(likedEmpty)));
     }
 
-    private Button LikesViewButton(string icon, bool showList)
+    private FrameworkElement TrackViewSwitch(ObservableValue<TrackViewMode> mode) =>
+        new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
+            new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(),
+            new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
+                TrackViewButton("squares-four", TrackViewMode.Cards, mode), TrackViewButton("waveform", TrackViewMode.Waveform, mode),
+                TrackViewButton("list-bullets", TrackViewMode.List, mode))));
+
+    private Button TrackViewButton(string icon, TrackViewMode selected, ObservableValue<TrackViewMode> mode)
     {
         var image = Icons.View(icon, 20);
-        image.Bind(Image.SourceProperty, likesAsList, value => Icons.Source(icon, value == showList ? TrackButtons.OnPrimary : TrackButtons.OnSurface));
-        var button = TrackButtons.Icon(image, () => { if (likesAsList.Value != showList) likesAsList.Value = showList; }, TrackButtons.Text, 32)
-            .Width(44).Hint(showList ? "Список" : "Карточки");
-        void Refresh() => TrackButtons.SetVariant(button, likesAsList.Value == showList ? TrackButtons.Filled : TrackButtons.Text);
-        likesAsList.Changed += Refresh; Refresh();
+        image.Bind(Image.SourceProperty, mode, value => Icons.Source(icon, value == selected ? TrackButtons.OnPrimary : TrackButtons.OnSurface));
+        var button = TrackButtons.Icon(image, () => { if (mode.Value != selected) mode.Value = selected; }, TrackButtons.Text, 32)
+            .Width(40).Hint(selected switch { TrackViewMode.Cards => "Квадратные карточки", TrackViewMode.Waveform => "Карточки с волной", _ => "Список" });
+        void Refresh() => TrackButtons.SetVariant(button, mode.Value == selected ? TrackButtons.Filled : TrackButtons.Text);
+        mode.Changed += Refresh; Refresh();
         return button;
     }
 
@@ -144,6 +157,7 @@ internal sealed partial class MainWindow
             track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
         SetPageItems(likedGrid, visible, LoadingRowStyle.Card);
         SetPageItems(likedList, visible, LoadingRowStyle.Waveform);
+        SetPageItems(likedCompactList, visible, LoadingRowStyle.Compact);
         if (paginationLoading.Value) RefreshPaginationSkeletons(true);
         RefreshLikedFilterState();
     }
@@ -151,6 +165,8 @@ internal sealed partial class MainWindow
     private void RefreshLikedFilterState()
     {
         if (page.Value != Page.LibraryTracks) return;
+        // A fixed-height presenter can retain its last arranged empty row.
+        likedCompactList.IsVisible = likesMode.Value == TrackViewMode.List && pageItems.TryGetValue(likedCompactList, out var compact) && compact.DataCount > 0;
         var incomplete = FilteringLikes && nextHref != null;
         var failed = incomplete && !paginationLoading.Value &&
             (failedPageCursor == nextHref || loadedPageCursors.Contains(nextHref!));
@@ -185,7 +201,7 @@ internal sealed partial class MainWindow
         if (columnsChanged && homeSections.FirstOrDefault(section => section.Key == "recommendations") is { } discovery)
             BindHomeSectionItems(discovery);
         foreach (var view in libraryLoadingViews)
-            view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : (view == likesLoadingView && likesAsList.Value || view == collectionLoadingView && playlistCollectionVisible.Value)));
+            view.Skeleton.SetGeometry(artworkSize, columns, view == homeLoadingView || (view == searchLoadingView ? searchSection.Value == SearchSection.Tracks : (view == likesLoadingView && likesMode.Value != TrackViewMode.Cards || view == collectionLoadingView && playlistCollectionVisible.Value && collectionMode.Value != TrackViewMode.Cards)));
         foreach (var grid in new[] { libraryGrid, likedGrid })
             if (grid != null) { grid.WrapPresenter(cellWidth, artworkSize + 90); grid.InvalidateMeasure(); }
         foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetSize(artworkSize);

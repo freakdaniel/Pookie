@@ -31,7 +31,8 @@ internal sealed partial class MainWindow
     private FrameworkElement InterfaceSettingsView() => SettingsGroups(
         SettingsGroup("Библиотека и поиск",
             SettingsChoice("likes", "Вид понравившихся треков", "Тот же выбор доступен в библиотеке",
-                () => likesAsList.Value, value => likesAsList.Value = value, ("Карточки", false), ("Подробный список", true)),
+                () => likesMode.Value, value => likesMode.Value = value, ("Квадратные карточки", TrackViewMode.Cards),
+                ("Карточки с волной", TrackViewMode.Waveform), ("Список", TrackViewMode.List)),
             SettingsToggle("search_section", "Запоминать категорию поиска", "Новый поиск открывает последнюю выбранную категорию вместо «Всё»",
                 () => preferences.RememberSearchSection, value => UpdatePreferences(p => p with { RememberSearchSection = value })),
             SettingsToggle("smooth_scroll", "Плавная прокрутка", "Плавное перемещение страниц и списков при прокрутке",

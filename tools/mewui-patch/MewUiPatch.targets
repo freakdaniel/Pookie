@@ -1,11 +1,11 @@
 <Project>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
-    <ProjectReference Include="$(MSBuildThisFileDirectory)MewUiPatch.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" OutputItemType="PookieMewUiPatcher" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)MewUiPatch.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" OutputItemType="PookieMewUiPatcher" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed;PublishSingleFile" />
   </ItemGroup>
   <Target Name="PatchPookieMewUi" AfterTargets="ResolveReferences"
           Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
     </ItemGroup>
     <ItemGroup>
       <PookieMewUiOriginal Update="@(PookieMewUiOriginal)">
@@ -15,12 +15,24 @@
     <WriteLinesToFile File="$(IntermediateOutputPath)mewui-patch-references.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <Exec Condition="'@(PookieMewUiOriginal)' != ''" Command="dotnet &quot;@(PookieMewUiPatcher->'%(FullPath)')&quot; &quot;%(PookieMewUiOriginal.FullPath)&quot; &quot;%(PookieMewUiOriginal.Patched)&quot; &quot;$(IntermediateOutputPath)mewui-patch-references.txt&quot;" />
     <ItemGroup Condition="'@(PookieMewUiOriginal)' != ''">
-      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
       <ReferencePath Include="@(PookieMewUiOriginal->'%(Patched)')" />
-      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.Backend.MewVG.X11.dll' or '%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
       <ReferencePathWithRefAssemblies Include="@(PookieMewUiOriginal->'%(Patched)')" />
       <ReferenceCopyLocalPaths Remove="@(PookieMewUiOriginal)" />
       <ReferenceCopyLocalPaths Include="@(PookieMewUiOriginal->'%(Patched)')" />
+    </ItemGroup>
+  </Target>
+  <Target Name="PublishPookieMewUi" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '@(PookieMewUiOriginal)' != ''">
+    <!-- Publish resolves package runtime assets independently of build references.
+         Replace its Core entry before trimming/bundling; keep duplicate checks enabled. -->
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ResolvedFileToPublish Include="@(PookieMewUiOriginal->'%(Patched)')">
+        <RelativePath>Aprillz.MewUI.dll</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 </Project>

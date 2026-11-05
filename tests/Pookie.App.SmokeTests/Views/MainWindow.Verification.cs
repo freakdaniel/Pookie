@@ -367,7 +367,7 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == 1019 && tile.Root.ActualWidth > 0));
         if (likedGrid.ItemsSource.Count != 1 || likedList.ItemsSource.Count != 1)
             throw new InvalidOperationException("Likes filter did not find an offscreen track in both views");
-        likesAsList.Value = true;
+        likesMode.Value = TrackViewMode.Waveform;
         await WaitForLikedLayoutAsync(() => likedList.ActualWidth > 100);
         await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == 1019 && row.Waveform.ActualWidth > 100));
         var filteredRow = likedRows.Values.Single(row => row.Track?.Id == 1019);
@@ -404,13 +404,13 @@ internal sealed partial class MainWindow
         await VerifyPlayerHoverAsync();
         CaptureUiPreview("list");
         Console.WriteLine("UI_LIKES_LIST_OK: shared overview/grid cards, padded 184px artwork rows, artist above title, waveform bounds, play/pause synchronization and waveform seeking");
-        likesAsList.Value = false;
+        likesMode.Value = TrackViewMode.Cards;
         Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
         
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width < DefaultWindowWidth - 100 && likedTiles.Values
             .Where(tile => tile.Track != null).GroupBy(tile => Math.Round(tile.Root.Bounds.Y)).OrderBy(group => group.Key).FirstOrDefault()?.Count() == 4);
         if (likedGrid.ItemsSource.Count != 30) throw new InvalidOperationException("Resize lost liked tracks");
-        likesAsList.Value = true;
+        likesMode.Value = TrackViewMode.Waveform;
         await WaitForLikedLayoutAsync(() => Math.Abs(likedList.ActualWidth - likedGrid.ActualWidth) <= 1 && likedRows.Values.Any(row =>
             row.Track != null && row.Waveform.ActualWidth > 100 && row.Root.Bounds.Right <= likedList.Bounds.Right));
         CheckLikedRowsGeometry();
@@ -514,15 +514,16 @@ internal sealed partial class MainWindow
         }
     }
 
-    private async Task WaitForLikedLayoutAsync(Func<bool> ready)
+    private async Task WaitForLikedLayoutAsync(Func<bool> ready, int timeoutMs = 4000)
     {
-        for (var attempt = 0; attempt < 80; attempt++)
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (Environment.TickCount64 < deadline)
         {
             if (ready()) return;
             await Task.Delay(50, lifetime.Token);
         }
         var rows = string.Join(",", likedTiles.Values.Where(tile => tile.Track != null)
             .GroupBy(tile => Math.Round(tile.Root.Bounds.Y)).Select(group => $"{group.Key}:{group.Count()}"));
-        throw new InvalidOperationException($"Likes layout did not settle: grid={likedGrid.ActualWidth}x{likedGrid.ActualHeight}, items={likedGrid.ItemsSource.Count}, tiles={likedTiles.Count}, rows={rows}, window={Window.ClientSize.Width}, tile width={likedTiles.Values.FirstOrDefault()?.Root.ActualWidth}, active={Window.IsActive}, state={Window.WindowState}, page={page.Value}");
+        throw new InvalidOperationException($"Likes layout did not settle: grid={likedGrid.ActualWidth}x{likedGrid.ActualHeight}, items={likedGrid.ItemsSource.Count}, tiles={likedTiles.Count}, rows={rows}, window={Window.ClientSize.Width}, tile width={likedTiles.Values.FirstOrDefault()?.Root.ActualWidth}, active={Window.IsActive}, state={Window.WindowState}, page={page.Value}, mixHit={homeMixCarousel?.IsMouseOver}, mixFront={homeMixCarousel?.FrontIndex}, mixMotion={homeMixCarousel?.MotionActive}, {homeMixCarousel?.MotionState}");
     }
 }

@@ -57,14 +57,14 @@ internal sealed partial class MainWindow
             if(anchor==null||Math.Abs(anchor.Root.Bounds.Y-viewer.Bounds.Y-savedAnchorY)>1)
                 Console.WriteLine($"CHAT_RESTORE_FRAME: restore={chatRestoreOffset}, id={chatRestoreAnchor}, passes={chatRestorePasses}, offset={viewer.VerticalOffset}, max={SmoothScroll.Maximum(viewer)}, y={anchor?.Root.Bounds.Y-viewer.Bounds.Y}, target={savedAnchorY}, bottom={chatScrollBottom}, wasBottom={chatWasAtBottom}, dirty={chatMessagesView.IsMeasureDirty}/{chatMessagesView.IsArrangeDirty}");
         }
-        chatViewport.BeforePaint += PaintOpening;
+        Window.FrameRendered += PaintOpening;
         var returning = SelectChatAsync(transport.Other);
         if (chatThreadLoading.Skeleton.IsVisible || !chatMessages.Select(m => m.Id).SequenceEqual(messages))
             throw new InvalidOperationException("Returning to a cached thread hid its messages behind a skeleton.");
         await WaitForLikedLayoutAsync(() => transport.ThreadReady != null && ChatRows.Any(r => r.Bound && r.Message?.Id == savedAnchorId &&
             Math.Abs(r.Root.Bounds.Y - viewer.Bounds.Y - savedAnchorY) < 1));
         transport.ThreadReady!.SetResult(); await returning;
-        await WaitForLoginFrameAsync(); chatViewport.BeforePaint -= PaintOpening;
+        await WaitForLoginFrameAsync(); Window.FrameRendered -= PaintOpening;
         if (openingFrames.Count == 0 || openingFrames.Any(y => Math.Abs(y - savedAnchorY) > 1))
             throw new InvalidOperationException($"Cached thread painted an intermediate scroll position: expected={savedAnchorY}, actual={string.Join(',', openingFrames)}");
         await WaitForLikedLayoutAsync(() => ChatRows.Any(r => r.Message?.Body == legacy && r.Attachments.FindVisualChild<ChatPhotoFrame>() is ChatPhotoFrame { Picture.Source: not null }));

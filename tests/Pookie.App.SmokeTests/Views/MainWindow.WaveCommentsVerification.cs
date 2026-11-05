@@ -15,6 +15,8 @@ internal sealed partial class MainWindow
         var savedOffset = shellScroll.VerticalOffset;
         try
         {
+            if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+                throw new InvalidOperationException("Could not expose the native waveform fixture.");
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             shellScroll.SetScrollOffsets(0, 0);
             current = track; title.Value = track.Title; artist.Value = track.Author; playerVisible.Value = true;
@@ -103,6 +105,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
+            if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
             ResetTrackCommentPreview(); api.BrowserTransport = transport;
             current = savedTrack; title.Value = savedTitle; artist.Value = savedArtist; playerVisible.Value = savedVisible;
             trackDetailState = savedState; RenderTrackDetailComments();

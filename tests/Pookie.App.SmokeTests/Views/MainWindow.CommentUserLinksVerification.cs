@@ -8,7 +8,7 @@ internal sealed partial class MainWindow
     private async Task VerifyCommentUserLinksAsync()
     {
         var names = new List<TextBlock>();
-        VisualTree.Visit(trackDetailComments, element =>
+        LogicalTree.Visit(trackDetailComments, element =>
         {
             if (element is TextBlock { Text: "Слушатель" or "Другой слушатель" } text) names.Add(text);
         });
@@ -19,6 +19,13 @@ internal sealed partial class MainWindow
         {
             foreach (var name in names)
             {
+                // Parked descendants retain their last painted coordinates. Realize the
+                // owning logical row before using the author's current window position.
+                if (trackDetailComments is ViewportStackPanel rows && rows.TryGetLayoutBounds(name, out var row))
+                {
+                    trackDetailScroll.SetScrollOffsets(0, trackDetailScroll.VerticalOffset + row.Y - 280);
+                    await WaitForLoginFrameAsync();
+                }
                 trackDetailScroll.SetScrollOffsets(0, trackDetailScroll.VerticalOffset + name.Bounds.Y - 400);
                 await WaitForLikedLayoutAsync(() => name.Bounds.Y is > 200 and < 600 && !trackDetailScroll.IsArrangeDirty);
                 var resting = name.Foreground;

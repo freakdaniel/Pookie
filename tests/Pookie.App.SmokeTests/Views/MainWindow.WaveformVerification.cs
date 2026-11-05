@@ -98,7 +98,11 @@ internal sealed partial class MainWindow
         var x = (int)Math.Floor((bar * waveform.Bounds.Width / count + .7) * scale);
         var y = (int)Math.Floor((waveform.Bounds.Height * .7 - 4) * scale);
         var pixels = cpu.GetReadOnlyPixelSpan();
-        return pixels[y * cpu.StrideBytes + x * 4 + 2];
+        var offset = y * cpu.StrideBytes + x * 4;
+        var alpha = pixels[offset + 3];
+        // CPU surfaces expose premultiplied BGRA. Fractional DPI can put this
+        // sample on a partially covered pixel; compare its colour, not coverage.
+        return alpha == 0 ? 0 : Math.Min(255, (pixels[offset + 2] * 255 + alpha / 2) / alpha);
     }
 
     private void RouteWaveformPointer(Point point)

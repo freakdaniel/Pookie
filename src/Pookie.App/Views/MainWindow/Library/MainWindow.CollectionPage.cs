@@ -10,6 +10,12 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> playlistCollectionVisible = new(false);
     private readonly Storage.ResourceCache<string, CollectionDetail> collectionDetails = new(64, new Storage.CacheBudget(16 * 1024 * 1024), detail => 512L + detail.Tracks.Tracks.Length * 1024L);
     private ItemsControl collectionTrackList = null!;
+    private ItemsControl collectionTrackCards = null!;
+    private ItemsControl collectionTrackWaves = null!;
+    private readonly ObservableValue<TrackViewMode> collectionMode = new(TrackViewMode.List);
+    private readonly Dictionary<Grid, (LikedTrackRow Row, int Position)> collectionWaveRows = [];
+    private readonly Dictionary<Button, (LikedTrackTile Tile, int Position)> collectionTrackTiles = [];
+    private double collectionTrackArtworkSize = 176;
     private Image collectionCover = null!, collectionBackdrop = null!, collectionPlayIcon = null!;
     private TextBlock collectionTitle = null!, collectionAuthor = null!, collectionMeta = null!, collectionDescription = null!;
     private Button collectionPlay = null!, collectionCopy = null!, collectionDescriptionToggle = null!;
@@ -22,11 +28,15 @@ internal sealed partial class MainWindow
     private sealed record CollectionTrackEntry(SoundCloudTrack Track, int Position);
     private LibraryItem? displayedCollection;
     private SoundCloudUser? CollectionAuthor => displayedCollection?.Playlist?.User;
-    private ScrollViewer? CollectionScroll => (playlistCollectionVisible.Value ? collectionTrackList : collectionGrid).FindVisualChild<ScrollViewer>() as ScrollViewer;
+    private ItemsControl CollectionTrackView => collectionMode.Value switch { TrackViewMode.Waveform => collectionTrackWaves, TrackViewMode.List => collectionTrackList, _ => collectionTrackCards };
+    private ScrollViewer? CollectionScroll => (playlistCollectionVisible.Value ? CollectionTrackView : collectionGrid).FindVisualChild<ScrollViewer>() as ScrollViewer;
 
     private FrameworkElement PlaylistCollectionPage()
     {
         collectionTrackList = CreateCollectionTrackList();
+        collectionTrackCards = CreateCollectionTrackCards();
+        collectionTrackWaves = CreateCollectionTrackWaves();
+        collectionMode.Changed += () => { RefreshCollectionTracks(); CollectionScroll?.SetScrollOffsets(0, 0); };
         collectionCover = new Image().StretchMode(Stretch.UniformToFill);
         collectionBackdrop = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
         collectionBackdrop.Transitions = [Transition.Create(UIElement.OpacityProperty, 240)];
@@ -80,15 +90,15 @@ internal sealed partial class MainWindow
             CollectionScroll?.SetScrollOffsets(0, 0);
         });
         collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
-        var tools = new Grid().Columns("*,320").Rows("Auto").Spacing(16).Children(
+        var tools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
             new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
-            MaterialSearchField.Create(collectionFilter).Column(1));
+            TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter).Column(2));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
             .Children(collectionDescriptionScroll,
                 collectionDescriptionToggle);
         return new DockPanel().LastChildFill().Spacing(18).Children(header.DockTop(), collectionDescriptionHost.DockTop(), tools.DockTop(),
-            new Grid().Columns("*").Rows("*").Children(collectionTrackList, collectionEmpty));
+            new Grid().Columns("*").Rows("*").Children(collectionTrackList, collectionTrackCards, collectionTrackWaves, collectionEmpty));
     }
 
     private ItemsControl CreateCollectionTrackList()
@@ -131,10 +141,16 @@ internal sealed partial class MainWindow
                 item.Track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)))
             .Select(item => new CollectionTrackEntry(item.Track!, item.index)).ToArray();
         SetPageItems(collectionTrackList, entries, LoadingRowStyle.Compact);
+        SetPageItems(collectionTrackCards, entries, LoadingRowStyle.Card);
+        SetPageItems(collectionTrackWaves, entries, LoadingRowStyle.Waveform);
         // The fixed-height presenter retains its last arranged rows when its
         // source becomes empty. Hide the entire list, including retained paint
         // and hit targets, until the filter has rows to arrange again.
-        collectionTrackList.IsVisible = entries.Length > 0;
+        collectionTrackList.IsVisible = entries.Length > 0 && collectionMode.Value == TrackViewMode.List;
+        collectionTrackCards.IsVisible = entries.Length > 0 && collectionMode.Value == TrackViewMode.Cards;
+        collectionTrackWaves.IsVisible = entries.Length > 0 && collectionMode.Value == TrackViewMode.Waveform;
+        collectionLoadingView.Skeleton.CompactList = collectionMode.Value == TrackViewMode.List;
+        collectionLoadingView.Skeleton.SetGeometry(collectionTrackArtworkSize, Math.Max(1, (int)(collectionTrackCards.ActualWidth / (collectionTrackArtworkSize + 24))), collectionMode.Value != TrackViewMode.Cards);
         collectionEmpty.Text = filter.Length > 0 ? "По этому фильтру ничего не найдено." : "Здесь пока нет треков.";
         collectionEmpty.IsVisible = entries.Length == 0;
     }
@@ -212,6 +228,8 @@ internal sealed partial class MainWindow
         var playing = playbackQueue.Context?.Key == displayedCollection?.Key && isPlaying.Value;
         collectionPlayIcon.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         collectionPlay.IsEnabled = activeCollection?.Items.Any(item => item.Track != null) == true;
+        foreach (var (tile, position) in collectionTrackTiles.Values)
+            RefreshCollectionTrackTile(tile, position);
     }
 
     private async Task PlayDisplayedCollectionAsync()

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -102,7 +103,8 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     }
     private Rect VisibleAnchor(FrameworkElement target)
     {
-        var bounds = target.Bounds.Intersect(new Rect(0, 0, window.ClientSize.Width, window.ClientSize.Height));
+        var origin = target.TranslatePoint(default, window);
+        var bounds = new Rect(origin.X, origin.Y, target.ActualWidth, target.ActualHeight).Intersect(new Rect(0, 0, window.ClientSize.Width, window.ClientSize.Height));
         for (var parent = target.Parent; parent != null; parent = parent.Parent)
             if (parent is ScrollViewer scroll) bounds = bounds.Intersect(scroll.Bounds);
         return bounds;
@@ -117,9 +119,9 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         if (attached && owner != next) { delay.Interval = TimeSpan.FromMilliseconds(20); delay.Start(); return; }
         pending = null; owner = next; keyboard = pendingKeyboard;
         label.Text = TooltipHints.TextFor(next)!;
-        // One small snapshot blends the text and backing together, including on
-        // renderers that otherwise apply alpha separately to each drawing call.
-        Card.CacheMode ??= new BitmapCache();
+        // Retained rendering records this small card once and applies its opacity
+        // as a group. An extra bitmap cache duplicates that capture and prevents
+        // a secondary CPU surface from reading the first GPU-cached frame.
         if (!attached) { window.OverlayLayer.Add(this); attached = true; }
         IsVisible = true; IsOpen = true; Observe();
         WatchScrolls(next);
@@ -162,7 +164,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     {
         IsVisible = false;
         if (attached) { window.OverlayLayer.Remove(this); attached = false; }
-        owner = null; Card.CacheMode = null; label.Text = "";
+        owner = null; label.Text = "";
     }
     private void Observe()
     {
@@ -207,17 +209,10 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     }
     protected override Size MeasureContent(Size availableSize) { Place(); return default; }
     protected override Size ArrangeOverride(Size finalSize) { Place(); if (!IsOpen) Card.Arrange(surfaceBounds); return finalSize; }
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
-        if (amount <= 0) return;
-        var scale = .8 + .2 * amount;
-        context.Save();
-        try
-        {
-            context.Translate(origin.X, origin.Y); context.Scale(scale, scale); context.Translate(-origin.X, -origin.Y);
-            base.RenderSubtree(context);
-        }
-        finally { context.Restore(); }
+        transform = Matrix3x2.CreateScale((float)(.8 + .2 * amount), new Vector2((float)origin.X, (float)origin.Y));
+        return !transform.IsIdentity;
     }
     protected override UIElement? OnHitTest(Point point) => null;
     private void Deactivated() { Hide(true); dismissed = null; }

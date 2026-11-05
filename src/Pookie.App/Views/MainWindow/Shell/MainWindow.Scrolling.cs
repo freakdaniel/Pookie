@@ -70,8 +70,8 @@ internal sealed partial class MainWindow
         {
             Page.Search => searchList,
             Page.Feed => feedList,
-            Page.LibraryTracks => likesAsList.Value ? likedList : likedGrid,
-            var collection when IsCollectionPage(collection) => playlistCollectionVisible.Value ? collectionTrackList : collectionGrid,
+            Page.LibraryTracks => LikedTrackView,
+            var collection when IsCollectionPage(collection) => playlistCollectionVisible.Value ? CollectionTrackView : collectionGrid,
             _ => (ScrollableItemsBase)list
         };
         if (pageItems.TryGetValue(control, out var source))
@@ -153,8 +153,8 @@ internal sealed partial class MainWindow
     };
 
     private int PageItemCount() => page.Value == Page.Feed ? VisibleFeedEntries.Length : page.Value == Page.Search ? searchResults?.Items.Length ?? 0 :
-        IsCollectionPage(page.Value) ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? collectionTrackList : collectionGrid)?.DataCount ?? 0 :
-        page.Value == Page.LibraryTracks ? pageItems.GetValueOrDefault(likesAsList.Value ? likedList : likedGrid)?.DataCount ?? 0 : tracks.Count;
+        IsCollectionPage(page.Value) ? pageItems.GetValueOrDefault(playlistCollectionVisible.Value ? CollectionTrackView : collectionGrid)?.DataCount ?? 0 :
+        page.Value == Page.LibraryTracks ? pageItems.GetValueOrDefault(LikedTrackView)?.DataCount ?? 0 : tracks.Count;
 
     private void OnPageWheel(MouseWheelEventArgs args)
     {

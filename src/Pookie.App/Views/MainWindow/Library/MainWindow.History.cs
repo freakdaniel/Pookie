@@ -45,7 +45,7 @@ internal sealed partial class MainWindow
         Page.UserProfile => UserProfileScroll,
         Page.Chats => null,
         Page.Settings => settingsScroll,
-        Page.LibraryTracks => (ScrollViewer?)(likesAsList.Value ? likedList : likedGrid).FindVisualChild<ScrollViewer>(),
+        Page.LibraryTracks => (ScrollViewer?)LikedTrackView.FindVisualChild<ScrollViewer>(),
         var collection when IsCollectionPage(collection) => CollectionScroll,
         _ => (ScrollViewer?)list.FindVisualChild<ScrollViewer>()
     };

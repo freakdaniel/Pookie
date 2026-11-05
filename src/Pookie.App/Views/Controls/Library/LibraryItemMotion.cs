@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -58,7 +59,7 @@ internal sealed class LibraryItemMotion : ContentControl
         Opacity = 1; IsHitTestVisible = true; clock.Duration = TimeSpan.FromMilliseconds(320);
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
         if (previous is { } old)
         {
@@ -67,8 +68,9 @@ internal sealed class LibraryItemMotion : ContentControl
             if (Math.Abs(from.X) + Math.Abs(from.Y) is > .5 and < 1500)
             { offset = from; clock.Start(); }
         }
-        context.Save(); context.Translate(offset.X, offset.Y);
-        base.RenderSubtree(context); context.Restore();
+
+        transform = Matrix3x2.CreateTranslation((float)offset.X, (float)offset.Y);
+        return !transform.IsIdentity;
     }
 
     protected override UIElement? OnHitTest(Point point)

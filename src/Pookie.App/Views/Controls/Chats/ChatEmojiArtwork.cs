@@ -29,7 +29,8 @@ internal static class ChatEmojiArtwork
         images[asset] = source = ImageSource.FromBgraPixels(decoded.Width, decoded.Height, decoded.Data);
         return source;
     }
-    internal static Image View(string value, double size = 28) => new Image().Source(Source(value)).Width(size).Height(size).StretchMode(Stretch.Uniform);
+    internal static Image View(string value, double size = 28) => new Image { ImageScaleQuality = ImageScaleQuality.HighQuality }
+        .Source(Source(value)).Width(size).Height(size).StretchMode(Stretch.Uniform);
     internal static void Draw(IGraphicsContext context, string value, Rect bounds)
     {
         var asset = ChatEmojiCatalog.Find(value)?.Asset;
@@ -48,7 +49,14 @@ internal static class ChatEmojiArtwork
                 }
             }
             else { recency.Remove(entry.Node); recency.AddLast(entry.Node); }
-            context.DrawImage(entry.Image, bounds);
+            // Small emoji need proper minification of the 72px artwork, including in text runs.
+            var quality = context.ImageScaleQuality;
+            try
+            {
+                context.ImageScaleQuality = ImageScaleQuality.HighQuality;
+                context.DrawImage(entry.Image, bounds);
+            }
+            finally { context.ImageScaleQuality = quality; }
         }
     }
     internal static void Clear()

@@ -26,7 +26,7 @@ internal static class AppHost
         else if (OperatingSystem.IsMacOS()) { MacOSPlatform.Register(); MewVGMacOSBackend.Register(); }
         else throw new PlatformNotSupportedException("Unsupported desktop platform.");
 #endif
-        ApplicationEmojiText.Install();
+        ApplicationEmojiText.InstallCompatibility();
 
         Application.DispatcherUnhandledException += eventArgs =>
         {

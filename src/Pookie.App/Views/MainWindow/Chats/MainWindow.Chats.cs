@@ -139,7 +139,7 @@ internal sealed partial class MainWindow
         // Completion follows the animation clock. Summed physical rounding at
         // fractional DPI can leave the final height more than one DIP from the
         // logical row height; comparing that geometry never hid the old reply.
-        chatComposerSurface.ResizeCompleted = chatComposerLayout.CompleteReplyTransition;
+        chatComposerSurface.ResizeCompleted = () => { chatComposerLayout.CompleteReplyTransition(); chatViewport.InvalidateArrange(); };
         chatComposerSurface.ResizeStarted = () => chatFollowLayout = chatFollowLayout || chatWasAtBottom || chatScrollBottom || ChatIsAtBottom();
         chatComposer = new GlassCard().Background(ChatGlassSurface).CornerRadius(24).Padding(4).Margin(0, 0, 0, 16).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(chatComposerSurface);
         chatInput.GotFocus += () => RefreshChatComposerSurface();
@@ -182,6 +182,7 @@ internal sealed partial class MainWindow
             ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), ReadingChrome(chatNewMessages).DockBottom(), historyArea);
         var threadSurface = new ChatStage(new Grid().Columns("*").Rows("*").Children(thread, new ChatStage(ChatThreadSearchResults(), rightInset: () => chatColumns.ScrollGutter).Initialize()), centerReadingColumn: false).Initialize();
         chatColumns = new ChatColumns(new GlassCard(Surface).Background(ChatGlassSurface).CornerRadius(24).Padding(12).Margin(0, 0, 0, 16).Child(inbox), threadSurface, compact => chatBack.IsVisible = compact).Initialize();
+        chatColumns.GeometryChanged = chatViewport.InvalidateArrange;
         chatColumns.SetDetails(CreateChatDetails()); chatColumns.CloseDetails=CloseChatDetails;
         chatColumns.OverlayHeader = chatIdentityCard;
         chatColumns.SizeChanged += _ => chatComposerLayout.InvalidateMeasure();

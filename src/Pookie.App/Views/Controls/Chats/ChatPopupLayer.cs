@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -89,7 +90,7 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
             ? new(Math.Clamp(alignRight ? trigger.Right : trigger.X, x, x + width), Math.Clamp(trigger.Y, y, y + height))
             : new(x + width, y + height);
     }
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override void OnRender(IGraphicsContext context)
     {
         // The overlay can be arranged before its sibling chat columns during a
         // resize. Reconcile the live anchor/viewport before the first paint, so
@@ -100,10 +101,12 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
             if (area != arrangedArea) MeasureContent(new Size(ActualWidth, ActualHeight));
             ArrangePopup(area, trigger);
         }
-        var scale = .94 + .06 * amount;
-        context.Save();
-        try { context.Translate(origin.X, origin.Y); context.Scale(scale, scale); context.Translate(-origin.X, -origin.Y); base.RenderSubtree(context); }
-        finally { context.Restore(); }
+    }
+
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
+    {
+        transform = Matrix3x2.CreateScale((float)(.94 + .06 * amount), new Vector2((float)origin.X, (float)origin.Y));
+        return !transform.IsIdentity;
     }
     protected override UIElement? OnHitTest(Point point)
     {

@@ -9,6 +9,7 @@ namespace Pookie.App;
 internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement side, bool hero = false, params FrameworkElement[] background) : Panel
 {
     private double sideWidth, height;
+    private double measuredMainWidth = double.NaN;
     internal double HeroArtworkMinWidth { get; init; } = 280;
     internal double HeroArtworkMaxWidth { get; init; } = 400;
     internal Image BackgroundArtwork => background.OfType<Image>().First();
@@ -28,13 +29,6 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         return this;
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        var clip = context.GetClipBoundsLocal();
-        foreach (var child in Children)
-            if (clip == null || child.Bounds.IntersectsWith(clip.Value)) child.Render(context);
-    }
-
     protected override Size MeasureContent(Size availableSize)
     {
         var width = double.IsFinite(availableSize.Width) ? availableSize.Width : 1200;
@@ -48,6 +42,7 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         if (hero) side.Width = side.Height = sideWidth;
         side.Measure(new Size(sideWidth, hero ? sideWidth : availableSize.Height));
         main.Measure(new Size(mainWidth, hero ? sideWidth : availableSize.Height));
+        measuredMainWidth = mainWidth;
         height = (hero ? sideWidth : Math.Max(main.DesiredSize.Height, side.DesiredSize.Height)) + (hero ? 48 : 0);
         foreach (var layer in background) layer.Measure(new Size(width, height));
         return new Size(width, height);
@@ -59,6 +54,13 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         var y = Bounds.Y + (hero ? 24 : 0);
         var scale = GetDpi() / 96d;
         var mainWidth = Math.Max(0, Math.Round((finalSize.Width - 48 - sideWidth - 32) * scale) / scale);
+        // The final rounded slot can be narrower than the measure constraint.
+        // Refresh star-column minima only when width changes, never while merely scrolling.
+        if (!measuredMainWidth.Equals(mainWidth))
+        {
+            main.Measure(new Size(mainWidth, hero ? sideWidth : height));
+            measuredMainWidth = mainWidth;
+        }
         main.Arrange(new Rect(Bounds.X + 24, y, mainWidth, height - (hero ? 48 : 0)));
         side.Arrange(new Rect(Bounds.X + 24 + mainWidth + 32, y, sideWidth, height - (hero ? 48 : 0)));
         return finalSize;

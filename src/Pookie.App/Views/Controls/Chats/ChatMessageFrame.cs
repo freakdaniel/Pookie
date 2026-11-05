@@ -39,11 +39,7 @@ internal sealed class ChatMessageFrame(FrameworkElement quote, Border bubble) : 
     }
     protected override void OnRender(IGraphicsContext context)
     { if (quote.IsVisible) context.FillPath(geometry.Get(Bounds,corners),surface); }
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        if (!quote.IsVisible) { base.RenderSubtree(context); return; }
-        context.Save();
-        try { context.SetClipPath(geometry.Get(Bounds,corners)); base.RenderSubtree(context); }
-        finally { context.Restore(); }
-    }
+    protected override ChildClip? GetChildClip(UIElement child) => quote.IsVisible && ReferenceEquals(child, quote)
+        ? ChildClip.Rounded(Bounds, Math.Max(Math.Max(corners.TopLeft, corners.TopRight), Math.Max(corners.BottomLeft, corners.BottomRight)))
+        : base.GetChildClip(child);
 }

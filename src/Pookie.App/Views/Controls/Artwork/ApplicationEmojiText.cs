@@ -7,8 +7,9 @@ using Pookie.App.Storage;
 
 namespace Pookie.App;
 
-// One text-layout transform covers labels, styled runs and native edit controls.
-// The document and its UTF-16 offsets are never rewritten.
+// Shared presentation keeps the document and its UTF-16 offsets unchanged.
+// Multi-line editors use public generators/transformers; the compatibility hook
+// covers standard labels and single-line editors without that extension API.
 internal static class ApplicationEmojiText
 {
     private static readonly ResourceCache<(string Value, double Size), Inline> objects = new(512, new CacheBudget(128 * 1024), _ => 128);
@@ -21,7 +22,22 @@ internal static class ApplicationEmojiText
     private static readonly ResourceCache<TextKey, Scan> scans = new(512, new CacheBudget(2 * 1024 * 1024), value => value.Bytes);
     [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "PookieTextLayoutTransform")]
     private static extern ref Func<TextLayoutRequest, TextLayoutRequest>? Transform(TextLayoutRequest? declaringType);
-    internal static void Install() => Transform(null) = Project;
+    internal static void InstallCompatibility() => Transform(null) = Project;
+
+    internal static void AddEditorCombiningInlines(ReadOnlyMemory<char> text, IList<InlineRun> inlines)
+    {
+        foreach (var run in CombiningText.HiddenRuns(text.Span))
+        {
+            var overlap = false;
+            for (var index = 0; index < inlines.Count; index++)
+            {
+                var existing = inlines[index];
+                if (run.Start < existing.Position + existing.Length && run.Start + run.Length > existing.Position)
+                { overlap = true; break; }
+            }
+            if (!overlap) inlines.Add(new(run.Start, run.Length, HiddenMarks.Instance, true));
+        }
+    }
 
     internal static TextLayoutRequest Project(TextLayoutRequest request)
     {

@@ -4,20 +4,21 @@ using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
-// A compatibility render subtree does not inherit retained-scene viewport
-// culling. Respect the actual scroll clip before entering expensive comment
-// trees (text layout, vector rasterization and button state animations).
-internal sealed class ViewportStackPanel : StackPanel
+// Logical rows stay attached for ownership, measurement and selection. The public
+// visual-tree contract exposes only realized rows to scene and backdrop captures.
+internal sealed class ViewportStackPanel : StackPanel, IVisualTreeHost
 {
     internal Func<Rect>? Viewport { get; init; }
     internal bool ArrangeVisibleOnly { get; init; } = true;
     private readonly List<UIElement> visible = [];
     private readonly Dictionary<UIElement, List<(UIElement Element, bool TabStop)>> parked = [];
+    private bool arranged;
 
     protected override void ArrangeContent(Rect bounds)
     {
         if (Viewport == null || !ArrangeVisibleOnly) { base.ArrangeContent(bounds); return; }
         visible.Clear();
+        arranged = true;
         var viewport = Viewport();
         var area = bounds.Deflate(Padding);
         var y = area.Y;
@@ -63,12 +64,41 @@ internal sealed class ViewportStackPanel : StackPanel
         foreach (var (element, tabStop) in tabStops) element.IsTabStop = tabStop;
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
+    internal bool TryGetLayoutBounds(Element descendant, out Rect bounds)
     {
-        var clip = context.GetClipBoundsLocal();
-        if (Viewport != null) clip = clip is { } current ? current.Intersect(Viewport()) : Viewport();
-        foreach (var child in Viewport == null || !ArrangeVisibleOnly ? Children.OfType<UIElement>() : visible)
-            if (clip == null || child.Bounds.IntersectsWith(clip.Value)) child.Render(context);
+        var row = descendant;
+        while (row.Parent != null && row.Parent != this) row = row.Parent;
+        var area = Bounds.Deflate(Padding);
+        var y = area.Y;
+        foreach (var child in Children.OfType<UIElement>())
+        {
+            if (!child.IsVisible) continue;
+            if (ReferenceEquals(child, row))
+            { bounds = new Rect(area.X, y, area.Width, child.DesiredSize.Height); return true; }
+            y += child.DesiredSize.Height + Spacing;
+        }
+        bounds = default; return false;
+    }
+
+    protected override ChildClip? GetChildClip(UIElement child) =>
+        Viewport != null ? new ChildClip(Viewport()) : base.GetChildClip(child);
+
+    bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor)
+    {
+        // Root attachment/detachment must reach every owned row, including those
+        // which have not been realized yet. Panel's logical tree remains complete.
+        if (!arranged || Viewport == null || !ArrangeVisibleOnly)
+        {
+            foreach (var child in ChildrenList) if (!visitor(child)) return false;
+        }
+        else foreach (var child in visible) if (!visitor(child)) return false;
+        return true;
+    }
+
+    protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
+    {
+        arranged = false;
+        base.OnVisualRootChanged(oldRoot, newRoot);
     }
 
     protected override UIElement? OnHitTest(Point point)

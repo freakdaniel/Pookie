@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
             if (!FilteringLikes) return;
             if (likedEmpty.Value && (paginationLoading.Value || nextHref != null || likesLoadingView.Skeleton.IsVisible))
                 invalidFrame = "Empty-result text appeared before all likes were checked.";
-            if (pageItems[likedGrid].LoadingCount != 0 || pageItems[likedList].LoadingCount != 0)
+            if (pageItems[likedGrid].LoadingCount != 0 || pageItems[likedList].LoadingCount != 0 || pageItems[likedCompactList].LoadingCount != 0)
                 invalidFrame = "Filtered metadata loading displayed unrelated track skeletons.";
         }
         try
@@ -40,11 +40,11 @@ internal sealed partial class MainWindow
                 if (transport.MaxConcurrent != 1 || likedEmpty.Value || !likedFilterNotice.IsVisible || likedFilterRetry.IsVisible)
                     throw new InvalidOperationException("Library filtering overlapped requests or lost its incomplete-search state.");
             }
-            foreach (var listView in new[] { false, true })
+            foreach (var mode in Enum.GetValues<TrackViewMode>())
             {
-                likesAsList.Value = listView;
+                likesMode.Value = mode;
                 var before = transport.Requests.Count;
-                Start((listView ? "list" : "grid") + "-1");
+                Start(mode + "-1");
                 // Three empty metadata pages must not end the search. The fourth
                 // contains tracks but still no match, reproducing old-liked songs.
                 for (var i = 1; i <= 4; i++)
@@ -69,10 +69,12 @@ internal sealed partial class MainWindow
                 likedFilter.Text = "совсем отсутствующий трек";
                 if (!likedEmpty.Value || likedFilterNotice.IsVisible || transport.Requests.Count != before + 6)
                     throw new InvalidOperationException("A completed library search did not distinguish an absent song from loading.");
+                if (mode == TrackViewMode.List && likedCompactList.IsVisible)
+                    throw new InvalidOperationException("An empty compact library retains its previous row's paint and hit targets.");
                 likedFilter.Text = "";
                 if (pageItems[likedList].DataCount != 81 || transport.Requests.Count != before + 6)
                     throw new InvalidOperationException("Clearing the filter discarded loaded likes or fetched the library again.");
-                Console.WriteLine($"LIKES_FILTER_UI_OK: {(listView ? "list" : "grid")}; six metadata pages, three empty pages, full-viewport continuation, oldest title/author match, final empty result and cached reuse");
+                Console.WriteLine($"LIKES_FILTER_UI_OK: {mode}; six metadata pages, three empty pages, full-viewport continuation, oldest title/author match, final empty result and cached reuse");
             }
             likedFilter.Text = "нет такого трека";
             SetLikesLoading(true); ReplaceTracks(new([], null));

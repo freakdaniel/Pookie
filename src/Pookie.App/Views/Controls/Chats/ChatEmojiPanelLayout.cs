@@ -37,7 +37,6 @@ internal sealed class ChatEmojiPanelLayout(FrameworkElement categories, Framewor
         modes.Arrange(new(Bounds.X, Bounds.Bottom - 48, finalSize.Width, 48));
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    { context.Save(); try { context.SetClipRoundedRect(Bounds, 20, 20); base.RenderSubtree(context); } finally { context.Restore(); } }
+    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(Bounds, 20);
     protected override void OnDispose() { motion.Stop(); base.OnDispose(); }
 }

@@ -26,15 +26,18 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => ReferenceEquals(row.TrackArt.Source, source) && row.Waveform.HasSamples && row.TrackArt.ActualWidth > 100);
         var cover = row.Cover.Source; var height = row.Root.ActualHeight;
         var actions = FindLikeAction(row.Root);
+        // Nested grids round tracks and child edges separately at fractional DPI.
+        // Bound that accumulated rounding in physical pixels, independent of desktop scale.
+        var edgeTolerance = 1.5 / Window.DpiScale;
         if (!row.Waveform.OnArtwork || row.TrackArt.Bounds.X <= row.Cover.Bounds.Right ||
             Math.Abs(row.TrackArt.Bounds.Y - row.Cover.Bounds.Y) > .5 || Math.Abs(row.TrackArt.Bounds.Bottom - row.Cover.Bounds.Bottom) > .5)
             throw new InvalidOperationException("Track Art does not align with the cover's top and bottom.");
-        if (Math.Abs(row.PlayButton.Bounds.Y - row.TrackArt.Bounds.Y - TrackRowLayout.VerticalInset) > .5 ||
-            Math.Abs(row.TrackArt.Bounds.Bottom - actions.Bounds.Bottom - TrackRowLayout.VerticalInset) > .5 ||
-            Math.Abs(row.Waveform.Bounds.X - row.TrackArt.Bounds.X - TrackRowLayout.ContentInset) > .5 ||
-            Math.Abs(row.TrackArt.Bounds.Right - row.Waveform.Bounds.Right - TrackRowLayout.ContentInset) > .5 ||
-            Math.Abs(row.Waveform.Bounds.Y + row.Waveform.ActualHeight / 2 - row.Cover.Bounds.Y - row.Cover.ActualHeight / 2) > .5)
-            throw new InvalidOperationException("Track controls did not stay centered inside the cover-height background.");
+        if (Math.Abs(row.PlayButton.Bounds.Y - row.TrackArt.Bounds.Y - TrackRowLayout.VerticalInset) > edgeTolerance ||
+            Math.Abs(row.TrackArt.Bounds.Bottom - actions.Bounds.Bottom - TrackRowLayout.VerticalInset) > edgeTolerance ||
+            Math.Abs(row.Waveform.Bounds.X - row.TrackArt.Bounds.X - TrackRowLayout.ContentInset) > edgeTolerance ||
+            Math.Abs(row.TrackArt.Bounds.Right - row.Waveform.Bounds.Right - TrackRowLayout.ContentInset) > edgeTolerance ||
+            Math.Abs(row.Waveform.Bounds.Y + row.Waveform.ActualHeight / 2 - row.Cover.Bounds.Y - row.Cover.ActualHeight / 2) > edgeTolerance)
+            throw new InvalidOperationException($"Track controls did not stay centered inside the cover-height background: play={row.PlayButton.Bounds}, art={row.TrackArt.Bounds}, actions={actions.Bounds}, wave={row.Waveform.Bounds}, cover={row.Cover.Bounds}, dpi={Window.DpiScale}.");
         var point = new Point(row.Waveform.Bounds.X + 40, row.Waveform.Bounds.Y + 20);
         if (((UIElement)Window.Content!).HitTest(point) != row.Waveform)
             throw new InvalidOperationException("Track Art intercepted waveform input.");
@@ -52,7 +55,7 @@ internal sealed partial class MainWindow
         BindLibraryTrackRow(row, track);
         await WaitForLikedLayoutAsync(() => ReferenceEquals(row.TrackArt.Source, source) && !row.Root.IsArrangeDirty);
         if (Math.Abs(height - row.Root.ActualHeight) > .1 || !ReferenceEquals(row.Cover.Source, cover))
-            throw new InvalidOperationException("Adding Track Art changed the row height or square cover.");
+            throw new InvalidOperationException($"Adding Track Art changed the row height or square cover: height={height}->{row.Root.ActualHeight}, sameCover={ReferenceEquals(row.Cover.Source, cover)}, bounds={row.Root.Bounds}, dpi={Window.DpiScale}.");
         if (!ReferenceEquals(GetTrackArtAsync(track), GetTrackArtAsync(track)))
             throw new InvalidOperationException("Custom background requests were not shared.");
         Console.WriteLine("TRACK_ART_ROWS_OK: sharp separate image, unchanged layout, unobstructed waveform, shared loading and recycled-row protection");

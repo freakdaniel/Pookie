@@ -27,6 +27,7 @@ internal sealed class HeaderIconButton : Button
 
     private void RefreshState()
     {
+        if (Content is UIElement ink) ink.Opacity = IsEffectivelyEnabled ? 1 : .38;
         Cursor = IsEffectivelyEnabled ? CursorType.Hand : CursorType.Arrow;
         var next = !IsEffectivelyEnabled ? 0 : IsPressed || KeyboardFocusFeedback.IsVisible(this) ? .12 : IsMouseOver ? .08 : 0;
         if (target == next) return;
@@ -52,18 +53,6 @@ internal sealed class HeaderIconButton : Button
         if (IsEffectivelyEnabled && KeyboardFocusFeedback.IsVisible(this))
             context.DrawPath(focusGeometry.Get(new Rect(Bounds.X + 2, Bounds.Y + 2, Bounds.Width - 4, Bounds.Height - 4),
                 start ? new CornerRadius(16, 4, 4, 16) : new CornerRadius(4, 16, 16, 4)), TrackButtons.OnSurface, 2);
-    }
-
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        // A single icon needs alpha on its draw, not another opacity surface.
-        context.Save();
-        try
-        {
-            if (!IsEffectivelyEnabled) context.GlobalAlpha *= .38f;
-            base.RenderSubtree(context);
-        }
-        finally { context.Restore(); }
     }
 
     protected override void OnDispose() { sheen.Dispose(); motion.Stop(); base.OnDispose(); }

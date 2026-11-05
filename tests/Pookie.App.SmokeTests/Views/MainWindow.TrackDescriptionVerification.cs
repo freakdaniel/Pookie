@@ -52,7 +52,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Description URLs did not wrap or remove adjacent prose punctuation.");
             var point = new Point(rects[0].X + Math.Min(12, rects[0].Width / 2), rects[0].Y + rects[0].Height / 2);
             var normal = trackDescriptionLinks.ColorFor(link);
-            RouteWaveformPointer(point);
+            MoveActionPointer(point);
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Cursor == CursorType.Hand && trackDescriptionLinks.HoveredUri == link.Uri);
             if (trackDescriptionLinks.ColorFor(link) != normal)
                 throw new InvalidOperationException("Description hover colour jumped instead of animating.");
@@ -66,7 +66,7 @@ internal sealed partial class MainWindow
 
             var start = new Point(rects[0].X + 2, rects[0].Y + rects[0].Height / 2);
             var last = rects[^1]; var end = new Point(last.Right - 2, last.Y + last.Height / 2);
-            RouteWaveformPointer(start); PressActionPointer(start, true);
+            MoveActionPointer(start); PressActionPointer(start, true);
             await WaitForLikedLayoutAsync(() => trackDetailDescription.IsFocused);
             RouteActionHeldPointer(end); PressActionPointer(end, false);
             await WaitForLoginFrameAsync();
@@ -80,7 +80,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Copying the selected description lost Unicode, line breaks or source URLs.");
             if (typeof(ITextInputClient).IsAssignableFrom(trackDetailDescription.GetType()))
                 throw new InvalidOperationException("The description is still an input control.");
-            RouteWaveformPointer(new Point(2, 2));
+            MoveActionPointer(new Point(2, 2));
             await WaitForLikedLayoutAsync(() => trackDescriptionLinks.ColorFor(link) == normal);
             if (trackDescriptionLinks.HoveredUri != null) throw new InvalidOperationException("Description link hover did not clear.");
             trackDetailDescription.Text = "Описание без ссылок";
@@ -181,7 +181,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDetailDescription.GetTextLayout(trackDetailDescription.ActualWidth).Lines.Count > 0 && !trackDetailDescription.IsArrangeDirty);
             var link = trackDescriptionLinks.Links.Single();
             var rect = trackDescriptionLinks.BoundsFor(link).First();
-            RouteWaveformPointer(new(rect.X + 8, rect.Y + rect.Height / 2));
+            MoveActionPointer(new(rect.X + 8, rect.Y + rect.Height / 2));
             // Previous link/icon ranges must never decorate replacement text.
             trackDetailDescription.Text = replacement;
             await WaitForLikedLayoutAsync(() => !trackDetailDescription.IsArrangeDirty);
@@ -204,7 +204,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException($"Telegram shorthand did not preserve its source or resolve correctly: {forms[i]}");
             var rect = trackDescriptionLinks.BoundsFor(link).First();
             var point = new Point(rect.X + 8, rect.Y + rect.Height / 2);
-            RouteWaveformPointer(point);
+            MoveActionPointer(point);
             if (trackDescriptionLinks.HoveredUri != link.Uri || trackDetailDescription.Cursor != CursorType.Hand)
                 throw new InvalidOperationException("Telegram shorthand did not behave as a hovered link.");
             var previous = opened.Count; RouteWaveformClick(point);

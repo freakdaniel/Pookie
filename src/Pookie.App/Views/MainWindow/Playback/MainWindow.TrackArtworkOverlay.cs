@@ -14,11 +14,11 @@ internal sealed partial class MainWindow
         internal Button? PlaybackButton { get; }
         internal bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
-        public TrackArtworkOverlay(Action? onPlay = null, double buttonSize = DefaultButtonSize)
+        public TrackArtworkOverlay(Action? onPlay = null, double buttonSize = DefaultButtonSize, bool scalingGlyphs = false)
         {
             var scale = buttonSize / DefaultButtonSize;
-            play = Icons.View("play-solid", (int)Math.Round(23 * scale), true).CenterHorizontal().CenterVertical();
-            pause = Icons.View("pause-solid", (int)Math.Round(22 * scale), true).CenterHorizontal().CenterVertical().IsVisible(false);
+            play = (scalingGlyphs ? Icons.ScalingView("play-solid", (int)Math.Round(23 * scale), true) : Icons.View("play-solid", (int)Math.Round(23 * scale), true)).CenterHorizontal().CenterVertical();
+            pause = (scalingGlyphs ? Icons.ScalingView("pause-solid", (int)Math.Round(22 * scale), true) : Icons.View("pause-solid", (int)Math.Round(22 * scale), true)).CenterHorizontal().CenterVertical().IsVisible(false);
             Background = Color.FromArgb(64, 0, 0, 0);
             Padding = new Thickness(0); BorderThickness = 0; CornerRadius = 0;
             var glyphs = new Grid().Columns("*").Rows("*").Children(play, pause);

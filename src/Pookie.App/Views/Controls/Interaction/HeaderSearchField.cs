@@ -93,12 +93,7 @@ internal sealed class HeaderSearchField : ContentControl
         private readonly GlassSheenRaster sheen = new();
         internal double Emphasis { get; set; }
 
-        protected override void RenderSubtree(IGraphicsContext context)
-        {
-            context.Save();
-            try { context.SetClipRoundedRect(Bounds, 20, 20); base.RenderSubtree(context); }
-            finally { context.Restore(); }
-        }
+        protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(Bounds, 20);
 
         protected override void OnRender(IGraphicsContext context)
         {

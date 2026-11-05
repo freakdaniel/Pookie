@@ -28,7 +28,7 @@ internal sealed class ChatReactionStrip : Panel
     {
         for (var i = 0; i < 2; i++)
         {
-            var emoji = new Image().Width(22).Height(22).StretchMode(Stretch.Uniform);
+            var emoji = ChatEmojiArtwork.View("", 22);
             var fallback = new TextBlock().FontSize(20).Foreground(TrackButtons.OnSurface).Center().IsVisible(false);
             var artwork = new Grid().Width(22).Height(22).Children(emoji, fallback);
             var first = new Image().Width(18).Height(18).StretchMode(Stretch.UniformToFill);
@@ -101,7 +101,6 @@ internal sealed class ChatReactionStrip : Panel
         { slot.Button.Opacity = amount; slot.Button.Arrange(new(x, Bounds.Y + 4, slot.Button.DesiredSize.Width, 30)); x += slot.Button.DesiredSize.Width + 4; }
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    { context.Save(); try { context.SetClip(Bounds); base.RenderSubtree(context); } finally { context.Restore(); } }
+    protected override ChildClip? GetChildClip(UIElement child) => new(Bounds);
     protected override void OnDispose() { motion.Stop(); Changing = null; base.OnDispose(); }
 }

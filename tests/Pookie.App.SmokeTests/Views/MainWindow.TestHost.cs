@@ -88,6 +88,8 @@ internal sealed partial class MainWindow
 
     partial void OnInitialized()
     {
+        // Shell execution can start Windows children with SW_HIDE. Native pointer checks need a visible window.
+        if (OperatingSystem.IsWindows()) { ProbeShowWindow(Window.Handle, 9); Window.Activate(); }
         if (uiSmoke || expandedUiSmoke || playbackMemoryUiSmoke)
         {
             lyricsService.Dispose();

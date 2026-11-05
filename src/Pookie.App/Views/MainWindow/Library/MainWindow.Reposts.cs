@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
         RefreshPlayerRepostState();
         foreach (var row in likedRows.Values)
             if (row.Track is { } track) row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
-        foreach (var row in compactTrackRows.Where(row => row.RepostMenu != null)) RefreshCompactTrackRow(row);
+        foreach (var row in compactTrackRows) RefreshCompactTrackRow(row);
         if (trackDetailState is not { } state) return;
         var reposted = repostedIds.Contains(state.Track.Id);
         TrackButtons.SetReposted(trackDetailRepost, reposted, TrackButtons.Glass);

@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
     private bool IsActiveLikedView(ItemsControl owner) => page.Value switch
     {
         Page.Library => owner == libraryGrid,
-        Page.LibraryTracks => owner == (likesAsList.Value ? likedList : likedGrid),
+        Page.LibraryTracks => owner == LikedTrackView,
         _ => false
     };
 
@@ -83,7 +83,7 @@ internal sealed partial class MainWindow
             motion.Retarget(point); motion.Edit = likedEdit;
         }
         // Empty lists still need an entry animation for the newly added item.
-        var active = page.Value == Page.Library ? libraryGrid : likesAsList.Value ? likedList : likedGrid;
+        var active = page.Value == Page.Library ? libraryGrid : LikedTrackView;
         likedEditPositions.TryAdd(active, []);
         tracks.RemoveAll(item => item.Id == track.Id);
         if (liked) tracks.Insert(0, track);

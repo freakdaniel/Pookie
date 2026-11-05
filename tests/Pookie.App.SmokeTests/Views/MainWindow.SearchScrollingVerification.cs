@@ -200,7 +200,7 @@ internal sealed partial class MainWindow
             var retained = compactTrackRows.FirstOrDefault(row => row.Track?.Id == anchorId && Math.Abs(row.Root.Bounds.Y - anchorY) < 2);
             if (retained == null) throw new InvalidOperationException($"Grouped pagination moved track {anchorId} from Y={anchorY}: now={string.Join(';', compactTrackRows.Where(row => row.Track?.Id == anchorId).Select(row => row.Root.Bounds.Y))}, offset={groupedScroll.VerticalOffset}");
             browser = new PaginationBrowser(); api.BrowserTransport = browser;
-            likedFilter.Text = ""; likesAsList.Value = true;
+            likedFilter.Text = ""; likesMode.Value = TrackViewMode.Waveform;
             var fixtures = Enumerable.Range(1, 30).Select(id => new SoundCloudTrack { Id = 80000 + id, Title = "Трек " + id, Duration = 120000 }).ToArray();
             ShowLibraryTracks(); ReplaceTracks(new(fixtures, "https://api-v2.soundcloud.com/users/42/likes?cursor=next"));
             await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 1000);
@@ -236,10 +236,10 @@ internal sealed partial class MainWindow
             viewer.SetScrollOffsets(0, SmoothScroll.Maximum(viewer));
             await Task.Delay(150, lifetime.Token);
             CaptureUiPreview("likes-pagination-skeleton");
-            likesAsList.Value = false;
+            likesMode.Value = TrackViewMode.Cards;
             if (pageItems[likedList].LoadingCount != 0 || pageItems[likedGrid].LoadingCount != libraryColumns)
                 throw new InvalidOperationException("Pagination skeletons did not follow a list/grid view change");
-            likesAsList.Value = true;
+            likesMode.Value = TrackViewMode.Waveform;
             // The user keeps scrolling while the network reply is pending. The arriving
             // page must preserve this position, rather than the request-start offset.
             viewer.SetScrollOffsets(0, viewer.VerticalOffset - 260);

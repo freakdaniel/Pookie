@@ -53,7 +53,8 @@ internal sealed partial class MainWindow
             await chatHistory.SavePageAsync(42,90,new([video],null));
             await chatHistory.SaveMediaMetadataAsync(90,video.Id,Files(videoPackage),"");
             await RenderChatMediaLibraryAsync("Видео");
-            try { await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews is [{Tile.Ready:true,Tile.Animating:false}]); }
+            // Cold native codec initialization and the bounded poster probe can outlast a layout-only wait.
+            try { await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews is [{Tile.Ready:true,Tile.Animating:false}], timeoutMs: 15000); }
             catch (Exception error)
             {
                 throw new InvalidOperationException($"Library video: active={chatLibraryPreviewActive}, previews={chatLibraryPreviews.Count}, tiles={string.Join(';',chatLibraryPreviews.Select(e => $"ready={e.Tile.Ready}, motion={e.Tile.Animating}, notice={e.Tile.Notice}"))}.", error);

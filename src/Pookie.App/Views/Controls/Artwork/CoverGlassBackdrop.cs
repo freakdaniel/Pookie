@@ -64,6 +64,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
             source = artwork.Source; sampledOpacity = artwork.Opacity;
             observedSource = source; observedOpacity = sampledOpacity;
             renderer!.BeginFrame(raster); renderer.Save();
+            using var captureViewport = WindowPresentation.CaptureViewport(raster);
             try
             {
                 renderer.Clear(Color.FromRgb(29, 29, 29)); renderer.Translate(-bounds.X, -bounds.Y);

@@ -42,9 +42,6 @@ internal sealed class ChatPanelTransition : Panel
         previous?.Arrange(new Rect(ChatColumns.SnapPixel(Bounds.X - direction * 24 * amount,scale), Bounds.Y, width, Math.Max(finalSize.Height, previous.DesiredSize.Height)));
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        context.Save(); try { context.SetClip(Bounds); base.RenderSubtree(context); } finally { context.Restore(); }
-    }
+    protected override ChildClip? GetChildClip(UIElement child) => new(Bounds);
     protected override void OnDispose() { motion.Stop(); base.OnDispose(); }
 }

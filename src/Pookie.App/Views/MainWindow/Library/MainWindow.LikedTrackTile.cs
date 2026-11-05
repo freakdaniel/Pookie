@@ -20,7 +20,7 @@ internal sealed partial class MainWindow
         internal Button PlaybackButton => overlay.PlaybackButton!;
         internal bool ShowsPause => overlay.ShowsPause;
 
-        public LikedTrackTile(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Func<Image, Grid> artworkLayer)
+        public LikedTrackTile(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Func<Image, Grid> artworkLayer, string marker = "heart-filled")
         {
             overlay = new TrackArtworkOverlay(() => { if (Track is { } track) select(track); });
             artworkFrame = new Border().CornerRadius(6).ClipToBounds()
@@ -29,7 +29,7 @@ internal sealed partial class MainWindow
                 .Content(new StackPanel().Vertical().Spacing(1).Children(
                     artworkFrame,
                     new Grid().Columns("14,*").Rows("20").Spacing(4).Margin(0, 7, 0, 0).Children(
-                        Icons.View("heart-filled", 13, Muted).CenterVertical().Column(0), Title.Column(1)),
+                        Icons.View(marker, 13, Muted).CenterVertical().Column(0), Title.Column(1)),
                     Author))
                 .OnMouseEnter(() => overlay.SetHovered(true))
                 .OnMouseLeave(() => overlay.SetHovered(false))

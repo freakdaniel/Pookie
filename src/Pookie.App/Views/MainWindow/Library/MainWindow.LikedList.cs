@@ -37,10 +37,10 @@ internal sealed partial class MainWindow
         return result;
     }
 
-    private LikedTrackRow CreateLibraryTrackRow()
+    private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null)
     {
-        var row = new LikedTrackRow(SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction)), ArtworkLayer, glass: true);
+        var row = new LikedTrackRow(select ?? SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
+            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);
@@ -70,7 +70,7 @@ internal sealed partial class MainWindow
     {
         if (row.Track is not { } track) return;
         row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
-        var selected = current?.Id == track.Id;
+        var selected = LibraryRowSelected(row);
         row.Refresh(selected, isPlaying.Value, likedIds.Contains(track.Id) || !likedIdsReady && tracks.Any(t => t.Id == track.Id) &&
             page.Value is Page.Library or Page.LibraryTracks, CanLikeTrack(track),
             selected ? likedPlaybackPosition : 0, IsLikePending(track));
@@ -84,12 +84,16 @@ internal sealed partial class MainWindow
         RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }
 
+    private bool LibraryRowSelected(LikedTrackRow row) => current?.Id == row.Track?.Id &&
+        (!collectionWaveRows.TryGetValue(row.Root, out var entry) ||
+            playbackQueue.Context?.Key == displayedCollection?.Key && playbackQueue.Current?.SourceIndex == entry.Position);
+
     private void RefreshPlaybackPosition(double seconds)
     {
         likedPlaybackPosition = seconds;
         if (current == null) return;
         foreach (var row in likedRows.Values)
-            if (row.Track?.Id == current.Id) row.RefreshPosition(true, seconds);
+            if (row.Track?.Id == current.Id) row.RefreshPosition(LibraryRowSelected(row), seconds);
         foreach (var (_, view) in chatMusicViews)
             if (view.IsCurrent() && view.Row.Track?.Id == current.Id && view.Item is { } item &&
                 (item.Playlist != null ? playbackQueue.Context?.Key == item.Key : item.Track?.Id == current.Id))

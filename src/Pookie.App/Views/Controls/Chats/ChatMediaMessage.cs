@@ -176,16 +176,9 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
         var top = attachments.IsVisible ? attachments.Bounds.Bottom : Bounds.Y;
         context.FillRectangle(new Rect(Bounds.X, top, Bounds.Width, Math.Max(0, Bounds.Bottom - top)), captionBackground);
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        if (!PhotoOnly || !reactions.HasContent) { base.RenderSubtree(context); return; }
-        // Reactions below bare media do not turn its lower corners into square
-        // edges. The timestamp continues to float over the original image.
-        context.Save();
-        try { context.SetClipRoundedRect(attachments.Bounds, 18, 18); attachments.Render(context); }
-        finally { context.Restore(); }
-        caption.Render(context); open.Render(context); reactions.Render(context); footer.Render(context);
-    }
+    protected override ChildClip? GetChildClip(UIElement child) =>
+        PhotoOnly && reactions.HasContent && ReferenceEquals(child, attachments)
+            ? ChildClip.Rounded(attachments.Bounds, 18) : base.GetChildClip(child);
 }
 
 internal sealed class ChatPhotoFrame : Panel
@@ -241,12 +234,13 @@ internal sealed class ChatPhotoFrame : Panel
         Picture.Measure(fitted); preview.Measure(fitted);
         var area = new Size(width, fitted.Height);
         Backdrop.Measure(area); Skeleton.Measure(area);
-        Backdrop.IsVisible = width > fitted.Width + 1;
         return area;
     }
     protected override Size ArrangeOverride(Size finalSize)
     {
         fitted = ChatImagePreview.Fit(intrinsic, finalSize.Width);
+        // Only the final slot decides visibility. Flipping it during measure and
+        // again for the animated arrange height creates an endless layout loop.
         Backdrop.IsVisible = finalSize.Width > fitted.Width + 1 || finalSize.Height > fitted.Height + 1;
         var rect = new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height);
         Backdrop.Arrange(rect); Skeleton.Arrange(rect);

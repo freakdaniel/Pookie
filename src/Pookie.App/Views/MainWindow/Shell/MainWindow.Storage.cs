@@ -19,13 +19,15 @@ internal sealed partial class MainWindow
         preferences = saved;
         volume.Value = saved.Volume; previousVolume = saved.PreviousVolume; muted.Value = saved.Volume == 0;
         playbackQueue.SetRepeat(saved.Repeat);
-        discordEnabled.Value = saved.DiscordEnabled; shuffle.Value = saved.Shuffle; likesAsList.Value = saved.LikesAsList;
+        discordEnabled.Value = saved.DiscordEnabled; shuffle.Value = saved.Shuffle;
+        likesMode.Value = saved.LikesView ?? (saved.LikesAsList ? TrackViewMode.Waveform : TrackViewMode.Cards);
+        collectionMode.Value = saved.PlaylistView;
     }
 
     private void ObserveConfiguration()
     {
         void Changed() { configurationTimer.Stop(); configurationTimer.Start(); RefreshSettingsControls(); }
-        volume.Changed += Changed; discordEnabled.Changed += Changed; shuffle.Changed += Changed; likesAsList.Changed += Changed;
+        volume.Changed += Changed; discordEnabled.Changed += Changed; shuffle.Changed += Changed; likesMode.Changed += Changed; collectionMode.Changed += Changed;
     }
 
     private void SaveConfiguration()
@@ -34,7 +36,8 @@ internal sealed partial class MainWindow
         try
         {
             preferences = preferences with { Volume = volume.Value, PreviousVolume = previousVolume, DiscordEnabled = discordEnabled.Value,
-                Shuffle = shuffle.Value, LikesAsList = likesAsList.Value, Repeat = playbackQueue.Repeat };
+                Shuffle = shuffle.Value, LikesAsList = likesMode.Value != TrackViewMode.Cards, LikesView = likesMode.Value,
+                PlaylistView = collectionMode.Value, Repeat = playbackQueue.Repeat };
             var save = configuration.SaveAsync(preferences);
             Run(async () =>
             {

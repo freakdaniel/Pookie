@@ -58,7 +58,8 @@ internal sealed partial class MainWindow
         if (!await MessageBox.AskYesNoAsync("Сбросить настройки приложения?", detail: "Восстановятся исходные предпочтения интерфейса, воспроизведения и чатов; аккаунт, очередь и обучение сохранятся; сохранённые черновики не удаляются", owner: Window)) return "";
         UpdatePreferences(_ => new AppConfiguration());
         discordEnabled.Value = true; if (presence != null) presence.Enabled = true;
-        likesAsList.Value = false; shuffle.Value = false; volume.Value = previousVolume = 70;
+        likesMode.Value = TrackViewMode.Cards; collectionMode.Value = TrackViewMode.List;
+        shuffle.Value = false; volume.Value = previousVolume = 70;
         playbackQueue.SetRepeat(Pookie.App.Playback.RepeatMode.Off); RefreshRepeatState(); RefreshQueue();
         SaveConfiguration(); RefreshSettingsControls();
         return "Исходные настройки восстановлены";

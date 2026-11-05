@@ -9,7 +9,7 @@ internal sealed partial class MainWindow
     {
         foreach (var listView in new[] { false, true })
         {
-            likesAsList.Value = listView;
+            likesMode.Value = listView ? TrackViewMode.Waveform : TrackViewMode.Cards;
             await WaitForLikedLayoutAsync(() => (listView ? likedList : likedGrid).ActualWidth > 100);
             var bounds = likesLoadingView.Root.Bounds;
             SetLikesLoading(true);
@@ -24,7 +24,7 @@ internal sealed partial class MainWindow
             if (likesLoadingView.Root.Bounds != bounds || ((FrameworkElement)likesLoadingView.Root.Children[0]).Opacity != 1)
                 throw new InvalidOperationException("Skeleton reveal changed the viewport or left content faded.");
         }
-        likesAsList.Value = false;
+        likesMode.Value = TrackViewMode.Cards;
         await WaitForLikedLayoutAsync(() => likedTiles.Values.Count(tile => tile.Track != null && tile.Root.ActualWidth > 100) >= 12);
         Console.WriteLine("UI_LIBRARY_LOADING_OK: shimmer and crossfade in grid/list views, stable viewport, no empty label or invisible input targets");
     }

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -40,17 +41,17 @@ internal sealed class PlayerQueueDrawer : MenuLayer
     {
         this.anchor = anchor; this.bar = bar; this.frame = frame; this.backdrop = backdrop; Card = card;
         Focusable = true;
-        Add(card); IsVisible = false;
+        Add(card); Card.Opacity = 0; IsVisible = false;
         backdrop.PaletteChanged += InvalidateVisual;
-        motion.TickCallback = progress => { amount = from + ((target ? 1 : 0) - from) * progress; InvalidateVisual(); };
-        motion.CompletedCallback = () => { amount = target ? 1 : 0; if (!target) IsVisible = false; InvalidateVisual(); };
+        motion.TickCallback = progress => { amount = from + ((target ? 1 : 0) - from) * progress; Card.Opacity = ContentReveal; InvalidateVisual(); };
+        motion.CompletedCallback = () => { amount = target ? 1 : 0; Card.Opacity = ContentReveal; if (!target) IsVisible = false; InvalidateVisual(); };
     }
 
     internal override void Show() => SetOpen(true);
     internal override void Close(bool immediate = false)
     {
         if (immediate)
-        { motion.Stop(); target = false; amount = 0; IsVisible = false; Card.IsHitTestVisible = false; InvalidateVisual(); }
+        { motion.Stop(); target = false; amount = 0; Card.Opacity = 0; IsVisible = false; Card.IsHitTestVisible = false; InvalidateVisual(); }
         else SetOpen(false);
     }
 
@@ -79,7 +80,7 @@ internal sealed class PlayerQueueDrawer : MenuLayer
         return finalSize;
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override void OnRender(IGraphicsContext context)
     {
         var surface = SurfaceBounds;
         if (amount <= .0001 || surface.Height <= 1 || Card.ActualHeight <= 0) return;
@@ -100,11 +101,20 @@ internal sealed class PlayerQueueDrawer : MenuLayer
             context.SetClipPath(shape);
             RenderedGradient = backdrop.CurrentGradient;
             backdrop.RenderRegion(context, new Rect(left - leftJoin, top, surface.Width + leftJoin + rightJoin, surface.Height));
-            context.GlobalAlpha *= (float)ContentReveal;
-            context.Translate(0, ContentOffset);
-            Card.Render(context);
         }
         finally { context.Restore(); }
+    }
+
+    protected override ChildClip? GetChildClip(UIElement child)
+    {
+        var surface = SurfaceBounds;
+        var radius = Math.Min(24, surface.Height / 2);
+        return ChildClip.Rounded(new Rect(surface.X, surface.Y - ContentOffset, surface.Width, surface.Height + radius), radius);
+    }
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
+    {
+        transform = Matrix3x2.CreateTranslation(0, (float)ContentOffset);
+        return !transform.IsIdentity;
     }
 
     protected override UIElement? OnHitTest(Point point)

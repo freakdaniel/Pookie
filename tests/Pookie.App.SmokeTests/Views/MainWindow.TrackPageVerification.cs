@@ -12,6 +12,8 @@ internal sealed partial class MainWindow
         var oldSession = api.Session; var oldTransport = api.BrowserTransport;
         try
         {
+            if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+                throw new InvalidOperationException("Could not expose the native track fixture.");
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
             var fixtures = tracks.Take(2).Select((track, index) => track with
             {
@@ -33,7 +35,7 @@ internal sealed partial class MainWindow
                 .Select(i => (float)(.22 + .55 * Math.Abs(Math.Sin(i * .41)) * (.45 + .55 * Math.Abs(Math.Sin(i * .037))))).ToArray());
             var browser = new TrackPageFixtureBrowser(fixtures);
             api.Session = new("fixture", "fixture-token", "Test"); api.BrowserTransport = browser;
-            libraryLikes = new(fixtures, null); ShowLibraryTracks(); likesAsList.Value = true;
+            libraryLikes = new(fixtures, null); ShowLibraryTracks(); likesMode.Value = TrackViewMode.Waveform;
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[0].Id && row.Title.ActualWidth > 100));
             await VerifyTrackArtRowAsync(likedRows.Values.First(row => row.Track?.Id == fixtures[0].Id), fixtures[0], trackArt);
             var originalPlayback = current?.Id; var originalGeneration = playGeneration;
@@ -131,7 +133,7 @@ internal sealed partial class MainWindow
             if (trackDetailState.Comments.Comments.Length != 2 || trackDetailMoreComments.IsVisible)
                 throw new InvalidOperationException("Comments pagination did not deduplicate entries or reach its end.");
             await MoveNavigationAsync(-1);
-            if (page.Value != Page.LibraryTracks || !likesAsList.Value || tracks.Count != 2)
+            if (page.Value != Page.LibraryTracks || likesMode.Value != TrackViewMode.Waveform || tracks.Count != 2)
                 throw new InvalidOperationException("Back lost the likes view.");
             await MoveNavigationAsync(1);
             if (page.Value != Page.Track || trackDetailState?.Comments.Comments.Length != 2 || trackDetailState.Sidebar?.Playlists.Length != 4)
@@ -144,6 +146,7 @@ internal sealed partial class MainWindow
             await late;
             if (trackDetailState?.Track.Id != fixtures[1].Id || trackDetailTitle.Text != fixtures[1].Title)
                 throw new InvalidOperationException("A late metadata response replaced the new track page.");
+            await WaitForLikedLayoutAsync(() => !trackDetailScroll.IsArrangeDirty && TrackTimelineInViewport());
             SetQueue(fixtures[1]);
             if (playbackQueue.Current?.Track.Id != fixtures[1].Id || playbackQueue.Context?.Kind != Pookie.App.Playback.PlaybackContextKind.Track)
                 throw new InvalidOperationException("Track page playback copied the likes queue.");
@@ -164,7 +167,7 @@ internal sealed partial class MainWindow
             repostedIds.Remove(fixtures[1].Id); RefreshRepostState();
             await VerifyActionColorTransitionsAsync();
             await VerifyTrackSectionsUiAsync();
-            ShowLibraryTracks(); likesAsList.Value = true;
+            ShowLibraryTracks(); likesMode.Value = TrackViewMode.Waveform;
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[0].Id && row.Root.ActualHeight > 100));
             var copyRow = likedRows.Values.First(row => row.Track?.Id == fixtures[0].Id);
             var connectedActions = new List<MaterialTrackButton>();
@@ -192,7 +195,11 @@ internal sealed partial class MainWindow
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("TRACK_PAGE_UI_FAILED: " + error); }
-        finally { api.Session = oldSession; api.BrowserTransport = oldTransport; Window.Close(); }
+        finally
+        {
+            if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
+            api.Session = oldSession; api.BrowserTransport = oldTransport; Window.Close();
+        }
     }
 
     private async Task VerifyLongTrackHeroResizeAsync()

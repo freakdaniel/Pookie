@@ -21,7 +21,7 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Fan background extends beyond its avatar.");
         if (Math.Abs(fan.Bounds.Right - fanContent.Children[2].Bounds.Right - 16) > 1)
             throw new InvalidOperationException("Fan playback count lost its right padding.");
-        VisualTree.Visit(trackDetailComments, element =>
+        LogicalTree.Visit(trackDetailComments, element =>
         {
             if (element is TextBlock { Text: "Этот момент особенно хорош 🎧" } body && body.FontWeight != FontWeight.Normal)
                 throw new InvalidOperationException("Comment body inherited a medium font weight.");

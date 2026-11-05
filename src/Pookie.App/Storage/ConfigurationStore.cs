@@ -20,6 +20,8 @@ internal sealed record AppConfiguration
     public bool DiscordEnabled { get; set; } = true;
     public bool Shuffle { get; set; }
     public bool LikesAsList { get; set; }
+    public TrackViewMode? LikesView { get; set; }
+    public TrackViewMode PlaylistView { get; set; } = TrackViewMode.List;
     public RepeatMode Repeat { get; set; } = RepeatMode.Off;
     public int SchemaVersion { get; set; } = 2;
     public bool SystemMediaEnabled { get; set; } = true;
@@ -48,6 +50,9 @@ internal sealed record AppConfiguration
     {
         SchemaVersion = Math.Max(2, SchemaVersion),
         Repeat = Enum.IsDefined(Repeat) ? Repeat : RepeatMode.Off,
+        LikesView = LikesView is { } view && Enum.IsDefined(view) ? view : LikesAsList ? TrackViewMode.Waveform : TrackViewMode.Cards,
+        LikesAsList = LikesView is { } legacyView && Enum.IsDefined(legacyView) ? legacyView != TrackViewMode.Cards : LikesAsList,
+        PlaylistView = Enum.IsDefined(PlaylistView) ? PlaylistView : TrackViewMode.List,
         Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, 100) : 70,
         PreviousVolume = double.IsFinite(PreviousVolume) && PreviousVolume > 0 ? Math.Clamp(PreviousVolume, 1, 100) : 70,
         StartupPage = StartupPage is "home" or "library" ? StartupPage : "home",
@@ -66,7 +71,7 @@ internal sealed class ConfigurationStore(AppDataPaths paths)
     {
         try
         {
-            if (!File.Exists(file)) return new();
+            if (!File.Exists(file)) return new AppConfiguration().Normalize();
             return (JsonSerializer.Deserialize(File.ReadAllText(file), StorageJson.Default.AppConfiguration) ?? new()).Normalize();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return new(); }

@@ -9,9 +9,6 @@ namespace Pookie.App;
 // retained children alive, but do not traverse/render their presentation tree.
 internal sealed class PresentationRoot : Grid
 {
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        if (FindVisualRoot() is Window { WindowState: WindowState.Minimized }) return;
-        base.RenderSubtree(context);
-    }
+    protected override ChildClip? GetChildClip(UIElement child) =>
+        FindVisualRoot() is Window { WindowState: WindowState.Minimized } ? new ChildClip(Rect.Empty) : base.GetChildClip(child);
 }

@@ -14,7 +14,7 @@ SPDX-FileComment = "Apple Color Emoji artwork rasterized at 72px from samuelngs/
 
 [[annotations]]
 path = [
-  ".editorconfig", ".gitattributes", ".gitignore", ".github/**",
+  ".editorconfig", ".gitattributes", ".gitignore", ".github/**", "NuGet.config",
   "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**", "tools/**",
   "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "src/**/*.md", "src/**/*.json", "tests/**",
   "src/Pookie.App/Assets/logo.svg",

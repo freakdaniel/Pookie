@@ -137,7 +137,6 @@ internal sealed class ChatVoiceWave : Control
             context.FillRoundedRectangle(new Rect(Bounds.X+i*4,Bounds.Y+(Bounds.Height-height)/2,2,height),1,1,brush);
         }
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    { context.Save(); try { context.SetClip(Bounds); base.RenderSubtree(context); } finally { context.Restore(); } }
+    protected override ChildClip? GetChildClip(UIElement child) => new(Bounds);
     protected override void OnDispose() { scroll.Stop(); playback.Stop(); base.OnDispose(); }
 }

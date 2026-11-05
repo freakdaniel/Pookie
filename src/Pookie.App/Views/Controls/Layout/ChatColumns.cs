@@ -20,6 +20,7 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
     private FrameworkElement? details;
     private readonly Border outsideClickLayer = new Border().Background(Color.Transparent).BorderThickness(0).CornerRadius(0).Padding(0);
     internal Action? CloseDetails;
+    internal Action? GeometryChanged;
     internal FrameworkElement? OverlayHeader;
     internal bool Animating => panelAnimation.IsRunning;
     internal double Reveal => reveal;
@@ -36,8 +37,8 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
             panelOpen = value; panelVisible = true; if (details != null) details.IsHitTestVisible = value && reveal > .7; outsideClickLayer.IsHitTestVisible = value; var from = reveal; var to = value ? 1d : 0d;
             panelAnimation.Stop();
             if (details != null) details.Opacity = reveal;
-            panelAnimation.TickCallback = t => { reveal = from + (to - from) * t; if (details != null) { details.Opacity = reveal; details.IsHitTestVisible = panelOpen && reveal > .7; } InvalidateMeasure(); };
-            panelAnimation.CompletedCallback = () => { reveal = to; panelVisible = panelOpen; InvalidateMeasure(); };
+            panelAnimation.TickCallback = t => { reveal = from + (to - from) * t; if (details != null) { details.Opacity = reveal; details.IsHitTestVisible = panelOpen && reveal > .7; } GeometryChanged?.Invoke(); InvalidateMeasure(); };
+            panelAnimation.CompletedCallback = () => { reveal = to; panelVisible = panelOpen; GeometryChanged?.Invoke(); InvalidateMeasure(); };
             panelAnimation.Start(); InvalidateMeasure();
         }
     }
@@ -61,7 +62,7 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
         var center = compact ? width : Math.Max(0, width - SidebarWidth - ColumnGap);
         // Dock only when the complete reading column fits. Otherwise the drawer
         // overlays an unchanged conversation instead of narrowing its messages.
-        docked = panelVisible && !compact && center - SidebarWidth - ColumnGap >= ReadingWidth;
+        docked = panelVisible && !compact && center - SidebarWidth - ColumnGap + 96d / GetDpi() >= ReadingWidth;
         inbox.IsVisible = !compact || !selected;
         thread.IsVisible = !compact || selected;
         if (inbox.IsVisible) inbox.Measure(new Size(compact ? width : SidebarWidth, availableSize.Height));
@@ -85,12 +86,7 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
         if (panelVisible && details != null) details.Arrange(new Rect(detailsX, Bounds.Y, detailsWidth, finalSize.Height));
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        context.Save();
-        try { context.SetClip(Bounds); base.RenderSubtree(context); }
-        finally { context.Restore(); }
-    }
+    protected override ChildClip? GetChildClip(UIElement child) => new(Bounds);
     protected override UIElement? OnHitTest(Point point)
     {
         // The transparent outside-click layer dismisses from the history, but
@@ -103,5 +99,5 @@ internal sealed class ChatColumns(FrameworkElement inbox, FrameworkElement threa
         }
         return base.OnHitTest(point);
     }
-    protected override void OnDispose() { panelAnimation.Stop(); base.OnDispose(); }
+    protected override void OnDispose() { panelAnimation.Stop(); GeometryChanged = null; base.OnDispose(); }
 }

@@ -26,6 +26,11 @@ Run native UI checks sequentially. On Linux, set `XDG_DATA_HOME` to a dedicated 
 directory when the production app is open: MewUI's extracted font files otherwise
 share the same cache and another process can remove them when it exits.
 
+`POOKIE_EMOJI_QUALITY_PROBE=1` with `--chat-emoji-ui-smoke-test --no-audio`
+compares native GPU emoji pixels against high-quality sampling at 96/110/144/192
+DPI and 18.2/22/28 DIP. It verifies fractional placement and restoration of the
+incoming sampling mode. `POOKIE_UI_PREVIEW` optionally saves the reference images.
+
 `--tooltips-ui-smoke-test --no-audio` checks the shared Material 3 plain hints:
 inverse surface, wrapped text/emoji, anchor-centred placement and edge fallback,
 96/110/144/192 DPI, pixel-verified enter/exit opacity, uninterrupted reversal,
@@ -93,6 +98,14 @@ specific control. Delayed GIF fixtures check the first restored frame, bottom
 anchoring after intrinsic-size changes, and encrypted disk reuse by a fresh loader.
 GIF bytes share the account media budget and favorite pinning; uploaded attachment
 containers are cached immediately. All requests in these checks use local handlers.
+
+`PUBLIC_EMOJI_EDITOR_OK` additionally disables the compatibility text-layout hook
+while checking the composer's public generator/transformer pipeline: family/skin-tone/
+flag artwork metrics, original Unicode selection, Backspace/Undo and stacked-mark
+protection. Standard labels and single-line editors retain their compatibility hook.
+Chat geometry checks sample rendered frames without an injected Window callback.
+Metadata checks traverse the logical comment tree so parked rows remain covered;
+the visual tree deliberately contains only realized rows for rendering and captures.
 
 The chat music/media checks also hold an older network page while scrolling the
 initial 30-message conversation to its upper edge. History must load automatically,
@@ -258,6 +271,17 @@ SoundCloud's related-track order and filter exclusions, unavailable tracks and
 likely reuploads. Explicit speed edits remain distinct. Exclusions from the
 former Wave profile are imported into the account's radio settings.
 
+For a passive carousel performance probe, set `POOKIE_MIX_PROBE=fixture` or
+`POOKIE_MIX_PROBE=live` and run the same Home command. Live mode reads the saved
+account's actual mixes and artwork through a separate temporary browser profile;
+it does not submit playback, history, likes or messages. The probe observes
+`Window.FrameRendered` during automatic motion and five rear-cover clicks, then
+checks the paused hover state. It does not request frames during measurement.
+Active frame intervals exclude the intentional idle wait between completed turns
+and the next click. Optional `POOKIE_PERF_CAPTURE=<absolute-json-path>` enables
+MewUI timing/allocation counters; `POOKIE_UI_PREVIEW=<directory>` saves a visual
+capture. `icon_raster_builds` reports SVG texture creation during each phase.
+
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
 centred player metadata and animated title/artist links, artist navigation and
 idempotent title clicks, comment skeletons and avatar fades, waveform preview
@@ -328,6 +352,10 @@ own-only deletion, reply preservation, disabled comments, and stale account resp
 It uses a fixture transport and never posts or deletes real SoundCloud comments.
 
 `--collections-ui-smoke-test` checks the compact playlist rows without numbering, row menus,
+fixed like/duration columns, playback counts, full-cover play scrims and reversible
+hover-action fades with keyboard focus and hidden hit targets. Card/list switching
+uses the likes view controls, virtualized cards and original playlist positions;
+it preserves the filter and playback queue. It also checks
 filtering without changing the full playback source, expandable description,
 narrow/wide hero layout, back-navigation filter/scroll, playlist likes/reposts,
 following/unfollowing, isolated pending states, playlist selection and stale account

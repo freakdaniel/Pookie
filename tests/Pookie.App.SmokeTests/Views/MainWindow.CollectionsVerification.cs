@@ -89,9 +89,13 @@ internal sealed partial class MainWindow
             RefreshFollowingButtons();
             var compact = compactTrackRows.First(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window);
             if (Math.Abs(compact.Cover.Bounds.X - compact.Root.Bounds.X - 8) > 1 || Math.Abs(compact.Root.ActualHeight - 64) >= 1 / Window.DpiScale || Math.Abs(compact.Cover.ActualWidth - 44) >= 1 / Window.DpiScale ||
-                compact.More == null || compact.Duration.Bounds.Right >= compact.Root.Bounds.Right ||
+                compact.Duration.Bounds.Right >= compact.Root.Bounds.Right ||
                 likedRows.Values.Any(row => row.Root.FindVisualRoot() == Window && row.Track?.Id == 9000))
                 throw new InvalidOperationException("Playlist rows did not use compact unnumbered tracks and trailing actions.");
+            await VerifyCompactTrackPresentationAsync(compact);
+            MoveActionPointer(new(compact.Cover.Bounds.X + 4, compact.Cover.Bounds.Y + 4));
+            await WaitForLikedLayoutAsync(() => compact.Actions.Strength > .999);
+            if (compact.More == null) throw new InvalidOperationException("Hovered playlist row did not realize its action menu.");
             RouteWaveformClick(new(compact.More.Bounds.X + compact.More.ActualWidth / 2, compact.More.Bounds.Y + compact.More.ActualHeight / 2));
             if (PopupAppearance.MenuFor(compact.Root).PlacementTarget != compact.More) throw new InvalidOperationException("Playlist row menu did not open from its button.");
             RouteWaveformClick(new(collectionMeta.Bounds.X + 4, collectionMeta.Bounds.Y + 4));
@@ -176,9 +180,9 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => collectionCards.Any(pair => pair.Value.Item.Key == item.Key && pair.Key.ActualWidth > 100 && collectionGrid.IsAncestorOf(pair.Key)));
         var root = collectionCards.First(pair => pair.Value.Item.Key == item.Key && collectionGrid.IsAncestorOf(pair.Key)).Key;
         var card = CollectionCard(root);
-        RouteWaveformPointer(new Point(2, 2));
+        MoveActionPointer(new Point(2, 2));
         await WaitForLikedLayoutAsync(() => card.Playback.Opacity < .001);
-        RouteWaveformPointer(new Point(card.Frame.Bounds.X + 10, card.Frame.Bounds.Y + 10));
+        MoveActionPointer(new Point(card.Frame.Bounds.X + 10, card.Frame.Bounds.Y + 10));
         await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999 && Math.Abs(card.Playback.PlaybackButton!.ActualWidth - 46) < 1 / Window.DpiScale);
         CaptureUiPreview("playlist-card-hover");
         var originalPlayer = player;
@@ -188,13 +192,14 @@ internal sealed partial class MainWindow
             player = null;
             var generation = navigationGeneration;
             var play = card.Playback.PlaybackButton!;
+            MoveActionPointer(new Point(play.Bounds.X + play.ActualWidth / 2, play.Bounds.Y + play.ActualHeight / 2));
             RouteWaveformClick(new Point(play.Bounds.X + play.ActualWidth / 2, play.Bounds.Y + play.ActualHeight / 2));
             await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == item.Key);
             if (page.Value != Page.LibraryPlaylists || navigationGeneration != generation ||
                 playbackQueue.Snapshot.Source.Count != 12 || playbackQueue.Current?.Track.Id != 9000)
                 throw new InvalidOperationException("Playlist overlay navigated instead of starting its own complete queue.");
             current = playbackQueue.Current.Track; isPlaying.Value = true; RefreshLikedPlayback();
-            RouteWaveformPointer(new Point(2, 2));
+            MoveActionPointer(new Point(2, 2));
             await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999 && card.Playback.ShowsPause);
             isPlaying.Value = false; RefreshLikedPlayback();
             if (card.Playback.ShowsPause) throw new InvalidOperationException("Paused playlist card still shows pause.");
@@ -231,7 +236,7 @@ internal sealed partial class MainWindow
             ArtworkUrl = "https://i1.sndcdn.com/collection-fixture-t500x500.jpg",
             PermalinkUrl = "https://soundcloud.com/fixture/sets/road",
             Tracks = Enumerable.Range(0, 12).Select(i => new SoundCloudTrack { Id = 9000 + i, Title = "Трек " + (i + 1), Duration = 120000,
-                User = new() { Id = 7, Username = "Исполнитель" }, LikesCount = 12,
+                User = new() { Id = 7, Username = "Исполнитель" }, LikesCount = 12, PlaybackCount = 123456 + i * 100,
                 PermalinkUrl = "https://soundcloud.com/fixture/track-" + i }).ToArray()
         };
         public int FollowWrites, PlaylistWrites, PlaylistLikeWrites;

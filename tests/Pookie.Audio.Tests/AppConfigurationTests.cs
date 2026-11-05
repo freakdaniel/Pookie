@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Pookie.App.Storage;
+using Pookie.App;
 using Xunit;
 
 namespace Pookie.Audio.Tests;
@@ -18,6 +19,8 @@ public sealed class AppConfigurationTests
                 """);
             var saved = new ConfigurationStore(paths).Load();
             Assert.Equal(34, saved.Volume); Assert.False(saved.DiscordEnabled); Assert.True(saved.LikesAsList);
+            Assert.Equal(TrackViewMode.Waveform, saved.LikesView);
+            Assert.Equal(TrackViewMode.List, saved.PlaylistView);
             Assert.True(saved.AutoContinue); Assert.True(saved.NormalizeVolume); Assert.True(saved.ChatSaveDrafts);
         }
         finally { Directory.Delete(root, true); }
@@ -59,5 +62,31 @@ public sealed class AppConfigurationTests
         var normalized = saved.Normalize();
         Assert.Equal(2, normalized.SchemaVersion); Assert.Equal("home", normalized.StartupPage);
         Assert.Equal(0, normalized.LastSearchSection); Assert.Equal("NEWEST", normalized.CommentSort);
+    }
+
+    [Theory]
+    [InlineData(0, 2)]
+    [InlineData(1, 0)]
+    [InlineData(2, 1)]
+    public void Three_track_views_roundtrip_independently(int likesValue, int playlistValue)
+    {
+        var likes = (TrackViewMode)likesValue; var playlist = (TrackViewMode)playlistValue;
+        var root = Directory.CreateTempSubdirectory("pookie-three-views-").FullName;
+        try
+        {
+            var store = new ConfigurationStore(new(root));
+            store.Save(new() { LikesView = likes, PlaylistView = playlist });
+            var saved = store.Load();
+            Assert.Equal(likes, saved.LikesView); Assert.Equal(playlist, saved.PlaylistView);
+            Assert.Equal(likes != TrackViewMode.Cards, saved.LikesAsList);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Invalid_track_views_fall_back_to_legacy_likes_and_compact_playlists()
+    {
+        var saved = new AppConfiguration { LikesAsList = true, LikesView = (TrackViewMode)99, PlaylistView = (TrackViewMode)99 }.Normalize();
+        Assert.Equal(TrackViewMode.Waveform, saved.LikesView); Assert.Equal(TrackViewMode.List, saved.PlaylistView);
     }
 }

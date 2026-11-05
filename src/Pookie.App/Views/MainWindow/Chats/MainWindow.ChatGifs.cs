@@ -87,7 +87,7 @@ internal sealed partial class MainWindow
         context.Register("title", title); context.Register("grid", grid);
         for (var i = 0; i < 8; i++)
         {
-            var image = new Image().Width(28).Height(28).StretchMode(Stretch.Uniform);
+            var image = ChatEmojiArtwork.View("");
             var slot = new EmojiSlot();
             var button = TrackButtons.Action(image, () => { if (slot.Value != null) PickChatEmoji(slot.Value); }, TrackButtons.Text, 40).Padding(2).CornerRadius(10).Column(i);
             chatEmojiSlots.Add(button, slot);

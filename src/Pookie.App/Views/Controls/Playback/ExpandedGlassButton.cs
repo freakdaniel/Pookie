@@ -119,12 +119,7 @@ internal sealed class ExpandedGlassSurface : ContentControl
         sheen.Draw(context, Bounds, corners, .35, GetDpi() / 96d, resizing: IsResizing);
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        context.Save();
-        try { context.SetClipRoundedRect(Bounds, CornerRadius, CornerRadius); base.RenderSubtree(context); }
-        finally { context.Restore(); }
-    }
+    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(Bounds, CornerRadius);
 
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {

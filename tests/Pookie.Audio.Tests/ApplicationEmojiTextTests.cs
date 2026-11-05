@@ -40,6 +40,23 @@ public sealed class ApplicationEmojiTextTests
         var inline = Assert.Single(ApplicationEmojiText.Project(sliced).Inlines);
         Assert.Equal(0, inline.Position); Assert.Equal(4, inline.Length);
     }
+    [Fact]
+    public void PublicEditorMarkProtectionKeepsExistingObjectsAndIsIdempotent()
+    {
+        var text = "ฏ" + new string('\u0e4e', 256) + " 😀";
+        var inlines = new List<InlineRun>();
+        ApplicationEmojiText.AddEditorCombiningInlines(text.AsMemory(), inlines);
+        Assert.NotEmpty(inlines);
+        Assert.All(inlines, run => Assert.Equal(0, run.Object.Measure().Width));
+        var count = inlines.Count;
+        ApplicationEmojiText.AddEditorCombiningInlines(text.AsMemory(), inlines);
+        Assert.Equal(count, inlines.Count);
+
+        var chip = new Chip();
+        var protectedInlines = new List<InlineRun> { new(0, text.Length, chip) };
+        ApplicationEmojiText.AddEditorCombiningInlines(text.AsMemory(), protectedInlines);
+        Assert.Same(chip, Assert.Single(protectedInlines).Object);
+    }
     private sealed class Chip : IInlineTextObject
     {
         public InlineMetrics Measure() => new(100, 20, 16);

@@ -120,6 +120,7 @@ internal sealed class MaterialTrackButton : Button
 
     private void RefreshSurface(bool snap = false)
     {
+        if (Content is UIElement ink) ink.Opacity = IsEffectivelyEnabled || pending ? 1 : .38;
         var variant = StyleName;
         if (variant == null) return;
         var surface = palette?.Surface ?? TrackButtons.Surface(variant);
@@ -177,20 +178,6 @@ internal sealed class MaterialTrackButton : Button
         else base.OnRender(context);
         if (glassFinish) sheen.Draw(context, GetSnappedBorderBounds(Bounds),
             connected ? ConnectedCorners : new CornerRadius(CornerRadius), .35, GetDpi() / 96d);
-    }
-
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        if (IsEffectivelyEnabled || pending) { base.RenderSubtree(context); return; }
-        // Fading a disabled control through UIElement.Opacity allocates a
-        // viewport-sized group on MewVG/Win32. Its ink needs no separate layer.
-        context.Save();
-        try
-        {
-            context.GlobalAlpha *= .38f;
-            base.RenderSubtree(context);
-        }
-        finally { context.Restore(); }
     }
 
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)

@@ -11,6 +11,8 @@ internal sealed partial class MainWindow
         Grid? fixture = null;
         try
         {
+            if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+                throw new InvalidOperationException("Could not expose the native tooltip fixture.");
             timer.Stop(); Window.Activate(); await ShowWorkspaceAsync();
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => Window.IsActive && workspace.IsVisible && startupHeader.Opacity > .999);
@@ -25,7 +27,7 @@ internal sealed partial class MainWindow
                 .Width(180).Height(100).Left().Top().Margin(600, 240, 0, 0);
             fixture = new Grid().Columns("*").Rows("*").Children(middle, top, left, scroll);
             ((Panel)Window.Content!).Add(fixture);
-            await WaitForLikedLayoutAsync(() => middle.ActualWidth == 120 && top.Bounds.Right > 1000);
+            await WaitForLikedLayoutAsync(() => Math.Abs(middle.ActualWidth - 120) <= 1 / Window.DpiScale && top.Bounds.Right > 1000);
             MoveActionPointer(new(2, 2)); Window.FocusManager.ClearFocus();
             var initialOverlayCount = Window.OverlayLayer.Count;
             var popupCountProperty = typeof(Window).GetProperty("DebugPopupCount", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
@@ -148,6 +150,7 @@ internal sealed partial class MainWindow
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine("MATERIAL_TOOLTIPS_UI_FAILED: " + error); }
         finally
         {
+            if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
             if (fixture != null) { ((Panel)Window.Content!).Remove(fixture); fixture.Dispose(); }
             Window.Close();
         }
@@ -162,10 +165,11 @@ internal sealed partial class MainWindow
             (int)Math.Ceiling(bounds.Width * Window.DpiScale), (int)Math.Ceiling(bounds.Height * Window.DpiScale), Window.DpiScale, premultiplied: true));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         context.BeginFrame(surface); context.Clear(Color.Transparent); context.Translate(-bounds.X, -bounds.Y);
+        using var captureViewport = WindowPresentation.CaptureViewport(surface);
         tooltipLayer.Render(context); context.EndFrame();
         var pixels = ((ICpuPixelSurface)surface).CopyPixels();
         var maximum = Enumerable.Range(0, pixels.Length / 4).Max(index => pixels[index * 4 + 3]);
         if (maximum == 0 || maximum > tooltipLayer.Reveal * 255 + 3)
-            throw new InvalidOperationException($"Tooltip backing did not fade with its text: alpha={maximum}, reveal={tooltipLayer.Reveal}.");
+            throw new InvalidOperationException($"Tooltip backing did not fade with its text: alpha={maximum}, reveal={tooltipLayer.Reveal}, layer={tooltipLayer.Bounds}, card={tooltipLayer.Card.Bounds}, surface={bounds}, origin={tooltipLayer.TransformOrigin}.");
     }
 }

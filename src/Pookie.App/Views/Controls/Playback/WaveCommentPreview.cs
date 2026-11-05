@@ -28,7 +28,7 @@ internal sealed class WaveCommentPreview : Panel
 
     internal WaveCommentPreview()
     {
-        IsVisible = false; IsHitTestVisible = false;
+        IsVisible = false; IsHitTestVisible = false; Opacity = 0;
         content = new StackPanel().Vertical().Spacing(4).Children(
             new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(author.Column(0), time.Column(1).CenterVertical()), body);
         Add(content);
@@ -57,18 +57,18 @@ internal sealed class WaveCommentPreview : Panel
         var toAnchor = value == null ? fromAnchor : Math.Clamp(fraction, 0, 1);
         motion.TickCallback = t =>
         {
-            reveal = from + (to - from) * t;
+            reveal = from + (to - from) * t; Opacity = reveal;
             size = new(fromSize.Width + (targetSize.Width - fromSize.Width) * t, fromSize.Height + (targetSize.Height - fromSize.Height) * t);
             anchor = fromAnchor + (toAnchor - fromAnchor) * t;
             InvalidateArrange(); InvalidateVisual();
         };
-        motion.CompletedCallback = () => { reveal = to; size = targetSize; anchor = toAnchor; IsVisible = to > 0; InvalidateArrange(); };
+        motion.CompletedCallback = () => { reveal = to; Opacity = reveal; size = targetSize; anchor = toAnchor; IsVisible = to > 0; InvalidateArrange(); };
         motion.Start(); InvalidateMeasure();
     }
 
     internal void Reset()
     {
-        motion.Stop(); textFade.Stop(); comment = null; reveal = 0;
+        motion.Stop(); textFade.Stop(); comment = null; reveal = 0; Opacity = 0;
         author.Text = time.Text = body.Text = ""; content.Opacity = 1; IsVisible = false;
     }
 
@@ -97,19 +97,11 @@ internal sealed class WaveCommentPreview : Panel
         content.Arrange(new(x + 12, CardBounds.Y + 9, Math.Max(0, targetSize.Width - 24), Math.Max(0, targetSize.Height - 18)));
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(CardBounds, 12);
+    protected override void OnRender(IGraphicsContext context)
     {
-        if (reveal <= 0) return;
-        context.Save();
-        try
-        {
-            context.GlobalAlpha *= (float)reveal;
-            context.FillRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(248, 31, 33, 38));
-            context.DrawRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(28, 255, 255, 255), 1);
-            context.SetClipRoundedRect(CardBounds, 12, 12);
-            base.RenderSubtree(context);
-        }
-        finally { context.Restore(); }
+        context.FillRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(248, 31, 33, 38));
+        context.DrawRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(28, 255, 255, 255), 1);
     }
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) Reset(); }

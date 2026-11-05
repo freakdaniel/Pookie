@@ -32,8 +32,17 @@ internal sealed partial class MainWindow
     private bool chatRestoreBubbleAnchor;
     private ScrollViewer? chatDateViewer;
     private double chatDateOffset;
-    private bool ChatIsAtBottom() => chatRestoreOffset == null && (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer ||
-        SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 12);
+    private bool ChatIsAtBottom()
+    {
+        if (chatRestoreOffset != null) return false;
+        if (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return true;
+        var maximum = SmoothScroll.Maximum(viewer);
+        // A newly realized row can refine the extent before the pre-scene pass
+        // reconciles the offset. Paging must retain the last presented bottom
+        // intent in that interval, rather than install a reading anchor above it.
+        return maximum - viewer.VerticalOffset < 12 ||
+            chatWasAtBottom && Math.Abs(maximum - chatViewportMaximum) > .1;
+    }
 
     private Task OpenChatsAsync() => NavigateRouteAsync(new(Page.Chats), async _ =>
     {
@@ -446,7 +455,7 @@ internal sealed partial class MainWindow
     private void RequestChatBottom()
     {
         chatRestoreOffset = null; chatRestoreAnchor = null; chatRestoreBubbleAnchor = false;
-        chatPrependAnchor = null; chatScrollBottom = true; chatLastBottomExtent = -1; chatViewport.InvalidateArrange();
+        chatPrependAnchor = null; chatScrollBottom = chatWasAtBottom = true; chatLastBottomExtent = -1; chatViewport.InvalidateArrange(); chatViewport.InvalidateVisual();
     }
 
     private void ArrangeChatScroll()
@@ -482,11 +491,16 @@ internal sealed partial class MainWindow
             Run(() => MarkSelectedChatReadAsync(api.Session, me.Id, chatRecipient.Id, chatRevision));
     }
 
+    // Preserve bottom intent while variable-height rows refine their estimated extent.
+    private double chatViewportMaximum = -1;
+
     private bool SynchronizeChatScroll()
     {
         if (page.Value != Page.Chats || chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return false;
         var changed = false;
         var maximum = SmoothScroll.Maximum(viewer);
+        var extentChanged = Math.Abs(chatViewportMaximum - maximum) > .1;
+        chatViewportMaximum = maximum;
         if (chatRestoreOffset is { } restore)
         {
             var anchor = chatRestoreAnchor == null ? null : ChatRows.FirstOrDefault(r => r.Bound && r.Message?.Id == chatRestoreAnchor && r.Root.ActualHeight > 0);
@@ -507,7 +521,7 @@ internal sealed partial class MainWindow
             else if (!animating) changed = true;
         }
         if (chatRestoreOffset == null && chatWasAtBottom &&
-            (Math.Abs(chatViewportWidth - viewer.ActualWidth) > .1 || Math.Abs(chatViewportHeight - viewer.ActualHeight) > .1))
+            (extentChanged || Math.Abs(chatViewportWidth - viewer.ActualWidth) > .1 || Math.Abs(chatViewportHeight - viewer.ActualHeight) > .1))
             chatScrollBottom = true;
         chatViewportWidth = viewer.ActualWidth; chatViewportHeight = viewer.ActualHeight;
         if (chatFollowLayout) chatScrollBottom = true;
@@ -531,8 +545,10 @@ internal sealed partial class MainWindow
 
     private void OnChatDateScroll()
     {
+        chatViewport.InvalidateVisual();
         chatPresentationDirty = true;
         if (chatDateViewer is not { } viewer || Math.Abs(chatDateOffset - viewer.VerticalOffset) < .1) return;
+        chatViewport.InvalidateArrange();
         chatDateOffset = viewer.VerticalOffset;
         if (page.Value == Page.Chats && chatRestoreOffset == null && !chatScrollBottom && chatPrependAnchor == null) chatDateLayer.Pulse();
         RefreshChatDateOverlay();

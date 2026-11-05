@@ -31,7 +31,7 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/GoogleSans.ttf" LogicalName="Pookie.App.Assets.Fonts.GoogleSans.ttf" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)Assets/Fonts/Bungee-Regular.ttf" LogicalName="Pookie.App.Assets.Fonts.Bungee-Regular.ttf" />
 
-    <PackageReference Include="Aprillz.MewUI" Version="0.22.1" />
+    <PackageReference Include="Aprillz.MewUI" Version="0.22.2-pookie.g6cda4f98" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.5" Condition="'$(MSBuildProjectName)' == 'Pookie.App'" />
     <PackageReference Include="StbImageSharp" Version="2.30.16" />
     <PackageReference Include="SoundFlow" Version="1.4.1" GeneratePathProperty="true" />

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using Aprillz.MewUI;
+using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 using Pookie.SoundCloud;
@@ -10,7 +11,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     // Orbit projects a tilted ring while the covers stay facing the viewer.
-    private sealed class MixCarousel : Panel
+    private sealed class MixCarousel : Panel, IVisualTreeHost
     {
         private const double BaseSide = 200;
         private const double PlayButtonSize = 64;
@@ -18,7 +19,7 @@ internal sealed partial class MainWindow
         private const double Drift = .244; // 14 degrees per second
         private const double Perspective = 1500;
         private readonly MainWindow owner;
-        private readonly DispatcherTimer timer = new(TimeSpan.FromMilliseconds(16));
+        private readonly AnimationClock motion;
         private readonly DispatcherTimer returnTimer = new(TimeSpan.FromSeconds(3));
         private LibraryItem[] items = [];
         private Card[] cards = [];
@@ -35,7 +36,7 @@ internal sealed partial class MainWindow
         private bool returnAfterTurn, projectionDirty = true;
         private string? playingKey;
 
-        private sealed record Card(LibraryItem Item, Image Artwork, Border Cover, TrackArtworkOverlay Overlay)
+        private sealed record Card(LibraryItem Item, Image Artwork, Border Cover, TrackArtworkOverlay Overlay, CardSlot Slot)
         {
             internal double Emphasis;
         }
@@ -45,7 +46,8 @@ internal sealed partial class MainWindow
         }
 
         internal int FrontIndex => front;
-        internal bool MotionActive => timer.IsEnabled;
+        internal bool MotionActive => motion.IsRunning;
+        internal string MotionState => $"hover={hovered}, point={hoverPoint}, velocity={velocity}, target={target}, lean={pointerLean}/{pointerAim}, intro={intro}, angle={angle}";
         internal double FrontCoverEmphasis => front >= 0 ? cards[front].Emphasis : 0;
         internal double PlayingEmphasis => playingIndex >= 0 ? cards[playingIndex].Emphasis : 0;
         private double Step => Math.Tau / Math.Max(1, cards.Length);
@@ -57,7 +59,7 @@ internal sealed partial class MainWindow
             Focusable = true;
             Cursor = CursorType.Hand;
             ClipToBounds = true;
-            timer.Tick += Tick;
+            motion = new AnimationClock(TimeSpan.FromSeconds(1), Easing.Linear) { RepeatCount = -1, TickCallback = _ => Tick() };
             returnTimer.Tick += ReturnToPlaying;
         }
 
@@ -93,11 +95,12 @@ internal sealed partial class MainWindow
         {
             var artwork = new Image().StretchMode(Stretch.UniformToFill);
             artwork.ImageScaleQuality = ImageScaleQuality.HighQuality;
-            var overlay = new TrackArtworkOverlay(buttonSize: PlayButtonSize);
+            var overlay = new TrackArtworkOverlay(buttonSize: PlayButtonSize, scalingGlyphs: true);
             var cover = new Border().CornerRadius(12).ClipToBounds().BorderThickness(0).Background(TrackButtons.TonalSurface)
                 .Child(new Grid().Columns("*").Rows("*").Children(owner.ArtworkLayer(artwork), overlay)).IsHitTestVisible(false);
-            Add(cover);
-            return new(item, artwork, cover, overlay);
+            var slot = new CardSlot(cover);
+            Add(slot);
+            return new(item, artwork, cover, overlay, slot);
         }
 
         private void LoadArtwork(Card card)
@@ -134,7 +137,7 @@ internal sealed partial class MainWindow
             }
             else
             {
-                timer.Stop();
+                motion.Stop();
                 returnTimer.Stop();
                 if (pressed && FindVisualRoot() is Window window && IsMouseCaptured) window.ReleaseMouseCapture();
                 pressed = dragging = false;
@@ -147,9 +150,9 @@ internal sealed partial class MainWindow
 
         private void Wake()
         {
-            if (!canAnimate || cards.Length == 0 || timer.IsEnabled) return;
+            if (!canAnimate || cards.Length == 0 || motion.IsRunning) return;
             lastTick = Stopwatch.GetTimestamp();
-            timer.Start();
+            motion.Start();
         }
 
         private void Tick()
@@ -210,7 +213,7 @@ internal sealed partial class MainWindow
             }
             if (intro >= 1 && target == null && pointerLean == pointerAim && !emphasisMoving &&
                 (pressed || cards.Length == 1 || (paused && velocity == 0)))
-                timer.Stop();
+                motion.Stop();
         }
 
         private static double Approach(double value, double goal, double dt)
@@ -294,7 +297,7 @@ internal sealed partial class MainWindow
 
         protected override Size MeasureContent(Size availableSize)
         {
-            foreach (var card in cards) card.Cover.Measure(new Size(Side, Side));
+            foreach (var card in cards) card.Slot.Measure(new Size(Side, Side));
             return new Size(double.IsFinite(availableSize.Width) ? availableSize.Width : Side, Height);
         }
 
@@ -304,7 +307,7 @@ internal sealed partial class MainWindow
             fit = Math.Min(1, Math.Min(finalSize.Width / (radius * 2 + Side), finalSize.Height / (Side * 1.09 + radius * .48)));
             projectionDirty = true;
             var center = Bounds.Center;
-            foreach (var card in cards) card.Cover.Arrange(new Rect(center.X - Side / 2, center.Y - Side / 2, Side, Side));
+            foreach (var card in cards) card.Slot.Arrange(new Rect(center.X - Side / 2, center.Y - Side / 2, Side, Side));
             return finalSize;
         }
 
@@ -349,26 +352,42 @@ internal sealed partial class MainWindow
             projectionDirty = false;
         }
 
-        protected override void RenderSubtree(IGraphicsContext context)
+        bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor)
         {
-            if (context.GetClipBoundsLocal() is { } clip && !Bounds.IntersectsWith(clip)) return;
-            var original = context.GetTransform();
             EnsureProjections();
-            context.Save();
-            context.SetClip(Bounds);
-            try
+            foreach (var pose in projections)
             {
-                foreach (var pose in projections)
-                {
-                    var card = cards[pose.Index];
-                    context.SetTransform(pose.Transform * original);
-                    card.Cover.Render(context);
-                    var frame = card.Cover.Bounds;
-                    if (pose.Shade >= .01)
-                        context.FillRoundedRectangle(frame, 12, 12, Color.FromArgb((byte)(pose.Shade * 255), 18, 18, 20));
-                }
+                var slot = cards[pose.Index].Slot;
+                slot.SetPose(pose.Transform, pose.Shade);
+                if (!visitor(slot)) return false;
             }
-            finally { context.Restore(); }
+            return true;
+        }
+
+        private sealed class CardSlot : Panel
+        {
+            private readonly CardInk ink;
+            private Matrix3x2 transform = Matrix3x2.Identity;
+            internal CardSlot(Border cover) { IsHitTestVisible = false; ink = new CardInk(cover); Add(ink); }
+            internal void SetPose(Matrix3x2 next, double shade)
+            {
+                if (transform != next) { transform = next; InvalidateVisual(); }
+                ink.SetShade(shade);
+            }
+            protected override Size MeasureContent(Size availableSize) { ink.Measure(availableSize); return ink.DesiredSize; }
+            protected override Size ArrangeOverride(Size finalSize) { ink.Arrange(Bounds); return finalSize; }
+            protected override bool TryGetChildTransform(out Matrix3x2 value) { value = transform; return !value.IsIdentity; }
+        }
+
+        private sealed class CardInk : ContentControl
+        {
+            private double shade;
+            internal CardInk(Border cover) { Content = cover; Padding = new Thickness(0); BorderThickness = 0; Background = Color.Transparent; }
+            internal void SetShade(double value) { if (shade == value) return; shade = value; InvalidateVisual(); }
+            protected override void OnRenderOverlay(IGraphicsContext context)
+            {
+                if (shade >= .01) context.FillRoundedRectangle(Bounds, 12, 12, Color.FromArgb((byte)(shade * 255), 18, 18, 20));
+            }
         }
 
         internal int CardAt(Point point, out bool playHit)
@@ -552,6 +571,6 @@ internal sealed partial class MainWindow
             if (newRoot == null) SetMotionActive(false);
         }
 
-        protected override void OnDispose() { timer.Dispose(); returnTimer.Dispose(); base.OnDispose(); }
+        protected override void OnDispose() { motion.Stop(); returnTimer.Dispose(); base.OnDispose(); }
     }
 }

@@ -9,9 +9,10 @@ namespace Pookie.App;
 
 internal static class Icons
 {
-    private static readonly Dictionary<(string, uint), IVectorImageSource> sources = [];
+    private static readonly Dictionary<(string, uint, int), IVectorImageSource> sources = [];
     private static readonly Dictionary<string, string> templates = [];
     internal static int CachedSourceCount => sources.Count;
+    internal static long RasterBuildCount { get; private set; }
     private static IVectorImageSource? logoSource;
     private static PathGeometry? logoGeometry;
 
@@ -20,7 +21,7 @@ internal static class Icons
 
     internal static IVectorImageSource Source(string name, Color color)
     {
-        var key = (name, color.ToArgb());
+        var key = (name, color.ToArgb(), 1);
         if (sources.TryGetValue(key, out var cached)) return cached;
         var svg = CreateTintedSource(name, color, cacheRaster: true);
         sources.Add(key, svg);
@@ -32,7 +33,7 @@ internal static class Icons
     internal static IVectorImageSource TransitionSource(string name, Color color) =>
         CreateTintedSource(name, color, cacheRaster: false);
 
-    private static IVectorImageSource CreateTintedSource(string name, Color color, bool cacheRaster)
+    private static IVectorImageSource CreateTintedSource(string name, Color color, bool cacheRaster, int rasterBucket = 1)
     {
         if (!templates.TryGetValue(name, out var template))
         {
@@ -43,7 +44,7 @@ internal static class Icons
             templates[name] = template = reader.ReadToEnd();
         }
         var tint = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-        return new ImmutableIconSource(SimpleSvgSource.FromString(template.Replace("currentColor", tint)), cacheRaster);
+        return new ImmutableIconSource(SimpleSvgSource.FromString(template.Replace("currentColor", tint)), cacheRaster, rasterBucket);
     }
 
     internal static IVectorImageSource? CountryFlag(string? code)
@@ -52,7 +53,7 @@ internal static class Icons
         var country = code.Trim().ToLowerInvariant();
         country = country switch { "uk" => "gb", "el" => "gr", _ => country };
         if (country.Length != 2 || !country.All(char.IsAsciiLetter)) return null;
-        var key = ("flag:" + country, 0u);
+        var key = ("flag:" + country, 0u, 1);
         if (sources.TryGetValue(key, out var cached)) return cached;
         using var stream = typeof(Icons).Assembly.GetManifestResourceStream($"Pookie.App.Assets.Flags.{country}.svg");
         if (stream == null) return null;
@@ -65,6 +66,17 @@ internal static class Icons
 
     internal static Image View(string name, double size, Color color) =>
         new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Source(Source(name, color)).Width(size).Height(size).StretchMode(Stretch.Uniform);
+
+    // A few oversampled sizes cover continuous scale changes without creating
+    // an SVG surface for every intermediate physical pixel width.
+    internal static Image ScalingView(string name, double size, bool dark = false)
+    {
+        var color = dark ? Color.FromRgb(32, 32, 32) : Color.FromRgb(222, 222, 222);
+        var key = (name, color.ToArgb(), 16);
+        if (!sources.TryGetValue(key, out var source))
+            sources[key] = source = CreateTintedSource(name, color, cacheRaster: true, rasterBucket: 16);
+        return new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Source(source).Width(size).Height(size).StretchMode(Stretch.Uniform);
+    }
 
     internal static PathShape PlaybackDisc(bool pause, double size, double glyphSize, Color color)
     {
@@ -99,7 +111,7 @@ internal static class Icons
 
     // These cached SVGs never mutate. Exposing SimpleSvgSource's Changed event would let
     // each Image subscribe to a process-wide source and retain its removed parent card.
-    private sealed class ImmutableIconSource(SimpleSvgSource source, bool cacheRaster = true) : IVectorImageSource
+    private sealed class ImmutableIconSource(SimpleSvgSource source, bool cacheRaster = true, int rasterBucket = 1) : IVectorImageSource
     {
         private readonly List<(IGraphicsFactory Factory, int Width, int Height, IRenderSurface Surface, IImage Image)> rasters = [];
         public Size IntrinsicSize => source.IntrinsicSize;
@@ -112,6 +124,11 @@ internal static class Icons
                 Math.Sqrt(transform.M21 * transform.M21 + transform.M22 * transform.M22));
             var width = Math.Clamp((int)Math.Ceiling(destRect.Width * scale), 1, 2048);
             var height = Math.Clamp((int)Math.Ceiling(destRect.Height * scale), 1, 2048);
+            if (rasterBucket > 1)
+            {
+                width = Math.Min(2048, (width + rasterBucket - 1) / rasterBucket * rasterBucket);
+                height = Math.Min(2048, (height + rasterBucket - 1) / rasterBucket * rasterBucket);
+            }
             var graphics = Application.Current.GraphicsFactory;
             lock (rasters)
                 if (DrawRaster(context, graphics, width, height, destRect)) return;
@@ -147,6 +164,7 @@ internal static class Icons
                 {
                     rasters[0].Image.Dispose(); rasters[0].Surface.Dispose(); rasters.RemoveAt(0);
                 }
+                RasterBuildCount++;
                 rasters.Add((graphics, width, height, raster, image));
                 context.DrawImage(image, destRect);
             }

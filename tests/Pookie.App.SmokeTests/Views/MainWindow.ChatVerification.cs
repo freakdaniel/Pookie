@@ -226,14 +226,14 @@ internal sealed partial class MainWindow
                 void Changes(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs change)
                 { if (change.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace) replacedItems++; }
                 void Paint() { if (sendingMediaRow.Bound) paintedInsets.Add(viewer.Bounds.Bottom - sendingMediaRow.Root.Bounds.Bottom); }
-                chatMessageItems.CollectionChanged += Changes; chatViewport.BeforePaint += Paint;
+                chatMessageItems.CollectionChanged += Changes; Window.FrameRendered += Paint;
                 try
                 {
                     transport.SendReady!.SetResult(); await mediaSending;
                     await WaitForLikedLayoutAsync(() => !sendingMediaRow.Content.IsResizing && !chatComposerSurface.IsResizing);
                     await WaitForLoginFrameAsync();
                 }
-                finally { chatMessageItems.CollectionChanged -= Changes; chatViewport.BeforePaint -= Paint; }
+                finally { chatMessageItems.CollectionChanged -= Changes; Window.FrameRendered -= Paint; }
                 if (!ReferenceEquals(stableItem, chatMessageItems.Last()) || replacedItems != 0)
                     throw new InvalidOperationException("Delivery acknowledgement replaced the stable timeline object.");
                 if (paintedInsets.Count == 0 || paintedInsets.Any(inset => Math.Abs(inset - bottomInset) > 1))

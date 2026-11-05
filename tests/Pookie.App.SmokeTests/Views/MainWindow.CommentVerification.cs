@@ -136,7 +136,7 @@ internal sealed partial class MainWindow
             await ChangeTrackCommentSortAsync("NEWEST");
             await WaitForLikedLayoutAsync(() => !trackCommentsLoadingView.Skeleton.IsVisible && trackDetailComments.Opacity == 1);
             var timeButtons = new List<Button>();
-            VisualTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
+            LogicalTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
             await WaitForLikedLayoutAsync(() => trackDetailComments.ActualWidth > 0 && shellPageScroll.IsReady);
             shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + trackDetailComments.Bounds.Y - shellScroll.Bounds.Y - 160));
             // Scrolling is reconciled at the frame boundary. Linux must also
@@ -156,7 +156,7 @@ internal sealed partial class MainWindow
             // Scrolling can recycle the rows collected before it. Hover the
             // currently attached timestamp, never a detached previous binding.
             timeButtons.Clear();
-            VisualTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
+            LogicalTree.Visit(trackDetailComments, e => { if (e is Button { StyleName: TrackButtons.CommentTime } b) timeButtons.Add(b); });
             var time = timeButtons.First(button => button.FindVisualRoot() == Window && button.ActualWidth > 0 &&
                 button.Bounds.Y > trackDetailScroll.Bounds.Y && button.Bounds.Bottom < trackDetailScroll.Bounds.Bottom);
             var hoverPoint = new Point(time.Bounds.X + time.ActualWidth / 2, time.Bounds.Y + 12);
@@ -173,7 +173,7 @@ internal sealed partial class MainWindow
             MoveActionPointer(new(1, 1));
             await WaitForLikedLayoutAsync(() => !time.IsMouseOver && time.Background == TrackButtons.CommentTimeSurface);
             var commentMenus = new List<Button>();
-            VisualTree.Visit(trackDetailComments, e =>
+            LogicalTree.Visit(trackDetailComments, e =>
             {
                 if (e is Button { ContextMenu: not null } button && button.FindVisualRoot() == Window &&
                     button.Bounds.Y > trackDetailScroll.Bounds.Y && button.Bounds.Bottom < trackDetailScroll.Bounds.Bottom)

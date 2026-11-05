@@ -17,7 +17,7 @@ internal sealed partial class MainWindow
         await NavigateAsync(Page.Library);
         ShowLibraryTracks();
         likedFilter.Text = "needle";
-        likesAsList.Value = true;
+        likesMode.Value = TrackViewMode.Waveform;
         await ShowLibrarySectionAsync(Page.LibraryPlaylists);
         var first = libraryPages["collections"].Items[0];
         var second = libraryPages["collections"].Items[1];
@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
         if (page.Value != Page.LibraryPlaylists || collectionGrid.ItemsSource.Count != 1)
             throw new InvalidOperationException("Back failed to restore the playlist tab");
         await MoveNavigationAsync(-1);
-        if (page.Value != Page.LibraryTracks || likedFilter.Text != "needle" || !likesAsList.Value || likedList.ItemsSource.Count != 1)
+        if (page.Value != Page.LibraryTracks || likedFilter.Text != "needle" || likesMode.Value != TrackViewMode.Waveform || likedList.ItemsSource.Count != 1)
             throw new InvalidOperationException("Back lost the likes filter or view");
         await MoveNavigationAsync(1);
         if (page.Value != Page.LibraryPlaylists || !backButton.IsEnabled || !forwardButton.IsEnabled)
@@ -57,7 +57,7 @@ internal sealed partial class MainWindow
         if (album.Title.TextAlignment != TextAlignment.Left || ((StackPanel)((StackPanel)album.Title.Parent!).Children[2]).Children.OfType<Image>().Single().IsVisible)
             throw new InvalidOperationException("Recycled artist captions leaked into album cards");
 
-        ShowLibraryTracks(); likedFilter.Text = ""; likesAsList.Value = true;
+        ShowLibraryTracks(); likedFilter.Text = ""; likesMode.Value = TrackViewMode.Waveform;
         await WaitForLikedLayoutAsync(() => NavigationScroll() != null &&
             likedRows.Values.Count(row => row.Track != null && row.Root.ActualWidth > 100) > 2);
         var likesScroll = NavigationScroll()!;

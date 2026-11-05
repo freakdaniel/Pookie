@@ -41,7 +41,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Music placeholders exposed fake metadata/raw URLs before loading.");
             CaptureUiPreview("chats-music-loading");
             var initialWidth = loadedGroup.Bubble.ActualWidth;
-            chatViewport.BeforePaint += Sample;
+            Window.FrameRendered += Sample;
             transport.MusicReady.SetResult();
             await WaitForLikedLayoutAsync(() => group.All(view => view.Loading.Reveal == 1) && !loadedGroup.Content.IsResizing && loadedGroup.Bubble.ActualWidth > initialWidth + 40);
             var finalWidth = loadedGroup.Bubble.ActualWidth;
@@ -59,7 +59,7 @@ internal sealed partial class MainWindow
         }
         finally
         {
-            chatViewport.BeforePaint -= Sample;
+            Window.FrameRendered -= Sample;
             transport.MusicReady?.TrySetResult(); transport.MusicReady = null;
             waveform.TrySetResult([.2f, .9f]); waveformRequests[waveformUrl] = previousWaveform;
         }

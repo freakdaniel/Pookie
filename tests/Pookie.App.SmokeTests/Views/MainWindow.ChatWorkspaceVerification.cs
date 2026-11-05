@@ -158,10 +158,10 @@ internal sealed partial class MainWindow
             var beforeCenter = chatComposer.Bounds.X + chatComposer.ActualWidth / 2;
             var motionFrames = new List<double>();
             void SampleMotion() => motionFrames.Add(((FrameworkElement)chatColumns.Children[1]).ActualWidth);
-            chatViewport.BeforePaint += SampleMotion;
+            Window.FrameRendered += SampleMotion;
             OpenChatInfo();
             await WaitForLikedLayoutAsync(()=>Math.Abs(Window.ClientSize.Width-width)<1&&Math.Abs(chatColumns.ActualWidth-(width-32))<1&&!chatColumns.IsMeasureDirty&&!chatColumns.IsArrangeDirty&&!chatColumns.Animating&&chatDetailsCard.Opacity>.99 && !chatHistoryLoading);
-            chatViewport.BeforePaint -= SampleMotion;
+            Window.FrameRendered -= SampleMotion;
             VerifyChatScrollColumn();
             VerifyChatReferenceGeometry(detailsOpen: true);
             try { await WaitForLikedLayoutAsync(() => chatProfileBackdrop.Target != new PlayerPalette(ChatGlassSurface,ChatGlassSurface,ChatGlassSurface) && !chatProfileBackdrop.Animating); }

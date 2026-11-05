@@ -14,12 +14,20 @@ internal sealed partial class MainWindow
         var originalPlayer = player;
         try
         {
+            if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+                throw new InvalidOperationException("Could not expose the native Home fixture.");
+            if (Environment.GetEnvironmentVariable("POOKIE_MIX_PROBE") is { Length: > 0 } mixProbe)
+            {
+                await ProbeHomeMixCarouselAsync(mixProbe == "live");
+                return;
+            }
             Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
             var transport = new HomeFixtureTransport();
             api.Session = new("homefixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Home fixture" }; signedIn.Value = true;
             await imageDiskCache.WriteAsync(HomeFixtureTransport.Artwork, ArtworkFixtureBitmap(500), lifetime.Token);
             await ShowWorkspaceAsync();
+            Window.Activate();
             var load = NavigateHomeAsync();
             await WaitForLikedLayoutAsync(() => HomeItems("recent").Length == 6 && homePending.Contains("recommendations"));
             if (!homeSections.Single(section => section.Key == "recommendations").Loading.Skeleton.IsVisible)
@@ -41,13 +49,13 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-wide");
             player = null;
             var mixPoint = FindHomeMixPoint(homeMixCarousel.FrontIndex);
-            RouteWaveformPointer(mixPoint);
+            MoveActionPointer(mixPoint);
             await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
             homeMixCarousel.Focus();
             var still = homeMixCarousel.FrontIndex;
-            RouteWaveformPointer(new Point(homeMixCarousel.Bounds.X + 8, mixPoint.Y));
+            MoveActionPointer(new Point(homeMixCarousel.Bounds.X + 8, mixPoint.Y));
             await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex != still && homeMixCarousel.MotionActive);
-            RouteWaveformPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
+            MoveActionPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
             await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
 
             var neighbor = (homeMixCarousel.FrontIndex + 1) % 7;
@@ -58,7 +66,7 @@ internal sealed partial class MainWindow
             await NavigateHomeAsync();
             shellScroll.SetScrollOffsets(0, 0);
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && homeMixCarousel.ActualHeight > 290);
-            RouteWaveformPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
+            MoveActionPointer(FindHomeMixPoint(homeMixCarousel.FrontIndex));
             await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
             var rear = (homeMixCarousel.FrontIndex + 3) % 7;
             RouteWaveformClick(FindHomeMixPoint(rear));
@@ -66,11 +74,11 @@ internal sealed partial class MainWindow
             if (page.Value != Page.Home || playbackQueue.Context != null)
                 throw new InvalidOperationException("Selecting a rear cover opened a page or started playback.");
 
-            RouteWaveformPointer(FindHomeMixPoint(rear));
+            MoveActionPointer(FindHomeMixPoint(rear));
             await WaitForLikedLayoutAsync(() => !homeMixCarousel.MotionActive);
             var playIndex = (rear + 1) % 7;
             var sidePlay = FindHomeMixPoint(playIndex, play: true);
-            RouteWaveformPointer(sidePlay);
+            MoveActionPointer(sidePlay);
             RouteWaveformClick(sidePlay);
             await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == HomeItems("mixes")[playIndex].Key && homeMixCarousel.FrontIndex == playIndex);
             current = playbackQueue.Current!.Track;
@@ -82,7 +90,8 @@ internal sealed partial class MainWindow
             var manualIndex = (playIndex + 1) % 7;
             await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex == manualIndex && homeMixCarousel.FrontCoverEmphasis > .99 && !homeMixCarousel.MotionActive);
             var rest = System.Diagnostics.Stopwatch.StartNew();
-            await Task.Delay(1200);
+            using (var idleObservation = new PeriodicTimer(TimeSpan.FromMilliseconds(25)))
+                while (rest.Elapsed < TimeSpan.FromMilliseconds(1200)) await idleObservation.WaitForNextTickAsync(lifetime.Token);
             if (homeMixCarousel.FrontIndex != manualIndex || homeMixCarousel.MotionActive)
                 throw new InvalidOperationException("Orbit returned early or redrew during its waiting period.");
             await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex == playIndex && !homeMixCarousel.MotionActive);
@@ -93,7 +102,7 @@ internal sealed partial class MainWindow
             playbackQueue.Clear();
             RefreshHomeMixPlayback();
             mixPoint = FindHomeMixPoint(homeMixCarousel.FrontIndex);
-            RouteWaveformPointer(mixPoint);
+            MoveActionPointer(mixPoint);
             RouteHomeCarouselDrag(mixPoint, new Point(mixPoint.X - 160, mixPoint.Y));
             await WaitForLikedLayoutAsync(() => homeMixCarousel.FrontIndex != playIndex);
             if (playbackQueue.Context != null)
@@ -107,6 +116,7 @@ internal sealed partial class MainWindow
                 homeChartLeft.Children.Count != 5 || homeChartRight.Children.Count != 5)
                 throw new InvalidOperationException("Home did not default to the general chart in SoundCloud order.");
             CaptureUiPreview("home-trending");
+            await VerifyTrendingActionsAsync(homeChartRows[0]);
             var chartScroll = shellScroll.VerticalOffset;
             picker.SelectedIndex = 0;
             await WaitForLikedLayoutAsync(() => homeChartRows.Count == 10 && homeChartRows[0].Track?.Id == transport.Chart[^1].Id && shellPageScroll.IsReady);
@@ -124,7 +134,8 @@ internal sealed partial class MainWindow
             shellScroll.SetScrollOffsets(0, 0);
             Window.WindowSize = WindowSize.Resizable(1000, 980, minWidth: 1000, minHeight: 680);
             var recommendations = homeSections.Single(section => section.Key == "recommendations");
-            await WaitForLikedLayoutAsync(() => libraryColumns == 4 && homeMixCarousel.ActualHeight == 258 &&
+            // A 1000-DIP native window rounds to physical pixels at fractional display DPI.
+            await WaitForLikedLayoutAsync(() => libraryColumns == 4 && Math.Abs(homeMixCarousel.ActualHeight - 258) < 1 &&
                 recommendations.Cards!.ItemsSource.Count == 4);
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
@@ -139,7 +150,7 @@ internal sealed partial class MainWindow
             var root = collectionCards.Keys.First(root => recommendations.Cards!.IsAncestorOf(root) && root.ActualWidth > 100);
             var card = CollectionCard(root)!; var id = card.Item!.Track!.Id;
             CaptureUiPreview("home-card-before-hover");
-            RouteWaveformPointer(new(card.Frame.Bounds.X + 12, card.Frame.Bounds.Y + 12));
+            MoveActionPointer(new(card.Frame.Bounds.X + 12, card.Frame.Bounds.Y + 12));
             await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999);
             ClickHomeElement(card.Playback.PlaybackButton!);
             await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == "home:recommendations");
@@ -168,31 +179,34 @@ internal sealed partial class MainWindow
             // standalone list is no longer attached to the feed page.
             localRecent.Clear();localRecent.AddRange(transport.Recent.Select(track=>LibraryItem.FromTrack(track)));
             await OpenFeedAsync(force:true);
+            Window.Activate();
             shellScroll.SetScrollOffsets(0, 0);
             await WaitForLoginFrameAsync();
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && feedSidebarRows.Any(row => row.Track?.Id == 101 && row.Root.ActualWidth > 100));
+            await WaitForLikedLayoutAsync(() => Window.IsActive && shellPageScroll.IsReady && feedSidebarRows.Any(row => row.Track?.Id == 101 && row.Root.ActualWidth > 100));
             var row = feedSidebarRows.First(row => row.Track?.Id == 101);
             if (row.Title.ActualWidth > row.Root.ActualWidth / 2) throw new InvalidOperationException("Short compact title stretches across the row.");
-            RouteWaveformPointer(new(row.Title.Bounds.Right + 60, row.Title.Bounds.Y + 8));
+            MoveActionPointer(new(row.Title.Bounds.Right + 60, row.Title.Bounds.Y + 8));
             if (row.Title.Opacity != 1) throw new InvalidOperationException("Empty row space triggers the title link hover.");
             var restingTitle = row.Title.Foreground;
             var titlePoint = SettingsCenter(row.Title);
-            RouteWaveformPointer(titlePoint);
+            MoveActionPointer(titlePoint);
             var hoveredTitle = Color.FromArgb((byte)Math.Round(restingTitle.A*.72),restingTitle.R,restingTitle.G,restingTitle.B);
             await WaitForLikedLayoutAsync(() => row.Title.Foreground == hoveredTitle);
             if (row.Title.Opacity != 1)
                 throw new InvalidOperationException("Actual title lost its foreground hover or allocated an opacity layer.");
-            playbackQueue.Clear(); RouteWaveformPointer(new(row.Cover.Bounds.X + 10, row.Cover.Bounds.Y + 10));
+            playbackQueue.Clear(); MoveActionPointer(new(row.Cover.Bounds.X + 10, row.Cover.Bounds.Y + 10));
             await WaitForLikedLayoutAsync(() => row.Overlay.Strength > .999);
             ClickHomeElement(row.PlaybackButton);
             await WaitForLikedLayoutAsync(() => playbackQueue.Current?.Track.Id == 101);
             if (page.Value != Page.Feed) throw new InvalidOperationException("Compact play button opened the track page.");
             ClickHomeElement(row.Title);
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState?.Track.Id == 101);
-            libraryLikes = new(transport.Recent, null); ShowLibraryTracks(); likesAsList.Value = false; RefreshLikedViews();
+            libraryLikes = new(transport.Recent, null); ShowLibraryTracks(); likesMode.Value = TrackViewMode.Cards; RefreshLikedViews();
+            // Recycled tiles still have their old bounds until the new page is arranged.
+            await WaitForLoginFrameAsync();
             await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == 101 && likedGrid.IsAncestorOf(tile.Root) && tile.Root.ActualWidth > 100));
             var tile = likedTiles.Values.First(tile => tile.Track?.Id == 101 && likedGrid.IsAncestorOf(tile.Root));
-            playbackQueue.Clear(); RouteWaveformPointer(new(tile.Cover.Bounds.X + 10, tile.Cover.Bounds.Y + 10));
+            playbackQueue.Clear(); MoveActionPointer(new(tile.Cover.Bounds.X + 10, tile.Cover.Bounds.Y + 10));
             await WaitForLikedLayoutAsync(() => tile.OverlayOpacity > .999);
             ClickHomeElement(tile.PlaybackButton);
             await WaitForLikedLayoutAsync(() => playbackQueue.Current?.Track.Id == 101);
@@ -209,7 +223,11 @@ internal sealed partial class MainWindow
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("HOME_UI_FAILED: " + error); }
-        finally { player = originalPlayer; Window.Close(); }
+        finally
+        {
+            if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
+            player = originalPlayer; Window.Close();
+        }
     }
 
     private Point FindHomeMixPoint(int index, bool play = false)

@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
             volume.Value = 0; // Exercise real audio decoding without sound or an OS media session.
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
             var track = await api.ResolveAsync("https://soundcloud.com/kar-tonw/dipins-etazhi-speed-up", timeout.Token);
-            libraryLikes = new([track], null); ShowLibraryTracks(); likesAsList.Value = true;
+            libraryLikes = new([track], null); ShowLibraryTracks(); likesMode.Value = TrackViewMode.Waveform;
             await WaitForTrackPageLiveAsync(() => likedRows.Values.Any(row => row.Track?.Id == track.Id && row.Title.ActualWidth > 100));
             var title = likedRows.Values.First(row => row.Track?.Id == track.Id && row.Title.ActualWidth > 100).Title;
             ClickLiveTrackElement(title);
@@ -61,7 +61,7 @@ internal sealed partial class MainWindow
                 void Avatars(string phase)
                 {
                     var sources = new HashSet<ImageSource>();
-                    VisualTree.Visit(trackDetailComments, element =>
+                    LogicalTree.Visit(trackDetailComments, element =>
                     { if (element is Image { Source: ImageSource image } && image.PixelWidth >= 48) sources.Add(image); });
                     Console.WriteLine($"LIVE_AVATAR_PIXELS {phase} unique={sources.Count}; rgba_bytes={sources.Sum(ArtworkBytes)}; max_side={sources.Select(image=>Math.Max(image.PixelWidth,image.PixelHeight)).DefaultIfEmpty().Max()}");
                 }
@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
             await WaitForTrackPageLiveAsync(() => Math.Abs(progress.Value - timed.Timestamp!.Value / 1000) < 1);
             Console.WriteLine("TRACK_PAGE_LIVE_SEEK_OK: native waveform and comment timestamp clicks, pause button");
             await MoveNavigationAsync(-1);
-            if (page.Value != Page.LibraryTracks || !likesAsList.Value || current?.Id != track.Id)
+            if (page.Value != Page.LibraryTracks || likesMode.Value != TrackViewMode.Waveform || current?.Id != track.Id)
                 throw new InvalidOperationException("Live back navigation lost the list or playback.");
             await MoveNavigationAsync(1);
             if (page.Value != Page.Track || trackDetailState?.Track.Id != track.Id || trackDetailState.Comments.Comments.Length <= firstPageCount)

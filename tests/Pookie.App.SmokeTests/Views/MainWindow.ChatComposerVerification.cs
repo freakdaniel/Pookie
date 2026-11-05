@@ -28,11 +28,11 @@ internal sealed partial class MainWindow
             var last = ChatRows.FirstOrDefault(row => row.Bound && row.Message?.Id == chatMessageItems.Last().Id);
             if (last != null) insets.Add(viewer.Bounds.Bottom - last.Root.Bounds.Bottom);
         }
-        chatViewport.BeforePaint += Paint;
+        Window.FrameRendered += Paint;
         var wrapText = new string('1', (int)(chatInput.ActualWidth / 7) * 3);
         chatInput.Text = wrapText; chatInput.CaretPosition = wrapText.Length;
         try { await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && chatComposer.ActualHeight > compact + 10); }
-        finally { chatViewport.BeforePaint -= Paint; }
+        finally { Window.FrameRendered -= Paint; }
         var expanded = chatComposer.ActualHeight;
         if (!samples.Any(height => height > compact + 1 && height < expanded - 1) ||
             Math.Abs(chatComposer.Bounds.Bottom - bottom) > 1 || insets.Count == 0 || insets.Max() - insets.Min() > 1 ||
@@ -56,10 +56,10 @@ internal sealed partial class MainWindow
         CaptureUiPreview("chats-composer-maximum");
         chatInput.CaretPosition = 0;
         await WaitForLikedLayoutAsync(() => chatComposerLayout.FadeOpacity < .05);
-        samples.Clear(); textInsets.Clear(); chatViewport.BeforePaint += Paint;
+        samples.Clear(); textInsets.Clear(); Window.FrameRendered += Paint;
         chatInput.Text = "";
         try { await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && Math.Abs(chatComposer.ActualHeight - compact) < 1); }
-        finally { chatViewport.BeforePaint -= Paint; }
+        finally { Window.FrameRendered -= Paint; }
         if (!samples.Any(height => height > compact + 1 && height < expanded - 1) || textInsets.Any(inset => Math.Abs(inset - textInset) > .5))
             throw new InvalidOperationException("Clearing the draft snapped the composer height.");
         foreach (var singleLine in new[] { "", "Одна строка" })
@@ -72,7 +72,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Send/microphone icon is not centered after switching composer state.");
             chatInput.ReplaceSelection("\n");
             await WaitForLikedLayoutAsync(() => chatComposerSurface.IsResizing && chatComposer.ActualHeight > compact + 2);
-            samples.Clear(); textInsets.Clear(); textOrigins.Clear(); chatViewport.BeforePaint += Paint;
+            samples.Clear(); textInsets.Clear(); textOrigins.Clear(); Window.FrameRendered += Paint;
             chatInput.Undo();
             if (singleLine.Length == 0) Window.FocusManager.ClearFocus();
             try
@@ -81,7 +81,7 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => !chatComposerSurface.IsResizing && Math.Abs(chatComposer.ActualHeight - compact) < 1);
                 await WaitForLoginFrameAsync();
             }
-            finally { chatViewport.BeforePaint -= Paint; }
+            finally { Window.FrameRendered -= Paint; }
             if (chatInput.Text != singleLine || textInsets.Count < 2 || textInsets.Any(inset => Math.Abs(inset - textInset) > .5) ||
                 textOrigins.Any(origin => Math.Abs(origin - textInset) > .5))
                 throw new InvalidOperationException("Quickly undoing a newline made the single-line text/placeholder recenter abruptly.");

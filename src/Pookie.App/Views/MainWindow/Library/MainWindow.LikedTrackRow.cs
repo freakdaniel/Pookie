@@ -257,7 +257,7 @@ internal sealed partial class MainWindow
 
         public void Reset() { ClearActionFocus(); Track = null; SetTrackArt(null); Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }
 
-        private static string ShortCount(long value) => value switch {
+        internal static string ShortCount(long value) => value switch {
             >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.InvariantCulture) + "M",
             >= 1000 => (value / 1000d).ToString("0.#", CultureInfo.InvariantCulture) + "K",
             _ => value.ToString(CultureInfo.InvariantCulture) };

@@ -4,7 +4,7 @@ using Pookie.App.Messages;
 
 namespace Pookie.App;
 
-internal sealed class ChatEmojiEditor : ITextElementGenerator, IDisposable
+internal sealed class ChatEmojiEditor : ITextElementGenerator, ITextLineTransformer, IDisposable
 {
     private readonly MultiLineTextBox editor;
     private (int Start, int Length, ChatEmojiInline Inline)[] spans = [];
@@ -13,6 +13,7 @@ internal sealed class ChatEmojiEditor : ITextElementGenerator, IDisposable
     {
         this.editor = editor;
         editor.Extensions.ElementGenerators.Add(this);
+        editor.Extensions.Transformers.Add(this);
         editor.TextChanged += Update;
         Update(editor.Text);
     }
@@ -33,6 +34,13 @@ internal sealed class ChatEmojiEditor : ITextElementGenerator, IDisposable
         var span = spans[index];
         return new(span.Length, span.Length, span.Inline, true);
     }
+    public void Transform(in TextLineTransformContext context, IList<GeometryStyleRun> geometryRuns, IList<InlineRun> inlines)
+    {
+        // Emoji are already supplied by our generator. Do not rescan/allocate a
+        // second full layout request here; only add protection for stacked marks.
+        // Existing music objects and original document offsets remain intact.
+        ApplicationEmojiText.AddEditorCombiningInlines(context.Text, inlines);
+    }
     private int LowerBound(int offset)
     {
         var start = 0; var end = spans.Length;
@@ -47,6 +55,7 @@ internal sealed class ChatEmojiEditor : ITextElementGenerator, IDisposable
     {
         editor.TextChanged -= Update;
         editor.Extensions.ElementGenerators.Remove(this);
+        editor.Extensions.Transformers.Remove(this);
         spans = [];
     }
 }

@@ -22,6 +22,8 @@ internal sealed partial class MainWindow
             OpenChatInfo(); await WaitForLikedLayoutAsync(() => !chatColumns.Animating && chatColumns.DetailsOpen);
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             MoveActionPointer(new Point(2, 2));
+            if (Environment.GetEnvironmentVariable("POOKIE_EMOJI_QUALITY_PROBE") == "1")
+            { VerifyEmojiSampling(); return; }
             var viewer = (ScrollViewer)chatMessagesView.FindVisualChild<ScrollViewer>()!;
             var column = chatComposer.Bounds; var offset = viewer.VerticalOffset;
             chatInput.Text = "До после"; chatInput.Select(3, 0);
@@ -247,6 +249,7 @@ internal sealed partial class MainWindow
             if (!chatMessages.Any(m => m.SenderId == 42 && m.Body == unicode))
                 throw new InvalidOperationException("Inline Apple artwork changed the actual message body.");
             await VerifyChatPastePresentationAsync();
+            await VerifyPublicEmojiEditorAsync();
             await VerifyGlobalEmojiTextAsync(transport);
             await VerifyGifRestorationAsync(transport, mediaFixture);
             Console.WriteLine("APPLE_EMOJI_INLINE_OK: same artwork in composer and messages; Unicode selection, whole-sequence backspace, undo and transport preserved; bounded GPU textures");
@@ -303,10 +306,10 @@ internal sealed partial class MainWindow
             if (chatRecipient?.Id == 90 && ChatRows.FirstOrDefault(r => r.Bound && r.Message?.Body == code) is { } row)
                 positions.Add(viewer.Bounds.Bottom - row.Root.Bounds.Bottom);
         }
-        chatViewport.BeforePaint += BeforePaint;
+        Window.FrameRendered += BeforePaint;
         await SelectChatAsync(transport.Other);
         await WaitForLikedLayoutAsync(() => gifFixture.Active > 0 && !chatScrollBottom && chatRestoreOffset == null);
-        await WaitForLoginFrameAsync(); chatViewport.BeforePaint -= BeforePaint;
+        await WaitForLoginFrameAsync(); Window.FrameRendered -= BeforePaint;
         if (positions.Count == 0 || positions.Any(gap => gap > 24 || gap < -2))
             throw new InvalidOperationException($"GIF restore painted a blank gap before scrolling: {string.Join(',', positions)}.");
         gifFixture.Ready.TrySetResult();

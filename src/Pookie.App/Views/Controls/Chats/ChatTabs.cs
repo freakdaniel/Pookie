@@ -82,15 +82,25 @@ internal sealed class ChatTabs : Panel
         foreach (var tab in tabs.Where(t => t.IsVisible)) { tab.Arrange(new Rect(x, Bounds.Y + 4, tab.DesiredSize.Width, 40)); x += tab.DesiredSize.Width; }
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(Bounds, 24);
+
+    protected override void OnRender(IGraphicsContext context)
+    {
+        context.FillRoundedRectangle(Bounds, 24, 24, Color.FromRgb(36, 36, 40));
+        if (pillWidth > 0)
+        {
+            context.Save();
+            try { context.SetClipRoundedRect(Bounds, 24, 24); context.FillRoundedRectangle(SelectionBounds, 20, 20, Color.FromRgb(43, 63, 82)); }
+            finally { context.Restore(); }
+        }
+    }
+
+    protected override void OnRenderOverlay(IGraphicsContext context)
     {
         context.Save();
         try
         {
             context.SetClipRoundedRect(Bounds, 24, 24);
-            context.FillRoundedRectangle(Bounds, 24, 24, Color.FromRgb(36, 36, 40));
-            if (pillWidth > 0) context.FillRoundedRectangle(SelectionBounds, 20, 20, Color.FromRgb(43, 63, 82));
-            base.RenderSubtree(context);
             var opaque = Color.FromRgb(36,36,40); var clear = Color.FromArgb(0,36,36,40);
             if (offset > 1) context.FillRectangle(new Rect(Bounds.X, Bounds.Y, 20, Bounds.Height), new LinearGradientBrush(new Point(Bounds.X,Bounds.Y), new Point(Bounds.X+20,Bounds.Y), [new(0,opaque),new(1,clear)]));
             if (total - offset > ActualWidth + 1) context.FillRectangle(new Rect(Bounds.Right-20, Bounds.Y, 20, Bounds.Height), new LinearGradientBrush(new Point(Bounds.Right-20,Bounds.Y), new Point(Bounds.Right,Bounds.Y), [new(0,clear),new(1,opaque)]));

@@ -41,7 +41,7 @@ internal sealed partial class MainWindow
                 foreach (var listView in new[] { false, true })
                 {
                     var transport = new PaginationBrowser(); api.BrowserTransport = transport;
-                    likesAsList.Value = listView;
+                    likesMode.Value = listView ? TrackViewMode.Waveform : TrackViewMode.Cards;
                     ResetPageScrolling();
                     ReplaceTracks(new(fixtures.Take(30).ToArray(), "https://api-v2.soundcloud.com/users/42/likes?cursor=scroll"));
                     await WaitForLikedLayoutAsync(() => NavigationScroll() is { ViewportHeight: > 100 } scroll &&

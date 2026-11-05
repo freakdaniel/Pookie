@@ -283,7 +283,7 @@ internal sealed partial class MainWindow
         SetCollectionPresentation(detail?.Item ?? routeItem);
         SetPageItems(collectionGrid, playlistCollectionVisible.Value ? [] : items, LoadingRowStyle.Card);
         if (playlistCollectionVisible.Value) RefreshCollectionTracks();
-        else SetPageItems(collectionTrackList, Array.Empty<CollectionTrackEntry>(), LoadingRowStyle.Compact);
+        else ClearCollectionTrackViews();
         RefreshCachedCollectionArtwork();
         librarySectionStatus.Value = items.Length > 0 ? "" : me == null && !demo ? "Войди в SoundCloud, чтобы открыть этот раздел." : "Здесь пока ничего нет.";
     }
@@ -325,8 +325,9 @@ internal sealed partial class MainWindow
             librarySectionTitle.Value = item.Title; librarySectionStatus.Value = "Загрузка…";
             activeCollection = null; SetCollectionPresentation(item);
             SetPageItems(collectionGrid, Array.Empty<LibraryItem>(), LoadingRowStyle.Card);
-            SetPageItems(collectionTrackList, Array.Empty<CollectionTrackEntry>(), LoadingRowStyle.Compact);
-            collectionLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, playlistCollectionVisible.Value);
+            ClearCollectionTrackViews();
+            collectionLoadingView.Skeleton.CompactList = collectionMode.Value == TrackViewMode.List;
+            collectionLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, playlistCollectionVisible.Value && collectionMode.Value != TrackViewMode.Cards);
             collectionLoadingView.SetLoading(!demo && me != null);
             var token = BeginLoad(); var session = api.Session;
             if (demo) { librarySectionStatus.Value = "В демо-режиме подборки не загружаются."; return; }

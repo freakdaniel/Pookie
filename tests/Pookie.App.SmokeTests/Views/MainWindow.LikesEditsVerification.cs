@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
             likedIds.UnionWith(fixtures.Select(track => track.Id));
             await LoadRepostedIdsAsync();
             libraryLikes = new(fixtures, "https://api-v2.soundcloud.com/fixture-next");
-            ShowLibraryTracks(); likesAsList.Value = true;
+            ShowLibraryTracks(); likesMode.Value = TrackViewMode.Waveform;
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[1].Id && row.Root.ActualHeight > 100));
             var generation = navigationGeneration;
             var cursor = nextHref;
@@ -86,7 +86,7 @@ internal sealed partial class MainWindow
             transport.Complete(fixtures[1].Id); await pending;
             if (tracks.Count != 1 || tracks[0].Id != fixtures[20].Id || libraryLikes!.Tracks.Any(track => track.Id == fixtures[1].Id))
                 throw new InvalidOperationException("Late like reply overwrote another page or failed to update cached likes.");
-            ShowLibraryTracks(); likesAsList.Value = false;
+            ShowLibraryTracks(); likesMode.Value = TrackViewMode.Cards;
             await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == fixtures[0].Id && tile.Root.ActualWidth > 100));
             var gridFade = new List<double>();
             void SampleGrid()
@@ -104,7 +104,7 @@ internal sealed partial class MainWindow
             }
             finally { Window.FrameRendered -= SampleGrid; }
 
-            likesAsList.Value = true;
+            likesMode.Value = TrackViewMode.Waveform;
             await WaitForLikedLayoutAsync(() => likedList.IsVisible && shellPageScroll.IsReady && !likedList.IsArrangeDirty);
             viewer.SetScrollOffsets(0, TrackRowLayout.Stride * 6);
             await WaitForLikedLayoutAsync(() => likedRows.Values.Any(row => row.Track?.Id == fixtures[8].Id));
@@ -116,6 +116,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Removing a visible row changed a scrolled viewport or pagination cursor.");
             CaptureUiPreview("likes-edits");
             await VerifyRepostsUiAsync(transport, fixtures);
+            await VerifyThreeLikedViewsAsync();
             Console.WriteLine("UI_LIKES_EDITS_OK: isolated pending likes, duplicate suppression, removal/entry/movement frames, stable viewport/cursor/navigation, recycled focus, failure recovery, late replies and grid fade");
         }
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine("UI_LIKES_EDITS_FAILED: " + error); }

@@ -9,7 +9,21 @@ namespace Pookie.App;
 // of the stack while the previous cover recedes and becomes translucent.
 internal sealed class HomeShortcutCoverStack : Panel
 {
-    private sealed record Layer(Border Frame, Image Image);
+    private sealed record Layer(Border Frame, Image Image, CoverSlot Slot);
+    private sealed class CoverSlot(HomeShortcutCoverStack owner, Border frame) : Panel, IVisualTreeHost
+    {
+        internal bool Masked;
+        internal CoverSlot Initialize() { Add(frame); return this; }
+        protected override Size MeasureContent(Size availableSize) { frame.Measure(availableSize); return frame.DesiredSize; }
+        protected override Size ArrangeOverride(Size finalSize) { frame.Arrange(Bounds); return finalSize; }
+        bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor) => Masked || visitor(frame);
+        protected override void OnRender(IGraphicsContext context)
+        {
+            if (!Masked) return;
+            var strength = SmoothStep(owner.amount / .2) * SmoothStep((1 - owner.amount) / .3);
+            owner.incomingRaster.Draw(context, frame, owner.Bounds, 12, strength);
+        }
+    }
 
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(520), Easing.CubicBezier(.2, 0, 0, 1));
     private readonly IncomingCoverRaster incomingRaster = new();
@@ -63,11 +77,11 @@ internal sealed class HomeShortcutCoverStack : Panel
         InvalidateVisual();
     }
 
-    private static Layer CreateLayer()
+    private Layer CreateLayer()
     {
         var image = new Image().StretchMode(Stretch.UniformToFill);
         var frame = new Border().CornerRadius(5).ClipToBounds().Background(Color.FromRgb(43, 43, 43)).Child(image);
-        return new(frame, image);
+        return new(frame, image, new CoverSlot(this, frame).Initialize());
     }
 
     private void SetRestingPositions()
@@ -86,41 +100,21 @@ internal sealed class HomeShortcutCoverStack : Panel
     protected override Size ArrangeOverride(Size finalSize)
     {
         var eased = amount;
-        Arrange(rear.Frame, Mix(8, 14, eased), 0, Mix(40, 34, eased), .45 * (1 - eased));
+        Arrange(rear, Mix(8, 14, eased), 0, Mix(40, 34, eased), .45 * (1 - eased));
         // The old front ends exactly at the normal rear-cover position. Keeping
         // its size constant avoids a resize jump as the animation completes.
-        Arrange(front.Frame, Mix(0, 8, eased), Mix(8, 0, eased), 40, Mix(1, .45, eased));
-        Arrange(incoming.Frame, Mix(-40, 0, eased), 8, 40, eased);
+        Arrange(front, Mix(0, 8, eased), Mix(8, 0, eased), 40, Mix(1, .45, eased));
+        Arrange(incoming, Mix(-40, 0, eased), 8, 40, eased);
         return finalSize;
 
-        void Arrange(Border frame, double x, double y, double size, double opacity)
+        void Arrange(Layer layer, double x, double y, double size, double opacity)
         {
+            var frame = layer.Frame;
+            layer.Slot.Masked = ReferenceEquals(layer, incoming) && amount > 0 && amount < 1;
             frame.Width = frame.Height = size;
             frame.Opacity = Math.Clamp(opacity, 0, 1);
-            frame.Arrange(new Rect(Bounds.X + x, Bounds.Y + y, size, size));
+            layer.Slot.Arrange(new Rect(Bounds.X + x, Bounds.Y + y, size, size));
         }
-    }
-
-    protected override void RenderSubtree(IGraphicsContext context)
-    {
-        if (amount <= 0 || amount >= 1)
-        {
-            base.RenderSubtree(context);
-            return;
-        }
-
-        context.Save();
-        try
-        {
-            context.IntersectClip(Bounds);
-            rear.Frame.Render(context);
-            front.Frame.Render(context);
-            // Blend the mask itself in and out. It must reach zero before the
-            // raster is replaced by normal rendering at the resting position.
-            var maskStrength = SmoothStep(amount / .2) * SmoothStep((1 - amount) / .3);
-            incomingRaster.Draw(context, incoming.Frame, Bounds, 12, maskStrength);
-        }
-        finally { context.Restore(); }
     }
 
     private static double Mix(double from, double to, double amount) => from + (to - from) * amount;
@@ -150,7 +144,7 @@ internal sealed class HomeShortcutCoverStack : Panel
     {
         var children = ChildrenList;
         children.Clear();
-        foreach (var layer in layers) children.Add(layer.Frame);
+        foreach (var layer in layers) { if (!ReferenceEquals(layer.Slot.Parent, this)) Add(layer.Slot); else children.Add(layer.Slot); }
     }
 
     protected override void OnDispose()
@@ -188,6 +182,7 @@ internal sealed class HomeShortcutCoverStack : Panel
             }
 
             renderer!.BeginFrame(surface);
+            using var captureViewport = WindowPresentation.CaptureViewport(surface);
             renderer.Clear(Color.Transparent);
             renderer.Translate(-x, -y);
             cover.Render(renderer);

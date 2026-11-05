@@ -48,7 +48,8 @@ internal static class Program
                 Preview = !searchLinksUi && !liveTrackUi && !likesEditsUi, RequireSignIn = loginUi, SkipSessionRestore = searchLinksUi || loginUi || liveTrackUi || likesEditsUi,
                 SilentAudio = true, DiscordPresence = false, SystemMediaSession = args.Contains("--media-ui-smoke-test"), IsolatedData = true
             };
-            Application.DispatcherUnhandledException += e => Console.Error.WriteLine(e.Exception);
+            Exception? dispatcherFailure = null;
+            Application.DispatcherUnhandledException += e => { dispatcherFailure ??= e.Exception; Console.Error.WriteLine(e.Exception); };
             MainWindow? testedWindow = null;
             await AppHost.RunAsync(options, window =>
             {
@@ -62,6 +63,7 @@ internal static class Program
                     lastFrame = frame.FrameIndex; frames.Add(frame);
                 };
             });
+            if (dispatcherFailure is { } uiError) throw new InvalidOperationException("Unhandled UI exception during verification.", uiError);
             if (testedWindow?.VerificationFailure is { } verificationError) throw new InvalidOperationException("UI verification failed.", verificationError);
             if (args.Contains("--browser-shutdown-smoke-test"))
                 await testedWindow!.VerifyBrowserShutdownAsync();

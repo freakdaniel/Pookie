@@ -13,7 +13,6 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
         [new(0,surface),new(1,Color.FromArgb(0,surface.R,surface.G,surface.B))]);
     private readonly LinearGradientBrush bottomFade = new(new Point(0,0), new Point(0,FadeHeight),
         [new(0,Color.FromArgb(0,surface.R,surface.G,surface.B)),new(1,surface)]);
-    internal Action? BeforePaint;
     internal Func<bool>? SynchronizeScroll;
     internal Func<bool>? ComposerResizing;
     internal Func<bool>? Restoring;
@@ -27,9 +26,10 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
         // fractional DPI. Remeasuring here makes the virtualized viewport
         // oscillate between them and continuously invalidate the window layout.
         content.Arrange(bounds);
+        ReconcileScroll();
         return finalSize;
     }
-    protected override void RenderSubtree(IGraphicsContext context)
+    private void ReconcileScroll()
     {
         // The composer changes the viewport every animation frame. Position the
         // realized rows at the corrected offset before painting that resize.
@@ -61,7 +61,10 @@ internal sealed class ChatViewport(FrameworkElement content, Color surface) : Pa
             content.Arrange(new Rect(Bounds.X, Bounds.Y, ActualWidth, ActualHeight));
         }
         composerWasResizing = composerResizing;
-        BeforePaint?.Invoke(); base.RenderSubtree(context);
+    }
+
+    protected override void OnRenderOverlay(IGraphicsContext context)
+    {
         // The conversation has a plain surface. Blend its clipping edge into that
         // surface so a single bottom pixel of an offscreen bubble cannot linger.
         if (content.FindVisualChild<ScrollViewer>() is ScrollViewer scroll)

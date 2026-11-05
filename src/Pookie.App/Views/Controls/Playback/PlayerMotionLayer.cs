@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
@@ -15,7 +16,7 @@ internal sealed class PlayerMotionLayer : Panel
     internal double InkStrength
     {
         get => inkStrength;
-        set { if (inkStrength == value) return; inkStrength = value; InvalidateVisual(); }
+        set { if (inkStrength == value) return; inkStrength = value; Opacity = Math.Clamp(value, 0, 1); }
     }
 
     internal PlayerMotionLayer(FrameworkElement child)
@@ -54,13 +55,9 @@ internal sealed class PlayerMotionLayer : Panel
         return finalSize;
     }
 
-    protected override void RenderSubtree(IGraphicsContext context)
+    protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
-        if (inkStrength <= 0 || FindVisualRoot() is Window { WindowState: WindowState.Minimized }) return;
-        context.Save();
-        context.GlobalAlpha *= (float)inkStrength;
-        context.Translate(OffsetX, OffsetY);
-        base.RenderSubtree(context);
-        context.Restore();
+        transform = Matrix3x2.CreateTranslation((float)OffsetX, (float)OffsetY);
+        return !transform.IsIdentity;
     }
 }

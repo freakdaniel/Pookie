@@ -67,8 +67,7 @@ internal sealed class ChatSearchPopup : Panel
         sheen.Draw(context, Bounds, new CornerRadius(21), .15, GetDpi()/96d);
         if (height > 1) context.FillRectangle(new Rect(Bounds.X + 10, Bounds.Y + 40, Math.Max(0, Bounds.Width - 20), .5), Color.FromArgb(26,255,255,255));
     }
-    protected override void RenderSubtree(IGraphicsContext context)
-    { context.Save(); try { context.SetClipRoundedRect(Bounds, 21,21); base.RenderSubtree(context); } finally { context.Restore(); } }
+    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(Bounds, 21);
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) shadow.Dispose(); }
     protected override void OnDispose() { reveal.Stop(); visibility.Stop(); sheen.Dispose(); shadow.Dispose(); base.OnDispose(); }

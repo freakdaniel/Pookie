@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
         await NavigateAsync(Page.Library);
         await StableActive(Tab("Библиотека"), "top-bar library overview");
         await StableActive(Tab("Обзор"), "library overview tab");
-        ShowLibraryTracks(); likedFilter.Text = ""; likesAsList.Value = true;
+        ShowLibraryTracks(); likedFilter.Text = ""; likesMode.Value = TrackViewMode.Waveform;
         ReplaceTracks(new(Enumerable.Range(90000, 30).Select(id => new SoundCloudTrack { Id = id, Title = "Трек " + id }).ToArray(), null));
         await WaitForLikedLayoutAsync(() => NavigationScroll() is { } scroll && SmoothScroll.Maximum(scroll) > 300);
         NavigationScroll()!.SetScrollOffsets(0, 20);
