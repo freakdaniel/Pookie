@@ -1,7 +1,12 @@
 # MewUI private application extension
 
 Pookie builds MewUI from commit `6cda4f9872f7fce8fc980b34f6f9322f5e5a2c39`.
-The package bootstrap is in [`../mewui-source`](../mewui-source/build.ps1).
+The package bootstrap is in [`../mewui-source`](../mewui-source/Program.cs).
+Normal `dotnet restore`, `build` and `run` commands prepare the pinned local
+packages automatically on the first restore, using .NET 10 and Git. Subsequent
+restores reuse them. Concurrent restores serialize package preparation through
+a lock in the source cache. The PowerShell entry point used by CI invokes the
+same bootstrap.
 
 The upstream X11 offscreen frame session now drains `TextCache.ReleasePendingDeletes()`.
 The old X11 assembly patch has been removed; the upstream implementation is used unchanged.

@@ -11,4 +11,8 @@
     <Project Path="tests/Pookie.Audio.Tests/Pookie.Audio.Tests.csproj" />
     <Project Path="tests/Pookie.Discord.Tests/Pookie.Discord.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/mewui-source/">
+    <Project Path="tools/mewui-source/MewUiSource.csproj" />
+  </Folder>
 </Solution>

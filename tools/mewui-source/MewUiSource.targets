@@ -1,0 +1,13 @@
+<Project>
+  <Target Name="PreparePookieMewUiPackages"
+          BeforeTargets="_GenerateRestoreProjectSpec;CollectPackageReferences"
+          Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'"
+          Inputs="$(MSBuildThisFileDirectory)revision.json;$(MSBuildThisFileDirectory)Program.cs;$(MSBuildThisFileDirectory)MewUiSource.csproj"
+          Outputs="$(MSBuildThisFileDirectory)../../artifacts/mewui-source/packages/.ready">
+    <PropertyGroup>
+      <PookieMewUiBootstrapArtifacts>$(MSBuildProjectDirectory)/obj/mewui-source/$([System.Guid]::NewGuid())</PookieMewUiBootstrapArtifacts>
+    </PropertyGroup>
+    <Exec Command="dotnet run --project &quot;$(MSBuildThisFileDirectory)MewUiSource.csproj&quot; --no-launch-profile --artifacts-path &quot;$(PookieMewUiBootstrapArtifacts)&quot;" />
+    <RemoveDir Directories="$(PookieMewUiBootstrapArtifacts)" />
+  </Target>
+</Project>
