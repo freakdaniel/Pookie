@@ -8,43 +8,14 @@ public sealed partial class SoundCloudWebClient
     {
         ValidateDetailTrackId(userId);
         using var document = await GetJsonAsync(Api("mixed-selections"), token);
-        var shelves = DiscoverData.Shelves(document.RootElement, userId);
-        if (shelves.Mixes.Length > 0 && shelves.MadeForYou.Length > 0 ||
-            Session?.MobileIdentity == null || Transport is not ISoundCloudMobileApi mobile) return shelves;
-
-        // The web selection supplies the reference order. Some mobile sessions
-        // receive only public web selections, so fill missing personal shelves from SDUI.
-        try
-        {
-            using var home = await mobile.GetMobileSduiAsync(cancellationToken: token);
-            var personal = DiscoverData.GroupShelves(DiscoverData.MobilePersonalMixes(home.RootElement, userId));
-            return shelves with
-            {
-                Mixes = shelves.Mixes.Length == 0 ? personal.Mixes : shelves.Mixes,
-                MadeForYou = shelves.MadeForYou.Length == 0 ? personal.MadeForYou : shelves.MadeForYou
-            };
-        }
-        catch (Exception error) when (!token.IsCancellationRequested &&
-            error is NotSupportedException or SoundCloudException or HttpRequestException or JsonException or OperationCanceledException)
-        { return shelves; }
+        return DiscoverData.Shelves(document.RootElement, userId);
     }
 
     public async Task<LibraryItem[]> GetPersonalMixesAsync(long userId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId);
         if (Session == null) throw new SoundCloudException("Для персональных подборок нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null && Transport is ISoundCloudMobileApi mobile)
-        {
-            try
-            {
-                using var home = await mobile.GetMobileSduiAsync(cancellationToken: token);
-                var mixes = DiscoverData.MobilePersonalMixes(home.RootElement, userId);
-                if (mixes.Length > 0) return mixes;
-            }
-            catch (NotSupportedException) { return await GetRestMixesAsync(userId, token); }
-            catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 400 or 404)
-            { return await GetRestMixesAsync(userId, token); }
-        }
+
         return await GetRestMixesAsync(userId, token);
     }
 
@@ -59,27 +30,7 @@ public sealed record SoundCloudDiscoverShelves(LibraryItem[] Mixes, LibraryItem[
 
 public static class DiscoverData
 {
-    public static LibraryItem[] MobilePersonalMixes(JsonElement root, long userId)
-    {
-        var items = new Dictionary<string, LibraryItem>(StringComparer.Ordinal); var remaining = 20000;
-        Visit(root, 0);
-        return items.Values.ToArray();
-        void Visit(JsonElement value, int depth)
-        {
-            if (--remaining < 0 || depth > 24) return;
-            if (value.ValueKind == JsonValueKind.Array) { foreach (var child in value.EnumerateArray()) Visit(child, depth + 1); return; }
-            if (value.ValueKind != JsonValueKind.Object) return;
-            if (value.TryGetProperty("urn", out var urn) && urn.ValueKind == JsonValueKind.String &&
-                urn.GetString()?.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal) == true &&
-                value.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
-            {
-                var playlist = LibraryData.ParsePlaylist(value);
-                if (playlist.MadeFor == null || playlist.MadeFor.Id == userId)
-                { var item = LibraryData.FromPlaylist(playlist); items.TryAdd(item.Key, item); }
-            }
-            foreach (var child in value.EnumerateObject()) Visit(child.Value, depth + 1);
-        }
-    }
+
 
     public static LibraryItem[] PersonalMixes(JsonElement root, long userId) =>
         SelectionPlaylists(root, userId).Where(item => Kind(item) is Shelf.Mixes or Shelf.MadeForYou).ToArray();

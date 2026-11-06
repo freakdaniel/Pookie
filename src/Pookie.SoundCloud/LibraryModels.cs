@@ -27,8 +27,7 @@ public sealed record SoundCloudPlaylist
     public string? LastModified { get; init; }
     public SoundCloudUser? User { get; init; }
     public SoundCloudTrack[] Tracks { get; init; } = [];
-    // Android can omit unavailable tracks while retaining them in track_count.
-    // Only the native reader sets this after exhausting the server's cursors.
+    // Marks a fully enumerated track order, including an empty playlist.
     [JsonIgnore] public bool TrackPagesComplete { get; init; }
 }
 
@@ -113,7 +112,10 @@ public static class LibraryData
         }
         var playlist = JsonSerializer.Deserialize(output.ToArray(), SoundCloudJson.Default.SoundCloudPlaylist)
             ?? throw new JsonException("Invalid playlist");
-        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? "Подборка", Urn = playlist.Urn ?? "" };
+        var tracks = playlist.Tracks ?? [];
+        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? "Подборка", Urn = playlist.Urn ?? "", Tracks = tracks,
+            TrackPagesComplete = item.TryGetProperty("tracks", out var rows) && rows.ValueKind == JsonValueKind.Array &&
+                tracks.Length == playlist.TrackCount && tracks.All(track => track.Id > 0) };
     }
 
     public static LibraryItem FromPlaylist(SoundCloudPlaylist playlist) => new(

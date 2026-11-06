@@ -11,7 +11,7 @@ internal sealed partial class MainWindow
     {
         try
         {
-            if (mobilePlaylistEditingOnly) { await VerifyMobilePlaylistEditingUiAsync(); return; }
+            if (webPlaylistEditingOnly) { await VerifyWebPlaylistEditingUiAsync(); return; }
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
             var transport = new CollectionFixtureTransport();
             api.Session = new("fixture", "fixture-token", "Test"); api.BrowserTransport = transport;
@@ -188,7 +188,7 @@ internal sealed partial class MainWindow
             if (likedPlaylistIds.Count != 0 || collectionLike.IsEnabled) throw new InvalidOperationException("Old account playlist reply changed the new account.");
             transport.FollowCompletion.SetResult(); await late;
             if (followingIds.Count != 0) throw new InvalidOperationException("Old account subscription reply changed the new account.");
-            await VerifyMobilePlaylistEditingUiAsync();
+            await VerifyWebPlaylistEditingUiAsync();
             Console.WriteLine("COLLECTIONS_UI_OK: compact unnumbered playlist, row menu, filter/full queue, expandable description, responsive hero, history filter/scroll, playlist likes/reposts, following/picker and stale account replies");
         }
         catch (Exception error)

@@ -5,7 +5,6 @@ public sealed partial class SoundCloudWebClient
     public async Task<HashSet<long>> GetRepostedIdsAsync(CancellationToken token = default)
     {
         if (Session == null) throw new SoundCloudException("Для репостов нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null) return await MobileApi.GetMobileActionIdsAsync("tracks", reposts: true, cancellationToken: token);
         var ids = new HashSet<long>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         Uri? target = Api("me/track_reposts/ids?limit=200&linked_partitioning=1");

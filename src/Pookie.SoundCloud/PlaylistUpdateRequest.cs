@@ -8,5 +8,5 @@ public sealed record PlaylistUpdateRequest(long UserId, long PlaylistId, string 
         Description is { Length: <= 4000 } && !Description.Any(c => char.IsControl(c) && c is not ('\r' or '\n' or '\t')) &&
         Sharing is "public" or "private" &&
         (TrackIds == null || TrackIds.Length <= 500 && TrackIds.All(id => id is > 0 and <= 9007199254740991)) &&
-        (ExpectedTrackIds == null || ExpectedTrackIds.All(id => id is > 0 and <= 9007199254740991));
+        (ExpectedTrackIds == null || ExpectedTrackIds.Length <= 500 && ExpectedTrackIds.All(id => id is > 0 and <= 9007199254740991));
 }

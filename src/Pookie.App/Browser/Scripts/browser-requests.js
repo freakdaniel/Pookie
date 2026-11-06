@@ -166,7 +166,7 @@
           ...(url.origin === apiOrigin && url.pathname.startsWith('/me/play-history') ?
             { credentials: 'include', ...(method === 'GET' ? { cache: 'no-store' } : {}) } : {}),
           headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1',
-            ...(body ? { 'Content-Type': contentType } : {}),
+            ...(body && contentType ? { 'Content-Type': contentType } : {}),
             // REST preflights do not allow Apollo's client header. Scope it to
             // GraphQL, including fixtures where both services share an origin.
             ...(body && url.origin === graphOrigin && url.pathname === '/graphql' ? { 'apollographql-client-name': 'webi' } : {}) },
@@ -200,7 +200,6 @@
       // Check the real API address before remapping local smoke-test fixtures.
       if (url.origin !== 'https://api-v2.soundcloud.com' || url.username || url.password || url.hash ||
         !(/^\/users\/soundcloud(%3[Aa]|:)users(%3[Aa]|:)[1-9][0-9]*\/web-profiles$/.test(url.pathname) || /^\/system-playlists\/soundcloud(%3A|:)system-playlists(%3A|:)[A-Za-z0-9%:_-]+$/i.test(url.pathname) || /^\/(mixed-selections|me|me\/track_likes\/ids|me\/track_reposts\/ids|me\/playlist_likes\/ids|me\/playlist_reposts\/ids|search(?:\/(tracks|users|albums|playlists|playlists_without_albums))?|stream|resolve|tracks|me\/library\/(all|stations)|me\/play-history\/(contexts|tracks))$/.test(url.pathname) ||
-          url.pathname === '/configuration/android' || /^\/tracks\/[1-9][0-9]*\/streams\/(https|hls)$/.test(url.pathname) ||
           /^\/media\//.test(url.pathname) || /^\/((tracks|playlists)\/[1-9][0-9]*|tracks\/[1-9][0-9]*\/(comments|related|reposters|albums|playlists_without_albums)|users\/[1-9][0-9]*(\/(likes|followings|followings\/ids|followers|tracks|playlists|playlists_without_albums|albums|comments))?|stream\/users\/[1-9][0-9]*(\/reposts)?)$/.test(url.pathname))) return null;
       return new URL(url.pathname + url.search, apiOrigin);
     } catch { return null; }
@@ -270,6 +269,47 @@
   }
 
   async function request(command, context) {
+    if (command.operation === 'playlist-edit') {
+      const edit = command.edit;
+      const url = new URL(`/playlists/${edit.playlist_id}`, apiOrigin);
+      const current = await fetchProtected(new URL(`${url.href}?representation=full`), 'GET', context);
+      if (!current.ok) { send({ kind: 'complete', request_id: command.id, status: current.status }); return; }
+      const playlist = (await readJson(current, context)).json;
+      if (playlist?.id !== edit.playlist_id || playlist.user?.id !== edit.user_id || playlist.is_album || playlist.is_system_playlist)
+        throw new Error('playlist-owner-mismatch');
+      let body, contentType = 'application/json';
+      if (edit.kind === 'remove' || edit.update?.track_ids != null) {
+        if (!Array.isArray(playlist.tracks) || playlist.tracks.length !== playlist.track_count ||
+          playlist.tracks.some(track => !Number.isSafeInteger(track.id) || track.id <= 0)) throw new Error('playlist-incomplete');
+      }
+      if (edit.kind === 'remove') {
+        body = JSON.stringify({ playlist: { tracks: playlist.tracks.filter(track => track.id !== edit.track_id).map(track => track.id) } });
+      } else if (edit.kind === 'update') {
+        const update = edit.update;
+        const ids = playlist.tracks?.map(track => track.id);
+        if (update.expected_track_ids && (ids?.length !== update.expected_track_ids.length ||
+          ids.some((id, index) => id !== update.expected_track_ids[index]))) throw new Error('playlist-order-changed');
+        body = JSON.stringify({ playlist: { title: update.title, description: update.description, sharing: update.sharing,
+          ...(update.track_ids ? { tracks: update.track_ids } : {}) } });
+      } else if (edit.kind === 'artwork') {
+        const bytes = Uint8Array.from(atob(edit.artwork), value => value.charCodeAt(0));
+        body = new FormData(); body.append('playlist[artwork_data]', new Blob([bytes], { type: 'image/jpeg' }), 'artwork.jpg');
+        contentType = null;
+      }
+      const response = await fetchProtected(url, edit.kind === 'delete' ? 'DELETE' : 'PUT', context, body, true, contentType);
+      if (!response.ok || edit.kind === 'delete') { send({ kind: 'complete', request_id: command.id, status: response.status }); return; }
+      const confirmed = await fetchProtected(new URL(`${url.href}?representation=full`), 'GET', context);
+      if (confirmed.ok) {
+        const { text } = await readJson(confirmed, context);
+        for (let start = 0, index = 0; start < text.length;) {
+          let end = Math.min(start + 1024, text.length);
+          if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+          send({ kind: 'json-chunk', request_id: command.id, chunk_index: index++, chunk: text.slice(start, end) }); start = end;
+        }
+      }
+      send({ kind: 'complete', request_id: command.id, status: confirmed.status });
+      return;
+    }
     if (command.operation === 'follow-signature') {
       await wait(ready, context);
       const signature = followSignature(command.user_id, command.artist_id);
@@ -445,11 +485,35 @@
     }
   }
 
+  function validPlaylistEdit(command) {
+    const edit = command.edit;
+    const id = value => Number.isSafeInteger(value) && value > 0;
+    const ids = value => value == null || Array.isArray(value) && value.length <= 500 && value.every(id);
+    if (!edit || !id(edit.user_id) || !id(edit.playlist_id) || command.url || command.audio || command.detail || command.comment ||
+      command.chat || command.session || command.playlist || command.context_urn || command.user_id || command.track_id || command.artist_id || command.playlist_id) return false;
+    if (edit.kind === 'update') {
+      const update = edit.update;
+      return update && update.user_id === edit.user_id && update.playlist_id === edit.playlist_id && !edit.track_id && edit.artwork == null &&
+        typeof update.title === 'string' && update.title.trim() === update.title && update.title.length > 0 && update.title.length <= 255 &&
+        !/[\u0000-\u001f\u007f-\u009f]/.test(update.title) && typeof update.description === 'string' && update.description.length <= 4000 &&
+        !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(update.description) &&
+        ['public', 'private'].includes(update.sharing) && ids(update.track_ids) && ids(update.expected_track_ids);
+    }
+    if (edit.update != null) return false;
+    if (edit.kind === 'remove') return id(edit.track_id) && edit.artwork == null;
+    if (edit.kind === 'delete') return !edit.track_id && edit.artwork == null;
+    if (edit.kind !== 'artwork' || edit.track_id || typeof edit.artwork !== 'string' || edit.artwork.length > 1398104) return false;
+    try { const bytes = atob(edit.artwork); return bytes.length >= 4 && bytes.length <= 1048576 &&
+      bytes.charCodeAt(0) === 255 && bytes.charCodeAt(1) === 216 && bytes.charCodeAt(bytes.length - 2) === 255 && bytes.charCodeAt(bytes.length - 1) === 217; }
+    catch { return false; }
+  }
+
   window.__pookieRequest = command => {
     if (!command || !/^[a-f0-9]{32}$/.test(command.id || '')) return;
     if (command.operation === 'session-update') {
       const next = command.session;
-      if (!next || next.client_id !== account.client_id || next.refresh_token != null || next.mobile_identity != null ||
+      if (!next || next.client_id !== account.client_id ||
+        Object.keys(next).some(key => !['client_id', 'access_token', 'user_agent', 'data_dome_client_id', 'app_version', 'app_locale', 'session_id'].includes(key)) ||
         typeof next.access_token !== 'string' || !/^[A-Za-z0-9._-]{1,4096}$/.test(next.access_token) ||
         account.session_id != null && next.session_id !== account.session_id) return;
       window.__pookieUpdateSession(next);
@@ -468,9 +532,10 @@
       }
       return;
     }
-    if (active.has(command.id) || (command.playlist != null && command.operation !== 'playlist-create') || (command.chat != null && command.operation !== 'chat') || (command.comment != null && command.operation !== 'comment-write') ||
+    if (active.has(command.id) || (command.edit != null && command.operation !== 'playlist-edit') || (command.playlist != null && command.operation !== 'playlist-create') || (command.chat != null && command.operation !== 'chat') || (command.comment != null && command.operation !== 'comment-write') ||
       (command.context_urn != null && command.operation !== 'play-history') ||
-      !(command.operation === 'playlist-create' && !command.url && !command.audio && !command.detail && !command.comment && !command.chat && !command.session && !command.context_urn && !command.user_id && !command.track_id && !command.artist_id && !command.playlist_id &&
+      !(command.operation === 'playlist-edit' && validPlaylistEdit(command) ||
+        command.operation === 'playlist-create' && !command.url && !command.audio && !command.detail && !command.comment && !command.chat && !command.session && !command.context_urn && !command.user_id && !command.track_id && !command.artist_id && !command.playlist_id &&
         command.playlist && Number.isSafeInteger(command.playlist.user_id) && command.playlist.user_id > 0 && Number.isSafeInteger(command.playlist.track_id) && command.playlist.track_id > 0 &&
         typeof command.playlist.title === 'string' && command.playlist.title.trim().length > 0 && command.playlist.title.length <= 255 && !/[\u0000-\u001f\u007f-\u009f]/.test(command.playlist.title) && ['public', 'private'].includes(command.playlist.sharing) ||
         command.operation === 'chat' && validChat(command) || command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&

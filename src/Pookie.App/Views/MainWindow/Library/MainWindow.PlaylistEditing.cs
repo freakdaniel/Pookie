@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
     private readonly HashSet<(WebSession Session, long Playlist)> pendingPlaylistEdits = [];
 
     private bool CanEditDisplayedPlaylist() => !demo && page.Value == Page.LibraryCollection && me is { } user &&
-        api.Session is { MobileIdentity: not null } session && displayedCollection is { IsAlbum: false, Playlist: { Id: > 0, IsSystemPlaylist: false } playlist } &&
+        api.Session is { } session && displayedCollection is { IsAlbum: false, Playlist: { Id: > 0, IsSystemPlaylist: false } playlist } &&
         playlist.User?.Id == user.Id && !pendingPlaylistEdits.Contains((session, playlist.Id));
 
     private bool HasCompletePlaylistOrder() => displayedCollection?.Playlist is { TrackPagesComplete: true } playlist &&
@@ -79,7 +79,7 @@ internal sealed partial class MainWindow
         playlistEditName.IsEnabled = playlistEditDescription.IsEnabled = playlistEditPrivacy.IsEnabled = !busy;
         playlistEditCancel.IsEnabled = !busy;
         playlistEditPrivacy.Select(playlistEditPrivate);
-        var valid = playlistEditDeleting || target is { TrackPagesComplete: true } &&
+        var valid = playlistEditDeleting || target != null &&
             new PlaylistUpdateRequest(me?.Id ?? 0, target.Id, playlistEditName.Text.Trim(), playlistEditDescription.Text, playlistEditPrivate ? "private" : "public").IsValid();
         TrackButtons.SetAvailability(playlistEditSave, valid && !busy && target != null && api.Session == playlistEditSession, busy);
     }
@@ -169,7 +169,7 @@ internal sealed partial class MainWindow
             root.Commands.Register(command, action, enabled); menu.Item(command);
         }
         Item("remove", "Удалить из плейлиста", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 0)); },
-            () => track() != null && CanEditDisplayedPlaylist());
+            () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder());
         Item("up", "Выше в плейлисте", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), -1)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder() && position() > 0);
         Item("down", "Ниже в плейлисте", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 1)); },

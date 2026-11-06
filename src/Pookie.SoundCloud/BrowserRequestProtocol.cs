@@ -8,11 +8,16 @@ namespace Pookie.SoundCloud;
 public sealed record BrowserRequestCommand(string Id, string Operation, long UserId = 0, long TrackId = 0, bool Liked = false, string? Url = null, BrowserAudioCommand? Audio = null, TrackReadRequest? Detail = null, bool Reposted = false, long ArtistId = 0, bool Following = false, long PlaylistId = 0, CommentWriteRequest? Comment = null, string? ContextUrn = null, ChatRequest? Chat = null, WebSession? Session = null, PlaylistCreateRequest? Playlist = null)
 {
     // 20,000 UTF-16 chat characters may expand to 120 KB in escaped JSON.
-    public const int MaxLength = 131072;
+    public const int MaxLength = 2097152;
     public bool IsValid() => Id is { Length: 32 } && Id.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+        (Operation == "playlist-edit" ? Edit?.IsValid() == true && Playlist == null && Session == null && Url == null && Audio == null && Detail == null && Comment == null && ContextUrn == null && Chat == null &&
+            UserId == 0 && TrackId == 0 && ArtistId == 0 && PlaylistId == 0 : Edit == null && IsStandardValid());
+
+    public PlaylistEditRequest? Edit { get; init; }
+    private bool IsStandardValid() =>
         (Operation == "playlist-create" ? Playlist?.IsValid() == true && Session == null && Url == null && Audio == null && Detail == null && Comment == null && ContextUrn == null && Chat == null &&
             UserId == 0 && TrackId == 0 && ArtistId == 0 && PlaylistId == 0 : Playlist == null &&
-        (Operation == "session-update" ? Session?.IsValid() == true && Session.RefreshToken == null && Session.MobileIdentity == null &&
+        (Operation == "session-update" ? Session?.IsValid() == true &&
             Url == null && Audio == null && Detail == null && Comment == null && ContextUrn == null && Chat == null &&
             UserId == 0 && TrackId == 0 && ArtistId == 0 && PlaylistId == 0 : Session == null &&
         (Operation == "chat" ? Chat?.IsValid() == true && Url == null && Audio == null && Detail == null && Comment == null && ContextUrn == null &&
@@ -49,7 +54,6 @@ public sealed record BrowserRequestCommand(string Id, string Operation, long Use
         if (value is not { Length: > 0 and <= 8192 } || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
             !SoundCloudWebClient.IsApiUri(uri) || uri.Fragment != "") return false;
         var path = uri.AbsolutePath;
-        if (path == "/configuration/android" || System.Text.RegularExpressions.Regex.IsMatch(path, @"^/tracks/[1-9][0-9]*/streams/(https|hls)$")) return true;
         return path is "/mixed-selections" or "/me" or "/me/track_likes/ids" or "/me/track_reposts/ids" or "/me/playlist_likes/ids" or "/me/playlist_reposts/ids" or "/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums" or "/stream" or "/resolve" or "/tracks" or "/me/library/all" or "/me/library/stations" or "/me/play-history/contexts" or "/me/play-history/tracks" ||
             path.StartsWith("/media/", StringComparison.Ordinal) ||
             System.Text.RegularExpressions.Regex.IsMatch(path, @"^/users/soundcloud(%3[Aa]|:)users(%3[Aa]|:)[1-9][0-9]*/web-profiles$") ||

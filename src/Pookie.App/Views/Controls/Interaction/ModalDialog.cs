@@ -32,6 +32,7 @@ internal sealed class ModalDialog : Panel
     internal void RenderGlassBackdrop(IGraphicsContext context) => OverlayScrim.Draw(context, Bounds, backgroundAmount);
     internal Action? DismissRequested;
     internal Action? Presented, Closed;
+    internal Action? Opened;
 
     internal ModalDialog(FrameworkElement content, UIElement initialFocus, FrameworkElement? close = null)
     {
@@ -71,7 +72,7 @@ internal sealed class ModalDialog : Panel
         if (close != null) close.Opacity = backgroundAmount;
         live.Opacity = pose == 1 && contentAmount == 1 ? 1 : 0;
         if (!watching) { source.FrameRendered += Prepare; watching = true; }
-        Animate(1); initialFocus.Focus(); InvalidateMeasure();
+        Animate(1); KeyboardFocusFeedback.Restore(initialFocus, triggerKeyboard); InvalidateMeasure();
     }
 
     internal void Close(bool immediate = false)
@@ -108,7 +109,7 @@ internal sealed class ModalDialog : Panel
         {
             set(target);
             if (IsOpen && target == 1 && ReferenceEquals(clock, fade)) Presented?.Invoke();
-            if (IsOpen && pose == 1 && contentAmount == 1) { live.Opacity = 1; stamp?.Dispose(); stamp = null; }
+            if (IsOpen && pose == 1 && contentAmount == 1) { live.Opacity = 1; stamp?.Dispose(); stamp = null; Opened?.Invoke(); }
             if (!IsOpen && backgroundAmount == 0 && contentAmount == 0 && pose == 0) Detach(restoreFocus: true);
             InvalidateVisual();
         };
@@ -154,13 +155,15 @@ internal sealed class ModalDialog : Panel
         preparing = true;
         try
         {
-            if (contentAmount > 0 && (live.Opacity == 0 || !IsOpen))
+            // Closing owns a frozen exit image. Recapturing after Close() can
+            // replace it with already hidden/disposed native content.
+            if (IsOpen && contentAmount > 0 && live.Opacity == 0)
             {
                 CaptureCard();
                 live.Opacity = 0;
                 InvalidateVisual();
             }
-            if (IsOpen && !IsFocusWithin) initialFocus.Focus();
+            if (IsOpen && !IsFocusWithin) KeyboardFocusFeedback.Restore(initialFocus, triggerKeyboard);
         }
         finally { preparing = false; }
     }
@@ -200,24 +203,42 @@ internal sealed class ModalDialog : Panel
         context.BeginOpacity(contentAmount);
         try
         {
-            var bounds = stamp.ImageBounds; var image = stamp.Image;
-            var scale = .8 + .2 * pose; var angle = -Math.PI / 9 * (1 - pose);
-            var sine = Math.Sin(angle); var cosine = Math.Cos(angle); var center = content.Bounds.Center;
-            // The renderer exposes affine images. Narrow horizontal image slices
-            // approximate the perspective(500px) plane, including its taper.
-            const double strip = 3;
-            for (var top = bounds.Y; top < bounds.Bottom; top += strip)
-            {
-                var bottom = Math.Min(bounds.Bottom, top + strip);
-                double Y(double y) => center.Y + scale * (y - center.Y) * cosine / (1 - scale * (y - center.Y) * sine / 500);
-                var depth = 1 - scale * ((top + bottom) / 2 - center.Y) * sine / 500;
-                var left = center.X + scale * (bounds.X - center.X) / depth;
-                var width = scale * bounds.Width / depth;
-                context.DrawImage(image, new(left, Y(top), width, Y(bottom) - Y(top)),
-                    new(0, (top - bounds.Y) / bounds.Height * image.PixelHeight, image.PixelWidth, (bottom - top) / bounds.Height * image.PixelHeight));
-            }
+            DrawPerspective(context, stamp.Image, stamp.ImageBounds, content.Bounds.Center, pose, Bounds);
         }
         finally { context.EndOpacity(); }
+    }
+
+    internal static void DrawPerspective(IGraphicsContext context, IImage image, Rect bounds, Point center, double pose, Rect viewport)
+    {
+        var scale = .8 + .2 * pose; var angle = -Math.PI / 9 * (1 - pose);
+        var sine = Math.Sin(angle); var cosine = Math.Cos(angle);
+        var dpi = context.DpiScale;
+        double Y(double y) => center.Y + scale * (y - center.Y) * cosine / (1 - scale * (y - center.Y) * sine / 500);
+        const double strip = 3;
+        for (var top = bounds.Y; top < bounds.Bottom; top += strip)
+        {
+            var bottom = Math.Min(bounds.Bottom, top + strip);
+            // Adjacent clips share an exact physical pixel boundary. Draw with
+            // overscan inside them so sampling/snapping cannot expose hairline gaps.
+            // The clips also prevent repeated alpha blending at the joins.
+            var clipTop = Math.Round(Y(top) * dpi) / dpi;
+            var clipBottom = Math.Round(Y(bottom) * dpi) / dpi;
+            if (clipBottom <= clipTop) continue;
+            var depth = 1 - scale * ((top + bottom) / 2 - center.Y) * sine / 500;
+            var padding = 2 * depth * depth / (dpi * scale * cosine);
+            var sampleTop = Math.Max(bounds.Y, top - padding);
+            var sampleBottom = Math.Min(bounds.Bottom, bottom + padding);
+            var left = center.X + scale * (bounds.X - center.X) / depth;
+            var width = scale * bounds.Width / depth;
+            context.Save();
+            try
+            {
+                context.SetClip(new Rect(viewport.X, clipTop, viewport.Width, clipBottom - clipTop));
+                context.DrawImage(image, new(left, Y(sampleTop), width, Y(sampleBottom) - Y(sampleTop)),
+                    new(0, (sampleTop - bounds.Y) / bounds.Height * image.PixelHeight, image.PixelWidth, (sampleBottom - sampleTop) / bounds.Height * image.PixelHeight));
+            }
+            finally { context.Restore(); }
+        }
     }
     private Point Unproject(Point point)
     {
@@ -254,5 +275,5 @@ internal sealed class ModalDialog : Panel
         base.OnVisualRootChanged(oldRoot, newRoot);
         if (newRoot == null) Close(true);
     }
-    protected override void OnDispose() { Close(true); DismissRequested = Presented = Closed = null; base.OnDispose(); }
+    protected override void OnDispose() { Close(true); DismissRequested = Presented = Closed = Opened = null; base.OnDispose(); }
 }

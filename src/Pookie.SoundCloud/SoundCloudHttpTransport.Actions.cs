@@ -9,35 +9,7 @@ public sealed partial class SoundCloudHttpTransport
     {
         if (!request.IsValid()) throw new ArgumentException("Некорректные данные плейлиста.");
         var account = Account();
-        if (account.MobileIdentity != null)
-        {
-            using var created = await ExecuteAsync(HttpMethod.Post, SoundCloudMobileRoutes.Uri("/playlists"), Json(writer =>
-            {
-                writer.WriteStartObject(); writer.WriteStartObject("playlist");
-                writer.WriteString("title", request.Title); writer.WriteBoolean("public", request.Sharing == "public");
-                writer.WriteEndObject(); writer.WriteStartArray("track_urns");
-                writer.WriteStringValue(SoundCloudMobileRoutes.Urn("tracks", request.TrackId));
-                writer.WriteEndArray(); writer.WriteEndObject();
-            }), null, cancellationToken).ConfigureAwait(false);
-            long playlistId = 0;
-            try
-            {
-                var metadata = SoundCloudMobilePlaylist.ParseMetadata(created.RootElement);
-                playlistId = metadata.Id;
-                if (metadata.User?.Id != request.UserId || metadata.Title != request.Title || metadata.Sharing != request.Sharing)
-                    throw new SoundCloudException("SoundCloud не подтвердил создание плейлиста.");
-                if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
-                // Android returns ApiPlaylistWrapper, without the seed track list.
-                // Confirm it by reading the new resource; never repeat the POST.
-                var playlist = await GetMobilePlaylistAsync(metadata.Id, cancellationToken).ConfigureAwait(false);
-                var result = JsonSerializer.SerializeToDocument(playlist, SoundCloudJson.Default.SoundCloudPlaylist);
-                if (request.Confirms(result.RootElement)) return result;
-                result.Dispose();
-                throw new SoundCloudException("SoundCloud не подтвердил создание плейлиста.");
-            }
-            catch (Exception error) when (error is SoundCloudException or HttpRequestException or JsonException)
-            { throw new PlaylistCreationUnconfirmedException(playlistId, error); }
-        }
+
         // The web client serializes tracks to IDs and wraps attributes in playlist.
         return await ExecuteAsync(HttpMethod.Post, Api("/playlists"), Json(writer =>
         {
@@ -57,38 +29,18 @@ public sealed partial class SoundCloudHttpTransport
     public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default)
     {
         ValidateId(userId); ValidateId(trackId);
-        return Account().MobileIdentity == null
-            ? ActionAsync(liked ? HttpMethod.Put : HttpMethod.Delete, $"/users/{userId}/track_likes/{trackId}", null,
-                verification == null ? null : ct => verification.SetLikedAsync(userId, trackId, liked, ct), cancellationToken)
-            : LikeAsync("tracks", trackId, liked, verification == null ? null : ct => verification.SetLikedAsync(userId, trackId, liked, ct), cancellationToken);
+        return ActionAsync(liked ? HttpMethod.Put : HttpMethod.Delete, $"/users/{userId}/track_likes/{trackId}", null,
+                verification == null ? null : ct => verification.SetLikedAsync(userId, trackId, liked, ct), cancellationToken);
     }
 
     public Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken cancellationToken = default)
     {
         ValidateId(userId); ValidateId(playlistId);
-        return Account().MobileIdentity == null
-            ? ActionAsync(liked ? HttpMethod.Put : HttpMethod.Delete, $"/users/{userId}/playlist_likes/{playlistId}", null,
-                verification == null ? null : ct => verification.SetPlaylistLikedAsync(userId, playlistId, liked, ct), cancellationToken)
-            : LikeAsync("playlists", playlistId, liked, verification == null ? null : ct => verification.SetPlaylistLikedAsync(userId, playlistId, liked, ct), cancellationToken);
+        return ActionAsync(liked ? HttpMethod.Put : HttpMethod.Delete, $"/users/{userId}/playlist_likes/{playlistId}", null,
+                verification == null ? null : ct => verification.SetPlaylistLikedAsync(userId, playlistId, liked, ct), cancellationToken);
     }
 
-    private async Task LikeAsync(string kind, long id, bool liked, Func<CancellationToken, Task>? verify, CancellationToken token)
-    {
-        var urn = SoundCloudMobileRoutes.Urn(kind, id);
-        using var result = await ExecuteAsync(HttpMethod.Post, SoundCloudMobileRoutes.Uri($"/likes/{kind}/{(liked ? "create" : "delete")}"), Json(writer =>
-        {
-            writer.WriteStartObject(); writer.WriteStartArray("likes"); writer.WriteStartObject();
-            writer.WriteString("target_urn", urn);
-            writer.WriteEndObject(); writer.WriteEndArray(); writer.WriteEndObject();
-        }), verify == null ? null : async ct => { await verify(ct).ConfigureAwait(false); return JsonDocument.Parse("{}"); }, token,
-            validate: root =>
-            {
-                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("collection", out var collection) || collection.ValueKind != JsonValueKind.Array ||
-                    !collection.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object && item.TryGetProperty("target_urn", out var target) &&
-                        target.ValueKind == JsonValueKind.String && target.GetString() == urn))
-                    throw new SoundCloudException("SoundCloud не подтвердил изменение лайка.");
-            }).ConfigureAwait(false);
-    }
+
 
     public Task SetRepostedAsync(long trackId, bool reposted, CancellationToken cancellationToken = default)
     {
@@ -105,17 +57,15 @@ public sealed partial class SoundCloudHttpTransport
     }
 
     private Task RepostAsync(string kind, long id, bool reposted, Func<CancellationToken, Task>? verify, CancellationToken token) =>
-        ActionAsync(reposted ? Account().MobileIdentity == null ? HttpMethod.Put : HttpMethod.Post : HttpMethod.Delete,
-            Account().MobileIdentity == null ? $"/me/{(kind == "tracks" ? "track" : "playlist")}_reposts/{id}" : $"/reposts/{kind}/{SoundCloudMobileRoutes.Urn(kind, id)}",
-            null, verify, token, mobileApi: Account().MobileIdentity != null);
+        ActionAsync(reposted ? HttpMethod.Put : HttpMethod.Delete,
+            $"/me/{(kind == "tracks" ? "track" : "playlist")}_reposts/{id}", null, verify, token);
 
     public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken cancellationToken = default)
     {
         ValidateId(userId); ValidateId(artistId);
         if (userId == artistId) throw new ArgumentException("Нельзя подписаться на свой профиль.");
-        var mobile = Account().MobileIdentity != null;
-        var path = mobile ? $"/follows/users/{SoundCloudMobileRoutes.Urn("users", artistId)}" : $"/me/followings/{artistId}";
-        if (following && !mobile)
+        var path = $"/me/followings/{artistId}";
+        if (following)
         {
             if (verification == null) throw new SoundCloudException("Подпись подписки SoundCloud ещё не подключена.");
             // The site's signing helper is an authorization operation. The actual
@@ -126,7 +76,7 @@ public sealed partial class SoundCloudHttpTransport
             path += "?signature=" + Uri.EscapeDataString(signature);
         }
         await ActionAsync(following ? HttpMethod.Post : HttpMethod.Delete, path, null,
-            verification == null ? null : ct => verification.SetFollowingAsync(userId, artistId, following, ct), cancellationToken, mobileApi: mobile).ConfigureAwait(false);
+            verification == null ? null : ct => verification.SetFollowingAsync(userId, artistId, following, ct), cancellationToken).ConfigureAwait(false);
     }
 
     private readonly SemaphoreSlim playlistEdits = new(1, 1);
@@ -141,21 +91,7 @@ public sealed partial class SoundCloudHttpTransport
     private async Task AddToPlaylistCoreAsync(long userId, long playlistId, long trackId, CancellationToken cancellationToken)
     {
         var account = Account();
-        var mobile = account.MobileIdentity != null;
-        if (mobile)
-        {
-            var snapshot = await GetMobilePlaylistAsync(playlistId, cancellationToken).ConfigureAwait(false);
-            if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
-            if (snapshot.User?.Id != userId || snapshot.IsAlbum || snapshot.IsSystemPlaylist)
-                throw new SoundCloudException("Этот плейлист нельзя редактировать.");
-            if (snapshot.Tracks.Any(track => track.Id == trackId)) return;
-            if (snapshot.TrackCount >= 500) throw new SoundCloudException("Плейлист заполнен.");
-            await ActionAsync(HttpMethod.Post, $"/playlists/{SoundCloudMobileRoutes.Urn("playlists", playlistId)}/tracks", Json(writer =>
-            {
-                writer.WriteStartObject(); writer.WriteString("track_urn", SoundCloudMobileRoutes.Urn("tracks", trackId)); writer.WriteEndObject();
-            }), null, cancellationToken, mobileApi: true).ConfigureAwait(false);
-            return;
-        }
+
         using var current = await GetJsonAsync(Api($"/playlists/{playlistId}?representation=full"), cancellationToken).ConfigureAwait(false);
         var playlist = current.RootElement;
         if (!MatchesResource(playlist, "playlists", playlistId) || !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", userId) ||
@@ -192,7 +128,7 @@ public sealed partial class SoundCloudHttpTransport
     {
         if (value.ValueKind != JsonValueKind.Object) return false;
         if (value.TryGetProperty("id", out var number) && number.ValueKind == JsonValueKind.Number) return number.TryGetInt64(out var actual) && actual == id;
-        return value.TryGetProperty("urn", out var urn) && urn.ValueKind == JsonValueKind.String && urn.GetString() == SoundCloudMobileRoutes.Urn(kind, id);
+        return value.TryGetProperty("urn", out var urn) && urn.ValueKind == JsonValueKind.String && urn.GetString() == $"soundcloud:{kind}:{id}";
     }
 
     public Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
@@ -272,9 +208,9 @@ public sealed partial class SoundCloudHttpTransport
     }
 
     private async Task ActionAsync(HttpMethod method, string path, byte[]? body,
-        Func<CancellationToken, Task>? verify, CancellationToken token, bool mobileApi = false)
+        Func<CancellationToken, Task>? verify, CancellationToken token)
     {
-        var uri = mobileApi ? SoundCloudMobileRoutes.Uri(path) : Api(path);
+        var uri = Api(path);
         using var document = await ExecuteAsync(method, uri, body, verify == null ? null : async ct =>
         { await verify(ct).ConfigureAwait(false); return JsonDocument.Parse("{}"); }, token, expectJson: false).ConfigureAwait(false);
     }

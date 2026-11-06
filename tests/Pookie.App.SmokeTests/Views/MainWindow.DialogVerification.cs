@@ -140,9 +140,10 @@ internal sealed partial class MainWindow
     private async Task VerifyPlaylistCreationAsync(SoundCloudTrack track, CollectionFixtureTransport transport)
     {
         var bounds = playlistDialog.Bounds;
-        if (playlistPickerClose.Bounds != new Rect(bounds.Right - 64, bounds.Y + 12, 40, 40) ||
+        var expectedClose = LayoutRounding.SnapRectEdgesToPixels(new Rect(bounds.Right - 64, bounds.Y + 12, 40, 40), Window.DpiScale);
+        if (playlistPickerClose.Bounds != expectedClose ||
             playlistDialogContent.Bounds.Contains(playlistPickerClose.Bounds.Center) || chatVideoClose.StyleName != TrackButtons.Glass)
-            throw new InvalidOperationException("Dialog/media close button is not glass or aligned to the overlay corner.");
+            throw new InvalidOperationException($"Dialog/media close button is not glass or aligned to the overlay corner: actual={playlistPickerClose.Bounds}, expected={expectedClose}, overlaps={playlistDialogContent.Bounds.Contains(playlistPickerClose.Bounds.Center)}, mediaStyle={chatVideoClose.StyleName}.");
         RouteWaveformClick(SettingsCenter(playlistPickerCreate));
         if (!playlistCreateName.IsFocused || !playlistDialogPages.Creating || playlistCreateSave.IsEnabled)
             throw new InvalidOperationException("Creation did not focus its empty title or allowed a blank write.");

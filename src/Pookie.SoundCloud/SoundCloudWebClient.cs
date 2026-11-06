@@ -39,7 +39,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public static bool IsMediaUri(Uri uri) => uri.Scheme == "https" &&
         (uri.Host == "sndcdn.com" || uri.Host.EndsWith(".sndcdn.com", StringComparison.OrdinalIgnoreCase) ||
          uri.Host == "playback.media-streaming.soundcloud.cloud") && uri.Port == 443 && uri.UserInfo == "";
-    public static bool IsPlaybackUri(Uri uri) => uri.Fragment == "" && (IsMediaUri(uri) || SoundCloudMobileRoutes.IsStream(uri));
+    public static bool IsPlaybackUri(Uri uri) => uri.Fragment == "" && IsMediaUri(uri);
 
     public async Task<string> GetClientIdAsync(CancellationToken cancellationToken = default)
     {
@@ -153,11 +153,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<TrackPage> GetLikesAsync(long userId, CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null)
-        {
-            var mobilePage = await MobileApi.GetMobileLibraryPageAsync(userId, "likes", cancellationToken: cancellationToken);
-            return new(mobilePage.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray(), mobilePage.NextHref);
-        }
+
         using var document = await GetJsonAsync(Api($"users/{userId}/likes?limit=30&linked_partitioning=1"), cancellationToken);
         return ParsePage(document.RootElement);
     }
@@ -165,11 +161,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<LibraryPage> GetLibraryAsync(string section, long userId, CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для библиотеки нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null)
-        {
-            if (section == "collections") return new(await MobileApi.GetMobileCollectionsAsync(userId, cancellationToken), null);
-            if (section == "following") return await MobileApi.GetMobileLibraryPageAsync(userId, section, cancellationToken: cancellationToken);
-        }
+
         var path = section switch {
             "collections" => "me/library/all", "stations" => "me/library/stations",
             "recent" => "me/play-history/contexts", "history" => "me/play-history/tracks",
@@ -181,8 +173,6 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<LibraryPage> GetLibraryNextAsync(string url, CancellationToken cancellationToken = default)
     {
-        if (Session?.MobileIdentity != null && Uri.TryCreate(url, UriKind.Absolute, out var mobileUri) && SoundCloudMobileRoutes.IsRead(mobileUri))
-            return await ReadMobileLibraryCursorAsync(mobileUri, cancellationToken);
         if (!BrowserRequestCommand.IsReadUrl(url)) throw new SoundCloudException("Неверный адрес страницы библиотеки.");
         using var document = await GetJsonAsync(new Uri(url), cancellationToken);
         return await ParseLibraryAsync(document.RootElement, cancellationToken);
@@ -218,13 +208,6 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<CollectionDetail> GetCollectionDetailAsync(LibraryItem item, CancellationToken cancellationToken = default)
     {
-        if (Session?.MobileIdentity != null && item.Playlist is { Id: > 0 } ordinary && !ordinary.IsSystemPlaylist &&
-            !ordinary.Urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal))
-        {
-            var mobilePlaylist = await MobileApi.GetMobilePlaylistAsync(ordinary.Id, cancellationToken);
-            var mobileItem = LibraryData.FromPlaylist(mobilePlaylist) with { Key = item.Key };
-            return new(mobileItem, new(mobilePlaylist.Tracks.Where(track => !string.IsNullOrWhiteSpace(track.Title)).ToArray(), null));
-        }
         string path;
         if (item.User is { Id: > 0 } user) path = $"users/{user.Id}/tracks?limit=30&linked_partitioning=1";
         else if (item.Playlist is { } playlist)
@@ -264,7 +247,6 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null) return await MobileApi.GetMobileActionIdsAsync("tracks", cancellationToken: cancellationToken);
         var ids = new HashSet<long>();
         Uri? target = Api("me/track_likes/ids?limit=200&linked_partitioning=1");
         var seen = new HashSet<string>();
@@ -300,11 +282,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<TrackPage> GetNextPageAsync(string nextHref, CancellationToken cancellationToken = default)
     {
-        if (Session?.MobileIdentity != null && Uri.TryCreate(nextHref, UriKind.Absolute, out var mobileUri) && SoundCloudMobileRoutes.IsRead(mobileUri))
-        {
-            var mobilePage = await ReadMobileLibraryCursorAsync(mobileUri, cancellationToken);
-            return new(mobilePage.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray(), mobilePage.NextHref);
-        }
+
         if (!Uri.TryCreate(nextHref, UriKind.Absolute, out var uri) || !IsApiUri(uri)) throw new SoundCloudException("Неверный адрес следующей страницы.");
         using var document = await GetJsonAsync(uri, cancellationToken);
         return ParsePage(document.RootElement);
@@ -331,7 +309,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     {
         using var document = await GetJsonAsync(Api($"tracks/{id}"), cancellationToken);
         var track = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
-        return Session?.MobileIdentity == null ? track : SoundCloudMobileStreams.WithFallbacks(track);
+        return track;
     }
 
     public async Task<SoundCloudTrack> ResolveAsync(string url, CancellationToken cancellationToken = default)
@@ -351,20 +329,16 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<SoundCloudStream?> ResolveTranscodingAsync(SoundCloudTrack track, Transcoding transcoding, CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(transcoding.Url, UriKind.Absolute, out var target)) return null;
-        var mobileStream = Session?.MobileIdentity != null && SoundCloudMobileRoutes.IsStream(target) &&
-            target.AbsolutePath.StartsWith($"/tracks/{SoundCloudMobileRoutes.Urn("tracks", track.Id)}/streams/", StringComparison.Ordinal);
-        if (!IsApiUri(target) && !mobileStream) return null;
+        if (!IsApiUri(target)) return null;
         var query = target.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Where(part => !part.StartsWith("track_authorization=", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrEmpty(track.TrackAuthorization))
             query = query.Append("track_authorization=" + Uri.EscapeDataString(track.TrackAuthorization));
         target = new UriBuilder(target) { Query = string.Join('&', query) }.Uri;
-        using var document = mobileStream && Transport is ISoundCloudMobileApi mobileApi
-            ? await mobileApi.ResolveMobileStreamAsync(target, cancellationToken)
-            : mobileStream ? throw new SoundCloudException("Мобильный транспорт аудио не подключён.") : await GetJsonAsync(target, cancellationToken);
+        using var document = await GetJsonAsync(target, cancellationToken);
         if (document.RootElement.TryGetProperty("snipped", out var snipped) && snipped.ValueKind != JsonValueKind.False) return null;
         if (!document.RootElement.TryGetProperty("url", out var value) || value.ValueKind != JsonValueKind.String ||
-            !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var media) || !(IsMediaUri(media) || mobileStream && media.GetLeftPart(UriPartial.Path) == target.GetLeftPart(UriPartial.Path)) ||
+            !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var media) || !IsMediaUri(media) ||
             media.Fragment != "" || media.AbsolutePath.Contains("preview", StringComparison.OrdinalIgnoreCase)) return null;
         var license = document.RootElement.TryGetProperty("licenseAuthToken", out var token) && token.ValueKind == JsonValueKind.String ? token.GetString() : null;
         var protocol = document.RootElement.TryGetProperty("protocol", out var actual) && actual.ValueKind == JsonValueKind.String

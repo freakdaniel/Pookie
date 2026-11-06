@@ -154,18 +154,20 @@ internal sealed partial class MainWindow
         workspace.IsHitTestVisible = true;
     }
 
-    private async Task LoginAsync()
+    private Task LoginAsync() => RunLoginAttemptAsync(ConnectSoundCloudAsync);
+
+    private async Task RunLoginAttemptAsync(Func<Task> connect)
     {
         if (disposed || loginBusy.Value || signedIn.Value) return;
         loginBusy.Value = true;
         SetLoginButtonState(LoginButtonState.Waiting);
-        try { await ConnectSoundCloudAsync(); }
+        try { await connect(); }
         finally
         {
+            if (!disposed && !signedIn.Value) SetLoginButtonState(LoginButtonState.Idle);
             loginBusy.Value = false;
             if (!disposed && loginScreen.IsVisible)
             {
-                if (!signedIn.Value) SetLoginButtonState(LoginButtonState.Idle);
                 loginButton.Focus();
             }
         }

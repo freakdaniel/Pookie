@@ -1,17 +1,16 @@
 # Application integration checks
 
-`--mobile-contract-network-probe <track-url>` checks the saved Android session
-against native `/configuration/android` and URN `/tracks/.../streams/https|hls`.
-It sends reads only, never refreshes the shared rotating token, and never starts
-a browser. Audio response bodies are not buffered during stream resolution.
+The normal application uses one embedded website session for authenticated web
+API operations, protection checks and browser audio. Login and the worker share
+one durable profile. A visible slider presents the existing worker in MewUI's
+modal overlay, then returns it to the background. Android OAuth, APK identity,
+SDK telemetry, mobile routes and isolated mobile challenge profiles were removed.
 
-Browser scenarios use the production InfiniFrame host: WebView2 on Windows,
-WebKitGTK on Linux and WKWebView on macOS. The app executable starts its browser
-child on an STA thread, using a private pipe and persistent native browser profile.
-Normal .NET builds restore the host package without installing a separate browser.
-Windows requires WebView2 Runtime; Linux requires `libwebkit2gtk-4.1-0`. The Linux
-GTK fallback keeps initialization on the main thread; `POOKIE_LOGIN_ENGINE=infiniframe`
-selects the packaged InfiniFrame implementation for explicit comparisons.
+Windows uses CoreWebView2, Linux uses WebKitGTK 4.1 inside a GtkPlug (X11/XWayland),
+and macOS uses a WKWebView subview. No separate browser runtime is introduced by
+embedding: the Windows NuGet reference supplies the SDK for the existing WebView2
+Runtime. InfiniFrame 0.62.1 remains for standalone browser diagnostics and legacy
+helper commands; its window builder does not expose an embeddable MewUI control.
 
 Browser challenge logs include whitelisted `ChallengeType` and `Interactive`
 fields and retain the challenge type on success/failure. This distinguishes
@@ -515,7 +514,7 @@ cancellation. The same embedded rules apply before navigation in the login and
 worker partitions. SoundCloud API/media/license, OAuth and challenge resources
 remain allowed.
 
-`--startup-network-probe` validates a saved account with the production InfiniFrame
+`--startup-network-probe` validates a saved account with the standalone InfiniFrame diagnostic
 worker. Close Pookie first to release the persistent profile. Diagnostics record
 only whitelisted startup stages and status codes; no tokens or raw browser output.
 
@@ -543,7 +542,7 @@ The Windows scenario is muted by default; `--system-audio` uses 15% volume to
 verify unmuted autoplay and system output. `--drm-native-cdm` retains the old
 native route for a controlled Windows comparison.
 
-The Windows browser-audio adapter uses the same hidden InfiniFrame worker as API
+The Windows browser-audio adapter uses the same embedded website as API
 calls, with background throttling and Chromium's system media integration disabled.
 The Windows system WebView2 runtime supplies EME/Widevine. CDM initialization
 and actual SoundCloud license acceptance are checked separately. No Castlabs
@@ -596,7 +595,7 @@ fresh account metadata/authorization independently of anonymous regional tokens.
 Use `history` instead of `TRACK_URL` to select an accessible protected track from
 the saved account's first 20 history entries. The probe stays muted, verifies a non-silent neural embedding from browser PCM,
 and then checks the normal seek/pause/end lifecycle. On Windows it uses the
-production InfiniFrame/WebView2 worker and its Widevine CDM.
+standalone InfiniFrame/WebView2 diagnostic worker and its Widevine CDM.
 `--normalization-probe` additionally verifies the fixed waveform correction.
 `--default-stream-selection` uses the production resolver's normal protocol order;
 if it selects an ordinary stream, the probe reports it without attempting DRM.
@@ -929,44 +928,52 @@ the normal native window frame: opaque page alpha, visible color variation and
 changed pixels after scrolling are required. Offscreen-only checks cannot detect
 a nested GPU capture that caches an empty readback during retained rendering.
 
-### Mobile OAuth
+### Embedded web login and verification
 
-`dotnet run --project tests/Pookie.App.SmokeTests -- --mobile-oauth-smoke-test`
-opens a real login WebView against a loopback fixture and verifies the intercepted
-`sc://auth` callback, PKCE exchange, private IPC, encrypted session round trip,
-single-use refresh after API `401`, token rotation in an already running browser
-worker and process cancellation. No real SoundCloud account or credentials are
-used. The Windows InfiniFrame path is verified; the Linux WebKit path still needs
-a runtime run. Configuration for real mobile login is described in
-`docs/soundcloud-api-internals.md`, section 14.
+`dotnet run --project tests/Pookie.App.SmokeTests -- --embedded-login-smoke-test`
+opens the actual Pookie login screen with an embedded browser. Loopback fixtures
+verify a provider origin with restrictive CSP, viewport resize, the web session
+and cookie, profile release, cancellation/retry, and a website popup that
+retains its opener and shares cookies. The browser stays in the main window;
+the existing `ModalDialog` supplies its unmodified spring/tilt, scrim and external
+close button. Its content is only the browser viewport, without another card or
+header. In-memory engine snapshots participate in the original opening/closing
+animation; the live native view is enabled after both opening motion and the
+ready-page crossfade finish.
+An opaque backdrop matches the browser viewport. The centered SoundCloud logo
+remains still during modal opening, then slides upwards while the spinner appears
+below it. A delayed-document/SPA fixture with initially transparent form controls
+requires the loader to remain visible until those controls have painted, a GPU
+pixel-verified crossfade of the actual page, and retention of the closing snapshot until the entire
+modal exit finishes. Scanline checks cover five tilt poses at four DPI scales
+to detect transparent strip seams or repeated alpha blending.
+Pixel samples check the page's intermediate opacity, and pointer-opened close
+buttons must retain their glass backdrop without a keyboard highlight. Immediate,
+loaded and repeated cancellation must restore the enabled idle login button.
+Neither real credentials nor a SoundCloud account are used. Windows uses
+CoreWebView2, Linux uses WebKitGTK 4.1 in a GtkPlug inside MewUI's X11 window
+(also under XWayland), and macOS uses a WKWebView subview. Run this test on the
+target OS to verify its native implementation; cross-building is not runtime QA.
 
-The same fixture also withholds an actual InfiniFrame JavaScript evaluation
-reply before clicking Continue. The OAuth callback must publish the result and
-close the native window independently of that pending observer. A pipe fixture
-keeps its writer open to require completion on the bounded newline-framed result
-rather than EOF. Normal login, cancellation and oversized-result rejection remain
-part of this smoke test.
+`dotnet run --project tests/Pookie.App.SmokeTests -- --embedded-web-challenge-smoke-test`
+uses the production in-app worker with a local website and a slider iframe. It
+checks that the existing view appears over the workspace without another profile
+or navigation, one rejected action resumes once after passing, later actions reuse
+that website, and closing the overlay stops the pending write. A new operation
+can reopen the durable profile after cancellation. Invisible checks stay hidden;
+a hard block is terminal. The fixture also verifies shutdown and profile release.
+No real SoundCloud account or account mutation is used.
 
-`dotnet run --project tests/Pookie.App.SmokeTests -- --native-session-recovery-smoke-test`
-checks a real WebView preparing the session with a read-only `/me`, exporting the
-rotated protection cookie before the pending native mutation resumes, keeping
-subsequent writes native, completing a browser fallback once when HTTP is still
-rejected, and returning the next operation to HTTP. It uses a loopback fixture
-only and does not change a SoundCloud account or reproduce real DataDome checks.
+`--collections-ui-smoke-test --web-playlist-editing-only --no-audio` checks web
+playlist menus, metadata/privacy editing, reordered/removed tracks, incomplete
+track-order protection and deletion confirmation/library refresh. JavaScript
+unit tests cover the numeric web routes, multipart JPEG artwork, owner/source
+order validation and no blind replay after an unconfirmed write.
 
-`--mobile-profile-status` validates the configured default mobile OAuth profile
-without contacting SoundCloud. It prints only build/signal availability and the
-actual system TLS choice; credentials and device identifiers are omitted.
-`tools/enable-mobile-profile.ps1` enables the local research profile without
-embedding its credentials in the app. Set `POOKIE_SOUNDCLOUD_PROFILE=web` for the
-existing web profile. Protocol, feature configuration, SDUI fallback, full-stream
-selection and CDN credential scoping are covered by `MobileProtocolTests`.
-
-`--native-track-network-probe <SoundCloud track URL>` checks `/me`, resolves the
-supplied track and reads fresh metadata using the selected saved web/mobile
-profile. It sends no like or other account mutation and prints no credentials.
-Native HTTP diagnostics include the host as well as the status so Android batch
-routes on `api-mobile.soundcloud.com` cannot be confused with V2 routes.
+The retained `--native-session-recovery-smoke-test` exercises the optional library
+HTTP transport and its standalone browser verifier against loopback fixtures. The
+normal application sends authenticated actions through its embedded website.
+Cross-building Linux/macOS does not verify their native runtime behavior.
 
 ## Search links
 

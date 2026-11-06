@@ -192,84 +192,6 @@ public sealed class HttpTransportTests
     }
 
     [Fact]
-    public async Task MobileProfileUsesOwnIdentityCookieAndBatchEndpoint()
-    {
-        var mobile = new SoundCloudMobileIdentity("0123456789abcdef", "Google", "Pixel Test", "15");
-        var account = new WebSession("mobileid", "mobile-token", mobile.UserAgent) { MobileIdentity = mobile, DataDomeClientId = "mobile-cookie", AppLocale = "ru" };
-        var roundTrip = JsonSerializer.Deserialize(JsonSerializer.Serialize(account, SoundCloudJson.Default.WebSession), SoundCloudJson.Default.WebSession)!;
-        Assert.True(roundTrip.IsValid()); Assert.Equal(mobile.Udid, roundTrip.MobileIdentity!.Udid);
-        using var http = new HttpClient(new Handler(async (request, token) =>
-        {
-            Assert.Equal("SoundCloud/2026.10.14-release (Android 15.0.0; Google Pixel Test)", request.Headers.UserAgent.ToString());
-            Assert.Equal(mobile.Udid, request.Headers.GetValues("UDID").Single());
-            Assert.Equal("377050", request.Headers.GetValues("App-Version").Single());
-            Assert.Equal("datadome=mobile-cookie", request.Headers.GetValues("Cookie").Single());
-            Assert.False(request.Headers.Contains("x-datadome-clientid")); Assert.Null(request.Headers.Referrer);
-            Assert.Contains("client_id=mobileid", request.RequestUri!.Query); Assert.DoesNotContain("app_version", request.RequestUri.Query);
-            Assert.Equal("api-mobile.soundcloud.com", request.RequestUri.Host);
-            Assert.Equal("/likes/tracks/create", request.RequestUri.AbsolutePath); Assert.Equal(HttpMethod.Post, request.Method);
-            using var body = JsonDocument.Parse(await request.Content!.ReadAsByteArrayAsync(token));
-            Assert.Equal("system_playlist_in_library=true", request.Headers.GetValues("App-Requested-Features").Single());
-            Assert.Equal("soundcloud:tracks:42", body.RootElement.GetProperty("likes")[0].GetProperty("target_urn").GetString());
-            return Json("""{"collection":[{"target_urn":"soundcloud:tracks:42"}]}""");
-        }));
-        using var transport = new SoundCloudHttpTransport(http, () => roundTrip);
-        await transport.SetLikedAsync(7, 42, true);
-        Assert.False((account with { UserAgent = "Chrome/1" }).IsValid());
-        Assert.DoesNotContain("0123456789abcdef", mobile.ToString());
-    }
-
-    [Fact]
-    public async Task MobileTelemetryUsesSuppliedSignalsRealResponseEventsAndNeverOAuth()
-    {
-        var clock = new ManualClock(); var apiCalls = 0; var telemetryCalls = 0;
-        var signals = new SoundCloudMobileSignals("fixture-product", "fixture-device", "fixture-hardware", "fixture-build", "release-keys",
-            "VANILLA_ICE_CREAM", 35, 1080, 2400, 3, "{\"auth\":\"false\",\"info\":\"{}\"}");
-        var mobile = new SoundCloudMobileIdentity("0123456789abcdef", "Fixture", "Fixture Model", "15") { Signals = signals };
-        var account = new WebSession("mobileid", "private-mobile-token", mobile.UserAgent) { MobileIdentity = mobile, DataDomeClientId = "initial" };
-        using var http = new HttpClient(new Handler(async (request, token) =>
-        {
-            if (request.RequestUri!.Host == "api-sdk.datadome.co")
-            {
-                telemetryCalls++; Assert.Null(request.Headers.Authorization);
-                var body = await request.Content!.ReadAsStringAsync(token);
-                Assert.DoesNotContain("private-mobile-token", body);
-                var fields = body.Split('&').Select(pair => pair.Split('=', 2)).ToDictionary(pair => Uri.UnescapeDataString(pair[0]), pair => Uri.UnescapeDataString(pair[1].Replace('+', ' ')));
-                Assert.Equal("android-java-manual", fields["inte"]); Assert.Equal("fixture-build", fields["fgp"]);
-                Assert.Equal("0123456789abcdef", fields["d_ifv"]); Assert.Equal("3.0.14", fields["ddv"]);
-                using var events = JsonDocument.Parse(fields["events"]);
-                Assert.All(events.RootElement.EnumerateArray(), item =>
-                { Assert.Equal(1, item.GetProperty("id").GetInt32()); Assert.Equal("response validation", item.GetProperty("message").GetString()); });
-                return Json("{\"cookie\":\"datadome=telemetry-rotated; Path=/; Domain=.soundcloud.com\"}");
-            }
-            apiCalls++;
-            Assert.Equal(apiCalls == 1 ? "datadome=initial" : "datadome=telemetry-rotated", request.Headers.GetValues("Cookie").Single());
-            return Json("{\"id\":7}");
-        }));
-        using var transport = new SoundCloudHttpTransport(http, () => account, timeProvider: clock);
-        for (var index = 0; index < 6; index++) { using var read = await transport.GetJsonAsync(Api()); }
-        Assert.Equal(1, telemetryCalls);
-        clock.Now = clock.Now.AddSeconds(10);
-        using var final = await transport.GetJsonAsync(Api());
-        Assert.Equal(2, telemetryCalls); Assert.Equal(7, apiCalls); Assert.Equal("telemetry-rotated", account.DataDomeClientId);
-    }
-
-    [Fact]
-    public async Task TelemetryFailureDoesNotDiscardSuccessfulApiResponseOrSolveAChallenge()
-    {
-        var signals = new SoundCloudMobileSignals("p", "d", "h", "f", "release-keys", "V", 35, 1080, 2400, 3, "{}");
-        var mobile = new SoundCloudMobileIdentity("0123456789abcdef", "Fixture", "Model", "15") { Signals = signals };
-        var account = new WebSession("mobileid", "mobile-token", mobile.UserAgent) { MobileIdentity = mobile };
-        var failures = 0;
-        using var http = new HttpClient(new Handler((request, _) => request.RequestUri!.Host == "api-sdk.datadome.co"
-            ? throw new HttpRequestException("telemetry unavailable") : Task.FromResult(Json("{\"id\":7}"))));
-        using var transport = new SoundCloudHttpTransport(http, () => account);
-        transport.Observed += observation => { if (observation.Status == 0) failures++; };
-        using var me = await transport.GetJsonAsync(Api());
-        Assert.Equal(7, me.RootElement.GetProperty("id").GetInt32()); Assert.Equal(1, failures); Assert.Null(account.DataDomeClientId);
-    }
-
-    [Fact]
     public async Task HistoryReportsOneRealPlayEventAndReusesAuthenticatedAccount()
     {
         var meReads = 0; var plays = 0; var history = 0;
@@ -404,22 +326,6 @@ public sealed class HttpTransportTests
         account = account with { AccessToken = "another-account-token" };
         release.SetResult(); await Task.WhenAll(pending);
         await Assert.ThrowsAsync<SoundCloudException>(() => queued); Assert.Equal(4, calls);
-    }
-
-    [Fact]
-    public async Task MobileLikeChallengeCannotFallBackToWebMutation()
-    {
-        var mobile = new SoundCloudMobileIdentity("0123456789abcdef", "Pookie", "Fixture", "15");
-        var account = new WebSession("mobileid", "mobile-token", mobile.UserAgent) { MobileIdentity = mobile };
-        var calls = 0; var browser = new Verification();
-        using var http = new HttpClient(new Handler((_, _) =>
-        {
-            calls++; var denied = Json(status: 403); denied.Headers.Add("X-DD-B", "259"); return Task.FromResult(denied);
-        }));
-        using var native = new SoundCloudHttpTransport(http, () => account, browser);
-        var error = await Assert.ThrowsAsync<SoundCloudException>(() => native.SetLikedAsync(7, 42, true));
-        Assert.Equal(SoundCloudChallengeKind.InvisibleDeviceCheck, error.ChallengeKind);
-        Assert.Equal(1, calls); Assert.Equal(0, browser.Calls);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler

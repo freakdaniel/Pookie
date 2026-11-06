@@ -21,12 +21,89 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
     fetch:async (...args)=>{calls.push(args); return fetch(...args);}};
   window.top = frame ? {} : window;
   const document={cookie:'',readyState:loaded?'complete':'loading',documentElement:{lang:'ru'}};
-  vm.runInNewContext(script.replace('__POOKIE_ACCOUNT__', JSON.stringify({client_id:'fixtureid', access_token:'secret-token', app_version:'123', app_locale:'en', ...extraAccount})), {window, document, location:{origin,href:origin+'/you/likes'}, URL, AbortController, TextDecoder, TextEncoder,
+  vm.runInNewContext(script.replace('__POOKIE_ACCOUNT__', JSON.stringify({client_id:'fixtureid', access_token:'secret-token', app_version:'123', app_locale:'en', ...extraAccount})), {window, document, location:{origin,href:origin+'/you/likes'}, URL, AbortController, TextDecoder, TextEncoder, FormData, Blob, atob,
     setTimeout, setInterval:callback=>timers.push(callback), clearInterval:()=>{}});
   if (prepared) events.get('dd_post_done')?.({detail:{}});
   return {window,document,messages,calls,timers,emit:(name,type)=>events.get(name)?.({detail:{challengeType:type}})};
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
+
+test('web playlist metadata edits preserve duplicate track IDs and use the numeric web route', async () => {
+  let playlist={id:77,user:{id:42},title:'Before',sharing:'private',description:'',track_count:3,tracks:[{id:8},{id:7},{id:8}]};
+  const h=harness((url,options)=>{
+    assert.equal(new URL(url).pathname,'/playlists/77');
+    if(options.method==='PUT'){
+      const data=JSON.parse(options.body).playlist;
+      assert.equal(data.tracks,undefined); playlist={...playlist,...data}; return response(200,playlist);
+    }
+    return response(200,playlist);
+  });
+  h.window.__pookieRequest({id:'01'.repeat(16),operation:'playlist-edit',edit:{kind:'update',user_id:42,playlist_id:77,
+    update:{user_id:42,playlist_id:77,title:'Updated 🎵',description:'Two\nlines',sharing:'public',expected_track_ids:[8,7,8]}}});
+  await tick(); assert.deepEqual(h.calls.map(([,options])=>options.method),['GET','PUT','GET']);
+  assert.deepEqual(playlist.tracks,[{id:8},{id:7},{id:8}]); assert.equal(h.messages.at(-1).status,200);
+});
+
+test('web metadata editing never replaces a partial playlist order', async () => {
+  let playlist={id:77,user:{id:42},title:'Before',sharing:'private',description:'',track_count:20,tracks:[{id:8},{id:7}]};
+  const h=harness((_,options)=>{
+    if(options.method==='PUT'){
+      const data=JSON.parse(options.body).playlist;assert.equal(data.tracks,undefined);playlist={...playlist,...data};
+    }
+    return response(200,playlist);
+  });
+  h.window.__pookieRequest({id:'09'.repeat(16),operation:'playlist-edit',edit:{kind:'update',user_id:42,playlist_id:77,
+    update:{user_id:42,playlist_id:77,title:'New',description:'',sharing:'private',expected_track_ids:[8,7]}}});
+  await tick();assert.equal(playlist.track_count,20);assert.deepEqual(playlist.tracks,[{id:8},{id:7}]);
+  assert.equal(h.messages.at(-1).status,200);assert.equal(h.calls.length,3);
+});
+
+test('web playlist edits reject foreign owners, incomplete removal and changed source order before writing', async () => {
+  for(const mode of ['owner','incomplete','stale']){
+    const playlist={id:77,user:{id:mode==='owner'?9:42},track_count:mode==='incomplete'?3:2,tracks:[{id:8},{id:7}]};
+    const h=harness(()=>response(200,playlist));
+    const edit={kind:mode==='stale'?'update':'remove',user_id:42,playlist_id:77,
+      ...(mode==='stale'?{update:{user_id:42,playlist_id:77,title:'New',description:'',sharing:'private',track_ids:[7,8],expected_track_ids:[7,8]}}:{track_id:8})};
+    h.window.__pookieRequest({id:'02'.repeat(16),operation:'playlist-edit',edit});
+    await tick(); assert.equal(h.calls.length,1); assert.equal(h.calls[0][1].method,'GET');
+  }
+});
+
+test('web playlist removal retains the remaining order and delete is sent once', async () => {
+  for(const kind of ['remove','delete']){
+    let playlist={id:77,user:{id:42},track_count:3,tracks:[{id:8},{id:7},{id:8}]};
+    const h=harness((_,options)=>{
+      if(options.method==='PUT'){const ids=JSON.parse(options.body).playlist.tracks;assert.deepEqual(ids,[7]);playlist={...playlist,track_count:ids.length,tracks:ids.map(id=>({id}))};}
+      return response(options.method==='DELETE'?204:200,playlist);
+    });
+    h.window.__pookieRequest({id:'03'.repeat(16),operation:'playlist-edit',edit:{kind,user_id:42,playlist_id:77,...(kind==='remove'?{track_id:8}:{})}});
+    await tick(); assert.equal(h.calls.filter(([,options])=>options.method!=='GET').length,1);
+    assert.equal(h.messages.at(-1).status,kind==='delete'?204:200);
+  }
+});
+
+test('web artwork is a JPEG multipart update with a browser-generated content type', async () => {
+  const h=harness((_,options)=>{
+    if(options.method==='PUT'){
+      assert.equal(options.headers['Content-Type'],undefined);
+      const image=options.body.get('playlist[artwork_data]'); assert.equal(image.type,'image/jpeg'); assert.equal(image.size,4);
+    }
+    return response(200,{id:77,user:{id:42},track_count:0,tracks:[],artwork_url:'https://i1.sndcdn.com/new.jpg'});
+  });
+  h.window.__pookieRequest({id:'04'.repeat(16),operation:'playlist-edit',edit:{kind:'artwork',user_id:42,playlist_id:77,artwork:'/9j/2Q=='}});
+  await tick(); assert.equal(h.calls.filter(([,options])=>options.method==='PUT').length,1);assert.equal(h.messages.at(-1).status,200);
+});
+
+test('invalid playlist edit envelopes and unconfirmed writes cannot produce another mutation', async () => {
+  const h=harness((_,options)=>{if(options.method==='PUT')throw Error('Lost acknowledgement');return response(200,{id:77,user:{id:42},track_count:0,tracks:[]});});
+  const edit={kind:'update',user_id:42,playlist_id:77,update:{user_id:42,playlist_id:77,title:'Title',description:'',sharing:'public'}};
+  h.window.__pookieRequest({id:'05'.repeat(16),operation:'playlist-edit',edit});
+  await tick();assert.equal(h.calls.filter(([,options])=>options.method==='PUT').length,1);
+  h.window.__pookieRequest({id:'06'.repeat(16),operation:'playlist-edit',url:'https://api-v2.soundcloud.com/me',edit});
+  h.window.__pookieRequest({id:'07'.repeat(16),operation:'playlist-edit',edit:{...edit,update:{...edit.update,title:''}}});
+  h.window.__pookieRequest({id:'08'.repeat(16),operation:'playlist-edit',edit:{kind:'artwork',user_id:42,playlist_id:77,artwork:'invalid'}});
+  await tick();assert.equal(h.calls.length,2);
+});
 
 test('playlist creation verifies owner then writes a seeded playlist once with numeric IDs', async () => {
   const playlist = {user_id:42,track_id:90,title:'Новая 🎵',sharing:'private'};
@@ -66,14 +143,14 @@ test('playlist writes are not replayed after a lost response or ordinary rejecti
   }
 });
 
-test('mobile configuration and full stream fallbacks are read-only fixed paths; snippets stay excluded', async () => {
+test('removed Android routes and stream fallbacks never reach the web API', async () => {
   const h = harness(async()=>response(200, {}));
   const paths = ['/configuration/android', '/tracks/90/streams/https', '/tracks/90/streams/hls'];
   for (const [i,path] of paths.entries())
     h.window.__pookieRequest({id:(910+i).toString(16).padStart(32,'0'), operation:'api-get', url:'https://api-v2.soundcloud.com'+path});
   h.window.__pookieRequest({id:'f'.repeat(32), operation:'api-get', url:'https://api-v2.soundcloud.com/tracks/90/streams/hls/snippet'});
   await tick();
-  assert.deepEqual(h.calls.map(call=>new URL(call[0]).pathname),paths);
+  assert.deepEqual(h.calls.map(call=>new URL(call[0]).pathname),[]);
   assert.ok(h.calls.every(call=>call[1].method==='GET'));
 });
 test('an initially restricted document reports a hard block without waiting for protection readiness or sending an API request', async () => {

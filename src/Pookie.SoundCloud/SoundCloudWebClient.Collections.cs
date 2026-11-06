@@ -18,12 +18,7 @@ public sealed partial class SoundCloudWebClient
     {
         ValidateDetailTrackId(userId);
         if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы добавить трек в плейлист.");
-        if (Session.MobileIdentity != null)
-        {
-            if (Transport is not ISoundCloudMobileApi mobile)
-                throw new SoundCloudException("Мобильное соединение SoundCloud ещё не подключено.");
-            return await mobile.GetMobileOwnedPlaylistsAsync(userId, token);
-        }
+
         var items = new List<LibraryItem>();
         var path = $"/users/{userId}/playlists";
         Uri? target = Api(path.TrimStart('/') + "?limit=50&linked_partitioning=1&show_tracks=" + (includeTracks ? "true" : "false"));
@@ -61,18 +56,9 @@ public sealed partial class SoundCloudWebClient
             var playlist = items[index].Playlist!;
             if (playlist.Tracks.Any(track => track.Id == trackId) ||
                 playlist.TrackCount >= 0 && playlist.Tracks.Length == playlist.TrackCount && playlist.Tracks.All(track => track.Id > 0)) return;
-            SoundCloudPlaylist full;
-            if (Session?.MobileIdentity != null)
-            {
-                if (Transport is not ISoundCloudMobileApi mobile)
-                    throw new SoundCloudException("Мобильное соединение SoundCloud ещё не подключено.");
-                full = await mobile.GetMobilePlaylistAsync(playlist.Id, stop);
-            }
-            else
-            {
-                using var document = await GetJsonAsync(Api($"playlists/{playlist.Id}?representation=full"), stop);
-                full = LibraryData.ParsePlaylist(document.RootElement);
-            }
+            using var document = await GetJsonAsync(Api($"playlists/{playlist.Id}?representation=full"), stop);
+            var full = LibraryData.ParsePlaylist(document.RootElement);
+
             if (full.Id != playlist.Id || full.User?.Id != userId || full.IsAlbum || full.IsSystemPlaylist || full.TrackCount < 0 ||
                 (!full.TrackPagesComplete && full.Tracks.Length != full.TrackCount) || full.Tracks.Any(track => track.Id <= 0))
                 throw new SoundCloudException("SoundCloud не подтвердил состав плейлиста. Открой список ещё раз.");
@@ -85,7 +71,6 @@ public sealed partial class SoundCloudWebClient
     {
         ValidateDetailTrackId(userId);
         if (Session == null) throw new SoundCloudException("Для подписок нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null) return await MobileApi.GetMobileActionIdsAsync("users", userId: userId, cancellationToken: token);
         var ids = new HashSet<long>(); var seen = new HashSet<string>();
         var path = $"/users/{userId}/followings/ids";
         Uri? target = Api(path.TrimStart('/') + "?limit=200&linked_partitioning=1");
@@ -129,7 +114,6 @@ public sealed partial class SoundCloudWebClient
     public async Task<HashSet<long>> GetPlaylistActionIdsAsync(bool reposts, CancellationToken token = default)
     {
         if (Session == null) throw new SoundCloudException("Для этого нужен вход в SoundCloud.");
-        if (Session.MobileIdentity != null) return await MobileApi.GetMobileActionIdsAsync("playlists", reposts, cancellationToken: token);
         var path = reposts ? "/me/playlist_reposts/ids" : "/me/playlist_likes/ids";
         Uri? target = Api(path.TrimStart('/') + "?limit=200&linked_partitioning=1");
         var ids = new HashSet<long>(); var seen = new HashSet<string>();

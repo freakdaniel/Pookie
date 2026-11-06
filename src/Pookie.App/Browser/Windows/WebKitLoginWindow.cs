@@ -23,13 +23,6 @@ internal sealed partial class WebKitLoginWindow
     private readonly string script;
     private readonly bool background;
     private readonly Action<BrowserRequestEvent>? browserEvent;
-    private readonly MobileAuthorizationRequest? mobileAuthorization;
-    private readonly Action<MobileAuthorizationResult>? authorized;
-    private readonly SoundCloudMobileChallenge? mobileChallenge;
-    private readonly Action<SoundCloudMobileChallengeResult>? challengeCompleted;
-    private readonly string? challengeFixture;
-    private readonly Native.PolicyCallback policyCallback;
-    private string? mobileCookie;
     private readonly ConcurrentQueue<Action> dispatch = new();
     private readonly Native.IdleCallback idleCallback;
     private readonly string pairing = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
@@ -40,24 +33,14 @@ internal sealed partial class WebKitLoginWindow
     private bool hiddenLogin;
 
     private WebKitLoginWindow(Action<WebSession> connected, string origin, bool background,
-        WebSession? account = null, Action<BrowserRequestEvent>? browserEvent = null,
-        MobileAuthorizationRequest? mobileAuthorization = null, Action<MobileAuthorizationResult>? authorized = null,
-        SoundCloudMobileChallenge? mobileChallenge = null, Action<SoundCloudMobileChallengeResult>? challengeCompleted = null, string? challengeFixture = null)
+        WebSession? account = null, Action<BrowserRequestEvent>? browserEvent = null)
     {
         this.connected = connected; this.origin = origin; this.background = background;
         this.browserEvent = browserEvent;
-        this.mobileAuthorization = mobileAuthorization; this.authorized = authorized;
-        this.mobileChallenge = mobileChallenge; this.challengeCompleted = challengeCompleted; this.challengeFixture = challengeFixture;
-        policyCallback = DecideMobilePolicy;
         idleCallback = DrainDispatch;
         messageCallback = MessageReceived; deleteCallback = WindowDeleted;
         uriCallback = UriChanged; createCallback = CreatePopup; closeCallback = ClosePopup;
-        if (mobileChallenge != null)
-        {
-            script = MobileChallengeBridge.Script(mobileChallenge, pairing, webkit: true, challengeFixture);
-            return;
-        }
-        var scriptBody = mobileAuthorization != null ? NativeMobileLogin.CookieScript : account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
+        var scriptBody = account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
         CustomizeScript(ref scriptBody, account == null);
         script = "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) { (()=>{" +
             "const pairing=" + JsonSerializer.Serialize(pairing) + ";" +
@@ -83,7 +66,7 @@ internal sealed partial class WebKitLoginWindow
     private static bool RunCore(WebKitLoginWindow app, string startUri, string profilePath)
     {
         if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException("Не удалось открыть WebView.");
-        using var contentFilter = app.mobileChallenge == null ? new WebKitContentFilter(profilePath) : null;
+        using var contentFilter = new WebKitContentFilter(profilePath);
         app.contentFilter = contentFilter;
         var dataPath = Path.Combine(profilePath, "Data");
         var cachePath = Path.Combine(profilePath, "Cache");
@@ -91,17 +74,6 @@ internal sealed partial class WebKitLoginWindow
         Storage.AppDataPaths.CreatePrivateDirectory(cachePath);
         var manager = Native.webkit_website_data_manager_new("base-data-directory", dataPath, "base-cache-directory", cachePath, 0);
         var context = Native.webkit_web_context_new_with_website_data_manager(manager);
-        if (app.mobileChallenge?.Language is { } language)
-        {
-            var text = Marshal.StringToCoTaskMemUTF8(language);
-            var languages = Marshal.AllocHGlobal(2 * IntPtr.Size);
-            try
-            {
-                Marshal.WriteIntPtr(languages, text); Marshal.WriteIntPtr(languages, IntPtr.Size, 0);
-                Native.webkit_web_context_set_preferred_languages(context, languages);
-            }
-            finally { Marshal.FreeHGlobal(languages); Marshal.FreeCoTaskMem(text); }
-        }
         var cookies = Native.webkit_website_data_manager_get_cookie_manager(manager);
         Native.webkit_cookie_manager_set_persistent_storage(cookies, Path.Combine(dataPath, "cookies.sqlite"), 1); // SQLite
         Native.g_object_unref(manager);
@@ -116,9 +88,7 @@ internal sealed partial class WebKitLoginWindow
             StartupLog.Event("browser.bridge-installed");
         }
         app.OnBrowserEvent(null);
-        if (app.mobileChallenge is { Html: { } html } && app.challengeFixture == null)
-            Native.webkit_web_view_load_html(view, html, app.mobileChallenge.RequestUrl);
-        else Native.webkit_web_view_load_uri(view, startUri);
+        Native.webkit_web_view_load_uri(view, startUri);
         if (app.browserEvent != null) _ = Task.Run(app.ReadCommandsAsync);
         Native.gtk_main();
         foreach (var item in app.views.Values.ToArray()) Native.gtk_widget_destroy(item.Window);
@@ -166,7 +136,7 @@ internal sealed partial class WebKitLoginWindow
         Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
         ConfigureView(view);
         var window = Native.gtk_window_new(0);
-        Native.gtk_window_set_title(window, mobileChallenge != null ? "Pookie — мобильная проверка SoundCloud" : background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
+        Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
         Native.gtk_window_set_default_size(window, 900, 760);
         var box = Native.gtk_box_new(1, 8);
         var address = Native.gtk_label_new("Подключение к SoundCloud…");
@@ -181,7 +151,7 @@ internal sealed partial class WebKitLoginWindow
             contentFilter?.Attach(manager);
             Connect(manager, "script-message-received::pookie", messageCallback);
             Native.webkit_user_content_manager_register_script_message_handler(manager, "pookie");
-            var userScript = Native.webkit_user_script_new(script, mobileChallenge == null ? 1 : 0, 0, 0, 0); // SDK callbacks also exist in challenge frames.
+            var userScript = Native.webkit_user_script_new(script, 1, 0, 0, 0); // Top frame, document start.
             Native.webkit_user_content_manager_add_script(manager, userScript);
             Native.webkit_user_script_unref(userScript);
         }
@@ -189,10 +159,9 @@ internal sealed partial class WebKitLoginWindow
         Connect(view, "notify::uri", uriCallback);
         Connect(view, "create", createCallback);
         Connect(view, "close", closeCallback);
-        if (mobileAuthorization != null || mobileChallenge != null) Connect(view, "decide-policy", policyCallback);
         // Allocate the browser without ever mapping its top-level window. Relying on
         // iconify lets window managers show it (and may flash it at startup).
-        if (background || mobileChallenge is { Interactive: false })
+        if (background)
         {
             Native.gtk_window_set_skip_taskbar_hint(window, 1);
             Native.gtk_window_set_skip_pager_hint(window, 1);
@@ -214,30 +183,10 @@ internal sealed partial class WebKitLoginWindow
             var value = Native.webkit_javascript_result_get_js_value(result);
             if (Native.jsc_value_is_string(value) == 0) return;
             var raw = TakeString(Native.jsc_value_to_string(value));
-            if (mobileChallenge != null)
-            {
-                var message = MobileChallengeBridge.Read(raw, Marshal.PtrToStringUTF8(Native.webkit_web_view_get_uri(rootView)), mobileChallenge, pairing, challengeFixture);
-                if (message.Visible is { } visible)
-                {
-                    Native.gtk_window_set_skip_taskbar_hint(rootWindow, visible ? 0 : 1);
-                    Native.gtk_window_set_skip_pager_hint(rootWindow, visible ? 0 : 1);
-                    if (visible) { Native.gtk_widget_show_all(rootWindow); Native.gtk_window_present(rootWindow); }
-                    else Native.gtk_widget_hide(rootWindow);
-                }
-                if (message.Result is { } challengeResult)
-                { challengeCompleted?.Invoke(challengeResult); done = true; Native.gtk_main_quit(); }
-                return;
-            }
             // WebKitGTK's copied JSC message value has no source realm. Combine a nonce
             // injected only into the permitted top frame with the native navigation URI.
             var source = views.Keys.Select(view => Marshal.PtrToStringUTF8(Native.webkit_web_view_get_uri(view)))
                 .FirstOrDefault(uri => Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.GetLeftPart(UriPartial.Authority) == origin);
-            if (mobileAuthorization != null)
-            {
-                var message = BrowserRequestProtocol.Parse(raw, source, origin, pairing);
-                if (message?.Kind == "protection-session") mobileCookie = message.DataDomeClientId;
-                return;
-            }
             if (browserEvent != null)
             {
                 var message = BrowserRequestProtocol.Parse(raw, source, origin, pairing);
@@ -274,9 +223,7 @@ internal sealed partial class WebKitLoginWindow
     {
         if (!views.TryGetValue(view, out var item)) return;
         var uri = Marshal.PtrToStringUTF8(Native.webkit_web_view_get_uri(view));
-        var text = mobileChallenge != null && Uri.TryCreate(uri, UriKind.Absolute, out var challengeAddress)
-            ? $"{challengeAddress.GetLeftPart(UriPartial.Authority)} — проверка SoundCloud"
-            : Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.Scheme == "https"
+        var text = Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.Scheme == "https"
             ? $"https://{address.Host} — {(background ? "проверка выполняется на этом сайте" : "вход выполняется на этом сайте")}"
             : "Pookie — загрузка страницы входа";
         Native.gtk_label_set_text(item.Address, text);
@@ -288,7 +235,6 @@ internal sealed partial class WebKitLoginWindow
 
     private nint CreatePopup(nint view, nint action, nint data)
     {
-        if (mobileChallenge != null) return 0;
         var popup = Native.webkit_web_view_new_with_related_view(view);
         AddWindow(popup);
         return popup;

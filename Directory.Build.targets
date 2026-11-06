@@ -1,6 +1,14 @@
 <Project>
   <Import Project="$(MSBuildThisFileDirectory)tools/mewui-source/MewUiSource.targets" />
   <Import Project="$(MSBuildThisFileDirectory)tools/mewui-patch/MewUiPatch.targets" />
+  <!-- WebView2's SDK adds WPF and WinForms references to every .NET consumer.
+       Pookie hosts CoreWebView2 directly and does not load either UI framework. -->
+  <Target Name="UseWebView2CoreOnly" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf' or '%(Reference.Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
+    </ItemGroup>
+  </Target>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App'">
     <None Include="$(MSBuildThisFileDirectory)licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)REUSE.toml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

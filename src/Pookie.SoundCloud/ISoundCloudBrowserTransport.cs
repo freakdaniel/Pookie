@@ -4,6 +4,8 @@ namespace Pookie.SoundCloud;
 
 public interface ISoundCloudTransport
 {
+    Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support playlist editing.");
     Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support follow signing.");
     Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default) =>

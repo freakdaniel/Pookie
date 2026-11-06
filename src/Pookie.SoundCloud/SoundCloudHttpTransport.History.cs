@@ -11,7 +11,7 @@ public sealed partial class SoundCloudHttpTransport
         ValidateId(trackId);
         if (!BrowserRequestCommand.IsHistoryContextUrn(contextUrn)) throw new ArgumentException("Некорректный контекст прослушивания.");
         try { await RecordNativePlaybackAsync(trackId, contextUrn, token).ConfigureAwait(false); }
-        catch (SoundCloudException error) when (Account().MobileIdentity == null && error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock && verification != null)
+        catch (SoundCloudException error) when (error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock && verification != null)
         {
             await recovery.WaitAsync(token).ConfigureAwait(false);
             try { await verification.RecordPlaybackAsync(trackId, contextUrn, token).ConfigureAwait(false); }
@@ -54,7 +54,7 @@ public sealed partial class SoundCloudHttpTransport
                 writer.WriteString("track_authorization", authorization.GetString());
             writer.WriteString("user", $"soundcloud:users:{userId}"); writer.WriteNumber("playhead_position", 0);
             writer.WriteString("anonymous_id", playbackSession); writer.WriteString("session_id", playbackSession);
-            writer.WriteString("url", "https://soundcloud.com/"); writer.WriteNumber("client_id", account.MobileIdentity == null ? 46941 : 3152);
+            writer.WriteString("url", "https://soundcloud.com/"); writer.WriteNumber("client_id", 46941);
             writer.WriteNumber("ts", clock.GetUtcNow().ToUnixTimeMilliseconds());
             if (account.AppVersion != null) writer.WriteString("app_version", account.AppVersion);
             writer.WriteEndObject(); writer.WriteEndObject(); writer.WriteEndArray();

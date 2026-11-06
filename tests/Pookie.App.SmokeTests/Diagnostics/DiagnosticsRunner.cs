@@ -13,24 +13,10 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
-        if (args.Contains("--playlist-order-network-probe")) { await PlaylistOrderNetworkProbe.RunAsync(); return true; }
-        if (args.Contains("--playlist-metadata-edit-live-probe")) { await PlaylistOrderNetworkProbe.RunAsync(editFixture: true); return true; }
-        if (args.Contains("--playlist-hidden-metadata-live-probe")) { await PlaylistOrderNetworkProbe.RunAsync(verifyHiddenMetadata: true); return true; }
-        if (args.Contains("--mobile-profile-status"))
-        {
-            var profile = Pookie.App.Auth.MobileOAuthConfiguration.Load();
-            Console.WriteLine(profile == null ? "MOBILE_PROFILE_DISABLED" :
-                $"MOBILE_PROFILE_ENABLED: build={profile.MobileIdentity.AppBuild}; signals={(profile.MobileIdentity.Signals == null ? "absent" : "configured")}; TLS=system; credentials omitted");
-            return true;
-        }
+        if (args.Contains("--embedded-web-challenge-smoke-test")) { await EmbeddedWebChallengeSmokeTest.RunAsync(); return true; }
+        if (args.Contains("--embedded-login-smoke-test") || args.Contains("--embedded-login-preview"))
+        { await EmbeddedLoginSmokeTest.RunAsync(args.Contains("--embedded-login-preview")); return true; }
         if (args.Contains("--native-session-recovery-smoke-test")) { await NativeSessionRecoverySmokeTest.RunAsync(); return true; }
-        if (args.Contains("--mobile-oauth-smoke-test")) { await MobileOAuthSmokeTest.RunAsync(); return true; }
-        if (args.Contains("--mobile-challenge-smoke-test")) { await MobileChallengeSmokeTest.RunAsync(); return true; }
-        if (args.Length is 1 or 2 && args[0] == "--mobile-challenge-network-probe")
-        { await NativeApiNetworkProbe.RunAsync(args.Length == 2 ? args[1] : null, mobileContracts: args.Length == 2, mobileChallenges: true); return true; }
-        if (args.Contains("--native-api-network-probe")) { await NativeApiNetworkProbe.RunAsync(); return true; }
-        if (args.Length == 2 && args[0] == "--native-track-network-probe") { await NativeApiNetworkProbe.RunAsync(args[1]); return true; }
-        if (args.Length == 2 && args[0] == "--mobile-contract-network-probe") { await NativeApiNetworkProbe.RunAsync(args[1], mobileContracts: true); return true; }
         if (args.Contains("--user-profile-network-probe")) { await UserProfileNetworkProbe.RunAsync(); return true; }
         if (args.Contains("--feed-network-probe")) { await FeedNetworkProbe.RunAsync(); return true; }
         if (args.Contains("--external-browser-smoke-test")) { await ExternalBrowserSmokeTest.RunAsync(); return true; }

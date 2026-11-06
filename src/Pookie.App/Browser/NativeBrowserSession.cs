@@ -19,6 +19,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private Worker? worker;
     private long requestNumber;
     private readonly List<Worker> workers = [];
+    private EmbeddedWebWorker? embedded;
+    private Task embeddedClosing = Task.CompletedTask;
+    internal EmbeddedWebWorker? Embedded => embedded;
+    internal void UseEmbedded(EmbeddedWebWorker value) { embedded = value; value.Changed += BrowserChanged; }
     public event Action<BrowserRequestEvent>? Changed;
     public WebSession Account { get { lock (sync) return account; } }
 
@@ -28,7 +32,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         lock (sync)
         {
             lifetime.Token.ThrowIfCancellationRequested();
-            if (account.ClientId != updated.ClientId || account.UserAgent != updated.UserAgent || account.MobileIdentity != updated.MobileIdentity ||
+            if (account.ClientId != updated.ClientId || account.UserAgent != updated.UserAgent ||
                 account.SessionId != null && account.SessionId != updated.SessionId)
                 throw new InvalidOperationException("Обновление принадлежит другой сессии SoundCloud.");
             account = updated;
@@ -39,10 +43,6 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     private void BrowserChanged(BrowserRequestEvent message)
     {
-        // A web worker (for example DRM playback) cannot replace the Android
-        // OAuth identity or the cookie obtained by the mobile challenge flow.
-        lock (sync)
-            if (account.MobileIdentity != null && message.Kind is "session" or "protection-session") return;
         if (message.Kind == "session" && message.Session?.IsValid() == true)
             lock (sync) account = message.Session;
         if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
@@ -92,6 +92,12 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал созданный плейлист."));
     }
 
+    public async Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new BrowserRequestCommand(Guid.NewGuid().ToString("N"), "playlist-edit") { Edit = request }, cancellationToken);
+        return JsonDocument.Parse(result.Json ?? "{}");
+    }
+
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken token = default) =>
         (await RequestAsync(new(Guid.NewGuid().ToString("N"), "liked-ids"), token)).Ids?.ToHashSet() ?? [];
 
@@ -129,6 +135,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private async Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
     {
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
+        if (embedded is { } web) return await RequestEmbeddedAsync(web, command, token).ConfigureAwait(false);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
         var stage = $"browser.request.{Interlocked.Increment(ref requestNumber)}.{command.Operation}" +
@@ -198,6 +205,32 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         finally { if (ordered) requests.Release(); }
     }
 
+    private async Task<BrowserRequestEvent> RequestEmbeddedAsync(EmbeddedWebWorker web, BrowserRequestCommand command, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        var ordered = command.Operation != "audio";
+        if (ordered) await requests.WaitAsync(timeout.Token).ConfigureAwait(false);
+        var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-create" or "playlist-edit" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
+        try
+        {
+            using var cancellation = timeout.Token.Register(() =>
+            {
+                if (write) _ = web.ResetAsync(); else _ = web.CancelReadAsync(command.Id);
+            });
+            var result = await web.RequestAsync(command, timeout.Token).ConfigureAwait(false);
+            if (result.Status is >= 200 and < 300) return result;
+            throw new SoundCloudException(result.Status switch
+            {
+                401 => "Сессия SoundCloud истекла. Войди в аккаунт ещё раз.",
+                403 => "SoundCloud отклонил действие в браузере.",
+                429 => "SoundCloud ограничил частоту запросов. Повтори позже.",
+                _ => "Браузер SoundCloud не подтвердил действие."
+            }, result.Status);
+        }
+        finally { if (ordered) requests.Release(); }
+    }
+
     private static SoundCloudException BrowserBlocked() => new(
         "SoundCloud временно заблокировал доступ для этого браузера или сети. Капча не предложена. Подробности — в окне сайта; действие не повторяется.", 403);
 
@@ -207,6 +240,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         {
             if (lifetime.IsCancellationRequested) return;
             lifetime.Cancel();
+            if (embedded != null) embeddedClosing = embedded.DisposeAsync().AsTask();
             foreach (var item in workers) item.Stop();
         }
     }
@@ -217,6 +251,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         Worker[] all;
         lock (sync) all = workers.ToArray();
         foreach (var item in all) await item.Completion.ConfigureAwait(false);
+        await embeddedClosing.ConfigureAwait(false);
     }
 
     public static int RunChild(string handle, string profile, string? fixture)
@@ -297,7 +332,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             {
                 if (Process != null)
                 {
-                    try { if (!Process.HasExited) Process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    try { if (!Process.HasExited) Process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { StartupLog.Event("browser.operation-unavailable"); }
                     Process.Dispose();
                 }
                 pipe.Dispose();
@@ -326,7 +361,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         public async Task CancelReadAsync(string id)
         {
             try { await SendAsync(new(id, "cancel"), CancellationToken.None).ConfigureAwait(false); }
-            catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { }
+            catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { StartupLog.Event("browser.channel-closed"); }
         }
 
         public void Abort()
@@ -334,7 +369,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             // Cancelled writes must not survive long enough to replay after a challenge.
             Interlocked.Exchange(ref stopped, 1);
             try { if (!Process.HasExited) Process.Kill(entireProcessTree: true); }
-            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { StartupLog.Event("browser.process-unavailable"); }
         }
 
         public void Stop()
@@ -342,7 +377,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             if (Interlocked.Exchange(ref stopped, 1) != 0) return;
             // EOF lets the native WebView close normally and persist website storage.
             try { Process.StandardInput.Close(); }
-            catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { }
+            catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException) { StartupLog.Event("browser.channel-closed"); }
             _ = KillIfStillRunningAsync();
         }
 
@@ -355,9 +390,9 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             catch (TimeoutException)
             {
                 try { if (!Process.HasExited) Process.Kill(entireProcessTree: true); }
-                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { StartupLog.Event("browser.process-unavailable"); }
             }
-            catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException) { }
+            catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException) { StartupLog.Event("browser.disposed"); }
         }
 
         private async Task ReadAsync(AnonymousPipeServerStream pipe, BrowserProfile profile, Action<BrowserRequestEvent> changed)
@@ -409,10 +444,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         pending.TrySetResult(message);
                     }
                     if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state")
-                        try { changed(message); } catch (InvalidOperationException) { }
+                        try { changed(message); } catch (InvalidOperationException) { StartupLog.Event("browser.operation-unavailable"); }
                 }
             }
-            catch (Exception error) when (error is IOException or JsonException or ObjectDisposedException) { }
+            catch (Exception error) when (error is IOException or JsonException or ObjectDisposedException) { StartupLog.Event("browser.disposed"); }
             finally
             {
                 Stop();

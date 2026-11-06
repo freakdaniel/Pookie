@@ -36,7 +36,6 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
             var regional = sourceIndex >= 0;
             try
             {
-                var mobile = source is SoundCloudWebClient { Session.MobileIdentity: not null };
                 cancellationToken.ThrowIfCancellationRequested();
                 SoundCloudTrack track;
                 try { track = await source.GetTrackAsync(trackId, cancellationToken); }
@@ -52,9 +51,7 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
                 protectedAvailable |= full.Any(t => t.Format!.Protocol.Contains("encrypted", StringComparison.Ordinal));
                 foreach (var transcoding in full.Where(t => protocols.Contains(t.Format!.Protocol, StringComparer.Ordinal))
                     .OrderBy(t => Array.IndexOf(protocols, t.Format!.Protocol))
-                    .ThenBy(t => mobile && t.Format!.Protocol != "progressive" ? 0 : t.Format!.MimeType?.Contains("mpeg", StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
-                    .ThenBy(t => !mobile ? 0 : t.Quality == "hq" ? 0 : t.Quality == "sq" ? 1 : 2)
-                    .ThenBy(t => mobile && t.Preset == "aac_256k" ? 0 : 1))
+                    .ThenBy(t => t.Format!.MimeType?.Contains("mpeg", StringComparison.OrdinalIgnoreCase) == true ? 0 : 1))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     try
@@ -64,7 +61,7 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
                         cancellationToken.ThrowIfCancellationRequested();
                         return new(track, stream!) { UsedRegionalSource = regional };
                     }
-                    catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 403 or 404) { }
+                    catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 403 or 404) { continue; }
                 }
             }
             catch (SoundCloudException) when (regional) { regionalFailed = true; }
