@@ -53,7 +53,10 @@ internal sealed partial class MainWindow
         // Narrow conversations retain the waveform and four actions without overflow.
         var narrow = new ChatBubbleRow(this); narrow.Bind(trackBubble.Message!);
         var narrowView = (ChatMusicView)narrow.Attachments.Children[0];
-        narrowView.Measure(new Size(360, 160)); narrowView.Arrange(new Rect(0, 0, 360, 160));
+        // Captions add an outside margin. Allocate the measured total height,
+        // as the conversation does, rather than taking that margin out of the row.
+        narrowView.Measure(new Size(360, double.PositiveInfinity));
+        narrowView.Arrange(new Rect(0, 0, 360, narrowView.DesiredSize.Height));
         if (narrowView.Row.Waveform.ActualWidth < 180 || narrowView.Row.Waveform.Bounds.Right > 361)
             throw new InvalidOperationException("A narrow chat clipped the embedded waveform row.");
         VisualTree.Visit(narrowView.Row.Root, child =>

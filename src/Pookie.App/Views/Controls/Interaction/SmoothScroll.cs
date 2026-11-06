@@ -85,7 +85,7 @@ internal sealed class SmoothScroll : IDisposable
         // window was inactive. Resume from the visible position and zero speed.
         if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
         var next = Math.Clamp(position, 0, Maximum(viewer));
-        if (Math.Abs(next - viewer.VerticalOffset) < .01) return false;
+        if (Math.Abs(next - viewer.VerticalOffset) < .01) { Stop(); return false; }
         if (!Enabled) { Stop(); viewer.SetScrollOffsets(viewer.HorizontalOffset, next); return true; }
         target = next;
         if (!running)
