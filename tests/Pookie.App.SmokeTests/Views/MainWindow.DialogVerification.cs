@@ -152,6 +152,9 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating && !playlistDialogContent.Resizing);
         playlistCreateName.Text = "Новый 🎵"; SetPlaylistPrivacy(true);
         if (!playlistCreateSave.IsEnabled) throw new InvalidOperationException("A valid playlist title did not enable creation.");
+        if (playlistCreateSave.StyleName != TrackButtons.Glass || playlistCreateSave.Background.A >= 100 || playlistCreateSave.Background.R != 255 ||
+            playlistPickerCreate.Background.A >= 100)
+            throw new InvalidOperationException("Playlist creation lost its translucent light glass surface.");
         CaptureUiPreview("dialog-create-form");
         ShowPlaylistCreation(false);
         await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating);

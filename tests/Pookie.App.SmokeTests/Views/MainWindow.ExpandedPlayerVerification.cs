@@ -77,6 +77,11 @@ internal sealed partial class MainWindow
             fixture.State = new(40, 180, true, false, false) { BufferedEnd = 120 };
             Poll();
             await WaitForLikedLayoutAsync(() => !progressAnimation.IsRunning && playerChrome.Height == PlayerBarHeight);
+            RouteWaveformClick(SettingsCenter(playerShareButton));
+            await WaitForLikedLayoutAsync(() => shareDialog.IsOpen && !shareDialog.Running);
+            if (shareTarget?.Track?.Id != current?.Id || expandedHost.IsVisible)
+                throw new InvalidOperationException("Normal player Share opened the wrong track or expanded playback.");
+            CloseShare(true);
             playerArtworkButton.Focus();
             await WaitForLikedLayoutAsync(() => playerArtworkOverlay.Opacity > .99);
             CaptureUiPreview("expanded-cover-hover");
@@ -100,6 +105,15 @@ internal sealed partial class MainWindow
             if (centerError > 1) throw new InvalidOperationException($"Cover is not centered: {centerError}");
             CaptureUiPreview("expanded-centered");
             await VerifyExpandedCoverHoverAsync();
+            MoveActionPointer(SettingsCenter(expandedCover));
+            var transport = (UIElement)((Grid)expandedCover.Child!).Children[1];
+            await WaitForLikedLayoutAsync(() => transport.Opacity > .99);
+            RouteWaveformClick(SettingsCenter(expandedShareButton));
+            await WaitForLikedLayoutAsync(() => shareDialog.IsOpen && !shareDialog.Running);
+            if (shareTarget?.Track?.Id != current?.Id || !expandedHost.IsVisible)
+                throw new InvalidOperationException("Expanded player Share lost the playing track or dismissed expanded playback.");
+            CloseShare(true);
+            Console.WriteLine("PLAYER_SHARE_UI_OK: real buttons beside repost open the current track in normal and expanded players");
             await VerifyExpandedGlassAsync();
             if (expandedGlassUiSmoke)
             {

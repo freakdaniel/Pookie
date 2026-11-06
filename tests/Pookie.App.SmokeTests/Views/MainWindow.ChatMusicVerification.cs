@@ -44,7 +44,7 @@ internal sealed partial class MainWindow
         if (Math.Abs(track.Row.PlayButton.Bounds.Y - track.Row.Cover.Bounds.Y) > 1 ||
             Math.Abs(actionsBottom - track.Row.Cover.Bounds.Bottom) > 1 || track.Row.Waveform.ActualHeight > 57)
             throw new InvalidOperationException("Music controls no longer align with the top/bottom of the artwork or the embedded waveform is too tall.");
-        if (glassActions != 4 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
+        if (glassActions != 5 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
             trackBubble.Content.CaptionBackground != ChatOutgoingColor || playlistBubble.Content.CaptionBackground != Color.Transparent ||
             trackBubble.Footer.Bounds.Bottom > trackBubble.Body.Bounds.Bottom + 1.1 ||
             playlistBubble.Footer.Bounds.Bottom > playlistBubble.Attachments.Bounds.Bottom ||
@@ -56,6 +56,13 @@ internal sealed partial class MainWindow
         narrowView.Measure(new Size(360, 160)); narrowView.Arrange(new Rect(0, 0, 360, 160));
         if (narrowView.Row.Waveform.ActualWidth < 180 || narrowView.Row.Waveform.Bounds.Right > 361)
             throw new InvalidOperationException("A narrow chat clipped the embedded waveform row.");
+        VisualTree.Visit(narrowView.Row.Root, child =>
+        {
+            var pixel = 1 / Window.DpiScale;
+            var bounds = new Rect(narrowView.Bounds.X - pixel, narrowView.Bounds.Y - pixel, narrowView.ActualWidth + 2 * pixel, narrowView.ActualHeight + 2 * pixel);
+            if (child is Button { IsVisible: true, StyleName: TrackButtons.Glass } action && !bounds.Contains(action.Bounds))
+                throw new InvalidOperationException($"A narrow chat clipped the track's share or other glass actions: action={action.Bounds}, view={narrowView.Bounds}.");
+        });
         var removed = narrowView.Row.Root; narrow.Clear();
         if (chatMusicViews.TryGetValue(removed, out _)) throw new InvalidOperationException("A recycled chat row retained its music playback binding.");
         narrow.Bind(trackBubble.Message! with { Body = "Plain text" });

@@ -40,6 +40,7 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync();
             if (SmoothScroll.Maximum(viewer) - viewer.VerticalOffset > 2 / Window.DpiScale)
                 throw new InvalidOperationException("Opening a conversation did not settle at its latest message.");
+            await VerifyChatSmoothScrollAsync(viewer);
 
             viewer.SetScrollOffsets(0, SmoothScroll.Maximum(viewer) * .45);
             await WaitForLoginFrameAsync();

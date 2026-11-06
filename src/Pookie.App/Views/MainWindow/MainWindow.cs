@@ -165,6 +165,7 @@ internal sealed partial class MainWindow : IDisposable
             if (embeddedLoginDialog.HandleKey(e)) return;
             if (playlistPickerClosing) { e.Handled = true; return; }
             if (playlistEditor.HandleKey(e)) return;
+            if (shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
             if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
@@ -245,7 +246,7 @@ internal sealed partial class MainWindow : IDisposable
             contentFrame.Padding = new Thickness(chats ? 16 : 36, ShellChromeGlass.HeaderHeight + 30, chats ? 16 : 36, 0);
             playerContentFrame.Width = Math.Min(1440, availableWidth);
             var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
-            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 18 - 4, 60, 180);
+            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 28 - 24 - 4, 60, 180);
         }
     }
 
@@ -604,7 +605,7 @@ internal sealed partial class MainWindow : IDisposable
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
         loginBusy.Value = true;
-        ClosePlaylistPicker(); ResetPlaylistEditor(); profileOpen.Value = queueOpen.Value = false;
+        CloseShare(true); ClosePlaylistPicker(); ResetPlaylistEditor(); profileOpen.Value = queueOpen.Value = false;
         CloseTopSearch(clear: true);
         ClearLinkPreviews();
         try
@@ -765,7 +766,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        CloseShare(true); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;

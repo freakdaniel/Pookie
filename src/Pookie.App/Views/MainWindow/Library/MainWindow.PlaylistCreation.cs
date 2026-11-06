@@ -23,7 +23,8 @@ internal sealed partial class MainWindow
         playlistCreatePrivacy = new PlaylistPrivacySelector(SetPlaylistPrivacy);
         playlistCreatePublic = playlistCreatePrivacy.Public; playlistCreatePrivate = playlistCreatePrivacy.Private;
         playlistCreateSave = TrackButtons.Action(new TextBlock().Text("Создать и добавить").FontSize(14).SemiBold(),
-            () => Run(CreatePickerPlaylistAsync), TrackButtons.Filled, 44);
+            () => Run(CreatePickerPlaylistAsync), TrackButtons.Glass, 44);
+        ((MaterialTrackButton)playlistCreateSave).UseLightGlassFinish();
         playlistCreateMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         playlistCreateForm = new StackPanel().Vertical().Spacing(20).Children(
             new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).Children(

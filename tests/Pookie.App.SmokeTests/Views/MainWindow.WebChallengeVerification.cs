@@ -17,29 +17,46 @@ internal sealed partial class MainWindow
             connected.UseEmbedded(worker); AttachBrowser(connected); api.Session = account;
             me = await connected.GetMeAsync(timeout.Token); signedIn.Value = true;
             await ShowWorkspaceAsync();
-            var like = api.SetLikedAsync(42, 17, true, timeout.Token);
+            likedIdsReady = true;
+            current = new() { Id = 17, Title = "Local slider like" }; UpdateLikeState();
+            var like = ToggleTrackLikeAsync(current);
+            if (!isLiked.Value || likedIds.Contains(17)) throw new InvalidOperationException("Like was not selected before web verification.");
             await VisibleAsync(like);
             var original = worker.View;
             if (!workspace.IsVisible || loginScreen.IsVisible || embeddedLogin != original || documents() != 1 || calls(17) != 1)
                 throw new InvalidOperationException("The slider did not present the existing website in the workspace overlay.");
+            if (!isLiked.Value) throw new InvalidOperationException("The slider erased the optimistic like.");
             CaptureUiPreview("web-slider-overlay");
             solve(17); await like;
             await ClosedAsync();
             if (calls(17) != 2 || !ReferenceEquals(original, worker.View)) throw new InvalidOperationException("The verified action was duplicated or the browser replaced.");
-            await api.SetLikedAsync(42, 17, false, timeout.Token);
+            await ToggleTrackLikeAsync(current);
             if (calls(17) != 3 || documents() != 1) throw new InvalidOperationException("The following action lost its live website session.");
             Console.WriteLine("WEB_SLIDER_EMBEDDED_OK: existing in-app website, one rejected request and one confirmed retry, subsequent web action, no extra profile or navigation");
-            var canceled = api.SetLikedAsync(42, 18, true, timeout.Token);
+            current = new() { Id = 18, Title = "Local canceled like" }; UpdateLikeState();
+            var canceled = ToggleTrackLikeAsync(current);
             await VisibleAsync(canceled); CancelEmbeddedBrowser();
             var stopped = false;
             try { await canceled; }
             catch (OperationCanceledException) { stopped = true; }
             await ClosedAsync(); solve(18);
-            if (!stopped || calls(18) != 1) throw new InvalidOperationException("A dismissed slider did not stop the pending write.");
+            if (!stopped || calls(18) != 1 || isLiked.Value || likedIds.Contains(18)) throw new InvalidOperationException("A dismissed slider did not stop and roll back the pending write.");
             await api.SetLikedAsync(42, 21, true, timeout.Token);
             if (calls(21) != 1 || documents() != 2) throw new InvalidOperationException("The website did not recover after cancellation.");
             await api.SetLikedAsync(42, 19, true, timeout.Token);
             if (calls(19) != 2 || embeddedLoginDialog.IsOpen) throw new InvalidOperationException("The invisible check opened an interactive modal or failed to resume.");
+            current = new() { Id = 22, Title = "Local rejected like after slider" }; UpdateLikeState();
+            var rejected = ToggleTrackLikeAsync(current);
+            await VisibleAsync(rejected);
+            if (!isLiked.Value) throw new InvalidOperationException("Interactive verification did not retain the selected heart.");
+            solve(22);
+            var rolledBack = false;
+            try { await rejected; }
+            catch (SoundCloudException error) when (error.StatusCode == 429) { rolledBack = true; }
+            await ClosedAsync();
+            if (!rolledBack || isLiked.Value || likedIds.Contains(22) || calls(22) != 2)
+                throw new InvalidOperationException("Rejection after passing the slider did not roll back exactly once.");
+            Console.WriteLine("WEB_OPTIMISTIC_LIKE_OK: selected before/during slider; passing retains success, rejection after passing rolls back, closing rolls back cancellation");
             var blocked = false;
             try { await api.SetLikedAsync(42, 20, true, timeout.Token); }
             catch (SoundCloudException error) when (error.StatusCode == 403) { blocked = true; }

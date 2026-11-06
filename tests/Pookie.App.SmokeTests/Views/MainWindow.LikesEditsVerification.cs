@@ -34,6 +34,7 @@ internal sealed partial class MainWindow
             var first = likedRows.Values.Single(row => row.Track?.Id == fixtures[0].Id);
             var second = likedRows.Values.Single(row => row.Track?.Id == fixtures[1].Id);
             Button Like(LikedTrackRow row) => FindLikeAction(row.Root);
+            current = fixtures[0]; UpdateLikeState();
             Like(first).Focus();
             var fade = new List<double>(); var shift = new List<double>(); var appearance = new List<double>();
             void Sample()
@@ -47,6 +48,8 @@ internal sealed partial class MainWindow
             try
             {
                 var remove = ToggleTrackLikeAsync(fixtures[0]);
+                if (IsTrackLiked(fixtures[0]) || isLiked.Value || !likedIds.Contains(fixtures[0].Id) || Like(first).StyleName == TrackButtons.Selected)
+                    throw new InvalidOperationException("Unlike did not update row/player immediately while retaining confirmed IDs.");
                 if (Like(first).IsEnabled || !Like(second).IsEnabled || !CanLikeTrack(fixtures[1]))
                     throw new InvalidOperationException("A pending like disabled unrelated tracks.");
                 if (Like(first).Opacity != 1) throw new InvalidOperationException("Pending like flashed a faded disabled state.");
@@ -66,7 +69,10 @@ internal sealed partial class MainWindow
                         throw new InvalidOperationException("Recycled row retained focus, outline or disabled state.");
 
                 appearance.Clear();
-                var add = ToggleTrackLikeAsync(fixtures[0]); transport.Complete(fixtures[0].Id); await add;
+                var add = ToggleTrackLikeAsync(fixtures[0]);
+                if (!IsTrackLiked(fixtures[0]) || !isLiked.Value || likedIds.Contains(fixtures[0].Id))
+                    throw new InvalidOperationException("Like waited for the request before appearing selected.");
+                transport.Complete(fixtures[0].Id); await add;
                 await WaitForLoginFrameAsync();
                 await WaitForLikedLayoutAsync(() => !likedItemMotions.Keys.Any(motion => motion.Moving));
                 if (tracks[0].Id != fixtures[0].Id || appearance.Count(value => value is > .02 and < .98) < 3)
@@ -74,10 +80,26 @@ internal sealed partial class MainWindow
             }
             finally { Window.FrameRendered -= Sample; }
 
+            MoveActionPointer(new Point(2, 2));
+            var failedRow = likedRows.Values.Single(row => row.Track?.Id == fixtures[2].Id);
+            current = fixtures[2]; UpdateLikeState();
             var failed = ToggleTrackLikeAsync(fixtures[2]);
-            transport.Fail(fixtures[2].Id);
-            try { await failed; throw new InvalidOperationException("Fixture error was swallowed."); }
-            catch (HttpRequestException) { }
+            if (isLiked.Value || IsTrackLiked(fixtures[2])) throw new InvalidOperationException("Pending unlike did not change its visible state.");
+            await WaitForLikedLayoutAsync(() => Like(failedRow).Background == TrackButtons.GlassSurface);
+            var rollbackFrames = new HashSet<Color>();
+            void SampleRollback() => rollbackFrames.Add(Like(failedRow).Background);
+            Window.FrameRendered += SampleRollback;
+            try
+            {
+                transport.Fail(fixtures[2].Id);
+                var surfaced = false;
+                try { await failed; }
+                catch (HttpRequestException) { surfaced = true; }
+                if (!surfaced || !isLiked.Value || !IsTrackLiked(fixtures[2])) throw new InvalidOperationException("Failed unlike did not restore the confirmed player state.");
+                await WaitForLikedLayoutAsync(() => Like(failedRow).Background == TrackButtons.SelectedSurface);
+            }
+            finally { Window.FrameRendered -= SampleRollback; }
+            if (rollbackFrames.Count < 3) throw new InvalidOperationException("Like rollback had no intermediate surface colors.");
             if (!CanLikeTrack(fixtures[2]) || !likedIds.Contains(fixtures[2].Id) || !tracks.Any(track => track.Id == fixtures[2].Id))
                 throw new InvalidOperationException("Failed like lost the track or left its button disabled.");
 
@@ -117,7 +139,8 @@ internal sealed partial class MainWindow
             CaptureUiPreview("likes-edits");
             await VerifyRepostsUiAsync(transport, fixtures);
             await VerifyThreeLikedViewsAsync();
-            Console.WriteLine("UI_LIKES_EDITS_OK: isolated pending likes, duplicate suppression, removal/entry/movement frames, stable viewport/cursor/navigation, recycled focus, failure recovery, late replies and grid fade");
+            await VerifyOptimisticLikeReadsAsync();
+            Console.WriteLine("UI_LIKES_EDITS_OK: immediate like/unlike in rows and player, animated rollback, isolated pending likes, duplicate suppression, stable viewport/cursor/navigation, failure recovery, late replies and grid fade");
         }
         catch (Exception error) { VerificationFailure = error; Console.Error.WriteLine("UI_LIKES_EDITS_FAILED: " + error); }
         finally { Window.Close(); }
@@ -137,9 +160,12 @@ internal sealed partial class MainWindow
     private sealed class LikesEditTransport : ISoundCloudBrowserTransport
     {
         private readonly Dictionary<long, TaskCompletionSource> pending = [];
+        internal TaskCompletionSource<JsonDocument>? LikedIdsResponse;
+        internal bool LastLiked;
         public int Requests { get; private set; }
         public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default) =>
             uri.AbsolutePath == "/me/track_reposts/ids" ? Task.FromResult(JsonDocument.Parse("[81004]")) :
+            uri.AbsolutePath == "/me/track_likes/ids" && LikedIdsResponse != null ? LikedIdsResponse.Task.WaitAsync(cancellationToken) :
             throw new InvalidOperationException("Like edit unexpectedly fetched a page: " + uri.AbsolutePath);
         public int RepostRequests { get; private set; }
         public bool LastReposted { get; private set; }
@@ -152,7 +178,7 @@ internal sealed partial class MainWindow
         }
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default)
         {
-            Requests++;
+            Requests++; LastLiked = liked;
             var response = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             pending.Add(trackId, response);
             return response.Task.WaitAsync(cancellationToken);

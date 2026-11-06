@@ -107,19 +107,28 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => Math.Abs(viewer.VerticalOffset - (reversing - step)) < 1);
         motion.Stop();
 
-        void Direct(double delta)
-        {
-            var before = viewer.VerticalOffset;
-            if (!motion.ScrollWheel(delta) || Math.Abs(viewer.VerticalOffset - before + delta * step) > 1 / Window.DpiScale)
-                throw new InvalidOperationException("Precision wheel input acquired an extra animation delay.");
-        }
-        Direct(.15);
-        Direct(1); // A coalesced whole notch in the same precision stream.
-        Direct(-.15); // Reversal follows the next input, not the old velocity.
-        var stopped = viewer.VerticalOffset;
-        await WaitForLoginFrameAsync();
-        if (Math.Abs(viewer.VerticalOffset - stopped) > 1 / Window.DpiScale)
-            throw new InvalidOperationException("A precision gesture kept animating after its final input.");
+        var precisionStart = viewer.VerticalOffset;
+        motion.ScrollWheel(-.15);
+        motion.ScrollWheel(-1); // A coalesced whole notch in the same precision stream.
+        if (Math.Abs(viewer.VerticalOffset - precisionStart) > .01)
+            throw new InvalidOperationException("Precision packets bypassed frame interpolation.");
+        await WaitForLikedLayoutAsync(() => viewer.VerticalOffset > precisionStart + .1 && viewer.VerticalOffset < precisionStart + 1.15 * step);
+        await WaitForLikedLayoutAsync(() => !motion.IsRunning);
+        if (Math.Abs(viewer.VerticalOffset - precisionStart - 1.15 * step) > .1)
+            throw new InvalidOperationException("Precision packet accumulation lost distance.");
+        motion.ScrollWheel(-.3);
+        await WaitForLikedLayoutAsync(() => viewer.VerticalOffset > precisionStart + 1.15 * step + .1);
+        var precisionReversing = viewer.VerticalOffset;
+        motion.ScrollWheel(.3);
+        await WaitForLikedLayoutAsync(() => viewer.VerticalOffset < precisionReversing - .1);
+        await WaitForLikedLayoutAsync(() => !motion.IsRunning);
+        if (Math.Abs(viewer.VerticalOffset - precisionReversing + .3 * step) > .1)
+            throw new InvalidOperationException("Touchpad reversal retained an old destination.");
+        var disabledStart = viewer.VerticalOffset;
+        motion.Enabled = false; motion.ScrollWheel(-.15);
+        if (Math.Abs(viewer.VerticalOffset - disabledStart - .15 * step) > .1 || motion.IsRunning)
+            throw new InvalidOperationException("Disabled smoothing still animated precision input.");
+        motion.Enabled = true;
         motion.Scroll(500);
         typeof(SmoothScroll).GetField("timestamp",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
             .SetValue(motion,System.Diagnostics.Stopwatch.GetTimestamp()-System.Diagnostics.Stopwatch.Frequency*2);
@@ -141,6 +150,6 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Window reactivation resumed an old scroll target.");
         registered.Scroll(step);
         await WaitForLikedLayoutAsync(()=>Math.Abs(viewer.VerticalOffset-inactive-step)<1);
-        Console.WriteLine("PRECISION_WHEEL_OK: immediate fractional/coalesced/reversed input; animated notches; stale-frame and window-reactivation targets discarded");
+        Console.WriteLine("PRECISION_WHEEL_OK: interpolated fractional/coalesced input, exact accumulated distance, prompt reversal, disabled preference, stale-frame and window-reactivation targets discarded");
     }
 }

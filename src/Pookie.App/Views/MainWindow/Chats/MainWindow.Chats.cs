@@ -89,7 +89,7 @@ internal sealed partial class MainWindow
         chatNewMessages = TrackButtons.Action(new TextBlock().Text("Новые сообщения ↓").FontSize(12), ()=>Run(ShowLatestChatAsync), TrackButtons.Tonal, 32).IsVisible(false).CenterHorizontal();
         chatMessagesView = new ItemsControl().Items(Array.Empty<ChatMessageItem>(), m => m.Key).ItemHeight(84).VariableHeightPresenter()
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 0));
-        chatMessagesView.MouseWheel += _ => { chatScrollBottom = chatWasAtBottom = chatFollowLayout = false; foreach (var row in ChatRows) row.FollowMediaResize = false; };
+        chatMessagesView.MouseWheel += _ => BeginChatUserScroll();
         chatMessagesView.ItemTemplate = ChatMessageTemplate();
         chatMessagesView.ItemsSource = ItemsView.Create(chatMessageItems, m => m.Body, m => m.Key);
         chatFloatingDateText = new TextBlock().FontSize(12).SemiBold();

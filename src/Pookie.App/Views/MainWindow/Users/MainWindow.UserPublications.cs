@@ -24,7 +24,7 @@ internal sealed partial class MainWindow
         var row = new LikedTrackRow(track => Run(() => PlayUserTrackAsync(track)), track => Run(() => OpenTrackPageAsync(track)),
             track => Run(() => ToggleTrackLikeAsync(track)), CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)),
             track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekUserTrackAsync(track, fraction)),
-            ArtworkLayer, glass: publication, publication: publication, byline: item == null ? null : author => CreateUserByline(author, item));
+            ArtworkLayer, glass: publication, publication: publication, byline: item == null ? null : author => CreateUserByline(author, item), share: ShareTrack);
         likedRows.Add(row.Root, row);
         if (publication) row.AddQueueAction(track => EnqueueTrack(track, false));
         AttachTrackQueueMenu(row.Root, () => row.Track);

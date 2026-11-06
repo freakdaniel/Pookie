@@ -340,6 +340,11 @@ of unrelated waveform/card skeletons.
 `--likes-edits-ui-smoke-test` uses an isolated account fixture to check per-track
 pending state, duplicate suppression, animated removal/insertion and movement in
 likes, stable scroll and pagination, focus recycling, failed writes and late replies.
+Like/unlike hearts update before initial ID/session checks and stay selected through
+pending verification. The fixture samples intermediate rollback colors and covers
+background cache refreshes, cancellation and account changes without committing
+unconfirmed IDs. The embedded web challenge fixture also rejects an action after
+the slider passes and checks that the optimistic heart rolls back.
 It also checks existing reposts, add/remove state, isolated pending buttons, duplicate
 suppression, failed writes, own-track restrictions and stale session replies. All
 account mutations use a local fixture transport.

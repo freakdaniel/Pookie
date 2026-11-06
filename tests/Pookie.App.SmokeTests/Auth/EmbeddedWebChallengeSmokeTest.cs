@@ -70,7 +70,8 @@ internal static class EmbeddedWebChallengeSmokeTest
             if (context.Request.Headers.Authorization != "OAuth fixture-token" || context.Request.Query["client_id"] != "fixture")
                 throw new InvalidOperationException("Wrong web credentials or route.");
             var count = calls.AddOrUpdate(id, 1, (_, value) => value + 1);
-            if (id is 17 or 18 or 19 or 20 && count == 1) return Results.Json(new { url = "https://geo.captcha-delivery.com/captcha/fixture" }, statusCode: 403);
+            if (id is 17 or 18 or 19 or 20 or 22 && count == 1) return Results.Json(new { url = "https://geo.captcha-delivery.com/captcha/fixture" }, statusCode: 403);
+            if (id == 22) return Results.StatusCode(429);
             return Results.NoContent();
         });
         await server.StartAsync();
@@ -78,7 +79,7 @@ internal static class EmbeddedWebChallengeSmokeTest
         MainWindow? tested = null;
         try
         {
-            await AppHost.RunAsync(new() { Preview = true, IsolatedData = true, AudioEnabled = false, DiscordPresence = false,
+            await AppHost.RunAsync(new() { SkipSessionRestore = true, RequireSignIn = true, IsolatedData = true, AudioEnabled = false, DiscordPresence = false,
                 SystemMediaSession = false }, window =>
             {
                 tested = window;

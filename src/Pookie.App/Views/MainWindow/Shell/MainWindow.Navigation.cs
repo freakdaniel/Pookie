@@ -29,11 +29,13 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? likedLoading;
     private Task? likedTask;
     private bool likedIdsReady, advancing;
-    private readonly HashSet<(WebSession Session, long Track)> pendingLikes = [];
-    private bool IsLikePending(SoundCloudTrack track) => api.Session is { } session && pendingLikes.Contains((session, track.Id));
-    private bool likeBusy => pendingLikes.Any(item => item.Session == api.Session);
+    private readonly Dictionary<(WebSession Session, long Track), bool> pendingLikes = [];
+    private bool IsTrackLiked(SoundCloudTrack track) => api.Session is { } session && pendingLikes.TryGetValue((session, track.Id), out var liked)
+        ? liked : likedIds.Contains(track.Id) || !likedIdsReady && page.Value is Page.Library or Page.LibraryTracks && tracks.Any(item => item.Id == track.Id);
+    private bool IsLikePending(SoundCloudTrack track) => api.Session is { } session && pendingLikes.ContainsKey((session, track.Id));
+    private bool likeBusy => pendingLikes.Keys.Any(item => item.Session == api.Session);
     private bool CanLikeTrack(SoundCloudTrack track) => me != null && !demo &&
-        (api.Session == null || !pendingLikes.Contains((api.Session, track.Id)));
+        (api.Session == null || !pendingLikes.ContainsKey((api.Session, track.Id)));
     private double previousVolume = 70;
 
     private Task NavigateAsync(Page target)
@@ -57,7 +59,7 @@ internal sealed partial class MainWindow
 
     private void UpdateLikeState()
     {
-        isLiked.Value = current != null && likedIds.Contains(current.Id);
+        isLiked.Value = current != null && IsTrackLiked(current);
         likeAvailable.Value = current != null && CanLikeTrack(current);
         RefreshLikedRows();
     }
@@ -89,15 +91,18 @@ internal sealed partial class MainWindow
 
     private async Task ToggleTrackLikeAsync(SoundCloudTrack track)
     {
-        if (demo || me == null || api.Session == null || !pendingLikes.Add((api.Session, track.Id))) return;
-        likedActionError.Value = "";
+        if (demo || me == null || api.Session == null) return;
         var user = me; var session = api.Session;
+        // Capture the user's visible intent before any session/ID check can await.
+        // Keep it separate from confirmed IDs so background reads cannot erase it.
+        var liked = !IsTrackLiked(track);
+        if (!pendingLikes.TryAdd((session, track.Id), liked)) return;
+        likedActionError.Value = "";
         UpdateLikeState();
         try
         {
             if (!likedIdsReady) await LoadLikedIdsAsync();
             if (api.Session != session) return;
-            var liked = !likedIds.Contains(track.Id);
             var token = likedLoading?.Token ?? lifetime.Token;
             if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
             status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
@@ -109,7 +114,12 @@ internal sealed partial class MainWindow
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
             await ApplyLibraryLikeAsync(track, liked, session);
         }
-        finally { pendingLikes.Remove((session, track.Id)); if (!disposed) UpdateLikeState(); }
+        finally
+        {
+            pendingLikes.Remove((session, track.Id));
+            // Existing heart/surface transitions animate rollback to confirmed state.
+            if (!disposed) UpdateLikeState();
+        }
     }
 
 }

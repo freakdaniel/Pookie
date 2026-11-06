@@ -283,11 +283,11 @@ internal sealed partial class MainWindow
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Unexpected write");
     }
 
-    private void RouteSearchTestWheel(Point point)
+    private void RouteSearchTestWheel(Point point, double delta = -3)
     {
         var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", throwOnError: true)!;
         var method = router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             .Single(method => method.Name == "MouseWheel" && method.GetParameters().Length == 8);
-        method.Invoke(null, [Window, point, new Point(0, 0), new Vector(0, -3), false, false, false, ModifierKeys.None]);
+        method.Invoke(null, [Window, point, new Point(0, 0), new Vector(0, delta), false, false, false, ModifierKeys.None]);
     }
 }

@@ -53,7 +53,7 @@ internal sealed partial class MainWindow
         public bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
         public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Action<SoundCloudTrack> like,
-            Action<SoundCloudTrack> copy, Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false, bool publication = false, Func<TextBlock, FrameworkElement>? byline = null)
+            Action<SoundCloudTrack> copy, Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false, bool publication = false, Func<TextBlock, FrameworkElement>? byline = null, Action<SoundCloudTrack>? share = null)
         {
             this.publication = publication;
             actionVariant = glass ? TrackButtons.Glass : TrackButtons.Tonal;
@@ -77,7 +77,8 @@ internal sealed partial class MainWindow
             Waveform.SeekRequested += fraction => { if (Track is { } track) seek(track, fraction); };
             artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).Child(artworkLayer(Cover));
             metadata = new StackPanel().Vertical().Spacing(3).Right().CenterVertical().Children(posted, genreBadge);
-            actionButtons = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton), playlistButton, copyButton);
+            actionButtons = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton),
+                TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Track is { } track) share?.Invoke(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Поделиться").IsVisible(share != null), playlistButton, copyButton);
             actions = new Grid().Columns("Auto,*").Rows("*").Children(
                 actionButtons.Column(0),
                 new StackPanel().Horizontal().Spacing(12).Right().CenterVertical().Column(1).Children(playsStat, commentsStat));
@@ -138,6 +139,9 @@ internal sealed partial class MainWindow
             metadata.IsVisible = false;
             playsStat.IsVisible = commentsStat.IsVisible = false;
             var compact = width - footerReserve < 480;
+            // The share panel includes Copy. Keep the primary actions inside a
+            // narrow conversation's footer reservation instead of overlapping it.
+            copyButton.IsVisible = !compact;
             likeCount.IsVisible = !compact;
             likeButton.Width = compact ? 40 : double.NaN;
             likeButton.Padding = new Thickness(compact ? 0 : 16, 0);

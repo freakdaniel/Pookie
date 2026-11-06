@@ -140,6 +140,7 @@ internal sealed partial class MainWindow
     }
     private void CancelChatReads()
     {
+        StopChatScrolling();
         CloseChatAttachMenu(); CloseChatMusicPicker(); CloseChatVideo(true);
         CancelChatAutomaticMedia(); CancelKlipyReads();
         chatReadCancellation?.Cancel(); chatReadCancellation?.Dispose(); chatReadCancellation = null;
@@ -454,6 +455,7 @@ internal sealed partial class MainWindow
 
     private void RequestChatBottom()
     {
+        StopChatScrolling();
         chatRestoreOffset = null; chatRestoreAnchor = null; chatRestoreBubbleAnchor = false;
         chatPrependAnchor = null; chatScrollBottom = chatWasAtBottom = true; chatLastBottomExtent = -1; chatViewport.InvalidateArrange(); chatViewport.InvalidateVisual();
     }
@@ -462,12 +464,20 @@ internal sealed partial class MainWindow
     {
         if (disposed || !workspace.IsVisible || page.Value != Page.Chats || Window.WindowState == WindowState.Minimized) return;
         if (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer currentViewer) return;
+        foreach (var control in new FrameworkElement[] { chatInbox, chatMessagesView, chatPeopleSearch, chatSavedMessages })
+            if (control.FindVisualChild<ScrollViewer>() is ScrollViewer scroll)
+            {
+                scroll.HorizontalScroll = ScrollMode.Disabled;
+                if (!smoothScrolls.ContainsKey(scroll))
+                    smoothScrolls[scroll] = new SmoothScroll(scroll) { Enabled = preferences.SmoothScrolling,
+                        UserScrolling = control == chatMessagesView ? BeginChatUserScroll : null,
+                        RestoringAnchor = control == chatMessagesView ? () => chatRestoreBubbleAnchor && chatRestoreOffset != null : null,
+                        Advanced = control == chatMessagesView ? delta => { if (chatRestoreBubbleAnchor && chatRestoreOffset != null) chatRestoreAnchorY -= delta; } : null };
+            }
         var geometry = (currentViewer.Bounds, currentViewer.VerticalOffset, SmoothScroll.Maximum(currentViewer), chatMediaLoads.Count);
         if (!chatPresentationDirty && chatPresentationGeometry == geometry && !chatColumns.Animating && !chatComposerSurface.IsResizing) return;
         chatPresentationDirty = false; chatPresentationGeometry = geometry;
         foreach (var row in ChatRows.Where(r => !r.Bound && r.Message != null).ToArray()) row.Clear();
-        foreach (var control in new[] { chatInbox, chatMessagesView })
-            if (control.FindVisualChild<ScrollViewer>() is ScrollViewer scroll) scroll.HorizontalScroll = ScrollMode.Disabled;
         if (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return;
         if (chatDateViewer != viewer)
         {
@@ -494,6 +504,17 @@ internal sealed partial class MainWindow
     // Preserve bottom intent while variable-height rows refine their estimated extent.
     private double chatViewportMaximum = -1;
 
+    private void StopChatScrolling()
+    {
+        if (chatDateViewer != null && smoothScrolls.TryGetValue(chatDateViewer, out var motion)) motion.Stop();
+    }
+
+    private void BeginChatUserScroll()
+    {
+        chatScrollBottom = chatWasAtBottom = chatFollowLayout = false;
+        foreach (var row in ChatRows) row.FollowMediaResize = false;
+    }
+
     private bool SynchronizeChatScroll()
     {
         if (page.Value != Page.Chats || chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return false;
@@ -508,7 +529,12 @@ internal sealed partial class MainWindow
             var requested = anchor != null ? viewer.VerticalOffset + anchorY - viewer.Bounds.Y - chatRestoreAnchorY : restore;
             var target = Math.Clamp(requested, 0, maximum);
             if (Math.Abs(target - viewer.VerticalOffset) > .1)
-            { viewer.SetScrollOffsets(0, target); changed = true; }
+            {
+                if (chatRestoreBubbleAnchor && smoothScrolls.TryGetValue(viewer, out var motion))
+                    motion.CorrectLayoutOffset(target - viewer.VerticalOffset);
+                else { StopChatScrolling(); viewer.SetScrollOffsets(0, target); }
+                changed = true;
+            }
             if (anchor != null && Math.Abs(anchorY - viewer.Bounds.Y - chatRestoreAnchorY) > .5) changed = true;
             // A larger window can make the old anchor unreachable at the end of
             // history. Accept the nearest edge after bounded extent refinement.
@@ -530,16 +556,20 @@ internal sealed partial class MainWindow
             var settled = Math.Abs(maximum - chatLastBottomExtent) < .1 && Math.Abs(maximum - viewer.VerticalOffset) < .1;
             chatLastBottomExtent = maximum;
             chatNewMessages.IsVisible = false;
-            if (Math.Abs(maximum - viewer.VerticalOffset) > .1) viewer.SetScrollOffsets(0, maximum);
+            if (Math.Abs(maximum - viewer.VerticalOffset) > .1) { StopChatScrolling(); viewer.SetScrollOffsets(0, maximum); }
             if (settled) { chatScrollBottom = false; chatLastBottomExtent = -1; if (!chatComposerSurface.IsResizing && !chatColumns.Animating) chatFollowLayout = false; }
             else changed = true;
         }
         else if (chatPrependAnchor is { } anchor)
         {
             chatPrependAnchor = null;
-            viewer.SetScrollOffsets(0, anchor.Offset + maximum - anchor.Maximum); changed = true;
+            var delta = anchor.Offset + maximum - anchor.Maximum - viewer.VerticalOffset;
+            if (smoothScrolls.TryGetValue(viewer, out var motion)) motion.CorrectLayoutOffset(delta);
+            else viewer.SetScrollOffsets(0, viewer.VerticalOffset + delta);
+            changed = true;
         }
-        chatWasAtBottom = chatRestoreOffset == null && maximum - viewer.VerticalOffset < 12;
+        chatWasAtBottom = chatRestoreOffset == null && maximum - viewer.VerticalOffset < 12 &&
+            (!smoothScrolls.TryGetValue(viewer, out var scrolling) || !scrolling.IsRunning);
         return changed;
     }
 

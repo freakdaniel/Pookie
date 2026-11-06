@@ -40,7 +40,7 @@ internal sealed partial class MainWindow
     private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null)
     {
         var row = new LikedTrackRow(select ?? SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true);
+            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);
@@ -71,8 +71,7 @@ internal sealed partial class MainWindow
         if (row.Track is not { } track) return;
         row.RefreshRepost(repostedIds.Contains(track.Id), CanRepostTrack(track), IsRepostPending(track));
         var selected = LibraryRowSelected(row);
-        row.Refresh(selected, isPlaying.Value, likedIds.Contains(track.Id) || !likedIdsReady && tracks.Any(t => t.Id == track.Id) &&
-            page.Value is Page.Library or Page.LibraryTracks, CanLikeTrack(track),
+        row.Refresh(selected, isPlaying.Value, IsTrackLiked(track), CanLikeTrack(track),
             selected ? likedPlaybackPosition : 0, IsLikePending(track));
     }
     private void RefreshLikedRows(double? seconds = null)

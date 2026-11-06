@@ -39,7 +39,7 @@ internal sealed partial class MainWindow
             var row = new LikedTrackRow(value => Run(() => PlayFeedTrackAsync(value)), value => Run(() => OpenTrackPageAsync(value)),
                 value => Run(() => ToggleTrackLikeAsync(value)), CopyTrackLink, value => Run(() => ToggleTrackRepostAsync(value)),
                 value => Run(() => OpenPlaylistPickerAsync(value)), (value, fraction) => Run(() => SeekFeedTrackAsync(value, fraction)),
-                ArtworkLayer, glass: true, publication: true);
+                ArtworkLayer, glass: true, publication: true, share: ShareTrack);
             view.Track = row; likedRows.Add(row.Root, row);
             row.AddQueueAction(value => EnqueueTrack(value, false));
             AttachTrackQueueMenu(row.Root, () => row.Track); AttachTrackTitle(row.Title, () => row.Track); AttachUserLink(row.Author, () => row.Track?.User);

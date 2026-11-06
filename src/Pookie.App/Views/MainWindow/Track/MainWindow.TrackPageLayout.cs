@@ -50,7 +50,7 @@ internal sealed partial class MainWindow
         AttachTrackQueueMenu(queue, () => trackDetailState?.Track);
         var playlist = AddToPlaylistButton(() => trackDetailState?.Track, TrackButtons.Glass, 44);
         var actions = trackCommentActions = new TrackCommentActionRow(TrackButtons.Connected(trackDetailLike, trackDetailRepost), comment,
-            new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(playlist, copy, queue));
+            new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(ShareTrackButton(() => trackDetailState?.Track), playlist, copy, queue));
         var coverFrame = new Border().Width(320).Height(320).CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
         var heroColumns = new TrackPageColumns(
             new ViewportGrid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),

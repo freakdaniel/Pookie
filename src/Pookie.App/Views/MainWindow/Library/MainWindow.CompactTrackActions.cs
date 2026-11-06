@@ -13,14 +13,7 @@ internal sealed partial class MainWindow
         var repostIcon = Icons.View("repeat", 18, Muted).Center();
         var repost = TrackButtons.Icon(repostIcon, () => { if (row.Track is { } track) Run(() => ToggleTrackRepostAsync(track)); }, TrackButtons.Text, 32).Hint("Сделать репост");
         var copy = TrackButtons.Icon(Icons.View("copy", 18), () => { if (row.Track is { } track) CopyTrackLink(track); }, TrackButtons.Text, 32).Hint("Скопировать ссылку");
-        var share = TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { }, TrackButtons.Text, 32).Hint("Поделиться");
-        var menu = PopupAppearance.CreateMenu();
-        var copyLink = new Command("pookie.track.share.copy", "Скопировать ссылку");
-        var open = new Command("pookie.track.share.open", "Открыть в SoundCloud");
-        share.Commands.Register(copyLink, () => { if (row.Track is { } track) CopyTrackLink(track); }, () => row.Track != null);
-        share.Commands.Register(open, () => OpenSoundCloudPage(row.Track?.PermalinkUrl), () => TrackLink(row.Track?.PermalinkUrl) != null);
-        menu.Item(copyLink).Item(open); PopupAppearance.Attach(share, menu);
-        share.Click += () => menu.Show(share);
+        var share = ShareTrackButton(() => row.Track, TrackButtons.Text, 32);
         var more = TrackButtons.Icon(Icons.View("dots-three", 20), () => { }, TrackButtons.Text, 32).Hint("Ещё");
         more.Click += () => PopupAppearance.MenuFor(row.Root).Show(more);
         var extras = new StackPanel().Horizontal().Spacing(4).Children(repost, share, copy).IsVisible(row.Root.ActualWidth >= CompactTrackTail.FullActionsThreshold);

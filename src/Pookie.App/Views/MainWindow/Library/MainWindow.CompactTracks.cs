@@ -138,7 +138,7 @@ internal sealed partial class MainWindow
         row.HoverFill.Strength = selected || row.Hovered ? 1 : 0;
         row.Play.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
         row.Overlay.Strength = selected || row.Hovered ? 1 : 0;
-        var liked = likedIds.Contains(track.Id);
+        var liked = IsTrackLiked(track);
         TrackButtons.SetGlyph(row.Heart, liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : Muted);
         TrackButtons.SetAvailability(row.Like, CanLikeTrack(track), IsLikePending(track));
         row.Like.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");

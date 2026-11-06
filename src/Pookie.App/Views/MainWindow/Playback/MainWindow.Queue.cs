@@ -226,6 +226,7 @@ internal sealed partial class MainWindow
         Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
         Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
         Item("playlist", "Добавить в плейлист", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
+        Item("share", "Поделиться", () => { if (track() is { } item) ShareTrack(item); }, () => track() != null);
         if (extraActions)
         {
             Item("copy", "Скопировать ссылку", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);

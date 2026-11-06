@@ -17,6 +17,7 @@ internal sealed partial class MainWindow
         nativeClipboard = GtkClipboardService.TryCreate();
         windowClipboard = new(Window, nativeClipboard);
         topSearchInput.ClipboardService = windowClipboard;
+        shareLink.ClipboardService = windowClipboard;
         likedFilter.ClipboardService = windowClipboard;
         trackDetailDescription.ClipboardService = windowClipboard;
         userDescription.ClipboardService = windowClipboard;

@@ -49,6 +49,7 @@ internal sealed partial class MainWindow
         playlistPickerClose = TrackButtons.Icon(Icons.View("x", 20), ClosePlaylistPicker, TrackButtons.Glass).Top();
         ((MaterialTrackButton)playlistPickerClose).UseLightGlassFinish();
         playlistPickerCreate = TrackButtons.Icon(Icons.View("plus", 20), () => ShowPlaylistCreation(true), TrackButtons.Glass);
+        ((MaterialTrackButton)playlistPickerCreate).UseLightGlassFinish();
         var list = new DockPanel().LastChildFill().Spacing(12).Children(
             new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).DockTop().Children(
                 new TextBlock().Text("Добавить в плейлист").FontSize(21).Bold().CenterVertical().Column(0),
@@ -200,7 +201,7 @@ internal sealed partial class MainWindow
             InvalidatePlaylistLibrary(playlistId);
             status.Value = "Трек добавлен в плейлист.";
         }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
         catch
         {
             if (!disposed && generation == playlistPickerGeneration && api.Session == session)

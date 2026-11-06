@@ -205,7 +205,7 @@ internal sealed partial class MainWindow
         trackDetailPlay.Hint(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
         trackDetailWaveform.IsPlaying = selected && isPlaying.Value;
         RefreshTrackDetailPosition();
-        var liked = likedIds.Contains(track.Id);
+        var liked = IsTrackLiked(track);
         TrackButtons.SetGlyph(trackDetailHeart, liked ? "heart-filled" : "heart", liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
         TrackButtons.SetTextColor(trackDetailLikeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
         TrackButtons.SetLiked(trackDetailLike, liked, TrackButtons.Glass);

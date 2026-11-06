@@ -61,10 +61,16 @@ internal sealed partial class MainWindow
                 Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
                 Icons.View("heart-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isLiked)),
             () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable);
+        void RefreshLikePending() => ((ExpandedGlassButton)like).SetPending(current != null && IsLikePending(current));
+        isLiked.Changed += RefreshLikePending;
+        likeAvailable.Changed += RefreshLikePending;
+        RefreshLikePending();
         var repost = ExpandedActionButton(PlayerRepostGlyph(24, Color.White),
             () => Run(ToggleCurrentTrackRepostAsync), 38, isReposted).BindIsEnabled(repostAvailable);
         ((ExpandedGlassButton)like).Connect(true);
         ((ExpandedGlassButton)repost).Connect(false, TrackButtons.RepostedSurface);
+        var share = expandedShareButton = ExpandedActionButton(Icons.View("arrow-square-out", 22, Color.White),
+            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }, 38);
         var shuffleControl = ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle);
         var repeatControl = ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive);
         var playbackTint = Color.FromRgb(28, 76, 76);
@@ -79,7 +85,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
-                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost)));
+                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost, share)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>

@@ -146,6 +146,7 @@ internal sealed partial class MainWindow
             if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || collectionFilter.Text != "Трек")
                 throw new InvalidOperationException("Back navigation lost playlist presentation.");
             await VerifyPlaylistDialogAsync(first, transport);
+            await VerifySharePanelAsync(first, LibraryData.FromPlaylist(transport.Playlist));
             transport.ExistingPickerTrack = first.Id;
             await OpenPlaylistPickerAsync(first);
             await WaitForLikedLayoutAsync(() => playlistChoices.Children.Count == 2 && !playlistPickerLoading.Skeleton.IsVisible);

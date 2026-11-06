@@ -14,6 +14,11 @@ internal sealed class SmoothScroll : IDisposable
     private long precisionTimestamp;
     private bool running, applying;
     private bool enabled = true;
+    internal bool IsRunning => running;
+    private bool precision;
+    internal Action? UserScrolling;
+    internal Action<double>? Advanced;
+    internal Func<bool>? RestoringAnchor;
     internal bool Enabled
     {
         get => enabled;
@@ -56,30 +61,21 @@ internal sealed class SmoothScroll : IDisposable
     internal bool ScrollWheel(double wheelDelta)
     {
         var delta = -wheelDelta * ThemeManager.DefaultMetrics.ScrollWheelStep;
+        if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
+        var now = Stopwatch.GetTimestamp();
+        var continuous = false;
         if (OperatingSystem.IsWindows())
         {
-            var now = Stopwatch.GetTimestamp();
-            // Precision devices already supply a continuous, inertial stream.
-            // A second spring trails the finger and keeps moving the old way
-            // after reversal. Whole notches inside that same stream remain
-            // direct too; ordinary wheel notches retain the user's animation.
             if (Math.Abs(wheelDelta - Math.Round(wheelDelta)) > .00001) precisionTimestamp = now;
-            if (precisionTimestamp != 0 && Stopwatch.GetElapsedTime(precisionTimestamp, now).TotalMilliseconds < 150)
-            {
-                Stop();
-                precisionTimestamp = now;
-                var before = viewer.VerticalOffset;
-                target = Math.Clamp(before + delta, 0, Maximum(viewer));
-                if (Math.Abs(target - before) < .01) return false;
-                viewer.SetScrollOffsets(viewer.HorizontalOffset, target);
-                last = viewer.VerticalOffset;
-                return true;
-            }
+            continuous = precisionTimestamp != 0 && Stopwatch.GetElapsedTime(precisionTimestamp, now).TotalMilliseconds < 150;
         }
         // A reversed notch cancels the unconsumed distance and velocity from
         // the previous direction. Otherwise several notches are spent braking
         // toward an old destination before the page follows the new input.
         if (running && (delta * (target - viewer.VerticalOffset) < 0 || delta * velocity < 0)) Stop();
+        precision = continuous;
+        if (continuous) precisionTimestamp = now;
+        UserScrolling?.Invoke();
         return Scroll(delta);
     }
 
@@ -89,7 +85,7 @@ internal sealed class SmoothScroll : IDisposable
         // window was inactive. Resume from the visible position and zero speed.
         if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
         var next = Math.Clamp(position, 0, Maximum(viewer));
-        if (Math.Abs(next - viewer.VerticalOffset) < .5) { Stop(); return false; }
+        if (Math.Abs(next - viewer.VerticalOffset) < .01) return false;
         if (!Enabled) { Stop(); viewer.SetScrollOffsets(viewer.HorizontalOffset, next); return true; }
         target = next;
         if (!running)
@@ -111,19 +107,23 @@ internal sealed class SmoothScroll : IDisposable
         target = Math.Clamp(target, 0, Maximum(viewer));
         // Exact critically damped spring. Retargeting preserves velocity; repeated wheel
         // events no longer restart a steep easing curve and jerk the first few frames.
-        const double frequency = 22;
+        // Interpolate precision packets over frames without adding the long tail
+        // used for mouse notches. Native touchpad inertia remains the input source.
+        var frequency = precision ? 90 : 22;
         var distance = viewer.VerticalOffset - target;
         var tangent = velocity + frequency * distance;
         var decay = Math.Exp(-frequency * dt);
         var position = target + (distance + tangent * dt) * decay;
         velocity = (velocity - frequency * tangent * dt) * decay;
-        if (Math.Abs(position - target) < .2 && Math.Abs(velocity) < 3)
+        if (Math.Abs(position - target) < .01 && Math.Abs(velocity) < 1)
         { position = target; Stop(); }
         applying = true;
         try
         {
+            var before = viewer.VerticalOffset;
             viewer.SetScrollOffsets(viewer.HorizontalOffset, Math.Clamp(position, 0, Maximum(viewer)));
             last = viewer.VerticalOffset;
+            Advanced?.Invoke(last - before);
         }
         finally { applying = false; }
     }
@@ -151,11 +151,18 @@ internal sealed class SmoothScroll : IDisposable
     private void OnChanged()
     {
         // Scrollbar dragging, keyboard movement and history restoration stay immediate.
-        if (running && !applying && Math.Abs(viewer.VerticalOffset - last) > 1) Stop();
+        if (!running || applying || Math.Abs(viewer.VerticalOffset - last) <= 1) return;
+        if (RestoringAnchor?.Invoke() == true)
+        {
+            // Virtualized history can reposition the same visible message while
+            // prepending. Carry the destination with that coordinate change.
+            target += viewer.VerticalOffset - last; last = viewer.VerticalOffset;
+        }
+        else Stop();
     }
 
     internal void Stop()
-    { motion.Stop(); running = false; velocity = 0; target = last = viewer.VerticalOffset; timestamp = precisionTimestamp = 0; }
+    { motion.Stop(); running = precision = false; velocity = 0; target = last = viewer.VerticalOffset; timestamp = precisionTimestamp = 0; }
     public void Dispose()
     {
         Stop(); viewer.MouseWheel -= OnWheel; viewer.ScrollChanged -= OnChanged; viewer.MouseDown -= OnPointerDown;

@@ -45,8 +45,8 @@ internal sealed partial class MainWindow
         void RefreshHeart()
         {
             idleHeart.Opacity = !heartHovered && !isLiked.Value ? 1 : 0;
-            likedHeart.Opacity = !heartHovered && isLiked.Value ? 1 : 0;
-            hoverHeart.Opacity = heartHovered ? 1 : 0;
+            likedHeart.Opacity = isLiked.Value ? 1 : 0;
+            hoverHeart.Opacity = heartHovered && !isLiked.Value ? 1 : 0;
         }
         isLiked.Changed += RefreshHeart;
         var heartButton = new Button().Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0)
@@ -65,6 +65,8 @@ internal sealed partial class MainWindow
         void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? "Убрать репост" : "Сделать репост");
         isReposted.Changed += RefreshRepostHint;
         RefreshRepostHint();
+        var share = playerShareButton = PlayerButton(Icons.View("arrow-square-out", 19, Color.FromRgb(190, 190, 190)),
+            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }).BindIsEnabled(playerVisible).Hint("Поделиться");
 
         playerArtworkOverlay = new Border().Background(Color.FromArgb(140, 0, 0, 0))
             .Child(Icons.View("arrows-out", 23, Color.White).Center());
@@ -108,10 +110,10 @@ internal sealed partial class MainWindow
             .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
         playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
             .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
-            new Grid().Columns("48,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
+            new Grid().Columns("48,Auto,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
                 playerArtworkButton.Column(0),
                 playerTrackInfo.Column(1),
-                heartButton.CenterVertical().Column(2), playerRepostButton.Column(3)),
+                heartButton.CenterVertical().Column(2), playerRepostButton.Column(3), share.Column(4)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
                     PlayerButton(Icons.View("skip-back-solid", 18), () => Run(() => SkipAsync(-1))).CenterVertical(),

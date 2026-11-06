@@ -10,7 +10,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     private readonly GlassSheenRaster sheen = new();
     private readonly GlassGeometry geometry = new(), focusGeometry = new();
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
-    private bool active;
+    private bool active, pending;
     internal Color SelectionTint { get; private set; } = Color.FromRgb(52, 52, 62);
     private bool? connectedStart;
     private double layer, selection, fromLayer, fromSelection, targetLayer, targetSelection;
@@ -40,13 +40,14 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     }
 
     internal void SetActive(bool value) { active = value; Refresh(); }
+    internal void SetPending(bool value) { pending = value; Refresh(); }
     internal void Connect(bool start, Color? selectionTint = null)
     { connectedStart = start; SelectionTint = selectionTint ?? Color.FromRgb(75, 28, 44); InvalidateVisual(); }
 
     private void Refresh()
     {
         Cursor = IsEffectivelyEnabled ? CursorType.Hand : CursorType.Arrow;
-        if (Content is UIElement glyph) glyph.Opacity = IsEffectivelyEnabled ? 1 : .38;
+        if (Content is UIElement glyph) glyph.Opacity = IsEffectivelyEnabled || pending ? 1 : .38;
         var nextLayer = !IsEffectivelyEnabled ? 0 : IsPressed || KeyboardFocusFeedback.IsVisible(this) ? .12 : IsMouseOver ? .08 : 0;
         var nextSelection = active ? 1d : 0;
         if (nextLayer == targetLayer && nextSelection == targetSelection) return;

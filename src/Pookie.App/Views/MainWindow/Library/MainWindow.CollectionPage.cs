@@ -80,7 +80,8 @@ internal sealed partial class MainWindow
         CreateCollectionActionButtons();
         var hero = new TrackPageColumns(
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),
-                new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Row(2).Children(TrackButtons.Connected(collectionLike, collectionRepost), collectionCopy,
+                new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Row(2).Children(TrackButtons.Connected(collectionLike, collectionRepost),
+                    TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться"), collectionCopy,
                     ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44), more)),
             coverFrame, true, collectionBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen())
             { HeroArtworkMinWidth = 176, HeroArtworkMaxWidth = 208 }.Initialize();
