@@ -43,7 +43,8 @@ internal sealed partial class MainWindow
         chatVideoImage = new Image().StretchMode(Stretch.Uniform);
         chatVideoStatus = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Center();
         BuildChatVideoControls();
-        chatVideoClose = PlayerButton(Icons.View("x", 22, Color.White), () => CloseChatVideo()).Width(40).Height(40).Right();
+        chatVideoClose = TrackButtons.Icon(Icons.View("x", 22, Color.White), () => CloseChatVideo(), TrackButtons.Glass, 40).Right();
+        ((MaterialTrackButton)chatVideoClose).UseLightGlassFinish();
         chatVideoHeader = new Grid().Columns("*,40").Rows("40").Children(chatVideoTitle.CenterVertical(), chatVideoClose.Column(1));
         chatVideoPrevious = PlayerButton(Icons.View("arrow-left", 24, Color.White), () => Run(() => NavigateChatVideoAsync(-1))).Width(40).Height(40).Left().CenterVertical();
         chatVideoNext = PlayerButton(Icons.View("arrow-right", 24, Color.White), () => Run(() => NavigateChatVideoAsync(1))).Width(40).Height(40).Right().CenterVertical();
@@ -57,6 +58,7 @@ internal sealed partial class MainWindow
             chatVideoPrevious, chatVideoNext, chatVideoSpeedMenu, chatVideoGear).Initialize();
         chatVideoTimer.Tick += RefreshChatVideo;
         chatVideoSurface = new ChatVideoSurface(chatVideoLayout).Initialize();
+        ((MaterialTrackButton)chatVideoClose).UseOverlayBackdrop(chatVideoSurface, chatVideoSurface.RenderGlassBackdrop);
         chatVideoSurface.MouseDown += e =>
         {
             if (e.Button != MouseButton.Left || e.Handled) return;

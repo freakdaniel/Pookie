@@ -79,6 +79,7 @@ public sealed record CreatorProduct(string? Id);
 
 public sealed record SoundCloudTrack
 {
+    public string? Sharing { get; init; }
     public bool? Commentable { get; init; }
     public long Id { get; init; }
     public string Urn { get; init; } = "";
@@ -177,6 +178,8 @@ public sealed record SoundCloudStream(Uri Uri, string Protocol, double Duration)
 [JsonSerializable(typeof(SoundCloudTokenExchangeClient))]
 [JsonSerializable(typeof(MobileAuthorizationRequest))]
 [JsonSerializable(typeof(MobileAuthorizationResult))]
+[JsonSerializable(typeof(SoundCloudMobileChallenge))]
+[JsonSerializable(typeof(SoundCloudMobileChallengeResult))]
 [JsonSerializable(typeof(BrowserRequestCommand))]
 [JsonSerializable(typeof(TrackReadRequest))]
 [JsonSerializable(typeof(CommentWriteRequest))]
@@ -186,6 +189,7 @@ public partial class SoundCloudJson : JsonSerializerContext;
 
 public sealed class SoundCloudException(string message, int statusCode = 0, bool requiresBrowserVerification = false, bool trackUnavailable = false) : Exception(message)
 {
+    public SoundCloudMobileChallenge? MobileChallenge { get; init; }
     public SoundCloudChallengeKind? ChallengeKind { get; init; }
     public DateTimeOffset? RetryAfterUtc { get; init; }
     public int StatusCode { get; } = statusCode;

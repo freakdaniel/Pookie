@@ -77,7 +77,7 @@ public sealed class MobileContractTests
         Assert.Equal(1, calls);
     }
 
-    private static string Playlist(string owner = "soundcloud:users:7", bool album = false, int count = 2, string tracks = "[]", string next = "null") =>
+    private static string Playlist(string owner = "soundcloud:users:7", bool album = false, int count = 0, string tracks = "[]", string next = "null") =>
         $$$"""{"playlist":{"urn":"soundcloud:playlists:11","_embedded":{"user":{"urn":"{{{owner}}}"}},"is_album":{{{album.ToString().ToLowerInvariant()}}},"track_count":{{{count}}}},"tracks":{"collection":{{{tracks}}},"next_href":{{{next}}}}}""";
 
     [Fact]
@@ -120,7 +120,7 @@ public sealed class MobileContractTests
         using var http = new HttpClient(new Handler((request, _) =>
         {
             calls++; Assert.Equal(HttpMethod.Get, request.Method);
-            return Task.FromResult(Json(calls == 1 ? Playlist(next: "\"https://api-mobile.soundcloud.com/playlists/soundcloud:playlists:11/tracks?cursor=next\"") :
+            return Task.FromResult(Json(calls == 1 ? Playlist(count: 1, next: "\"https://api-mobile.soundcloud.com/playlists/soundcloud:playlists:11/tracks?cursor=next\"") :
                 """{"collection":[{"urn":"soundcloud:tracks:42"}],"next_href":null}"""));
         }));
         using var native = new SoundCloudHttpTransport(http, Account);
@@ -161,19 +161,13 @@ public sealed class MobileContractTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task MobileOnlyReadsRecoverSessionWithoutExecutingEndpointInBrowser(bool stream, bool accepted)
+    public async Task MobileOnlyReadsCannotPrepareDesktopWebSession(bool stream, bool hardBlock)
     {
         var calls = 0; var browser = new SessionBrowser();
         using var http = new HttpClient(new Handler((_, _) =>
         {
             calls++;
-            if (calls == 1 || !accepted)
-            {
-                var blocked = Json(status: 403); blocked.Headers.Add("X-DD-B", "259"); return Task.FromResult(blocked);
-            }
-            var response = stream ? Json(status: 302) : Json("""{"features":[]}""");
-            if (stream) response.Headers.Location = new("https://cf-media.sndcdn.com/full");
-            return Task.FromResult(response);
+            var blocked = Json(status: 403); blocked.Headers.Add("X-DD-B", hardBlock ? "2" : "259"); return Task.FromResult(blocked);
         }));
         using var native = new SoundCloudHttpTransport(http, Account, browser);
         async Task ReadAsync()
@@ -181,9 +175,8 @@ public sealed class MobileContractTests
             if (stream) { using var result = await native.ResolveMobileStreamAsync(SoundCloudMobileRoutes.Uri("/tracks/soundcloud:tracks:42/streams/https")); }
             else await native.GetMobileConfigurationAsync();
         }
-        if (accepted) await ReadAsync();
-        else Assert.True((await Assert.ThrowsAsync<SoundCloudException>(ReadAsync)).RequiresBrowserVerification);
-        Assert.Equal(1, browser.Preparations); Assert.Equal(2, calls);
+        Assert.True((await Assert.ThrowsAsync<SoundCloudException>(ReadAsync)).RequiresBrowserVerification);
+        Assert.Equal(0, browser.Preparations); Assert.Equal(1, calls);
     }
 
     [Theory]

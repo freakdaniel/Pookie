@@ -143,6 +143,7 @@ internal sealed partial class MainWindow
                 RouteWaveformClick(SettingsCenter(middle));
                 await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible);
                 if (clicks != 1) throw new InvalidOperationException("A tooltip interfered with its anchor's click.");
+                await VerifyAvatarGroupAsync(fixture, initialOverlayCount);
                 Console.WriteLine("MATERIAL_TOOLTIPS_UI_OK: anchor-centred placement, top/side edge fallback, DPI 96/110/144/192, wrapped emoji text, translucent enter/exit and continuous reversal, no native popup or focus/input capture, delayed-hover cancellation, keyboard/Escape, dynamic/recycled content, scroll/disable/deactivate/click cleanup and one idle-free overlay");
             }
             finally { Window.FrameRendered -= Sample; }
@@ -154,6 +155,66 @@ internal sealed partial class MainWindow
             if (fixture != null) { ((Panel)Window.Content!).Remove(fixture); fixture.Dispose(); }
             Window.Close();
         }
+    }
+
+    private async Task VerifyAvatarGroupAsync(Grid fixture, int initialOverlayCount)
+    {
+        var selected = -1;
+        var group = new AvatarGroup().Left().Top().Margin(340, 400, 0, 0);
+        for (var index = 0; index < 7; index++)
+        {
+            var person = index;
+            group.AddAvatar(new Border().Background(Color.FromRgb((byte)(60 + index * 25), 110, 160))
+                .CornerRadius(21).Child(new TextBlock().Text((index + 1).ToString()).Center()),
+                index == 1 ? "Второй слушатель" : "Слушатель " + (index + 1), () => selected = person);
+        }
+        fixture.Add(group);
+        await WaitForLikedLayoutAsync(() => group.ActualWidth > 250 && !group.IsArrangeDirty);
+        var first = (Button)((ContentControl)group.Children[0]).Content!;
+        var second = (Button)((ContentControl)group.Children[1]).Content!;
+        if (Math.Abs(second.Bounds.X - first.Bounds.Right + AvatarGroup.Overlap) > .5)
+            throw new InvalidOperationException("Follower avatars did not overlap by their shared border.");
+        var overlap = new Point(first.Bounds.Right - 5, first.Bounds.Center.Y);
+        var hit = Window.HitTest(overlap);
+        if (hit != first && (hit == null || !first.IsAncestorOf(hit)))
+            throw new InvalidOperationException("Inverted avatar overlap disagreed with pointer targeting.");
+        Window.FocusManager.ClearFocus(); MoveActionPointer(SettingsCenter(first));
+        if (!tooltipLayer.IsOpen || tooltipLayer.Owner != first)
+            throw new InvalidOperationException("The avatar group kept the ordinary tooltip hover delay.");
+        await WaitForLikedLayoutAsync(() => first.TranslatePoint(default, Window).Y < first.Bounds.Y - 10 && tooltipLayer.Reveal == 1);
+        await Task.Delay(500);
+        if (!first.IsMouseOver) throw new InvalidOperationException("Lifting an avatar lost its resting hover target.");
+        var positions = new HashSet<double>();
+        void Sample() { if (tooltipLayer.IsOpen) positions.Add(tooltipLayer.SurfaceBounds.X); }
+        Window.FrameRendered += Sample;
+        try
+        {
+            MoveActionPointer(SettingsCenter(second));
+            if (!tooltipLayer.IsOpen || tooltipLayer.Owner != second || tooltipLayer.Text != "Второй слушатель")
+                throw new InvalidOperationException("Moving between avatars closed the shared tooltip or kept its previous label.");
+            await WaitForLikedLayoutAsync(() => !tooltipLayer.Running && second.TranslatePoint(default, Window).Y < second.Bounds.Y - 10);
+            await Task.Delay(100);
+            var sharedEdge = new Point(first.Bounds.Right - 5, first.Bounds.Center.Y - 11);
+            var overlapHit = Window.HitTest(sharedEdge);
+            if (overlapHit != first && (overlapHit == null || !first.IsAncestorOf(overlapHit)))
+                throw new InvalidOperationException("Hovering promoted an avatar above its neighbor.");
+            if (Math.Abs(second.TranslatePoint(default, Window).Y - tooltipLayer.SurfaceBounds.Bottom - MaterialTooltipLayer.AvatarGap) > .5)
+                throw new InvalidOperationException("Avatar tooltip kept an excessive gap from the lifted avatar.");
+            if (positions.Count < 3 || Window.OverlayLayer.Count != initialOverlayCount + 1)
+                throw new InvalidOperationException("Avatar tooltip jumped between anchors or created multiple overlays.");
+            CaptureUiPreview("avatar-group-hover");
+            CaptureUiPreview("avatar-group-tooltip", tooltipLayer);
+            // Click the raised cap, outside the avatar's original rectangular bounds.
+            RouteWaveformClick(new(second.Bounds.Center.X, second.TranslatePoint(default, Window).Y + 3));
+            if (selected != 1) throw new InvalidOperationException("The lifted avatar cap did not open its own profile.");
+        }
+        finally { Window.FrameRendered -= Sample; }
+        MoveActionPointer(new(2, 2)); Window.FocusManager.ClearFocus();
+        await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible && Math.Abs(second.TranslatePoint(default, Window).Y - second.Bounds.Y) < .01);
+        if (tooltipLayer.Running || Window.OverlayLayer.Count != initialOverlayCount)
+            throw new InvalidOperationException("Leaving an avatar group retained its tooltip animation or overlay.");
+        fixture.Remove(group); group.Dispose();
+        Console.WriteLine("AVATAR_GROUP_UI_OK: stable inverted overlap while hovered, close anchored tooltip with animated retarget/resize, spring lift without hover loss, raised-cap click, return and overlay cleanup");
     }
 
     private void VerifyTooltipAlpha()

@@ -18,13 +18,18 @@ internal sealed partial class WebKitLoginWindow
 
     private int DecideMobilePolicy(nint view, nint decision, int kind, nint data)
     {
-        if (mobileAuthorization == null || kind is not (0 or 1)) return 0;
+        if (mobileAuthorization == null && mobileChallenge == null || kind is not (0 or 1)) return 0;
         try
         {
             var action = Native.webkit_navigation_policy_decision_get_navigation_action(decision);
             var request = Native.webkit_navigation_action_get_request(action);
             var url = Marshal.PtrToStringUTF8(Native.webkit_uri_request_get_uri(request));
-            var result = mobileAuthorization.ReadCallback(url);
+            if (mobileChallenge != null)
+            {
+                if (MobileChallengeBridge.Allows(url, mobileChallenge, challengeFixture)) return 0;
+                Native.webkit_policy_decision_ignore(decision); return 1;
+            }
+            var result = mobileAuthorization!.ReadCallback(url);
             if (result != null)
             {
                 Native.webkit_policy_decision_ignore(decision);

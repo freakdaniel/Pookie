@@ -131,14 +131,52 @@ public sealed class SessionRecoveryTests
     }
 
     [Fact]
-    public async Task HardBlockAfterPreparationDoesNotInvokeBrowserMutation()
+    public async Task NativeBlockAfterPreparationAllowsTheBrowserToCompleteTheAction()
     {
         var account = Session(); var attempts = 0;
         var browser = new Browser(_ => Task.CompletedTask);
         using var http = new HttpClient(new Handler((_, _) => Task.FromResult(Reply(403, ++attempts == 1 ? 259 : 2))));
         using var native = new SoundCloudHttpTransport(http, () => account, browser);
+        await native.SetLikedAsync(7, 42, true);
+        Assert.Equal(2, attempts); Assert.Equal(1, browser.Preparations); Assert.Equal(1, browser.Writes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NativeBlockStillPreparesTheBrowserAfterProtectionRotates(bool rotateProtection)
+    {
+        var account = Session(); var attempts = 0;
+        var browser = new Browser(_ => Task.CompletedTask);
+        using var http = new HttpClient(new Handler((_, _) =>
+        {
+            var response = Reply(403, ++attempts == 1 && rotateProtection ? 259 : 2);
+            if (attempts == 1 && rotateProtection)
+                response.Headers.Add("x-set-cookie", "datadome=rotated; Path=/; Secure");
+            return Task.FromResult(response);
+        }));
+        using var native = new SoundCloudHttpTransport(http, () => account, browser);
+        await native.SetLikedAsync(7, 42, true);
+        Assert.Equal(rotateProtection ? 3 : 2, attempts);
+        Assert.Equal(1, browser.Preparations); Assert.Equal(1, browser.Writes);
+    }
+
+    [Fact]
+    public async Task BlockInTheBrowserStopsBeforeAnotherNativeRequestOrMutation()
+    {
+        var account = Session(); var attempts = 0;
+        var rejection = new SoundCloudException("Browser is blocked.", 403, requiresBrowserVerification: true)
+            { ChallengeKind = SoundCloudChallengeKind.HardBlock };
+        var browser = new Browser(_ => throw rejection);
+        using var http = new HttpClient(new Handler((_, _) =>
+        {
+            attempts++;
+            return Task.FromResult(Reply(403, 2));
+        }));
+        using var native = new SoundCloudHttpTransport(http, () => account, browser);
         var error = await Assert.ThrowsAsync<SoundCloudException>(() => native.SetLikedAsync(7, 42, true));
-        Assert.Equal(SoundCloudChallengeKind.HardBlock, error.ChallengeKind); Assert.Equal(0, browser.Writes);
+        Assert.Same(rejection, error);
+        Assert.Equal(1, attempts); Assert.Equal(1, browser.Preparations); Assert.Equal(0, browser.Writes);
     }
 
     private sealed class Browser(Func<CancellationToken, Task> prepare) : ISoundCloudBrowserTransport, ISoundCloudSessionVerifier

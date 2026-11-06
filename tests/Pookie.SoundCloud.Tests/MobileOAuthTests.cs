@@ -24,7 +24,7 @@ public sealed class MobileOAuthTests
         var options = Options(); SoundCloudPkceAttempt? attempt = null;
         using var http = new HttpClient(new Handler(async (request, token) =>
         {
-            Assert.Equal("secure.soundcloud.com", request.RequestUri!.Host); Assert.Equal("/oauth/token", request.RequestUri.AbsolutePath);
+            Assert.Equal("api-auth.soundcloud.com", request.RequestUri!.Host); Assert.Equal("/oauth/token", request.RequestUri.AbsolutePath);
             var fields = Fields(await request.Content!.ReadAsStringAsync(token));
             Assert.Equal("authorization_code", fields["grant_type"]); Assert.Equal("fixture-code+value", fields["code"]);
             Assert.Equal("sc://auth", fields["redirect_uri"]); Assert.Equal(64, fields["code_verifier"].Length);

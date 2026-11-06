@@ -8,13 +8,14 @@ namespace Pookie.App;
 // One registration per owner; rebinding a virtualized row only updates its text.
 internal static class TooltipHints
 {
-    private sealed class HintData { internal string? Text; }
+    private sealed class HintData { internal string? Text; internal object? Group; }
     private static readonly ConditionalWeakTable<FrameworkElement, HintData> hints = new();
     internal static string? TextFor(FrameworkElement owner) => hints.TryGetValue(owner, out var hint) ? hint.Text : null;
+    internal static object? GroupFor(FrameworkElement owner) => hints.TryGetValue(owner, out var hint) ? hint.Group : null;
     private static MaterialTooltipLayer? Layer(FrameworkElement owner) =>
         (owner.FindVisualRoot() as Window)?.OverlayLayer.GetService<MaterialTooltipLayer>();
 
-    internal static T Hint<T>(this T owner, string? text) where T : FrameworkElement
+    internal static T Hint<T>(this T owner, string? text, object? group = null) where T : FrameworkElement
     {
         var hint = hints.GetValue(owner, element =>
         {
@@ -27,8 +28,8 @@ internal static class TooltipHints
             return new HintData();
         });
         text = string.IsNullOrWhiteSpace(text) ? null : text;
-        if (hint.Text == text) return owner;
-        hint.Text = text; Layer(owner)?.Refresh(owner);
+        if (hint.Text == text && ReferenceEquals(hint.Group, group)) return owner;
+        hint.Text = text; hint.Group = group; Layer(owner)?.Refresh(owner);
         return owner;
     }
 }

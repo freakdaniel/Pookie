@@ -23,6 +23,7 @@ internal sealed partial class MainWindow : IDisposable
     private readonly bool isolatedRun;
     private readonly bool requireSignIn;
     private readonly bool skipSessionRestore;
+    private readonly bool signInImmediately;
     private readonly CancellationTokenSource lifetime = new();
     private CancellationTokenSource? loading;
     private CancellationTokenSource? login;
@@ -59,6 +60,7 @@ internal sealed partial class MainWindow : IDisposable
     private readonly WebSession? importedMobileSession;
     private readonly SoundCloudMobileOAuthOptions? mobileOAuthOptions;
     private SoundCloudMobileSessionManager? mobileSessionManager;
+    private readonly NativeMobileChallenge mobileChallenge = new();
     private (NativeBrowserSession Session, Action<BrowserRequestEvent> Handler)? browserNotifications;
     private readonly List<NativeBrowserSession> browserSessions = [];
     private Task browserClosing = Task.CompletedTask;
@@ -80,6 +82,7 @@ internal sealed partial class MainWindow : IDisposable
         demo = options.Preview;
         requireSignIn = options.RequireSignIn;
         skipSessionRestore = options.SkipSessionRestore;
+        signInImmediately = options.SignInImmediately;
         isolatedRun = options.IsolatedData || demo;
         enableSystemMedia = options.SystemMediaSession;
         importedMobileSession = isolatedRun ? null : MobileSessionImport.Load();
@@ -101,7 +104,9 @@ internal sealed partial class MainWindow : IDisposable
         RestoreConfiguration();
         ObserveConfiguration();
         SaveConfiguration();
-        var handler = new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli };
+        var handler = new HttpClientHandler { AllowAutoRedirect = false,
+            UseCookies = mobileOAuthOptions == null && importedMobileSession == null,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli };
         if (Environment.GetEnvironmentVariable("POOKIE_PROXY") is { Length: > 0 } proxy) handler.Proxy = new WebProxy(proxy);
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         api = new(http) { RequireSessionTransport = true };
@@ -113,7 +118,11 @@ internal sealed partial class MainWindow : IDisposable
         {
             try
             {
-                var native = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsPlaybackUri, () => api.Session);
+                var native = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsPlaybackUri, () => api.Session, mobileChallenge,
+                    () => Application.Current.Dispatcher?.BeginInvoke(() =>
+                    {
+                        if (!disposed && browser is { } connected) Run(() => PersistBrowserSessionAsync(connected));
+                    }));
                 player = OperatingSystem.IsWindows() ? new WindowsAudioPlayer(native, () => browser) : native;
                 audioStatus.Value = "Аудио: SoundFlow";
             }
@@ -167,6 +176,9 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (playlistPickerClosing) { e.Handled = true; return; }
+            if (playlistEditor.HandleKey(e)) return;
+            if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
             if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && chatMessageMenu.IsOpen) { e.Handled = true; CloseChatMessageMenu(); chatInput.Focus(); return; }
@@ -229,6 +241,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (signedIn.Value) { Run(LoadLikedIdsAsync); Run(LoadRepostedIdsAsync); }
             OnInitialized();
+            if (signInImmediately && !signedIn.Value) await ConnectSoundCloudAsync();
         });
     }
 
@@ -276,7 +289,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 try
                 {
-                    saved = await MobileOAuthConfiguration.TryExchangeLegacyAsync(http, mobileOAuthOptions, lifetime.Token);
+                    saved = await MobileOAuthConfiguration.TryExchangeLegacyAsync(http, mobileOAuthOptions, lifetime.Token, mobileChallenge);
                     if (saved != null && vault != null) await Task.Run(() => vault.Save(saved), lifetime.Token);
                 }
                 catch (Exception error) when (error is SoundCloudOAuthException or HttpRequestException or InvalidOperationException or IOException or UnauthorizedAccessException or JsonException)
@@ -572,7 +585,7 @@ internal sealed partial class MainWindow : IDisposable
             SetLoginButtonState(LoginButtonState.Waiting);
             if (mobileOAuthOptions != null)
             {
-                var oauth = new SoundCloudMobileOAuth(http, mobileOAuthOptions);
+                var oauth = new SoundCloudMobileOAuth(http, mobileOAuthOptions, mobileChallenge: mobileChallenge);
                 var locale = System.Globalization.CultureInfo.CurrentUICulture.Name;
                 var attempt = oauth.Begin(string.IsNullOrEmpty(locale) ? "en" : locale);
                 var result = await NativeMobileLogin.AuthorizeAsync(attempt.Request, MobileBrowserPath, token);
@@ -590,7 +603,7 @@ internal sealed partial class MainWindow : IDisposable
         try
         {
             using var authorization = CreateMobileSessionManager(connectedBrowser);
-            using var transport = new SoundCloudHttpTransport(http, () => connectedBrowser.Account, connectedBrowser, authorization: authorization);
+            using var transport = new SoundCloudHttpTransport(http, () => connectedBrowser.Account, connectedBrowser, authorization: authorization, mobileChallenge: mobileChallenge);
             using var document = await transport.GetJsonAsync(new("https://api-v2.soundcloud.com/me"), token);
             connectedProfile = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser) ?? throw new SoundCloudException("SoundCloud не вернул профиль.");
             token.ThrowIfCancellationRequested();
@@ -629,7 +642,7 @@ internal sealed partial class MainWindow : IDisposable
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
         loginBusy.Value = true;
-        ClosePlaylistPicker(); profileOpen.Value = queueOpen.Value = false;
+        ClosePlaylistPicker(); ResetPlaylistEditor(); profileOpen.Value = queueOpen.Value = false;
         CloseTopSearch(clear: true);
         ClearLinkPreviews();
         try
@@ -791,7 +804,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        ClosePlaylistPicker(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;
@@ -864,7 +877,7 @@ internal sealed partial class MainWindow : IDisposable
         mobileSessionManager?.Dispose();
         mobileSessionManager = CreateMobileSessionManager(connected);
         api.Session = connected.Account;
-        var nativeTransport = new SoundCloudHttpTransport(http, () => connected.Account, connected, authorization: mobileSessionManager);
+        var nativeTransport = new SoundCloudHttpTransport(http, () => connected.Account, connected, authorization: mobileSessionManager, mobileChallenge: mobileChallenge);
         httpTransport = nativeTransport;
         api.Transport = nativeTransport;
         browserSessions.Add(connected);
@@ -913,7 +926,7 @@ internal sealed partial class MainWindow : IDisposable
         if (connected.Account.ClientId != mobileOAuthOptions.ClientId || connected.Account.MobileIdentity != mobileOAuthOptions.MobileIdentity)
             throw new InvalidOperationException("Сохранённая сессия не соответствует мобильной конфигурации OAuth.");
         if (connected.Account.SessionId == null) connected.UpdateAccount(connected.Account with { SessionId = Guid.NewGuid().ToString("N") });
-        var manager = new SoundCloudMobileSessionManager(new SoundCloudMobileOAuth(http, mobileOAuthOptions), () => connected.Account,
+        var manager = new SoundCloudMobileSessionManager(new SoundCloudMobileOAuth(http, mobileOAuthOptions, mobileChallenge: mobileChallenge), () => connected.Account,
             connected.UpdateAccount, async (updated, token) =>
             {
                 if (vault == null) throw new InvalidOperationException("Хранилище сессии недоступно.");

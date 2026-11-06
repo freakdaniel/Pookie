@@ -29,10 +29,11 @@ public sealed class SoundFlowPlayer : IAudioPlayer
     private bool disposed;
     private Task? release;
 
-    public SoundFlowPlayer(bool silent = false, Func<Uri, bool>? allowedUri = null, Func<WebSession?>? networkSession = null)
+    public SoundFlowPlayer(bool silent = false, Func<Uri, bool>? allowedUri = null, Func<WebSession?>? networkSession = null,
+        ISoundCloudMobileChallengeHandler? mobileChallenge = null, Action? protectionChanged = null)
     {
-        http = new(new SoundCloudMediaSessionHandler(networkSession ?? (() => null))
-            { InnerHandler = new HttpClientHandler { AllowAutoRedirect = false } }) { Timeout = TimeSpan.FromSeconds(30) };
+        http = new(new SoundCloudMediaSessionHandler(networkSession ?? (() => null), mobileChallenge, protectionChanged)
+            { InnerHandler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false } }) { Timeout = Timeout.InfiniteTimeSpan };
         allowed = allowedUri ?? (uri => uri.UserInfo.Length == 0 && (uri.Scheme == "https" || (uri.Scheme == "http" && uri.IsLoopback)));
         // SoundFlow 1.4.1's Null enum is 0 (native WASAPI); the bundled miniaudio ABI uses 14.
         // Leave normal backend probing to miniaudio; use the correct ABI value for headless checks.

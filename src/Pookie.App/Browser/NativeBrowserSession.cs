@@ -39,6 +39,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     private void BrowserChanged(BrowserRequestEvent message)
     {
+        // A web worker (for example DRM playback) cannot replace the Android
+        // OAuth identity or the cookie obtained by the mobile challenge flow.
+        lock (sync)
+            if (account.MobileIdentity != null && message.Kind is "session" or "protection-session") return;
         if (message.Kind == "session" && message.Session?.IsValid() == true)
             lock (sync) account = message.Session;
         if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
@@ -82,6 +86,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     public async Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken token = default) =>
         _ = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-add", UserId: userId, PlaylistId: playlistId, TrackId: trackId), token);
+    public async Task<JsonDocument> CreatePlaylistAsync(PlaylistCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-create", Playlist: request), cancellationToken);
+        return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал созданный плейлист."));
+    }
 
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken token = default) =>
         (await RequestAsync(new(Guid.NewGuid().ToString("N"), "liked-ids"), token)).Ids?.ToHashSet() ?? [];
@@ -145,7 +154,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
-            var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
+            var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-create" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
             using var cancellation = write ? timeout.Token.Register(current.Abort) : default;
             try
             {

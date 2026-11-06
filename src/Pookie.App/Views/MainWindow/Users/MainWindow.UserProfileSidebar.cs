@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
         userFollowersSection.IsVisible = followersPending || followers is { Length: > 0 };
         userFollowingSection.IsVisible = followingPending || following is { Length: > 0 };
         SetUserLoading(userLikesLoading, likesPending, LoadingRowStyle.Compact, 192);
-        SetUserLoading(userFollowersLoading, followersPending, LoadingRowStyle.Compact, 40);
+        SetUserLoading(userFollowersLoading, followersPending, LoadingRowStyle.Compact, AvatarGroup.GroupHeight);
         SetUserLoading(userFollowingLoading, followingPending, LoadingRowStyle.Compact, 172);
         var sameUser = renderedUserSidebarId == state.User.Id && renderedUserSidebarGeneration == navigationGeneration;
         var updateLikes = !sameUser || !ReferenceEquals(likes, renderedUserLikes);
@@ -49,8 +49,8 @@ internal sealed partial class MainWindow
             userSidebarFollowers.Clear();
             foreach (var user in (followers ?? []).Select(item => item.User).OfType<SoundCloudUser>().Take(7))
             {
-                var avatar = UserSidebarAvatar(user, 38, state.User.Id);
-                userSidebarFollowers.Add(TrackButtons.Icon(avatar, () => Run(() => OpenUserProfileAsync(user)), TrackButtons.Text, 38).Margin(0, 0, -2, 0).Hint(user.Username));
+                var avatar = UserSidebarAvatar(user, AvatarGroup.AvatarSize - 6, state.User.Id);
+                userSidebarFollowers.AddAvatar(avatar, user.Username, () => Run(() => OpenUserProfileAsync(user)));
             }
         }
         if (updateFollowing)

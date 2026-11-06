@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
             tile.SetSize(collectionTrackArtworkSize);
             collectionTrackTiles.Add(tile.Root, (tile, -1));
             AttachTrackQueueMenu(tile.Root, () => tile.Track, extraActions: true);
+            AttachPlaylistTrackEdits(tile.Root, () => tile.Track, () => collectionTrackTiles[tile.Root].Position);
             AttachTrackTitle(tile.Title, () => tile.Track);
             context.Register("tile", tile.Root); return tile.Root;
         }, (_, entry, _, context) =>

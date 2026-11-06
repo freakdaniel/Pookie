@@ -9,13 +9,20 @@ namespace Pookie.App;
 // portion of the window. Keep the last image until the closing fade completes.
 internal sealed class ChatVideoSurface(FrameworkElement content) : Panel
 {
-    internal const byte NormalBackdropAlpha = 200;
+    internal const byte NormalBackdropAlpha = OverlayScrim.NormalAlpha;
     private readonly AnimationClock fade = new(TimeSpan.FromMilliseconds(200), Easing.CubicBezier(.4, 0, .2, 1));
     private TaskCompletionSource? completion;
     private double reveal, from;
     private bool target;
     internal double Reveal => reveal;
     internal double Expansion { get; set; }
+    internal void RenderGlassBackdrop(IGraphicsContext context)
+    {
+        OverlayScrim.Draw(context, Bounds, reveal, Expansion);
+        context.BeginOpacity(reveal);
+        try { if (content is ChatVideoLayout layout) layout.RenderMediaBackdrop(context); }
+        finally { context.EndOpacity(); }
+    }
     internal ChatVideoSurface Initialize() { Add(content); content.Opacity = 0; IsVisible = false; return this; }
     internal Task SetOpen(bool open, bool immediate = false)
     {
@@ -37,8 +44,7 @@ internal sealed class ChatVideoSurface(FrameworkElement content) : Panel
     protected override ChildClip? GetChildClip(UIElement child) => new(Bounds);
     protected override void OnRender(IGraphicsContext context)
     {
-        var alpha = (byte)Math.Round((NormalBackdropAlpha + (255 - NormalBackdropAlpha) * Expansion) * reveal);
-        context.FillRectangle(Bounds, Color.FromArgb(alpha, 0, 0, 0));
+        OverlayScrim.Draw(context, Bounds, reveal, Expansion);
     }
     protected override void OnDispose() { fade.Stop(); completion?.TrySetResult(); base.OnDispose(); }
 }

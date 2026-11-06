@@ -169,6 +169,8 @@ internal sealed partial class MainWindow
         try
         {
             var result = await request;
+            if (!disposed && api.Session == session && libraryLoads.GetValueOrDefault(source) != request)
+                return await LoadLibrarySourceAsync(source);
             if (!disposed && api.Session == session) { libraryPages[source] = result; libraryLoadedAt[source] = DateTimeOffset.UtcNow; overviewErrors.Remove(source); if (source == "collections") { overviewErrors.Remove("playlists"); overviewErrors.Remove("albums"); } }
             return result;
         }

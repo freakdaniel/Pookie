@@ -87,6 +87,7 @@ internal static class MobileOAuthSmokeTest
             <!doctype html><title>Local mobile session bridge</title><script>
             window.__pookieTagReady=true;window.__pookieProtectionReady=true;window.ddSbh=true;window.dataDomeOptions={};
             document.cookie='datadome=fixture-mobile-cookie; Path=/';
+            window.dispatchEvent(new Event('dd_ready'));window.dispatchEvent(new Event('dd_post_done'));
             </script>
             """, "text/html"));
         await app.StartAsync();
@@ -114,10 +115,13 @@ internal static class MobileOAuthSmokeTest
                 throw new InvalidOperationException("OAuth exchange, reactive refresh or durable rotation failed.");
 
             var initial = current with { AccessToken = "old-browser-token" };
+            var mobileProtection = initial.DataDomeClientId;
             await using (var browser = new NativeBrowserSession(initial, app.Urls.Single() + "/browser", Path.Combine(root, "browser")))
             {
                 browserToken = "old-browser-token";
                 await browser.GetMeAsync(timeout.Token);
+                if (browser.Account.DataDomeClientId != mobileProtection)
+                    throw new InvalidOperationException("A website worker replaced mobile protection state.");
                 browserToken = "not-used";
                 browser.UpdateAccount(current);
                 await browser.GetMeAsync(timeout.Token);
@@ -181,7 +185,7 @@ internal static class MobileOAuthSmokeTest
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri?.Host is not ("secure.soundcloud.com" or "api-v2.soundcloud.com")) throw new InvalidOperationException("Fixture tried a foreign host.");
+            if (request.RequestUri?.Host is not ("secure.soundcloud.com" or "api-auth.soundcloud.com" or "api-v2.soundcloud.com")) throw new InvalidOperationException("Fixture tried a foreign host.");
             request.RequestUri = new Uri(origin, request.RequestUri.PathAndQuery);
             return base.SendAsync(request, cancellationToken);
         }

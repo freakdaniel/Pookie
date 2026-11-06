@@ -81,6 +81,7 @@ internal sealed partial class MainWindow
         compactTrackRows.Add(row);
         if (!queueRow) AttachTrackQueueMenu(root, () => row.Track, extraActions: true);
         if (!queueRow) row.RepostMenu = root.ContextMenu!.Items.OfType<MenuItem>().Last();
+        if (collectionRow) AttachPlaylistTrackEdits(root, () => row.Track, () => row.SourceIndex);
         foreach (var button in new[] { action, playback, like }) TrackCompactActionFocus(row, button);
         AttachUserLink(author, () => row.Track?.User);
         if (open == null) AttachTrackTitle(title, () => row.Track);

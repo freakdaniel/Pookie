@@ -6,13 +6,14 @@ namespace Pookie.App.Auth;
 
 internal static class MobileOAuthConfiguration
 {
-    public static async Task<WebSession?> TryExchangeLegacyAsync(HttpClient http, SoundCloudMobileOAuthOptions options, CancellationToken token)
+    public static async Task<WebSession?> TryExchangeLegacyAsync(HttpClient http, SoundCloudMobileOAuthOptions options, CancellationToken token,
+        ISoundCloudMobileChallengeHandler? mobileChallenge = null)
     {
         if (options.ExchangeClient == null) return null;
         using var sourceVault = SessionVault.Open(new AppDataPaths());
         var source = await Task.Run(sourceVault.Load, token);
         if (source?.ClientId != options.ExchangeClient.ClientId) return null;
-        return await new SoundCloudMobileOAuth(http, options).ExchangeTokenAsync(source, token);
+        return await new SoundCloudMobileOAuth(http, options, mobileChallenge: mobileChallenge).ExchangeTokenAsync(source, token);
     }
 
     public static SoundCloudMobileOAuthOptions? Load()

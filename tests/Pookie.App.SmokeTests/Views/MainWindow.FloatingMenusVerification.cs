@@ -102,7 +102,16 @@ internal sealed partial class MainWindow
             var contextRows = context.Buttons.ToArray();
             PopupAppearance.Attach(profileButton, context);
             var trigger = Center(profileButton);
-            SendLikedActionMouse(0x204, 2, trigger); SendLikedActionMouse(0x205, 0, trigger);
+            if (OperatingSystem.IsWindows())
+            { SendLikedActionMouse(0x204, 2, trigger); SendLikedActionMouse(0x205, 0, trigger); }
+            else
+            {
+                var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", true)!;
+                var mouse = router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                    .Single(method => method.Name == "MouseButton" && method.GetParameters().Length == 10);
+                mouse.Invoke(null, [Window, trigger, Window.ClientToScreen(trigger), MouseButton.Right, true, false, true, false, 1, ModifierKeys.None]);
+                mouse.Invoke(null, [Window, trigger, Window.ClientToScreen(trigger), MouseButton.Right, false, false, false, false, 1, ModifierKeys.None]);
+            }
             await WaitForLikedLayoutAsync(() => context.IsOpen && context.Reveal == 1);
             if (context.Model.FindVisualRoot() is Window || !context.Buttons.SequenceEqual(contextRows) || context.Buttons[1].IsEffectivelyEnabled)
                 throw new InvalidOperationException("Right click opened the native fallback, rebuilt rows, or enabled a disabled command.");
@@ -282,10 +291,12 @@ internal sealed partial class MainWindow
     {
         var scale = Window.DpiScale;
         var pixels = (int)Math.Ceiling(8 * scale);
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
         using var surface = Window.GraphicsFactory.CreateSurface(
             Aprillz.MewUI.Rendering.RenderSurfaceDescriptor.CpuPixels(pixels, pixels, scale, premultiplied: true));
         using var context = Window.GraphicsFactory.CreateContext(surface);
         context.BeginFrame(surface); context.Clear(Color.Transparent);
+        using var viewport = WindowPresentation.CaptureViewport(surface);
         context.Translate(-menu.Card.Bounds.X - 16, -menu.Card.Bounds.Y - 8);
         menu.Render(context); context.EndFrame();
         var bytes = ((Aprillz.MewUI.Rendering.ICpuPixelSurface)surface).CopyPixels();

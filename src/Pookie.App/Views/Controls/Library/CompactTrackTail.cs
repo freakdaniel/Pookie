@@ -15,7 +15,7 @@ internal sealed class CompactTrackTail : Grid
     private readonly Motion likeMotion, summaryMotion, actionsMotion;
     private readonly InkBorder summary, actions;
     private readonly bool miniature;
-    private double amount, target;
+    private double amount, target, actionsAmount;
     internal double Reveal => amount;
     internal bool Animating => motion.IsRunning;
 
@@ -29,7 +29,7 @@ internal sealed class CompactTrackTail : Grid
         actionsMotion = new(actions.Right().CenterVertical());
         Add(likeMotion); Add(summaryMotion); Add(actionsMotion);
         SizeChanged += _ => Paint();
-        motion.CompletedCallback = () => { amount = target; Paint(); };
+        motion.CompletedCallback = () => { amount = actionsAmount = target; Paint(); };
         Paint();
     }
 
@@ -38,10 +38,18 @@ internal sealed class CompactTrackTail : Grid
         var next = expanded && !miniature ? 1d : 0d;
         if (animate && target == next) return;
         motion.Stop(); target = next;
-        if (!animate || FindVisualRoot() is not Window) { amount = next; Paint(); return; }
+        if (!animate || FindVisualRoot() is not Window) { amount = actionsAmount = next; Paint(); return; }
         var from = amount;
+        var fromActions = actionsAmount;
+        motion.Duration = TimeSpan.FromMilliseconds(expanded ? 220 : 160);
         Paint();
-        motion.TickCallback = t => { amount = from + (next - from) * t; Paint(); };
+        motion.TickCallback = t =>
+        {
+            amount = from + (next - from) * t;
+            var fade = expanded ? t : Math.Min(1, t * 2);
+            actionsAmount = fromActions + (next - fromActions) * fade;
+            Paint();
+        };
         motion.Start();
     }
 
@@ -50,7 +58,7 @@ internal sealed class CompactTrackTail : Grid
         likeMotion.Move(Math.Max(0, ActualWidth - CompactWidth) * (1 - amount), 0);
         summaryMotion.Move(0, -5 * amount);
         actionsMotion.Move(12 * (1 - amount), 0);
-        summary.Strength = 1 - amount; actions.Strength = amount;
+        summary.Strength = 1 - amount; actions.Strength = actionsAmount;
         summary.IsHitTestVisible = target < .5;
         // A moving-in action must not steal a click aimed at the resting like.
         actions.IsHitTestVisible = target > .5 && amount >= .98;

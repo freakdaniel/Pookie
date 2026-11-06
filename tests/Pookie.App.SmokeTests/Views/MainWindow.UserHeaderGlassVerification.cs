@@ -57,7 +57,8 @@ internal sealed partial class MainWindow
                 stripes[index + 3] = 255;
             }
             userHeader.SetBanner(ImageSource.FromBgraPixels(width, height, stripes, hasAlpha: false));
-            await WaitForLikedLayoutAsync(() => !userHeader.Revealing && !userHeader.Backdrop.Running);
+            // Blur is processed on a worker and can finish after the banner's transition.
+            await WaitForLikedLayoutAsync(() => !userHeader.Revealing && !userHeader.Backdrop.Running && glass.IsCurrent);
             var raw = Read(false); var blurred = Read(true);
             int Edge(byte[] row) => Enumerable.Range(20, row.Length - 41).Max(x => Math.Abs(row[x + 1] - row[x]));
             if (!glass.HasBlurredArtwork || Edge(raw) < 30 || Edge(blurred) >= Edge(raw) * .7 || blurred.Max() - blurred.Min() < 10)

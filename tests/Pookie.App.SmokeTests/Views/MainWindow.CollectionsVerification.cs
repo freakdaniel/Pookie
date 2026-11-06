@@ -11,6 +11,7 @@ internal sealed partial class MainWindow
     {
         try
         {
+            if (mobilePlaylistEditingOnly) { await VerifyMobilePlaylistEditingUiAsync(); return; }
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
             var transport = new CollectionFixtureTransport();
             api.Session = new("fixture", "fixture-token", "Test"); api.BrowserTransport = transport;
@@ -144,8 +145,20 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => Math.Abs(CollectionScroll!.VerticalOffset - offset) < 1);
             if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || collectionFilter.Text != "Трек")
                 throw new InvalidOperationException("Back navigation lost playlist presentation.");
+            await VerifyPlaylistDialogAsync(first, transport);
+            transport.ExistingPickerTrack = first.Id;
+            await OpenPlaylistPickerAsync(first);
+            await WaitForLikedLayoutAsync(() => playlistChoices.Children.Count == 2 && !playlistPickerLoading.Skeleton.IsVisible);
+            var presentChoice = (Button)playlistChoices.Children[1];
+            if (presentChoice.IsEnabled || presentChoice.StyleName != TrackButtons.Text || !((Button)playlistChoices.Children[0]).IsEnabled)
+                throw new InvalidOperationException("Existing playlist membership was not applied before showing the picker.");
+            RouteWaveformClick(SettingsCenter(presentChoice));
+            if (transport.PlaylistWrites != 0) throw new InvalidOperationException("An already-present track could be added again from the picker.");
+            CaptureUiPreview("playlist-picker-existing");
+            transport.ExistingPickerTrack = null;
             await OpenPlaylistPickerAsync(first);
             await WaitForLikedLayoutAsync(() => playlistChoices.Children.Count == 2 && playlistChoices.ActualWidth > 100);
+            await WaitForLikedLayoutAsync(() => !playlistDialog.Running);
             var button = (Button)playlistChoices.Children[0];
             RouteWaveformClick(new(button.Bounds.X + button.ActualWidth / 2, button.Bounds.Y + button.ActualHeight / 2));
             await WaitForLikedLayoutAsync(() => transport.PlaylistWrites == 1);
@@ -153,9 +166,18 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Playlist pending state disabled unrelated choices or flashed.");
             transport.PlaylistCompletion.SetResult();
             await WaitForLikedLayoutAsync(() => pendingPlaylistAdds.Count == 0);
-            if (button.IsEnabled || button.StyleName != TrackButtons.Confirmed) throw new InvalidOperationException("Completed playlist choice did not show added state.");
+            if (button.IsEnabled || button.StyleName != TrackButtons.Text) throw new InvalidOperationException("Completed playlist choice did not stay neutral and disabled.");
+            VisualTree.Visit(button, element =>
+            { if (element is TextBlock { Text: "Добавлено" }) throw new InvalidOperationException("Completed playlist choice retained its added label."); });
             await WaitForLikedLayoutAsync(() => !playlistPickerLoading.Skeleton.IsVisible);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-picker");
+            transport.PlaylistFails = true;
+            var failedChoice = (Button)playlistChoices.Children[1];
+            RouteWaveformClick(SettingsCenter(failedChoice));
+            await WaitForLikedLayoutAsync(() => transport.PlaylistWrites == 2 && pendingPlaylistAdds.Count == 0);
+            if (playlistPickerMessage.IsVisible || !failedChoice.IsEnabled || status.Value.Contains("Ресурс"))
+                throw new InvalidOperationException("Failed playlist addition inserted a technical error row or left the choice locked.");
+            transport.PlaylistFails = false;
             ClosePlaylistPicker();
             transport.PlaylistLikeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var lateLike = ToggleCollectionActionAsync(false);
@@ -166,6 +188,7 @@ internal sealed partial class MainWindow
             if (likedPlaylistIds.Count != 0 || collectionLike.IsEnabled) throw new InvalidOperationException("Old account playlist reply changed the new account.");
             transport.FollowCompletion.SetResult(); await late;
             if (followingIds.Count != 0) throw new InvalidOperationException("Old account subscription reply changed the new account.");
+            await VerifyMobilePlaylistEditingUiAsync();
             Console.WriteLine("COLLECTIONS_UI_OK: compact unnumbered playlist, row menu, filter/full queue, expandable description, responsive hero, history filter/scroll, playlist likes/reposts, following/picker and stale account replies");
         }
         catch (Exception error)
@@ -240,24 +263,56 @@ internal sealed partial class MainWindow
                 PermalinkUrl = "https://soundcloud.com/fixture/track-" + i }).ToArray()
         };
         public int FollowWrites, PlaylistWrites, PlaylistLikeWrites;
+        internal bool PlaylistFails;
         public bool LastPlaylistReposted;
         public TaskCompletionSource PlaylistLikeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool LastFollowing;
         public TaskCompletionSource FollowCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource PlaylistCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource? PickerHold;
+        internal int PickerCount = 2;
+        internal bool PickerFails;
+        internal long? ExistingPickerTrack;
+        internal int CreateWrites;
+        internal PlaylistCreateRequest? LastCreate;
+        internal TaskCompletionSource? CreateHold;
+        internal bool CreateFails;
+        public async Task<JsonDocument> CreatePlaylistAsync(PlaylistCreateRequest request, CancellationToken cancellationToken = default)
+        {
+            CreateWrites++; LastCreate = request;
+            if (CreateHold != null) await CreateHold.Task.WaitAsync(cancellationToken);
+            if (CreateFails) throw new HttpRequestException("Fixture lost response");
+            return JsonSerializer.SerializeToDocument(new SoundCloudPlaylist
+            {
+                Id = 777, Title = request.Title, Sharing = request.Sharing, TrackCount = 1,
+                User = new() { Id = request.UserId }, Tracks = [new() { Id = request.TrackId }]
+            }, SoundCloudJson.Default.SoundCloudPlaylist);
+        }
         public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
         {
             if (uri.AbsolutePath == "/me/playlist_likes/ids") return Task.FromResult(JsonDocument.Parse("[11]"));
             if (uri.AbsolutePath == "/me/playlist_reposts/ids") return Task.FromResult(JsonDocument.Parse("[]"));
             if (uri.AbsolutePath == "/playlists/11") return Task.FromResult(JsonDocument.Parse(JsonSerializer.Serialize(Playlist, SoundCloudJson.Default.SoundCloudPlaylist)));
             if (uri.AbsolutePath == "/users/42/followings/ids") return Task.FromResult(JsonDocument.Parse("[7]"));
-            if (uri.AbsolutePath == "/users/42/playlists") return Task.FromResult(JsonDocument.Parse("""
-                {"collection":[{"kind":"playlist","id":21,"title":"Моя музыка","track_count":2,"user":{"id":42}},
-                {"kind":"playlist","id":22,"title":"На вечер","track_count":4,"sharing":"private","user":{"id":42}},
-                {"kind":"playlist","id":23,"title":"Чужая музыка","user":{"id":8}}]}
-                """));
+            if (uri.AbsolutePath == "/users/42/playlists" && PickerHold != null) return WaitPickerAsync(uri, cancellationToken);
+            if (uri.AbsolutePath == "/users/42/playlists" && PickerFails) throw new SoundCloudException("Не удалось получить плейлисты", 503);
+            if (uri.AbsolutePath == "/users/42/playlists" && PickerCount != 2)
+                return Task.FromResult(JsonSerializer.SerializeToDocument(new { collection = Enumerable.Range(0, PickerCount).Select(i => new
+                    { kind = "playlist", id = 100 + i, title = "Подборка " + i, track_count = i + 1, user = new { id = 42 },
+                        tracks = Enumerable.Range(0, i + 1).Select(j => new { id = 10000 + i * 100 + j }) }) }));
+            if (uri.AbsolutePath == "/users/42/playlists") return Task.FromResult(JsonSerializer.SerializeToDocument(new
+            {
+                collection = new[]
+                {
+                    new { kind = "playlist", id = 21, title = "Моя музыка", track_count = 2, sharing = "public", user = new { id = 42 }, tracks = new[] { new { id = 101L }, new { id = 102L } } },
+                    new { kind = "playlist", id = 22, title = "На вечер", track_count = 4, sharing = "private", user = new { id = 42 }, tracks = new[] { 201L, 202L, 203L, ExistingPickerTrack ?? 204L }.Select(id => new { id }).ToArray() },
+                    new { kind = "playlist", id = 23, title = "Чужая музыка", track_count = 0, sharing = "public", user = new { id = 8 }, tracks = Enumerable.Empty<long>().Select(id => new { id }).ToArray() }
+                }
+            }));
             throw new InvalidOperationException("Unexpected collection fixture request: " + uri.AbsolutePath);
         }
+        private async Task<JsonDocument> WaitPickerAsync(Uri uri, CancellationToken token)
+        { await PickerHold!.Task.WaitAsync(token); PickerHold = null; return await GetJsonAsync(uri, token); }
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken cancellationToken = default)
         { PlaylistLikeWrites++; return PlaylistLikeCompletion.Task; }
@@ -266,6 +321,6 @@ internal sealed partial class MainWindow
         public Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken cancellationToken = default)
         { FollowWrites++; LastFollowing = following; return FollowCompletion.Task; }
         public Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken cancellationToken = default)
-        { PlaylistWrites++; return PlaylistCompletion.Task; }
+        { PlaylistWrites++; return PlaylistFails ? Task.FromException(new SoundCloudException("Ресурс SoundCloud не найден.", 404)) : PlaylistCompletion.Task; }
     }
 }

@@ -16,7 +16,9 @@ internal class InAppPopup : Panel
     private UIElement? owner;
     private InAppPopup? parentPopup;
     private bool observing, presented;
+    private bool ownerKeyboard;
     internal bool IsOpen => layer?.IsOpen == true;
+    internal UIElement? FocusReturnTarget => owner;
     internal double Reveal => layer?.Reveal ?? 0;
     internal Action? Dismissing;
 
@@ -31,6 +33,7 @@ internal class InAppPopup : Panel
         if (trigger.FindVisualRoot() is not Window source || source.Content is not Panel root || layer == null) return;
         if (window != null && window != source) Close(true);
         window = source; owner = trigger; host = root;
+        ownerKeyboard = trigger is Control control && KeyboardFocusFeedback.IsVisible(control);
         parentPopup = null;
         for (var ancestor = trigger.Parent; ancestor != null; ancestor = ancestor.Parent)
             if (ancestor is InAppPopup parent) { parentPopup = parent; break; }
@@ -71,7 +74,7 @@ internal class InAppPopup : Panel
         layer.Close(immediate); Dismissing?.Invoke();
         if (hadFocus && window?.IsActive == true)
         {
-            if (restoreFocus && owner?.FindVisualRoot() == window) owner.Focus();
+            if (restoreFocus && owner?.FindVisualRoot() == window) KeyboardFocusFeedback.Restore(owner, ownerKeyboard);
             else window.FocusManager.ClearFocus();
         }
     }

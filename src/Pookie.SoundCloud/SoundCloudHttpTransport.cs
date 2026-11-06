@@ -11,17 +11,18 @@ public sealed record SoundCloudHttpObservation(string Method, string Path, int S
 public enum SoundCloudRecoveryStage { PreparingSession, SessionPrepared, NativeRetry, NativeAccepted, NativeRejected, BrowserOperation, BrowserCompleted }
 public sealed record SoundCloudRecoveryObservation(string Method, string Path, SoundCloudRecoveryStage Stage);
 
-// Normal requests never start a browser. Explicit challenges first prepare the
-// site's session; an operation fallback remains if native HTTP is still denied.
+// Normal requests never start a browser. Web challenges can prepare the site's
+// session. Android challenges need their own SDK session, not the desktop site.
 public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSession> session,
-    ISoundCloudBrowserTransport? verification = null, TimeProvider? timeProvider = null, ISoundCloudSessionRefresher? authorization = null) : ISoundCloudTransport, IDisposable
+    ISoundCloudBrowserTransport? verification = null, TimeProvider? timeProvider = null, ISoundCloudSessionRefresher? authorization = null,
+    ISoundCloudMobileChallengeHandler? mobileChallenge = null) : ISoundCloudTransport, IDisposable
 {
     private const int MaxResponseBytes = 2 * 1024 * 1024;
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     private readonly SemaphoreSlim concurrency = new(4, 4);
     private readonly SemaphoreSlim recovery = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
-    private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> reads = new();
+    private readonly ConcurrentDictionary<string, PendingRead> reads = new();
     private long retryAfterTicks;
     private bool verified;
     private string? verifiedProtection;
@@ -31,6 +32,10 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
     private string? preparedProtection;
     private string? preparedToken;
     private long preparationGeneration;
+    private long mobileChallengeGeneration;
+    private WebSession? mobileChallengeAccount;
+    private bool mobileChallengePassed;
+    private string? mobileVerifiedCookie;
     public event Action<SoundCloudHttpObservation>? Observed;
     public event Action<SoundCloudRecoveryObservation>? RecoveryObserved;
     public event Action? SessionChanged;
@@ -43,21 +48,50 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         if (!(BrowserRequestCommand.IsReadUrl(uri.AbsoluteUri) || account.MobileIdentity != null && SoundCloudMobileRoutes.IsRead(uri)))
             throw new SoundCloudException("Отклонён адрес вне SoundCloud API.");
         var key = account.ClientId + "\n" + account.AccessToken + "\n" + uri.AbsoluteUri;
-        var candidate = new Lazy<Task<byte[]>>(() => ReadAsync(key, uri, lifetime.Token));
-        var read = reads.GetOrAdd(key, candidate);
-        try { return JsonDocument.Parse(await read.Value.WaitAsync(cancellationToken).ConfigureAwait(false)); }
-        finally { if (read.IsValueCreated && read.Value.IsCompleted) reads.TryRemove(new(key, read)); }
+        while (true)
+        {
+            var candidate = new PendingRead(stop => ReadAsync(uri, stop), lifetime.Token);
+            var read = reads.GetOrAdd(key, candidate);
+            if (!ReferenceEquals(read, candidate)) candidate.Stop.Dispose();
+            lock (read)
+            {
+                if (read.Retired) { reads.TryRemove(new(key, read)); continue; }
+                read.Waiters++;
+            }
+            try { return JsonDocument.Parse(await read.Value.Value.WaitAsync(cancellationToken).ConfigureAwait(false)); }
+            finally
+            {
+                bool last;
+                lock (read) { last = --read.Waiters == 0; if (last) read.Retired = true; }
+                if (last)
+                {
+                    reads.TryRemove(new(key, read));
+                    read.Stop.Cancel();
+                    _ = read.Value.Value.ContinueWith(_ => read.Stop.Dispose(), CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                }
+            }
+        }
     }
 
-    private async Task<byte[]> ReadAsync(string key, Uri uri, CancellationToken token)
+    private sealed class PendingRead
     {
-        try
+        public readonly CancellationTokenSource Stop;
+        public readonly Lazy<Task<byte[]>> Value;
+        public int Waiters;
+        public bool Retired;
+        public PendingRead(Func<CancellationToken, Task<byte[]>> operation, CancellationToken lifetime)
         {
-            using var document = await ExecuteAsync(HttpMethod.Get, uri, null,
-                verification == null || SoundCloudMobileRoutes.IsOrigin(uri) ? null : ct => verification.GetJsonAsync(uri, ct), token).ConfigureAwait(false);
-            return JsonSerializer.SerializeToUtf8Bytes(document.RootElement);
+            Stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+            Value = new(() => operation(Stop.Token));
         }
-        finally { reads.TryRemove(key, out _); }
+    }
+
+    private async Task<byte[]> ReadAsync(Uri uri, CancellationToken token)
+    {
+        using var document = await ExecuteAsync(HttpMethod.Get, uri, null,
+            verification == null || SoundCloudMobileRoutes.IsOrigin(uri) ? null : ct => verification.GetJsonAsync(uri, ct), token).ConfigureAwait(false);
+        return JsonSerializer.SerializeToUtf8Bytes(document.RootElement);
     }
 
     private WebSession Account()
@@ -69,20 +103,69 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
 
     private async Task<JsonDocument> ExecuteAsync(HttpMethod method, Uri uri, byte[]? body,
         Func<CancellationToken, Task<JsonDocument>>? verify, CancellationToken token, string contentType = "application/json", bool expectJson = true,
-        Action<System.Text.Json.JsonElement>? validate = null)
+        Action<System.Text.Json.JsonElement>? validate = null, WebSession? expectedAccount = null)
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         var stop = cancellation.Token;
-        var account = Account();
+        var account = expectedAccount ?? Account();
+        if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
         if (authorization != null && account.MobileIdentity != null && account.ExpiresAtUtc <= clock.GetUtcNow().AddMinutes(1))
             account = await authorization.RefreshAsync(account, force: false, stop).ConfigureAwait(false);
         var protection = account.DataDomeClientId;
         var accessToken = account.AccessToken;
         var generation = Interlocked.Read(ref preparationGeneration);
+        var mobileGeneration = Interlocked.Read(ref mobileChallengeGeneration);
         try { return await SendAuthorizedAsync(method, uri, body, contentType, expectJson, account, stop, validate).ConfigureAwait(false); }
-        catch (SoundCloudException error) when (error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock &&
+        catch (SoundCloudException error) when (account.MobileIdentity != null && mobileChallenge != null && error.MobileChallenge is { } challenge)
+        {
+            await recovery.WaitAsync(stop).ConfigureAwait(false);
+            try
+            {
+                if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+                if (mobileGeneration != Interlocked.Read(ref mobileChallengeGeneration) && account.Equals(mobileChallengeAccount))
+                {
+                    if (!mobileChallengePassed) throw;
+                    UpdateProtection(account, mobileVerifiedCookie!);
+                }
+                else
+                {
+                    mobileChallengePassed = false; mobileChallengeAccount = account;
+                    Report(SoundCloudRecoveryStage.PreparingSession);
+                    try
+                    {
+                        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
+                        timeout.CancelAfter(TimeSpan.FromMinutes(3));
+                        var cookie = await mobileChallenge.SolveAsync(challenge, timeout.Token).ConfigureAwait(false);
+                        stop.ThrowIfCancellationRequested();
+                        if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+                        if (!WebSession.IsDataDomeClientId(cookie) || cookie == challenge.PreviousCookie) throw;
+                        UpdateProtection(account, cookie!);
+                        mobileVerifiedCookie = cookie;
+                        mobileChallengePassed = true;
+                    }
+                    finally { Interlocked.Increment(ref mobileChallengeGeneration); }
+                    Report(SoundCloudRecoveryStage.SessionPrepared);
+                }
+            }
+            finally { recovery.Release(); }
+            stop.ThrowIfCancellationRequested();
+            Report(SoundCloudRecoveryStage.NativeRetry);
+            // Retry the captured method, URL and bytes once. A second rejection
+            // escapes this catch, and never executes a web mutation fallback.
+            try
+            {
+                var result = await SendAuthorizedAsync(method, uri, body, contentType, expectJson, account, stop, validate).ConfigureAwait(false);
+                Report(SoundCloudRecoveryStage.NativeAccepted);
+                return result;
+            }
+            catch { Report(SoundCloudRecoveryStage.NativeRejected); throw; }
+        }
+        catch (SoundCloudException error) when (error.RequiresBrowserVerification &&
+            account.MobileIdentity == null &&
             (verify != null || verification is ISoundCloudSessionVerifier))
         {
+            // The native connection's block does not establish the browser's state.
+            // The live website must perform its own check before executing the action.
             var rejection = error;
             await recovery.WaitAsync(stop).ConfigureAwait(false);
             try
@@ -140,7 +223,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
                     Report(SoundCloudRecoveryStage.NativeAccepted);
                     return result;
                 }
-                catch (SoundCloudException next) when (next.RequiresBrowserVerification && next.ChallengeKind != SoundCloudChallengeKind.HardBlock)
+                catch (SoundCloudException next) when (next.RequiresBrowserVerification)
                 { rejection = next; Report(SoundCloudRecoveryStage.NativeRejected); return null; }
             }
         }
@@ -203,7 +286,12 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             {
                 request.Content = new ByteArrayContent(body);
                 request.Content.Headers.ContentType = new(contentType);
+                if (account.MobileIdentity != null && contentType == "application/json")
+                    request.Content.Headers.ContentType.CharSet = "utf-8";
             }
+            var mobileMutation = account.MobileIdentity != null && SoundCloudMobileRoutes.IsOrigin(uri) &&
+                method != HttpMethod.Get && method != HttpMethod.Head && !uri.AbsolutePath.EndsWith("/fetch", StringComparison.Ordinal);
+            if (mobileMutation) InvalidateMobileCollectionSnapshots();
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
             Observed?.Invoke(new(method.Method, uri.AbsolutePath, (int)response.StatusCode) { Host = uri.Host });
             foreach (var header in new[] { "Set-Cookie", "x-set-cookie" })
@@ -219,13 +307,14 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             // A mobile stream endpoint is a MediaItem URI. Do not buffer audio as
             // JSON (or download an entire file just to resolve it).
             var bytes = directMedia || streamResponse && redirect ? [] : await ReadBoundedAsync(response.Content, token).ConfigureAwait(false);
-            var challenge = Challenge(response, bytes);
+            var challenge = Challenge(response, bytes, request.RequestUri);
             await RecordMobileResponseAsync(uri, account, token, allowSend: challenge == null).ConfigureAwait(false);
             if (challenge != null)
                 throw new SoundCloudException(challenge == SoundCloudChallengeKind.HardBlock
                     ? "SoundCloud заблокировал доступ. Капча не предложена."
                     : "SoundCloud запросил проверку сессии.", (int)response.StatusCode, requiresBrowserVerification: true)
-                    { ChallengeKind = challenge.Value };
+                    { ChallengeKind = challenge.Value, MobileChallenge = account.MobileIdentity == null ? null :
+                        SoundCloudMobileChallenge.Parse(response, bytes, request.RequestUri!, account, challenge.Value) };
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 var until = response.Headers.RetryAfter?.Date ?? clock.GetUtcNow() + (response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30));
@@ -251,6 +340,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
                     HttpStatusCode.NotFound => "Ресурс SoundCloud не найден.",
                     _ => "SoundCloud не выполнил запрос."
                 }, (int)response.StatusCode);
+            if (mobileMutation) InvalidateMobileCollectionSnapshots();
             var document = JsonDocument.Parse(!expectJson || bytes.Length == 0 ? "{}"u8.ToArray() : bytes);
             try { validate?.Invoke(document.RootElement); return document; }
             catch { document.Dispose(); throw; }
@@ -294,7 +384,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
     private static bool IsGraphUri(Uri uri) => uri.Scheme == "https" && uri.Host == "graph.soundcloud.com" &&
         uri.Port == 443 && uri.UserInfo == "" && uri.AbsolutePath == "/graphql";
 
-    private static SoundCloudChallengeKind? Challenge(HttpResponseMessage response, byte[] bytes)
+    internal static SoundCloudChallengeKind? Challenge(HttpResponseMessage response, byte[] bytes, Uri? requestUri = null)
     {
         foreach (var header in new[] { "X-DD-B", "X-SF-CC-X-dd-b" })
             if (response.Headers.TryGetValues(header, out var values))
@@ -309,6 +399,8 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             }
         if (response.Headers.Location is { IsAbsoluteUri: true } location && IsChallengeUri(location))
             return SoundCloudChallengeKind.Redirect;
+        if (response.Headers.Location is { } redirect && (requestUri ?? response.RequestMessage?.RequestUri) is { } original &&
+            SoundCloudMobileChallenge.IsChallengeTarget(original, new Uri(original, redirect))) return SoundCloudChallengeKind.Redirect;
         if (response.StatusCode != HttpStatusCode.Forbidden || bytes.Length == 0) return null;
         try
         {

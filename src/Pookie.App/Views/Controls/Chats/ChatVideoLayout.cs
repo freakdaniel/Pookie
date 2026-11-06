@@ -6,6 +6,7 @@ namespace Pookie.App;
 internal sealed class ChatVideoLayout(FrameworkElement image, FrameworkElement status, FrameworkElement header,
     FrameworkElement controls, FrameworkElement previous, FrameworkElement next, FrameworkElement speed, FrameworkElement gear) : Panel
 {
+    internal void RenderMediaBackdrop(Aprillz.MewUI.Rendering.IGraphicsContext context) => image.Render(context);
     private double expansion;
     internal double Expansion { get => expansion; set { expansion = value; InvalidateArrange(); } }
     internal ChatVideoLayout Initialize() { Add(image); Add(status); Add(header); Add(previous); Add(next); Add(controls); Add(speed); return this; }

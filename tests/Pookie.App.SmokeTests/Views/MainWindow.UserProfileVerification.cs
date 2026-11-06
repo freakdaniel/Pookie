@@ -61,7 +61,7 @@ internal sealed partial class MainWindow
             fixture.ActivityHold = fixture.SidebarHold = null;
             await WaitForLikedLayoutAsync(() => page.Value == Page.UserProfile && userProfileState is { MetadataLoading: false } &&
                 userHero.ActualHeight > 200 && userArtworkReady && !navigationHistory[navigationIndex].Pending);
-            if (userName.Text != fixture.User.Username || userPublicationRows.Count != 2 || userPublications.Count != 3 || userSidebarRows.Count != 1 || userSidebarFollowers.Children.Count != 1 || !userBioLinks.Links.Any() || !userVerified.IsVisible || current?.Id != original || userFollowerCount.Text != "321")
+            if (userName.Text != fixture.User.Username || userPublicationRows.Count != 2 || userPublications.Count != 3 || userSidebarRows.Count != 1 || userSidebarFollowers.Children.Count != 7 || !userBioLinks.Links.Any() || !userVerified.IsVisible || current?.Id != original || userFollowerCount.Text != "321")
                 throw new InvalidOperationException("Profile metadata, overview rows, counts, verification or navigation without playback failed.");
             if (userPublications.Any(entry => entry.Root is not Grid) || userPublications.Any(entry => entry.Item.Playlist is { TrackCount: 0 }))
                 throw new InvalidOperationException("Activity kept a card background or an empty playlist");
@@ -83,6 +83,8 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(contentFrame.ActualWidth - Math.Min(1440, width)) < 1 && !userHero.IsArrangeDirty);
                 if (userHero.ActualHeight > 350 || userName.ActualWidth < 50 || userName.Bounds.Right > userHero.Bounds.Right - 20 || userTabs.Bounds.Right > contentFrame.Bounds.Right + 1)
                     throw new InvalidOperationException("Profile header or tabs overflowed the responsive page.");
+                if (userSidebarFollowers.Children.Any(child => child is FrameworkElement avatar && avatar.Bounds.Right > userFollowersSection.Bounds.Right + 1))
+                    throw new InvalidOperationException("The follower avatar group escaped the responsive sidebar.");
                 var row = userPublicationRows[0];
                 var like = FindLikeAction(row.Root);
                 if (Math.Abs(row.Cover.ActualWidth - TrackRowLayout.CoverSize) > 1 || Math.Abs(row.Cover.ActualHeight - TrackRowLayout.CoverSize) > 1 ||
@@ -281,7 +283,10 @@ internal sealed partial class MainWindow
                 return JsonSerializer.SerializeToDocument(new { collection = next ? Tracks.Skip(29) : Tracks.Take(30), next_href = next ? null : "https://api-v2.soundcloud.com/users/7/tracks?cursor=next" }, json);
             }
             if (FailLikes && path == "/users/7/likes") throw new SoundCloudException("Временная ошибка", 503);
-            if (path == "/users/7/followers" || path == "/users/7/followings") return JsonDocument.Parse("""{"collection":[{"id":8,"username":"Другой слушатель","followers_count":12}]}""");
+            if (path == "/users/7/followers")
+                return JsonSerializer.SerializeToDocument(new { collection = Enumerable.Range(0, 7).Select(i => new SoundCloudUser
+                    { Id = i == 0 ? 8 : 10 + i, Username = i == 0 ? "Другой слушатель" : "Слушатель " + (i + 1), AvatarUrl = User.AvatarUrl, FollowersCount = 12 }) }, json);
+            if (path == "/users/7/followings") return JsonDocument.Parse("""{"collection":[{"id":8,"username":"Другой слушатель","followers_count":12}]}""");
             if (path == "/users/7/albums" || path == "/users/7/playlists_without_albums")
                 return JsonDocument.Parse("""{"collection":[{"kind":"playlist","id":101,"title":"Там, где мы остались","track_count":19,"artwork_url":"https://i1.sndcdn.com/user-profile-banner.jpg","user":{"id":7,"username":"kurokovvv"}},{"kind":"playlist","id":102,"title":"Пустой плейлист","track_count":0,"artwork_url":"https://i1.sndcdn.com/user-profile-banner.jpg"}]}""");
             if (path == "/stream/users/7/reposts" || path == "/users/7/likes")

@@ -71,6 +71,9 @@ internal sealed partial class MainWindow
             more.Commands.Register(command, execute, enabled); menu.Item(command);
         }
         MenuItem("queue", "Добавить в очередь", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
+        MenuItem("edit", "Редактировать плейлист", () => OpenPlaylistEditor(), CanEditDisplayedPlaylist);
+        MenuItem("artwork", "Изменить обложку", () => Run(PickPlaylistArtworkAsync), CanEditDisplayedPlaylist);
+        MenuItem("delete", "Удалить плейлист", () => OpenPlaylistEditor(deleting: true), CanEditDisplayedPlaylist);
         MenuItem("open", "Открыть в SoundCloud", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
             () => TrackLink(displayedCollection?.Playlist?.PermalinkUrl) != null);
         PopupAppearance.Attach(more, menu); more.OnClick(() => menu.Show(more));

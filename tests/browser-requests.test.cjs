@@ -28,6 +28,44 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
 
+test('playlist creation verifies owner then writes a seeded playlist once with numeric IDs', async () => {
+  const playlist = {user_id:42,track_id:90,title:'Новая 🎵',sharing:'private'};
+  const h = harness((url, options) => new URL(url).pathname === '/me' ? response(200,{id:42}) :
+    response(201,{id:77,title:playlist.title,sharing:playlist.sharing,user:{id:42},tracks:[{id:90}]}));
+  h.window.__pookieRequest({id:'a1'.repeat(16),operation:'playlist-create',playlist});
+  await tick();
+  assert.equal(h.calls.length,2);
+  assert.equal(h.calls[0][1].method,'GET');
+  const [url,options] = h.calls[1];
+  assert.equal(new URL(url).pathname,'/playlists'); assert.equal(options.method,'POST');
+  assert.deepEqual(JSON.parse(options.body),{playlist:{title:playlist.title,sharing:'private',tracks:[90]}});
+  assert.equal(h.messages.at(-1).status,201);
+  const body=h.messages.filter(m=>m.kind==='json-chunk').map(m=>m.chunk).join('');
+  assert.equal(JSON.parse(body).id,77);
+});
+test('playlist creation rejects wrong owners, mixed commands and invalid title/privacy before mutation', async () => {
+  const h=harness(()=>response(200,{id:8}));
+  const playlist={user_id:42,track_id:90,title:'New',sharing:'public'};
+  h.window.__pookieRequest({id:'b1'.repeat(16),operation:'playlist-create',playlist});
+  await tick(); assert.equal(h.calls.length,1); assert.equal(h.calls[0][1].method,'GET');
+  for(const [i,change] of [{title:''},{title:'x'.repeat(256)},{title:'line\nbreak'},{sharing:'other'},{user_id:0}].entries())
+    h.window.__pookieRequest({id:(3000+i).toString(16).padStart(32,'0'),operation:'playlist-create',playlist:{...playlist,...change}});
+  h.window.__pookieRequest({id:'b2'.repeat(16),operation:'playlist-create',playlist,url:'https://api-v2.soundcloud.com/me'});
+  h.window.__pookieRequest({id:'b3'.repeat(16),operation:'me',playlist});
+  await tick(); assert.equal(h.calls.length,1);
+});
+test('playlist writes are not replayed after a lost response or ordinary rejection', async () => {
+  for(const lost of [false,true]){
+    const h=harness(url=>{
+      if(new URL(url).pathname==='/me')return response(200,{id:42});
+      if(lost)throw Error('Lost response');
+      return response(403);
+    });
+    h.window.__pookieRequest({id:'c1'.repeat(16),operation:'playlist-create',playlist:{user_id:42,track_id:90,title:'New',sharing:'public'}});
+    await tick(); assert.equal(h.calls.filter(([,o])=>o.method==='POST').length,1);
+  }
+});
+
 test('mobile configuration and full stream fallbacks are read-only fixed paths; snippets stay excluded', async () => {
   const h = harness(async()=>response(200, {}));
   const paths = ['/configuration/android', '/tracks/90/streams/https', '/tracks/90/streams/hls'];

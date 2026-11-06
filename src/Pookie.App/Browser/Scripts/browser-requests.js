@@ -367,9 +367,16 @@
       send({ kind: 'complete', request_id: command.id, status: response.status });
       return;
     }
-    if (command.operation === 'api-get' || command.operation === 'track-read' || command.operation === 'comment-write') {
+    if (command.operation === 'api-get' || command.operation === 'track-read' || command.operation === 'comment-write' || command.operation === 'playlist-create') {
       let response;
-      if (command.operation === 'comment-write') {
+      if (command.operation === 'playlist-create') {
+        const me = await fetchProtected(new URL('/me', apiOrigin), 'GET', context);
+        if (!me.ok) { send({ kind: 'complete', request_id: command.id, status: me.status }); return; }
+        if ((await readJson(me, context)).json?.id !== command.playlist.user_id) throw new Error('playlist-owner-mismatch');
+        const d = command.playlist;
+        response = await fetchProtected(new URL('/playlists', apiOrigin), 'POST', context,
+          JSON.stringify({ playlist: { title: d.title, sharing: d.sharing, tracks: [d.track_id] } }));
+      } else if (command.operation === 'comment-write') {
         const d = command.comment;
         const input = d.kind === 'create' ? { trackUrn: `soundcloud:tracks:${d.track_id}`, body: d.body, timestamp: Math.round(d.timestamp ?? 0) } :
           { commentUrn: `soundcloud:comments:${d.comment_id}` };
@@ -456,14 +463,17 @@
       window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
-      if (context && !context.chatWrite && !['like', 'repost', 'follow', 'playlist-add', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
+      if (context && !context.chatWrite && !['like', 'repost', 'follow', 'playlist-add', 'playlist-create', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
         context.controller.abort(); context.rejectCancel(new Error('cancelled'));
       }
       return;
     }
-    if (active.has(command.id) || (command.chat != null && command.operation !== 'chat') || (command.comment != null && command.operation !== 'comment-write') ||
+    if (active.has(command.id) || (command.playlist != null && command.operation !== 'playlist-create') || (command.chat != null && command.operation !== 'chat') || (command.comment != null && command.operation !== 'comment-write') ||
       (command.context_urn != null && command.operation !== 'play-history') ||
-      !(command.operation === 'chat' && validChat(command) || command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&
+      !(command.operation === 'playlist-create' && !command.url && !command.audio && !command.detail && !command.comment && !command.chat && !command.session && !command.context_urn && !command.user_id && !command.track_id && !command.artist_id && !command.playlist_id &&
+        command.playlist && Number.isSafeInteger(command.playlist.user_id) && command.playlist.user_id > 0 && Number.isSafeInteger(command.playlist.track_id) && command.playlist.track_id > 0 &&
+        typeof command.playlist.title === 'string' && command.playlist.title.trim().length > 0 && command.playlist.title.length <= 255 && !/[\u0000-\u001f\u007f-\u009f]/.test(command.playlist.title) && ['public', 'private'].includes(command.playlist.sharing) ||
+        command.operation === 'chat' && validChat(command) || command.operation === 'play-history' && !command.url && !command.audio && !command.detail && !command.user_id && !command.artist_id && !command.playlist_id &&
         Number.isSafeInteger(command.track_id) && command.track_id > 0 && validHistoryContext(command.context_urn) ||
         command.operation === 'comment-write' && validCommentWrite(command) || command.operation === 'track-read' && validTrackRead(command) || command.operation === 'api-get' && readUrl(command.url) ||
         command.operation === 'me' || command.operation === 'liked-ids' || command.operation === 'like' &&

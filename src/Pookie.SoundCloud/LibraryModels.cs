@@ -16,15 +16,20 @@ public sealed record SoundCloudPlaylist
     public string? PermalinkUrl { get; init; }
     public string? PlaylistType { get; init; }
     public bool IsAlbum { get; init; }
+    public bool IsSystemPlaylist { get; init; }
     public int TrackCount { get; init; }
     public double Duration { get; init; }
     public string? Description { get; init; }
     public string? Sharing { get; init; }
     public string? Genre { get; init; }
+    public string[] Tags { get; init; } = [];
     public string? CreatedAt { get; init; }
     public string? LastModified { get; init; }
     public SoundCloudUser? User { get; init; }
     public SoundCloudTrack[] Tracks { get; init; } = [];
+    // Android can omit unavailable tracks while retaining them in track_count.
+    // Only the native reader sets this after exhausting the server's cursors.
+    [JsonIgnore] public bool TrackPagesComplete { get; init; }
 }
 
 public sealed record LibraryItem(string Key, string Title, string Subtitle, string? ArtworkUrl,

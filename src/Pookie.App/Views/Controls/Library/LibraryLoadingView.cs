@@ -68,6 +68,8 @@ internal sealed class LibrarySkeleton : Control
     public int PreviewCardRowGap { get; set; }
     public bool ListView { get; set; }
     public bool CompactList { get; set; }
+    public bool PlaylistRows { get; set; }
+    public int CompactRowSpacing { get; set; }
     public bool ArtworkOnly { get; set; }
     public bool AvatarStrip { get; set; }
     public bool TextOnly { get; set; }
@@ -124,9 +126,12 @@ internal sealed class LibrarySkeleton : Control
         if (active && FindVisualRoot() is Window) shimmer.Start(); else shimmer.Stop();
     }
     private double PreviewCardStride => artworkSize + PreviewCardFooter + PreviewCardRowGap;
+    private bool CompactRows => loadingRowStyle == LoadingRowStyle.Compact || CompactList && ListView;
 
     protected override Size MeasureContent(Size availableSize) => new(0,
-        Preview ? Math.Max(0, Math.Ceiling(PreviewItems / (double)columns) * PreviewCardStride - PreviewCardRowGap) : 0);
+        !Preview ? 0 : CompactRows
+            ? Math.Max(0, PreviewItems * (64 + CompactRowSpacing) - CompactRowSpacing)
+            : Math.Max(0, Math.Ceiling(PreviewItems / (double)columns) * PreviewCardStride - PreviewCardRowGap));
 
     protected override void OnRender(IGraphicsContext context)
     {
@@ -141,9 +146,27 @@ internal sealed class LibrarySkeleton : Control
             var rect = new Rect(bounds.X + left, bounds.Y + top, Math.Max(0, width), Math.Min(height, bounds.Height - top));
             if (rect.Width > 0 && rect.Height > 0) context.FillRoundedRectangle(rect, radius, radius, brush);
         }
+        if (PlaylistRows)
+        {
+            for (var y = 0d; y + 64 <= bounds.Height; y += 72)
+            {
+                Block(8, y + 10, 44, 44, 6);
+                Block(64, y + 17, Math.Max(0, Math.Min(220, bounds.Width - 90)), 12);
+                Block(64, y + 39, Math.Max(0, Math.Min(90, bounds.Width - 90)), 9);
+            }
+            return;
+        }
         if (AvatarStrip)
         {
-            for (var xOffset = 0d; xOffset + 38 <= bounds.Width; xOffset += 42) Block(xOffset, 2, 38, 38, 19);
+            var size = AvatarGroup.AvatarSize;
+            var stride = size - AvatarGroup.Overlap;
+            var count = Math.Clamp((int)((bounds.Width - size) / stride) + 1, 0, 7);
+            for (var index = count - 1; index >= 0; index--)
+            {
+                var rect = new Rect(bounds.X + index * stride, bounds.Y + AvatarGroup.TopInset, size, size);
+                context.FillEllipse(rect, PopupAppearance.AppBackground);
+                Block(index * stride + 3, AvatarGroup.TopInset + 3, size - 6, size - 6, (size - 6) / 2);
+            }
             return;
         }
         if (CommentRows)
@@ -167,9 +190,9 @@ internal sealed class LibrarySkeleton : Control
             }
             return;
         }
-        if (loadingRowStyle == LoadingRowStyle.Compact || CompactList && ListView)
+        if (CompactRows)
         {
-            for (var y = 0d; y < bounds.Height; y += 64)
+            for (var y = 0d; y < bounds.Height; y += 64 + CompactRowSpacing)
             {
                 Block(8, y + 10, 44, 44, 5); Block(64, y + 17, Math.Min(240, bounds.Width * .45), 12);
                 Block(64, y + 38, Math.Min(130, bounds.Width * .3), 10);

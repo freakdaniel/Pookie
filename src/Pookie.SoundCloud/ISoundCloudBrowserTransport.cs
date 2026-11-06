@@ -22,6 +22,8 @@ public interface ISoundCloudTransport
         throw new NotSupportedException("This transport does not support following.");
     Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support playlist edits.");
+    Task<JsonDocument> CreatePlaylistAsync(PlaylistCreateRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support playlist creation.");
     Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support track page reads.");
     Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default) =>

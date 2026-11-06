@@ -5,6 +5,24 @@ namespace Pookie.SoundCloud;
 
 public interface ISoundCloudMobileApi
 {
+    Task<LibraryPage> GetMobileLibraryPageAsync(long userId, string section, string? cursor = null, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile library reads.");
+    Task<LibraryItem[]> GetMobileCollectionsAsync(long userId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile collections.");
+    Task<HashSet<long>> GetMobileActionIdsAsync(string kind, bool reposts = false, long? userId = null, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile action reads.");
+    Task RemoveMobilePlaylistTrackAsync(long userId, long playlistId, long trackId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlist edits.");
+    Task<SoundCloudPlaylist> UpdateMobilePlaylistAsync(PlaylistUpdateRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlist edits.");
+    Task DeleteMobilePlaylistAsync(long userId, long playlistId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlist deletion.");
+    Task<SoundCloudPlaylist> SetMobilePlaylistArtworkAsync(long userId, long playlistId, byte[] jpeg, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlist artwork.");
+    Task<LibraryItem[]> GetMobileOwnedPlaylistsAsync(long userId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlist collections.");
+    Task<SoundCloudPlaylist> GetMobilePlaylistAsync(long playlistId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This transport does not support mobile playlists.");
     Task<SoundCloudMobileConfiguration> GetMobileConfigurationAsync(CancellationToken cancellationToken = default);
     Task<JsonDocument> GetMobileSduiAsync(bool catalog = false, string? after = null, CancellationToken cancellationToken = default);
     Task<JsonDocument> ResolveMobileStreamAsync(Uri uri, CancellationToken cancellationToken = default);

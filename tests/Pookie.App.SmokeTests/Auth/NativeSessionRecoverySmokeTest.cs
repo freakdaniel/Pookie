@@ -17,8 +17,10 @@ internal static class NativeSessionRecoverySmokeTest
         var preparations = 0; var nativeWrites = 0; var browserWrites = 0; var rejections = 0; var denyNative = false;
         app.MapGet("/browser", () => Results.Content("""
             <!doctype html><title>Local native recovery fixture</title><script>
-            window.__pookieTagReady=true;window.__pookieProtectionReady=true;window.ddSbh=true;window.dataDomeOptions={};
+            window.ddSbh=true;window.dataDomeOptions={};
             document.cookie='datadome=fixture-loaded; Path=/';
+            window.dispatchEvent(new Event('dd_ready'));
+            setTimeout(() => window.dispatchEvent(new Event('dd_post_done')), 100);
             </script>
             """, "text/html"));
         app.MapGet("/me", (HttpContext context) =>
@@ -35,7 +37,8 @@ internal static class NativeSessionRecoverySmokeTest
             { Interlocked.Increment(ref browserWrites); return Results.Json(new { }); }
             if (!Volatile.Read(ref denyNative) && context.Request.Headers["x-datadome-clientid"] == "fixture-prepared")
             { Interlocked.Increment(ref nativeWrites); return Results.NoContent(); }
-            Interlocked.Increment(ref rejections); context.Response.Headers["X-DD-B"] = "259";
+            Interlocked.Increment(ref rejections);
+            context.Response.Headers["X-DD-B"] = Volatile.Read(ref denyNative) ? "2" : "259";
             return Results.Json(new { }, statusCode: 403);
         });
         await app.StartAsync();
@@ -54,8 +57,8 @@ internal static class NativeSessionRecoverySmokeTest
                 throw new InvalidOperationException("Browser preparation did not transfer protection before both native mutations.");
             if (!stages.Contains(SoundCloudRecoveryStage.NativeAccepted)) throw new InvalidOperationException("Native recovery acceptance was not observed.");
 
-            // A server can still reject HTTP with a browser-owned session. Keep
-            // the existing one-operation fallback, then return to native HTTP.
+            // A native connection block can coexist with an accepted WebView.
+            // Complete the browser action once, then return to native HTTP.
             Volatile.Write(ref denyNative, true);
             await native.SetLikedAsync(42, 9, true, timeout.Token);
             if (preparations != 1 || browserWrites != 1 || nativeWrites != 2 || rejections != 2)
@@ -64,7 +67,7 @@ internal static class NativeSessionRecoverySmokeTest
             await native.SetLikedAsync(42, 10, true, timeout.Token);
             if (nativeWrites != 3 || browserWrites != 1 || !stages.Contains(SoundCloudRecoveryStage.BrowserCompleted))
                 throw new InvalidOperationException("Requests did not return to native HTTP after browser fallback.");
-            Console.WriteLine("NATIVE_SESSION_RECOVERY_OK: real WebView read-only preparation, cookie handoff, native writes, bounded browser fallback and return to native; loopback fixture only");
+            Console.WriteLine("NATIVE_SESSION_RECOVERY_OK: real WebView read-only preparation, cookie handoff, native writes, native connection block with bounded browser fallback and return to native; loopback fixture only");
         }
         finally { await BrowserPersistenceSmokeTest.DeleteFixtureProfileAsync(root); }
     }

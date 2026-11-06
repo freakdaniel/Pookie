@@ -106,6 +106,7 @@ internal sealed partial class MainWindow
             else await api.SetPlaylistLikedAsync(user.Id, playlist.Id, selected, lifetime.Token);
             if (disposed || api.Session != session || collectionActionsSession != session) return;
             if (selected) ids.Add(playlist.Id); else ids.Remove(playlist.Id);
+            if (!repost) InvalidatePlaylistLibrary(playlist.Id, details: false);
             libraryPages.Remove("collections"); overviewReady.Remove("collections");
             status.Value = repost ? selected ? "Плейлист появился в твоём профиле." : "Репост убран." : selected ? "Плейлист сохранён." : "Лайк убран.";
         }

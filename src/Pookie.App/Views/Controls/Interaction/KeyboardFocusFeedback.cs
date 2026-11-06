@@ -8,12 +8,18 @@ namespace Pookie.App;
 internal static class KeyboardFocusFeedback
 {
     internal static readonly MewProperty<bool> VisibleProperty = MewProperty<bool>.Register<Control>("KeyboardFocusVisible", false);
-    private static readonly ConditionalWeakTable<Control, ObservableValue<bool>> values = new();
+    private sealed class State
+    {
+        internal readonly ObservableValue<bool> Visible = new(false);
+        internal bool? Restoring;
+    }
+    private static readonly ConditionalWeakTable<Control, State> values = new();
 
     internal static void Attach(Control control)
     {
-        control.Bind(VisibleProperty, values.GetValue(control, static _ => new(false)));
-        control.GotFocus += () => Set(control, true);
+        var state = values.GetValue(control, static _ => new());
+        control.Bind(VisibleProperty, state.Visible);
+        control.GotFocus += () => Set(control, state.Restoring ?? true);
         control.LostFocus += () => Set(control, false);
         control.MouseDown += _ => Set(control, false);
         // Popup policy can consume the trigger's down event while restoring its focus.
@@ -21,9 +27,16 @@ internal static class KeyboardFocusFeedback
         control.KeyDown += _ => Set(control, true);
     }
 
-    internal static bool IsVisible(Control control) => values.TryGetValue(control, out var visible) && visible.Value;
+    internal static bool IsVisible(Control control) => values.TryGetValue(control, out var state) && state.Visible.Value;
     internal static void Set(Control control, bool keyboard)
     {
-        if (values.TryGetValue(control, out var visible)) visible.Value = keyboard && control.IsFocused;
+        if (values.TryGetValue(control, out var state)) state.Visible.Value = keyboard && control.IsFocused;
+    }
+    internal static void Restore(UIElement target, bool keyboard)
+    {
+        if (target is not Control control || !values.TryGetValue(control, out var state)) { target.Focus(); return; }
+        state.Restoring = keyboard;
+        try { control.Focus(); Set(control, keyboard); }
+        finally { state.Restoring = null; }
     }
 }

@@ -21,6 +21,7 @@ internal sealed partial class MainWindow
     private StackPanel homeChart = null!;
     private StackPanel homeChartGenreSlot = null!, homeChartLeft = null!, homeChartRight = null!;
     private Grid homeChartColumns = null!;
+    private LibraryLoadingView homeChartLeftLoading = null!, homeChartRightLoading = null!;
     private TextBlock homeChartStatus = null!;
     private Button homeChartOpen = null!, homeChartRetry = null!;
     private bool homeChartFailed, homeChartWide = true;
@@ -35,15 +36,24 @@ internal sealed partial class MainWindow
         homeChartStatus = new TextBlock().FontSize(14).Foreground(Muted).Margin(4, 10).IsVisible(false);
         homeChartLeft = new StackPanel().Vertical().Spacing(ChartRowSpacing);
         homeChartRight = new StackPanel().Vertical().Spacing(ChartRowSpacing);
+        homeChartLeftLoading = CreateLibraryLoadingView(homeChartLeft, preview: true);
+        homeChartRightLoading = CreateLibraryLoadingView(homeChartRight, preview: true);
+        foreach (var loading in new[] { homeChartLeftLoading, homeChartRightLoading })
+        {
+            loading.Skeleton.ConfigureLoadingRow(44, 1, LoadingRowStyle.Compact);
+            loading.Skeleton.PreviewItems = ChartColumnSize;
+            loading.Skeleton.CompactRowSpacing = ChartRowSpacing;
+            loading.Skeleton.Height = double.NaN;
+        }
         homeChartColumns = new Grid().Columns("*,*").Rows("Auto").Spacing(24)
-            .Children(homeChartLeft, homeChartRight.Column(1));
+            .Children(homeChartLeftLoading.Root, homeChartRightLoading.Root.Column(1));
         homeChartColumns.SizeChanged += e =>
         {
             var wide = e.NewSize.Width >= 720;
             if (wide == homeChartWide) return;
             homeChartWide = wide;
             homeChartColumns.Columns(wide ? "*,*" : "*").Rows(wide ? "Auto" : "Auto,Auto").Spacing(wide ? 24 : 4);
-            homeChartRight.Column(wide ? 1 : 0).Row(wide ? 0 : 1);
+            homeChartRightLoading.Root.Column(wide ? 1 : 0).Row(wide ? 0 : 1);
             ReserveHomeChartRows();
         };
         var heading = new Grid().Columns("*,Auto,Auto").Rows("Auto").Spacing(10).Children(
@@ -79,8 +89,9 @@ internal sealed partial class MainWindow
             }
             SelectHomeChart(selected < 0 ? null : genres[selected]);
         }
-        homeChart.IsVisible = genres.Length > 0;
+        homeChart.IsVisible = genres.Length > 0 || homePending.Contains("trends");
         LoadHomeChart();
+        RefreshHomeChartLoading();
     }
 
     private void SelectHomeChart(LibraryItem? genre)
@@ -100,13 +111,15 @@ internal sealed partial class MainWindow
         if (homeChartCache.TryGetValue(genre.Key, out var cached)) { SetHomeChartDetail(cached); return; }
         var request = homeChartRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = request.Token;
-        SetHomeChartStatus("Загружаем чарт…");
+        SetHomeChartStatus("");
+        RefreshHomeChartLoading();
         Run(async () =>
         {
             try
             {
                 var detail = await api.GetCollectionDetailAsync(genre, token);
-                if (token.IsCancellationRequested || disposed || api.Session != session) return;
+                if (token.IsCancellationRequested || disposed || api.Session != session ||
+                    homeChartGenre?.Key != genre.Key || !ReferenceEquals(homeChartRequest, request)) return;
                 homeChartCache[genre.Key] = detail;
                 SetHomeChartDetail(detail);
             }
@@ -114,6 +127,7 @@ internal sealed partial class MainWindow
                 error is SoundCloudException { StatusCode: not 401 } or HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
             {
                 homeChartFailed = true;
+                RefreshHomeChartLoading();
                 SetHomeChartStatus("Не удалось загрузить чарт.");
             }
             finally
@@ -133,10 +147,13 @@ internal sealed partial class MainWindow
 
     private void CancelHomeChartRequest()
     {
-        if (homeChartRequest is not { } request) return;
-        homeChartRequest = null;
-        request.Cancel();
-        request.Dispose();
+        if (homeChartRequest is { } request)
+        {
+            homeChartRequest = null;
+            request.Cancel();
+            request.Dispose();
+        }
+        RefreshHomeChartLoading();
     }
 
     private void SetHomeChartStatus(string text)
@@ -154,7 +171,6 @@ internal sealed partial class MainWindow
         homeChartLeft.Clear();
         homeChartRight.Clear();
         var tracks = detail?.Tracks.Tracks.Take(ChartColumnSize * 2).ToArray() ?? [];
-        ReserveHomeChartRows();
         SetHomeChartStatus(detail != null && tracks.Length == 0 ? "В этом чарте пока нет треков." : "");
         for (var index = 0; index < tracks.Length; index++)
         {
@@ -164,13 +180,23 @@ internal sealed partial class MainWindow
             homeChartRows.Add(row);
             (index < ChartColumnSize ? homeChartLeft : homeChartRight).Add(row.Root);
         }
+        RefreshHomeChartLoading();
+    }
+
+    private void RefreshHomeChartLoading()
+    {
+        var loading = !disposed && page.Value == Page.Home && !homeChartFailed && homeChartDetail == null &&
+            (homeChartGenre != null || homePending.Contains("trends"));
+        homeChartLeftLoading.SetLoading(loading);
+        homeChartRightLoading.SetLoading(loading);
+        ReserveHomeChartRows();
     }
 
     private void ReserveHomeChartRows()
     {
         var rows = homeChartWide ? ChartColumnSize : ChartColumnSize * 2;
         // Keep the chart header under the pointer while the next genre loads.
-        homeChartColumns.MinHeight = homeChartGenre != null && homeChartDetail == null
+        homeChartColumns.MinHeight = homeChartLeftLoading.Loading
             ? rows * (ChartRowHeight + ChartRowSpacing) - ChartRowSpacing : 0;
     }
 

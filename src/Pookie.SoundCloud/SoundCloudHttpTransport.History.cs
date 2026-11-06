@@ -11,7 +11,7 @@ public sealed partial class SoundCloudHttpTransport
         ValidateId(trackId);
         if (!BrowserRequestCommand.IsHistoryContextUrn(contextUrn)) throw new ArgumentException("Некорректный контекст прослушивания.");
         try { await RecordNativePlaybackAsync(trackId, contextUrn, token).ConfigureAwait(false); }
-        catch (SoundCloudException error) when (error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock && verification != null)
+        catch (SoundCloudException error) when (Account().MobileIdentity == null && error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock && verification != null)
         {
             await recovery.WaitAsync(token).ConfigureAwait(false);
             try { await verification.RecordPlaybackAsync(trackId, contextUrn, token).ConfigureAwait(false); }

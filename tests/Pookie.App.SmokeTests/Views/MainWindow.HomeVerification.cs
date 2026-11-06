@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
                 return;
             }
             Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
-            var transport = new HomeFixtureTransport();
+            var transport = new HomeFixtureTransport { ChartReady = new(TaskCreationOptions.RunContinuationsAsynchronously) };
             api.Session = new("homefixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Home fixture" }; signedIn.Value = true;
             await imageDiskCache.WriteAsync(HomeFixtureTransport.Artwork, ArtworkFixtureBitmap(500), lifetime.Token);
@@ -33,6 +33,11 @@ internal sealed partial class MainWindow
             if (!homeSections.Single(section => section.Key == "recommendations").Loading.Skeleton.IsVisible)
                 throw new InvalidOperationException("Slow recommendation request hid the loaded recent section or lost its skeleton.");
             transport.RelatedReady.SetResult(); await load;
+            await WaitForLikedLayoutAsync(() => homeChartLeftLoading.Loading && homeChartRightLoading.Loading &&
+                homeChartLeftLoading.Skeleton.Running && homeChartLeftLoading.Skeleton.ActualHeight > 300);
+            if (homeChartStatus.IsVisible || !homeChart.IsVisible || homeChartRows.Count != 0)
+                throw new InvalidOperationException("Slow trends must show row skeletons without a loading label or stale tracks.");
+            transport.ChartReady.SetResult();
             await WaitForLikedLayoutAsync(() => homeSections.All(section => section.Root.IsVisible) && libraryColumns == 6 &&
                 collectionCards.Keys.Any(root => homeSections[0].Cards!.IsAncestorOf(root) && root.ActualWidth > 100));
             if (HomeItems("recommendations").Length != 12 || HomeItems("releases").Length != 6 || HomeItems("mixes").Length != 7 ||
@@ -45,7 +50,8 @@ internal sealed partial class MainWindow
             if (homeLikesCard.CornerRadius != 16 || homeLikesCard.Height != 88 || homeHistoryCard.CornerRadius != 16 ||
                 homeLikesSubtitle.Text != "6 треков" || homeHistorySubtitle.Text.Length == 0)
                 throw new InvalidOperationException("Home shortcuts lost their card shape or personal captions.");
-            await WaitForLikedLayoutAsync(() => homeMixCarousel.ActualHeight > 290 && homeMixCarousel.MotionActive && homeChartRows.Count == 10);
+            await WaitForLikedLayoutAsync(() => homeMixCarousel.ActualHeight > 290 && homeMixCarousel.MotionActive && homeChartRows.Count == 10 &&
+                !homeChartLeftLoading.Skeleton.IsVisible && !homeChartRightLoading.Skeleton.IsVisible);
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-wide");
             player = null;
             var mixPoint = FindHomeMixPoint(homeMixCarousel.FrontIndex);
@@ -118,8 +124,16 @@ internal sealed partial class MainWindow
             CaptureUiPreview("home-trending");
             await VerifyTrendingActionsAsync(homeChartRows[0]);
             var chartScroll = shellScroll.VerticalOffset;
+            transport.ChartReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             picker.SelectedIndex = 0;
-            await WaitForLikedLayoutAsync(() => homeChartRows.Count == 10 && homeChartRows[0].Track?.Id == transport.Chart[^1].Id && shellPageScroll.IsReady);
+            await WaitForLikedLayoutAsync(() => homeChartLeftLoading.Loading && homeChartRightLoading.Loading &&
+                homeChartLeftLoading.Skeleton.ActualHeight > 300 && shellPageScroll.IsReady);
+            if (homeChartStatus.IsVisible || homeChartLeft.IsHitTestVisible || homeChartRight.IsHitTestVisible)
+                throw new InvalidOperationException("Changing trends genres retained a loading label or interactive stale rows.");
+            CaptureUiPreview("home-trending-loading");
+            transport.ChartReady.SetResult();
+            await WaitForLikedLayoutAsync(() => homeChartRows.Count == 10 && homeChartRows[0].Track?.Id == transport.Chart[^1].Id && shellPageScroll.IsReady &&
+                !homeChartLeftLoading.Skeleton.IsVisible && !homeChartRightLoading.Skeleton.IsVisible);
             if (Math.Abs(shellScroll.VerticalOffset - chartScroll) > 1)
                 throw new InvalidOperationException("Switching genres moved the page vertically.");
             ClickHomeElement(homeChartOpen);
@@ -262,6 +276,7 @@ internal sealed partial class MainWindow
         internal bool FailMixes;
         internal int HomeReads;
         internal TaskCompletionSource RelatedReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource? ChartReady;
         internal SoundCloudTrack[] Recent { get; } = Enumerable.Range(101, 6).Select(id => Track(id, id - 100,
             new[] { "Тихая гавань", "Там, где свет", "Волны", "После полуночи", "Новый день", "До весны" }[id - 101])).ToArray();
         internal SoundCloudTrack[] Chart { get; } = Enumerable.Range(1, 12)
@@ -308,6 +323,8 @@ internal sealed partial class MainWindow
             if (path.StartsWith("/system-playlists/"))
             {
                 var urn = Uri.UnescapeDataString(path["/system-playlists/".Length..]);
+                if (urn.Contains(":trending-by-genre:") && ChartReady is { } ready)
+                    await ready.Task.WaitAsync(cancellationToken);
                 var hipHop = urn.EndsWith(":genre-0");
                 var general = urn.EndsWith(":all-genres");
                 var entries = hipHop ? Chart.Reverse().ToArray() : general ? Chart : Recent;

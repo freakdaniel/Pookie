@@ -37,6 +37,7 @@ public sealed class HttpTransportTests
     [InlineData(259, 403)]
     [InlineData(3, 200)]
     [InlineData(1, 403)]
+    [InlineData(2, 403)]
     public async Task OnlyExplicitChallengesRecoverThroughBrowser(int flag, int status)
     {
         var account = Session(); var browser = new Verification();
@@ -54,11 +55,10 @@ public sealed class HttpTransportTests
     {
         using var http = new HttpClient(new Handler((_, _) =>
         { var response = Json("{\"secret\":\"not-logged\"}", 403); response.Headers.Add("X-SF-CC-X-dd-b", flag.ToString()); return Task.FromResult(response); }));
-        var browser = new Verification();
-        using var transport = new SoundCloudHttpTransport(http, Session, kind == SoundCloudChallengeKind.HardBlock ? browser : null);
+        using var transport = new SoundCloudHttpTransport(http, Session);
         var error = await Assert.ThrowsAsync<SoundCloudException>(() => transport.GetJsonAsync(Api()));
         Assert.Equal(kind, error.ChallengeKind); Assert.True(error.RequiresBrowserVerification);
-        Assert.DoesNotContain("not-logged", error.Message); Assert.Equal(0, browser.Calls);
+        Assert.DoesNotContain("not-logged", error.Message);
     }
 
     [Theory]
@@ -166,16 +166,16 @@ public sealed class HttpTransportTests
     }
 
     [Fact]
-    public async Task PlaylistAppendDoesNotReplaceExistingTracks()
+    public async Task PlaylistAppendSavesWebClientOrderWithoutLosingTracks()
     {
         var count = 0;
         using var http = new HttpClient(new Handler(async (request, token) =>
         {
             if (++count == 1) return Json("{\"id\":11,\"user\":{\"id\":7},\"track_count\":1,\"tracks\":[{\"id\":90}]}");
-            Assert.Equal(HttpMethod.Post, request.Method); Assert.Equal("/playlists/11/tracks", request.RequestUri!.AbsolutePath);
+            Assert.Equal(HttpMethod.Put, request.Method); Assert.Equal("/playlists/11", request.RequestUri!.AbsolutePath);
             using var body = JsonDocument.Parse(await request.Content!.ReadAsByteArrayAsync(token));
-            Assert.Equal("soundcloud:tracks:42", body.RootElement.GetProperty("track_urn").GetString());
-            Assert.False(body.RootElement.TryGetProperty("tracks", out _)); return Json();
+            Assert.Equal(new long[] { 90, 42 }, body.RootElement.GetProperty("playlist").GetProperty("tracks").EnumerateArray().Select(t => t.GetInt64()));
+            return Json();
         }));
         using var transport = new SoundCloudHttpTransport(http, Session);
         await transport.AddToPlaylistAsync(7, 11, 42); Assert.Equal(2, count);
@@ -407,7 +407,7 @@ public sealed class HttpTransportTests
     }
 
     [Fact]
-    public async Task MobileBrowserFallbackCompletesOnceWithoutFabricatingNativeLikeReceipt()
+    public async Task MobileLikeChallengeCannotFallBackToWebMutation()
     {
         var mobile = new SoundCloudMobileIdentity("0123456789abcdef", "Pookie", "Fixture", "15");
         var account = new WebSession("mobileid", "mobile-token", mobile.UserAgent) { MobileIdentity = mobile };
@@ -417,8 +417,9 @@ public sealed class HttpTransportTests
             calls++; var denied = Json(status: 403); denied.Headers.Add("X-DD-B", "259"); return Task.FromResult(denied);
         }));
         using var native = new SoundCloudHttpTransport(http, () => account, browser);
-        await native.SetLikedAsync(7, 42, true);
-        Assert.Equal(1, calls); Assert.Equal(1, browser.Calls);
+        var error = await Assert.ThrowsAsync<SoundCloudException>(() => native.SetLikedAsync(7, 42, true));
+        Assert.Equal(SoundCloudChallengeKind.InvisibleDeviceCheck, error.ChallengeKind);
+        Assert.Equal(1, calls); Assert.Equal(0, browser.Calls);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler

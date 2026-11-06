@@ -12,13 +12,14 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
 {
     internal static readonly Color Surface = Color.FromRgb(226, 226, 230);
     internal static readonly Color Ink = Color.FromRgb(47, 47, 51);
-    internal const double Gap = 4, Radius = 4, MaximumWidth = 200;
+    internal const double Gap = 4, AvatarGap = 8, Radius = 4, MaximumWidth = 200;
     internal const int HoverDelayMs = 500;
     private readonly Window window;
     private readonly TextBlock label;
     internal readonly Border Card;
     private readonly DispatcherTimer delay = new(TimeSpan.FromMilliseconds(HoverDelayMs));
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(150), Easing.Linear);
+    private readonly AnimationClock groupMotion = new(TimeSpan.FromMilliseconds(400), Easing.Spring(400, 29));
     private readonly List<(ScrollViewer Scroll, Action Handler)> scrolls = [];
     private FrameworkElement? owner, pending;
     private WeakReference<FrameworkElement>? dismissed;
@@ -28,13 +29,15 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     private Rect placedAnchor;
     private Size placedWindow;
     private Point origin;
+    private Rect groupFrom;
+    private double groupProgress = 1, placedGroupProgress;
     internal bool IsOpen { get; private set; }
     internal double Reveal => amount;
     internal Rect SurfaceBounds => surfaceBounds;
     internal Point TransformOrigin => origin;
     internal FrameworkElement? Owner => owner;
     internal string Text => label.Text;
-    internal bool Running => delay.IsEnabled || motion.IsRunning;
+    internal bool Running => delay.IsEnabled || motion.IsRunning || groupMotion.IsRunning;
 
     internal MaterialTooltipLayer(Window window)
     {
@@ -64,13 +67,34 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
             if (reopening) { Observe(); WatchScrolls(target); Animate(1); }
             return;
         }
+        var group = TooltipHints.GroupFor(target);
+        if (group != null && attached && owner != null && ReferenceEquals(group, TooltipHints.GroupFor(owner)))
+        {
+            RetargetGroup(target, keyboard);
+            return;
+        }
         var warm = attached;
         Hide();
         pending = target; pendingKeyboard = keyboard;
         Observe();
-        if (keyboard && !attached) { ShowPending(); return; }
+        if (group != null || keyboard && !attached) { ShowPending(); return; }
         delay.Interval = TimeSpan.FromMilliseconds(warm ? 100 : HoverDelayMs);
         delay.Start();
+    }
+    private void RetargetGroup(FrameworkElement target, bool keyboard)
+    {
+        CancelPending(); groupMotion.Stop();
+        groupFrom = surfaceBounds; groupProgress = 0;
+        owner = target; this.keyboard = keyboard;
+        label.Text = TooltipHints.TextFor(target)!;
+        var reopening = !IsOpen;
+        IsOpen = true;
+        ClearScrolls(); WatchScrolls(target); Observe();
+        groupMotion.TickCallback = progress => { groupProgress = progress; InvalidateVisual(); };
+        groupMotion.CompletedCallback = () => { groupProgress = 1; InvalidateVisual(); };
+        groupMotion.Start();
+        InvalidateMeasure();
+        if (reopening) Animate(1);
     }
     internal void Leave(FrameworkElement target, bool lostFocus = false)
     {
@@ -145,11 +169,15 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     }
     private void Hide(bool immediate = false)
     {
-        CancelPending(); IsOpen = false; Unobserve();
-        foreach (var (scroll, handler) in scrolls) scroll.ScrollChanged -= handler;
-        scrolls.Clear();
+        CancelPending(); IsOpen = false; Unobserve(); groupMotion.Stop();
+        ClearScrolls();
         if (immediate) { motion.Stop(); amount = Card.Opacity = 0; Detach(); }
         else if (attached) Animate(0);
+    }
+    private void ClearScrolls()
+    {
+        foreach (var (scroll, handler) in scrolls) scroll.ScrollChanged -= handler;
+        scrolls.Clear();
     }
     private void Animate(double target)
     {
@@ -162,6 +190,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     }
     private void Detach()
     {
+        groupMotion.Stop(); groupProgress = 1;
         IsVisible = false;
         if (attached) { window.OverlayLayer.Remove(this); attached = false; }
         owner = null; label.Text = "";
@@ -192,19 +221,28 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         var area = new Rect(0, 0, window.ClientSize.Width, window.ClientSize.Height);
         if (area.Width <= 16 || area.Height <= 16) return;
         var anchor = VisibleAnchor(owner);
-        if (placedAnchor == anchor && placedWindow == window.ClientSize && !Card.IsMeasureDirty && !Card.IsArrangeDirty) return;
-        placedAnchor = anchor; placedWindow = window.ClientSize;
+        if (placedAnchor == anchor && placedWindow == window.ClientSize && !Card.IsMeasureDirty && !Card.IsArrangeDirty && placedGroupProgress == groupProgress) return;
+        placedAnchor = anchor; placedWindow = window.ClientSize; placedGroupProgress = groupProgress;
         Card.MaxWidth = Math.Max(1, Math.Min(MaximumWidth, area.Width - 16));
         Card.MaxHeight = Math.Max(1, area.Height - 16);
         Card.Measure(new(Math.Max(1, area.Width - 16), Math.Max(1, area.Height - 16)));
         var size = Card.DesiredSize;
         var x = Math.Clamp(anchor.X + (anchor.Width - size.Width) / 2, 8, Math.Max(8, area.Width - size.Width - 8));
-        var above = anchor.Y - size.Height - Gap >= 8;
-        var y = above ? anchor.Y - size.Height - Gap : anchor.Bottom + Gap;
+        var gap = TooltipHints.GroupFor(owner) != null ? AvatarGap : Gap;
+        var above = anchor.Y - size.Height - gap >= 8;
+        var y = above ? anchor.Y - size.Height - gap : anchor.Bottom + gap;
         y = Math.Clamp(y, 8, Math.Max(8, area.Height - size.Height - 8));
         surfaceBounds = new(x, y, size.Width, size.Height);
-        var inset = Math.Min(Radius, size.Width / 2);
-        origin = new(Math.Clamp(anchor.X + anchor.Width / 2, x + inset, x + size.Width - inset), above ? surfaceBounds.Bottom : y);
+        if (groupMotion.IsRunning)
+        {
+            var width = Math.Clamp(groupFrom.Width + (size.Width - groupFrom.Width) * groupProgress, Math.Min(40, area.Width - 16), area.Width - 16);
+            var height = Math.Clamp(groupFrom.Height + (size.Height - groupFrom.Height) * groupProgress, Math.Min(24, area.Height - 16), area.Height - 16);
+            x = Math.Clamp(groupFrom.X + (x - groupFrom.X) * groupProgress, 8, Math.Max(8, area.Width - width - 8));
+            y = Math.Clamp(groupFrom.Y + (y - groupFrom.Y) * groupProgress, 8, Math.Max(8, area.Height - height - 8));
+            surfaceBounds = new(x, y, width, height);
+        }
+        var inset = Math.Min(Radius, surfaceBounds.Width / 2);
+        origin = new(Math.Clamp(anchor.X + anchor.Width / 2, x + inset, surfaceBounds.Right - inset), above ? surfaceBounds.Bottom : y);
         Card.Arrange(surfaceBounds);
     }
     protected override Size MeasureContent(Size availableSize) { Place(); return default; }
@@ -232,7 +270,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     protected override void OnDispose()
     {
         if (disposed) return;
-        disposed = true; Hide(true); delay.Dispose(); motion.Stop();
+        disposed = true; Hide(true); delay.Dispose(); motion.Stop(); groupMotion.Stop();
         window.Deactivated -= Deactivated; window.PreviewKeyDown -= PreviewKey;
         window.MouseDown -= PointerDown; window.MouseWheel -= Wheel;
         base.OnDispose();

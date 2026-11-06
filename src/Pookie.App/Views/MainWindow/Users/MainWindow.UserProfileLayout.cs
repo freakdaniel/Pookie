@@ -30,7 +30,8 @@ internal sealed partial class MainWindow
     private readonly List<CompactTrackRow> userPreviewRows = [];
     private readonly List<LikedTrackRow> userPublicationRows = [];
     private readonly List<(LibraryItem Item, FrameworkElement Root)> userPublications = [];
-    private StackPanel userSidebarLikes = null!, userSidebarFollowers = null!, userSidebarFollowing = null!;
+    private StackPanel userSidebarLikes = null!, userSidebarFollowing = null!;
+    private AvatarGroup userSidebarFollowers = null!;
     private FrameworkElement userLikesSection = null!, userFollowersSection = null!, userFollowingSection = null!, userSidebarAboutSection = null!;
     private LibraryItem[]? renderedUserActivity, renderedUserLikes, renderedUserFollowers, renderedUserFollowing;
     private readonly List<CompactTrackRow> userSidebarRows = [];
@@ -112,7 +113,7 @@ internal sealed partial class MainWindow
         userSidebarBiography = biography;
         userSidebarLinks = new StackPanel().Vertical().Spacing(6);
         userSidebarLikes = new StackPanel().Vertical().Spacing(6);
-        userSidebarFollowers = new StackPanel().Horizontal().Spacing(0);
+        userSidebarFollowers = new AvatarGroup();
         userSidebarFollowing = new StackPanel().Vertical().Spacing(8);
         userLikesLoading = CreateLibraryLoadingView(userSidebarLikes, preview: true);
         userFollowersLoading = CreateLibraryLoadingView(userSidebarFollowers, preview: true);

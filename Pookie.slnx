@@ -12,6 +12,9 @@
     <Project Path="tests/Pookie.Discord.Tests/Pookie.Discord.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/" />
+  <Folder Name="/tools/mewui-patch/">
+    <Project Path="tools/mewui-patch/MewUiPatch.csproj" />
+  </Folder>
   <Folder Name="/tools/mewui-source/">
     <Project Path="tools/mewui-source/MewUiSource.csproj" />
   </Folder>

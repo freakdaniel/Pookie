@@ -27,9 +27,21 @@ internal sealed class MaterialTrackButton : Button
     private readonly AnimationClock surfaceClock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
     private bool connected, groupStart;
     private bool glassFinish;
+    private bool lightGlass, listStateLayer;
     private readonly GlassSheenRaster sheen = new();
     private CoverGlassBackdrop? glassBackdrop;
+    private OverlayButtonBackdrop? overlayBackdrop;
+    internal bool HasOverlayBlur => overlayBackdrop?.Ready == true;
+    internal Rect OverlayBlurBounds => overlayBackdrop?.CaptureBounds ?? default;
+    internal void UseOverlayBackdrop(FrameworkElement overlay, Action<IGraphicsContext> draw)
+    {
+        overlayBackdrop?.Dispose();
+        overlayBackdrop = new(this, overlay, draw);
+        overlayBackdrop.Attach(FindVisualRoot() as Window);
+    }
     internal void UseGlassFinish() => glassFinish = true;
+    internal void UseLightGlassFinish() { lightGlass = glassFinish = true; RefreshSurface(true); }
+    internal void UseListStateLayer() { listStateLayer = true; surfaceClock.Duration = TimeSpan.FromMilliseconds(150); RefreshSurface(true); }
     internal void AttachGlassBackdrop(CoverGlassBackdrop? backdrop)
     {
         if (!glassFinish) return;
@@ -130,6 +142,10 @@ internal sealed class MaterialTrackButton : Button
         // pressed colour/shape would introduce a detour during that transition.
         var next = !suppressStateLayer && !passive && !connected && !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
             hot ? TrackButtons.HoverColor(surface, foreground) : surface;
+        if (lightGlass && variant == TrackButtons.Glass)
+            next = Color.FromArgb((byte)(IsEnabled && IsPressed ? 56 : hot ? 44 : 32), 255, 255, 255);
+        if (listStateLayer && variant == TrackButtons.Text)
+            next = Color.FromArgb((byte)(IsEnabled && IsPressed ? 32 : hot ? 22 : 0), 255, 255, 255);
         if (target == next && !snap) return;
         var first = target == null;
         surfaceClock.Stop();
@@ -165,7 +181,13 @@ internal sealed class MaterialTrackButton : Button
 
     private void DrawSurface(IGraphicsContext context)
     {
-        if (glassBackdrop != null)
+        if (overlayBackdrop is { Ready: true })
+        {
+            var bounds = GetSnappedBorderBounds(Bounds);
+            overlayBackdrop.Draw(context, bounds, CornerRadius);
+            context.FillRoundedRectangle(bounds, CornerRadius, CornerRadius, glassTint);
+        }
+        else if (glassBackdrop != null)
         {
             var bounds = GetSnappedBorderBounds(Bounds);
             var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
@@ -183,6 +205,7 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
+        overlayBackdrop?.Attach(newRoot as Window);
         if (newRoot == null)
         {
             surfaceClock.Stop(); shapeClock.Stop();
@@ -195,6 +218,7 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnDispose()
     {
         surfaceClock.Stop(); shapeClock.Stop();
+        overlayBackdrop?.Dispose(); overlayBackdrop = null;
         sheen.Dispose();
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
         base.OnDispose();

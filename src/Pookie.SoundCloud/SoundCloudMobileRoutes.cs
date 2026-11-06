@@ -17,12 +17,20 @@ public static class SoundCloudMobileRoutes
     public static bool IsStream(System.Uri uri) => IsOrigin(uri) && Regex.IsMatch(uri.AbsolutePath,
         @"^/tracks/soundcloud:tracks:[1-9][0-9]*/streams/(https|hls)$");
     public static bool IsRead(System.Uri uri) => IsOrigin(uri) && (uri.AbsolutePath == "/configuration/android" ||
+        Regex.IsMatch(uri.AbsolutePath, @"^/followings/soundcloud:users:[1-9][0-9]*/users$") ||
+        Regex.IsMatch(uri.AbsolutePath, @"^/users/soundcloud:users:[1-9][0-9]*/((playlists|albums)/posted|likes|reposts)$") ||
         Regex.IsMatch(uri.AbsolutePath, @"^/playlists/soundcloud:playlists:[1-9][0-9]*/(info|tracks)$"));
     public static bool IsAllowed(System.Uri uri, HttpMethod method)
     {
         if (!IsOrigin(uri)) return false;
         if (method == HttpMethod.Get || method == HttpMethod.Head) return IsRead(uri) || IsStream(uri);
         var path = uri.AbsolutePath;
+        if (path == "/playlists") return method == HttpMethod.Post;
+        if (Regex.IsMatch(path, @"^/playlists/soundcloud:playlists:[1-9][0-9]*$"))
+            return method == HttpMethod.Put || method == HttpMethod.Delete;
+        if (Regex.IsMatch(path, @"^/playlists/soundcloud:playlists:[1-9][0-9]*/artwork$")) return method == HttpMethod.Put;
+        if (Regex.IsMatch(path, @"^/playlists/soundcloud:playlists:[1-9][0-9]*/tracks/soundcloud:tracks:[1-9][0-9]*$"))
+            return method == HttpMethod.Delete;
         if (Regex.IsMatch(path, @"^/likes/(tracks|playlists)/(create|delete)$")) return method == HttpMethod.Post;
         if (Regex.IsMatch(path, @"^/follows/users/soundcloud:users:[1-9][0-9]*$") ||
             Regex.IsMatch(path, @"^/reposts/(tracks|playlists)/soundcloud:\1:[1-9][0-9]*$"))

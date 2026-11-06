@@ -108,7 +108,8 @@ public sealed class SoundCloudOAuthException(SoundCloudOAuthFailure failure, int
     public DateTimeOffset? RetryAfterUtc { get; init; }
 }
 
-public sealed class SoundCloudMobileOAuth(HttpClient http, SoundCloudMobileOAuthOptions options, TimeProvider? timeProvider = null)
+public sealed class SoundCloudMobileOAuth(HttpClient http, SoundCloudMobileOAuthOptions options, TimeProvider? timeProvider = null,
+    ISoundCloudMobileChallengeHandler? mobileChallenge = null)
 {
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     public SoundCloudPkceAttempt Begin(string locale = "en")
@@ -123,7 +124,7 @@ public sealed class SoundCloudMobileOAuth(HttpClient http, SoundCloudMobileOAuth
         ValidateOptions();
         if (!attempt.Request.IsValid() || !result.IsValid() || result.Error != null) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.Denied);
         var previous = new WebSession(options.ClientId, "pending", options.MobileIdentity.UserAgent)
-        { MobileIdentity = options.MobileIdentity, SessionId = Guid.NewGuid().ToString("N"), DataDomeClientId = result.DataDomeClientId, AppLocale = attempt.Locale };
+        { MobileIdentity = options.MobileIdentity, SessionId = Guid.NewGuid().ToString("N"), AppLocale = attempt.Locale };
         return await TokenAsync(new()
         {
             ["grant_type"] = "authorization_code", ["client_id"] = options.ClientId, ["code"] = result.Code!,
@@ -161,9 +162,12 @@ public sealed class SoundCloudMobileOAuth(HttpClient http, SoundCloudMobileOAuth
         if (!options.IsValid()) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.InvalidClient);
     }
 
-    private async Task<WebSession> TokenAsync(Dictionary<string, string> fields, WebSession previous, bool authenticateClient, CancellationToken token)
+    private async Task<WebSession> TokenAsync(Dictionary<string, string> fields, WebSession previous, bool authenticateClient, CancellationToken token, bool challengeRetried = false)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://secure.soundcloud.com/oauth/token?client_id=" + Uri.EscapeDataString(options.ClientId))
+        // AuthTokenFetcher uses AuthBuilder for code exchange. APK refresh and
+        // legacy migration use a public Builder, despite the AUTH body mode.
+        var tokenOrigin = authenticateClient ? "https://api-auth.soundcloud.com" : "https://secure.soundcloud.com";
+        using var request = new HttpRequestMessage(HttpMethod.Post, tokenOrigin + "/oauth/token?client_id=" + Uri.EscapeDataString(options.ClientId))
         { Content = new FormUrlEncodedContent(fields), Version = HttpVersion.Version20, VersionPolicy = HttpVersionPolicy.RequestVersionOrLower };
         request.Headers.UserAgent.ParseAdd(options.MobileIdentity.UserAgent);
         request.Headers.Accept.ParseAdd("application/x-www-form-urlencoded");
@@ -175,23 +179,43 @@ public sealed class SoundCloudMobileOAuth(HttpClient http, SoundCloudMobileOAuth
         // ApiMobileAuthTokenRefresh sets the auth/public request flag and sends
         // only the refresh token and client_id: no OAuth header or client secret.
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-        if ((int)response.StatusCode >= 500) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.ServerUnavailable, (int)response.StatusCode);
-        if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            throw new SoundCloudOAuthException(SoundCloudOAuthFailure.RateLimited, 429)
-            { RetryAfterUtc = response.Headers.RetryAfter?.Date ?? clock.GetUtcNow() + (response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30)) };
         byte[] bytes;
         await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
         {
             using var output = new MemoryStream(); var buffer = new byte[4096]; int count;
             while ((count = await input.ReadAsync(buffer, token).ConfigureAwait(false)) != 0)
             {
-                if (output.Length + count > 32768) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.InvalidResponse, (int)response.StatusCode);
+                if (output.Length + count > SoundCloudMobileChallenge.MaxHtmlLength) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.InvalidResponse, (int)response.StatusCode);
                 output.Write(buffer, 0, count);
             }
             bytes = output.ToArray();
         }
         try
         {
+            if (SoundCloudHttpTransport.Challenge(response, bytes, request.RequestUri) is { } kind)
+            {
+                foreach (var header in new[] { "Set-Cookie", "x-set-cookie" })
+                    if (response.Headers.TryGetValues(header, out var cookies))
+                        foreach (var cookieHeader in cookies)
+                            if (SoundCloudMobileChallenge.ReadCookie(cookieHeader) is { } cookie) previous.UpdateDataDomeClientId(cookie);
+                var challenge = SoundCloudMobileChallenge.Parse(response, bytes, request.RequestUri!, previous, kind);
+                var denied = new SoundCloudException(kind == SoundCloudChallengeKind.HardBlock ? "SoundCloud заблокировал мобильный вход. Капча не предложена." :
+                    "SoundCloud запросил проверку мобильного входа.", (int)response.StatusCode, requiresBrowserVerification: true)
+                    { ChallengeKind = kind, MobileChallenge = challenge };
+                if (mobileChallenge == null || challenge == null || challengeRetried) throw denied;
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                timeout.CancelAfter(TimeSpan.FromMinutes(3));
+                var verified = await mobileChallenge.SolveAsync(challenge, timeout.Token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                if (!WebSession.IsDataDomeClientId(verified) || verified == challenge.PreviousCookie) throw denied;
+                response.Dispose();
+                return await TokenAsync(fields, previous with { DataDomeClientId = verified }, authenticateClient, token, challengeRetried: true).ConfigureAwait(false);
+            }
+            if ((int)response.StatusCode >= 500) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.ServerUnavailable, (int)response.StatusCode);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                throw new SoundCloudOAuthException(SoundCloudOAuthFailure.RateLimited, 429)
+                { RetryAfterUtc = response.Headers.RetryAfter?.Date ?? clock.GetUtcNow() + (response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(30)) };
+            if (bytes.Length > 32768) throw new SoundCloudOAuthException(SoundCloudOAuthFailure.InvalidResponse, (int)response.StatusCode);
             using var document = JsonDocument.Parse(bytes);
             var root = document.RootElement;
             if (!response.IsSuccessStatusCode)

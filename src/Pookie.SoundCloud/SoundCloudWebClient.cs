@@ -153,6 +153,11 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<TrackPage> GetLikesAsync(long userId, CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
+        if (Session.MobileIdentity != null)
+        {
+            var mobilePage = await MobileApi.GetMobileLibraryPageAsync(userId, "likes", cancellationToken: cancellationToken);
+            return new(mobilePage.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray(), mobilePage.NextHref);
+        }
         using var document = await GetJsonAsync(Api($"users/{userId}/likes?limit=30&linked_partitioning=1"), cancellationToken);
         return ParsePage(document.RootElement);
     }
@@ -160,6 +165,11 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<LibraryPage> GetLibraryAsync(string section, long userId, CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для библиотеки нужен вход в SoundCloud.");
+        if (Session.MobileIdentity != null)
+        {
+            if (section == "collections") return new(await MobileApi.GetMobileCollectionsAsync(userId, cancellationToken), null);
+            if (section == "following") return await MobileApi.GetMobileLibraryPageAsync(userId, section, cancellationToken: cancellationToken);
+        }
         var path = section switch {
             "collections" => "me/library/all", "stations" => "me/library/stations",
             "recent" => "me/play-history/contexts", "history" => "me/play-history/tracks",
@@ -171,6 +181,8 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<LibraryPage> GetLibraryNextAsync(string url, CancellationToken cancellationToken = default)
     {
+        if (Session?.MobileIdentity != null && Uri.TryCreate(url, UriKind.Absolute, out var mobileUri) && SoundCloudMobileRoutes.IsRead(mobileUri))
+            return await ReadMobileLibraryCursorAsync(mobileUri, cancellationToken);
         if (!BrowserRequestCommand.IsReadUrl(url)) throw new SoundCloudException("Неверный адрес страницы библиотеки.");
         using var document = await GetJsonAsync(new Uri(url), cancellationToken);
         return await ParseLibraryAsync(document.RootElement, cancellationToken);
@@ -206,6 +218,13 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<CollectionDetail> GetCollectionDetailAsync(LibraryItem item, CancellationToken cancellationToken = default)
     {
+        if (Session?.MobileIdentity != null && item.Playlist is { Id: > 0 } ordinary && !ordinary.IsSystemPlaylist &&
+            !ordinary.Urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal))
+        {
+            var mobilePlaylist = await MobileApi.GetMobilePlaylistAsync(ordinary.Id, cancellationToken);
+            var mobileItem = LibraryData.FromPlaylist(mobilePlaylist) with { Key = item.Key };
+            return new(mobileItem, new(mobilePlaylist.Tracks.Where(track => !string.IsNullOrWhiteSpace(track.Title)).ToArray(), null));
+        }
         string path;
         if (item.User is { Id: > 0 } user) path = $"users/{user.Id}/tracks?limit=30&linked_partitioning=1";
         else if (item.Playlist is { } playlist)
@@ -245,6 +264,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
+        if (Session.MobileIdentity != null) return await MobileApi.GetMobileActionIdsAsync("tracks", cancellationToken: cancellationToken);
         var ids = new HashSet<long>();
         Uri? target = Api("me/track_likes/ids?limit=200&linked_partitioning=1");
         var seen = new HashSet<string>();
@@ -280,6 +300,11 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<TrackPage> GetNextPageAsync(string nextHref, CancellationToken cancellationToken = default)
     {
+        if (Session?.MobileIdentity != null && Uri.TryCreate(nextHref, UriKind.Absolute, out var mobileUri) && SoundCloudMobileRoutes.IsRead(mobileUri))
+        {
+            var mobilePage = await ReadMobileLibraryCursorAsync(mobileUri, cancellationToken);
+            return new(mobilePage.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray(), mobilePage.NextHref);
+        }
         if (!Uri.TryCreate(nextHref, UriKind.Absolute, out var uri) || !IsApiUri(uri)) throw new SoundCloudException("Неверный адрес следующей страницы.");
         using var document = await GetJsonAsync(uri, cancellationToken);
         return ParsePage(document.RootElement);
