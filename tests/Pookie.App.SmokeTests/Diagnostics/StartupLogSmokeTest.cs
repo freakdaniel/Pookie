@@ -52,6 +52,14 @@ internal static class StartupLogSmokeTest
                 });
             }
             catch (SoundCloudException error) when (error.StatusCode == 403) { }
+            var read = new BrowserRequestCommand(Guid.NewGuid().ToString("N"), "api-get", Url: "https://api-v2.soundcloud.com/tracks/42");
+            try
+            {
+                await browserLog.RunAsync(read, "embedded-browser", () =>
+                    Task.FromException<BrowserRequestEvent>(new SoundCloudException(privateValue, 404)));
+                throw new InvalidOperationException("Logging swallowed the missing resource response.");
+            }
+            catch (SoundCloudException error) when (error.StatusCode == 404) { }
             var propagated = false;
             try { await StartupLog.RunAsync("probe.failure", () => Task.FromException(new InvalidOperationException(privateValue))); }
             catch (InvalidOperationException error) when (error.Message == privateValue) { propagated = true; }
@@ -103,6 +111,11 @@ internal static class StartupLogSmokeTest
                 line.Contains("passes=1 ") && line.Contains("rotations=1 ") && line.Contains("protection_state=blocked ")))
                 throw new InvalidOperationException("Post-pass HTTP failure lost protection state.");
             var console = output.ToString();
+            if (!events.Any(line => line.Contains("[DBG] [Pookie.Browser.Request]") && line.Contains(read.Id) &&
+                line.Contains("stage=failed http_status=404")) || console.Contains(read.Id) ||
+                !console.Split('\n').Any(line => line.Contains("[Pookie.Browser.Request]") && line.Contains(command.Id) &&
+                    line.Contains("stage=failed http_status=403")))
+                throw new InvalidOperationException("Browser read 404 should stay in the debug log while 403 remains visible in the console.");
             if (console.Contains("probe-debug") || console.Contains("probe-trace") || console.Contains("stage=probe.sync") || console.Contains(privateValue) || log.Contains("probe-trace"))
                 throw new InvalidOperationException("Debug noise or private data reached the wrong destination.");
             foreach (var marker in new[] { "probe-information", "probe-warning", "probe-error", "probe-critical" })

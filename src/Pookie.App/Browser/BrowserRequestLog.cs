@@ -29,8 +29,11 @@ internal sealed class BrowserRequestLog
         }
         catch (Exception error)
         {
-            Write(error is OperationCanceledException ? LogEventLevel.Debug : LogEventLevel.Warning,
-                error is OperationCanceledException ? "cancelled" : "failed", (error as SoundCloudException)?.StatusCode ?? 0, error.GetType().Name);
+            var cancelled = error is OperationCanceledException;
+            var status = (error as SoundCloudException)?.StatusCode ?? 0;
+            var missingResource = command.Operation == "api-get" && status == 404;
+            Write(cancelled || missingResource ? LogEventLevel.Debug : LogEventLevel.Warning,
+                cancelled ? "cancelled" : "failed", status, error.GetType().Name);
             throw;
         }
         finally { pending.TryRemove(command.Id, out _); }
