@@ -35,10 +35,7 @@ internal sealed partial class MainWindow
         playlistPickerTrack = new TextBlock().FontSize(15).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         playlistPickerArtist = new TextBlock().FontSize(13).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         playlistPickerCover = new Image().Width(56).Height(56).StretchMode(Stretch.UniformToFill);
-        playlistPickerPreview = new PaletteGlassCard { HoverEnabled = false }.CornerRadius(20).Padding(14).Height(84);
-        playlistPickerPreview.Child(new Grid().Columns("56,*").Rows("*").Spacing(14).Children(
-                new Border().CornerRadius(10).ClipToBounds().Child(ArtworkLayer(playlistPickerCover)).Column(0),
-                new StackPanel().Vertical().Spacing(5).CenterVertical().Column(1).Children(playlistPickerTrack, playlistPickerArtist)));
+        playlistPickerPreview = TrackDialogChrome.Preview(ArtworkLayer(playlistPickerCover), playlistPickerTrack, playlistPickerArtist);
         playlistPickerMessage = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(40).Margin(24, 0, 24, 0).IsVisible(false);
         var scroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(playlistChoices);
@@ -52,7 +49,7 @@ internal sealed partial class MainWindow
         ((MaterialTrackButton)playlistPickerCreate).UseLightGlassFinish();
         var list = new DockPanel().LastChildFill().Spacing(12).Children(
             new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).DockTop().Children(
-                new TextBlock().Text("Добавить в плейлист").FontSize(21).Bold().CenterVertical().Column(0),
+                TrackDialogChrome.Heading("Добавить в плейлист").Column(0),
                 playlistPickerCreate.Column(1)),
             playlistPickerMessage.DockTop(), playlistPickerLoading.Root);
         playlistDialogPages = new PlaylistDialogPages(list, PlaylistCreationView());

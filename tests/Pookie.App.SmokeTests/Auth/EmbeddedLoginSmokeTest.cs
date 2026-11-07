@@ -116,7 +116,9 @@ internal static class EmbeddedLoginSmokeTest
         });
         app.MapGet("/loaded", () => Results.Content("""
             <!doctype html><title>Ready login cancellation fixture</title>
-            <style>body{background:#3355bb;color:white;font:20px sans-serif}</style><h1>Ready to sign in</h1><button>Sign in</button>
+            <style>body{background:#3355bb;color:white;font:20px sans-serif}</style>
+            <script>window.requestAnimationFrame=()=>0;</script>
+            <h1>Ready to sign in</h1><a href="#sign-in">Sign in</a>
             """, "text/html"));
         if (preview) app.MapGet("/release-preview", () => { previewReleased.TrySetResult(); return Results.NoContent(); });
         await app.StartAsync(); await provider.StartAsync();

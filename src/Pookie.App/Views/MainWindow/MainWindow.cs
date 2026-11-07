@@ -165,7 +165,7 @@ internal sealed partial class MainWindow : IDisposable
             if (embeddedLoginDialog.HandleKey(e)) return;
             if (playlistPickerClosing) { e.Handled = true; return; }
             if (playlistEditor.HandleKey(e)) return;
-            if (shareDialog.HandleKey(e)) return;
+            if (HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
             if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
@@ -766,7 +766,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        CloseShare(true); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        CloseShare(true); shareTimePopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;

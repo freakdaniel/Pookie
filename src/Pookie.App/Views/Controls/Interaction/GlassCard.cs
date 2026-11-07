@@ -14,6 +14,10 @@ internal class GlassCard : ContentControl
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
     private bool emphasized;
+    private PopupGlassBackdrop? popupBackdrop;
+    internal long PopupBackdropPaintVersion { get; private set; }
+    internal void UsePopupBackdrop(PopupGlassBackdrop backdrop)
+    { popupBackdrop?.Unregister(this); popupBackdrop = backdrop; backdrop.Register(this); InvalidateVisual(); }
     internal bool HoverEnabled { get; init; } = true;
     internal bool ShadowEnabled { get; init; } = true;
 
@@ -39,9 +43,18 @@ internal class GlassCard : ContentControl
     protected override void OnRender(IGraphicsContext context)
     {
         if (ShadowEnabled) shadow.Draw(context, Bounds, CornerRadius, (byte)(65 + emphasis * 25) / 90d);
-        // Drawers keep the shared translucent finish without leaking underlying text.
-        if (underlay is { } color) context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, color);
-        base.OnRender(context);
+        if (popupBackdrop != null)
+        {
+            PopupBackdropPaintVersion = popupBackdrop.Version;
+            popupBackdrop.Draw(context, Bounds, CornerRadius);
+            context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, Color.FromArgb(174, 22, 22, 27));
+        }
+        else
+        {
+            // Drawers keep the shared translucent finish without leaking underlying text.
+            if (underlay is { } color) context.FillRoundedRectangle(Bounds, CornerRadius, CornerRadius, color);
+            base.OnRender(context);
+        }
         RenderGlassBackground(context);
         sheen.Draw(context, Bounds, new CornerRadius(CornerRadius), emphasis, GetDpi() / 96d);
     }
@@ -54,5 +67,5 @@ internal class GlassCard : ContentControl
         if (newRoot == null) { motion.Stop(); emphasis = target; sheen.Dispose(); shadow.Dispose(); }
     }
 
-    protected override void OnDispose() { motion.Stop(); sheen.Dispose(); shadow.Dispose(); base.OnDispose(); }
+    protected override void OnDispose() { popupBackdrop?.Unregister(this); motion.Stop(); sheen.Dispose(); shadow.Dispose(); base.OnDispose(); }
 }

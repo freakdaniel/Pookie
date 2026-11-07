@@ -11,7 +11,7 @@ internal sealed class PlaylistDialogContent : Panel
 {
     internal const double PreferredWidth = 480, MaximumWidth = 520;
     internal const double PreferredBodyHeight = 420, MaximumBodyHeight = 460;
-    private const double TrackSlot = 104, TrackHeight = 84;
+    private const double TrackHeight = TrackDialogChrome.PreviewHeight, TrackSlot = TrackHeight + 20;
     private readonly FrameworkElement body;
     private readonly RisingTrack track;
     private readonly AnimationClock reveal = new(TimeSpan.FromMilliseconds(420), Easing.CubicBezier(.16, 1, .3, 1));

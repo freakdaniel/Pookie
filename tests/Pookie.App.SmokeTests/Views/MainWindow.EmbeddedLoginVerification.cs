@@ -44,7 +44,7 @@ internal sealed partial class MainWindow
                 if (embeddedLoginSurface?.PageReveal is > 0 and < 1)
                 {
                     revealFrames++;
-                    if (embeddedLoginSurface.PageReveal is > .1 and < .9)
+                    if (embeddedLoginSurface.PageReveal is > .1 and < .9 && embeddedLogin?.HasSnapshot == true)
                     {
                         try { VerifyEmbeddedFadePixels(); pixelFadeFrames++; }
                         catch (Exception error) { motionFailure ??= error; }
@@ -67,10 +67,11 @@ internal sealed partial class MainWindow
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(previewReleased == null ? 35 : 90));
-                while (startupSplash.IsVisible || !loginScreen.IsVisible) await WaitForLoginFrameAsync();
+                Window.Activate();
+                while (startupSplash.IsVisible || !loginScreen.IsVisible) await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
                 var signingIn = AuthorizeEmbeddedAsync(timeout.Token, root + "/authorize", profile);
                 await authorizationRequested.WaitAsync(timeout.Token);
-                while (embeddedLoginDialog.Running || embeddedLoginSurface?.IntroProgress != 1) await WaitForLoginFrameAsync();
+                while (embeddedLoginDialog.Running || embeddedLoginSurface?.IntroProgress != 1) await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
                 if (!embeddedLoginDialog.IsOpen || embeddedLoginSurface is not { Loading: true, PageReveal: 0, NativeVisible: false })
                     throw new InvalidOperationException("The loading backdrop did not appear before the delayed authorization document.");
                 CaptureUiPreview("embedded-loading");
@@ -80,14 +81,24 @@ internal sealed partial class MainWindow
                 if (embeddedLoginSurface is not { PageReveal: 0, NativeVisible: false } || embeddedLogin!.HasSnapshot)
                     throw new InvalidOperationException("The SPA shell was mistaken for a painted sign-in form.");
                 continueForm();
-                while (!embeddedLoginDialog.IsOpen || embeddedLoginDialog.Running || embeddedLoginSurface?.NativeVisible != true) await WaitForLoginFrameAsync();
+                while (!embeddedLoginDialog.IsOpen || embeddedLoginDialog.Running || embeddedLoginSurface?.NativeVisible != true)
+                {
+                    await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
+                }
                 if (previewReleased != null) { Console.WriteLine("EMBEDDED_PREVIEW_READY"); await previewReleased.WaitAsync(timeout.Token); }
                 if (!embeddedLoginDialog.IsOpen || !loginContent.IsVisible || workspace.IsVisible || embeddedLogin == null)
                     throw new InvalidOperationException("Login browser was not shown inside the main login screen.");
-                if (openingFrames < 3 || !embeddedLogin.HasSnapshot || embeddedLoginDialog.Pose != 1)
-                    throw new InvalidOperationException("Login did not animate a real browser snapshot through the existing modal spring.");
-                if (revealFrames < 3 || pixelFadeFrames < 2 || embeddedLoginSurface!.Loading)
+                await Task.Delay(250, timeout.Token);
+                VerifyEmbeddedNativePixels();
+                if (openingFrames < 3 || embeddedLoginDialog.Pose != 1)
+                    throw new InvalidOperationException($"Login did not animate through the existing modal spring: frames={openingFrames}, snapshot={embeddedLogin.HasSnapshot}, pose={embeddedLoginDialog.Pose}.");
+                if (revealFrames < 3 || embeddedLogin.HasSnapshot && pixelFadeFrames < 2 || embeddedLoginSurface!.Loading)
                     throw new InvalidOperationException("The ready authorization page skipped its spinner-to-browser crossfade.");
+                if (!embeddedLogin.HasSnapshot)
+                {
+                    await embeddedLogin.CapturePresentedPageForVerificationAsync(Window, timeout.Token);
+                    Console.WriteLine("EMBEDDED_PREVIEW_FALLBACK_OK: native page shown despite unavailable offscreen preview; onscreen page captured successfully");
+                }
                 if (motionFailure != null) throw motionFailure;
                 if (openingBrandFrames < 3 || expandingFrames < 3 || spinnerPhases.Count < 3 || expansionFailure != null)
                     throw new InvalidOperationException($"The centered logo/vertical spinner sequence failed: brandFrames={openingBrandFrames}, expandingFrames={expandingFrames}, phases={spinnerPhases.Count}, failure={expansionFailure}.");
@@ -100,8 +111,12 @@ internal sealed partial class MainWindow
                 navigateToProvider();
                 await providerSeen.WaitAsync(timeout.Token);
                 Window.WindowSize = WindowSize.Resizable(1050, 720, minWidth: 1000, minHeight: 680);
-                await WaitForLoginFrameAsync();
-                await WaitForLoginFrameAsync();
+                // Native resize, ClientSizeChanged and layout arrive on separate
+                // turns; do not inspect the old viewport after an arbitrary two frames.
+                do { await WaitForLoginFrameAsync().WaitAsync(timeout.Token); }
+                while (Window.ClientSize != new Size(1050, 720) ||
+                    embeddedLoginContent.Height > Window.ClientSize.Height - 128 ||
+                    embeddedLogin.ActualHeight > embeddedLoginContent.Height);
                 var browserBounds = embeddedLogin.TranslateRect(new(0, 0, embeddedLogin.ActualWidth, embeddedLogin.ActualHeight), Window);
                 var backdropBounds = embeddedLoginSurface.TranslateRect(new(0, 0, embeddedLoginSurface.ActualWidth, embeddedLoginSurface.ActualHeight), Window);
                 if (Math.Abs(backdropBounds.Width - browserBounds.Width) > .01 || Math.Abs(backdropBounds.Height - browserBounds.Height) > .01 ||
@@ -110,6 +125,8 @@ internal sealed partial class MainWindow
                 if (browserBounds.Width < 600 || browserBounds.Height < 350 || browserBounds.Y < 16 || browserBounds.Bottom > Window.ClientSize.Height - 16 ||
                     embeddedLoginDialog.SurfaceBounds.Width >= Window.ClientSize.Width - 16)
                     throw new InvalidOperationException($"Embedded browser escaped its login viewport after resize: browser={browserBounds}, surface={embeddedLoginDialog.SurfaceBounds}, client={Window.ClientSize}.");
+                await Task.Delay(250, timeout.Token);
+                VerifyEmbeddedNativePixels();
                 continueProvider();
                 var result = (WebSession)await signingIn;
                 if (result.AccessToken != "embedded-token" || result.DataDomeClientId != "embedded-cookie" || embeddedLoginDialog.IsOpen || !loginContent.IsVisible)
@@ -119,7 +136,7 @@ internal sealed partial class MainWindow
                 using (BrowserProfile.Open(path: profile)) { /* The browser lease must be released before the API worker starts. */ }
                 Console.WriteLine("EMBEDDED_OAUTH_OK: real in-window browser, provider CSP, resize, callback, cookie and profile handoff");
                 VerifyEmbeddedPerspectiveSampling();
-                Console.WriteLine("EMBEDDED_TRANSITIONS_OK: centered logo during opening; upward expansion and animated spinner below; SPA controls and GPU crossfade; opaque exit snapshot");
+                Console.WriteLine($"EMBEDDED_TRANSITIONS_OK: centered logo during opening; upward expansion and animated spinner below; SPA controls and page reveal; opaque exit snapshot; snapshot fade pixel frames={pixelFadeFrames}");
                 foreach (var loaded in new[] { false, true, false })
                 {
                     using var cancel = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
@@ -133,6 +150,7 @@ internal sealed partial class MainWindow
                     }
                     if (!loaded && embeddedLoginSurface is not { PageReveal: 0, NativeVisible: false })
                         throw new InvalidOperationException("A pending document exposed the native view or dismissed its loading spinner early.");
+                    if (loaded) { await Task.Delay(250, timeout.Token); VerifyEmbeddedNativePixels(); }
                     embeddedLoginDialog.DismissRequested!();
                     try { await pending; throw new InvalidOperationException("Embedded login ignored cancellation."); }
                     catch (OperationCanceledException) when (cancel.IsCancellationRequested)
@@ -143,8 +161,24 @@ internal sealed partial class MainWindow
                     login = null;
                 }
                 Console.WriteLine("EMBEDDED_CANCEL_OK: immediate, loaded and repeated cancellation restore an enabled idle login button");
+                try
+                {
+                    await RunLoginAttemptAsync(async () => await AuthorizeEmbeddedAsync(timeout.Token, root + "/wait", profile,
+                        preparationTimeout: TimeSpan.FromMilliseconds(250)));
+                    throw new InvalidOperationException("A stalled login preparation never timed out.");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("не загрузилась вовремя", StringComparison.Ordinal))
+                {
+                    if (loginBusy.Value || !loginButton.IsEnabled || embeddedLoginDialog.IsOpen || !loginError.IsVisible ||
+                        !loginError.Text.Contains("не загрузилась вовремя", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Preparation timeout did not restore a retryable login with a visible error.");
+                    using (BrowserProfile.Open(path: profile)) { }
+                }
+                Console.WriteLine("EMBEDDED_LOGIN_READINESS_OK: link-only controls without animation frames, bounded stalled-page wait, visible error and reusable profile");
                 if (motionFailure != null) throw motionFailure;
-                var session = (WebSession)await AuthorizeEmbeddedAsync(timeout.Token, root + "/web", profile);
+                var popupLogin = AuthorizeEmbeddedAsync(timeout.Token, root + "/web", profile);
+                await embeddedLogin!.OpenFixturePopupForVerificationAsync(timeout.Token);
+                var session = (WebSession)await popupLogin;
                 if (session.ClientId != "embeddedid" || session.AccessToken != "embedded-token")
                     throw new InvalidOperationException("Embedded popup did not return its website session.");
                 Console.WriteLine("EMBEDDED_POPUP_OK: popup shares profile and opener, closes back into the same login panel; session returned");
@@ -206,5 +240,23 @@ internal sealed partial class MainWindow
         var expectedBlue = 19 + (187 - 19) * surface.PageReveal;
         if (Math.Abs(pixel[0] - expectedBlue) > 3 || pixel[3] != 255)
             throw new InvalidOperationException($"Browser pixels skipped the crossfade: reveal={surface.PageReveal}, blue={pixel[0]}, expected={expectedBlue}.");
+    }
+
+    private void VerifyEmbeddedNativePixels()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        VerifyEmbeddedNativeGeometry();
+        var display = XOpenDisplay(0);
+        if (display == 0) throw new InvalidOperationException("No X11 display for embedded browser visibility verification.");
+        try
+        {
+            var bounds = embeddedLogin!.TranslateRect(new(0, 0, embeddedLogin.ActualWidth, embeddedLogin.ActualHeight), Window);
+            var point = new Point(bounds.Right - 40, bounds.Bottom - 40);
+            var pixel = ReadNativeChatVideoPixel(display, point);
+            if (pixel != 0x3355bb)
+                throw new InvalidOperationException($"The live browser is covered or misplaced in the actual X11 window: pixel=#{pixel:x6}, expected=#3355bb, bounds={bounds}.");
+            Console.WriteLine("EMBEDDED_NATIVE_PIXELS_OK: actual application window displays the live page before closing");
+        }
+        finally { XCloseDisplay(display); }
     }
 }

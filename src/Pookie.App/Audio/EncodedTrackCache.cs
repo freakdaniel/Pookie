@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Http.Headers;
 using Pookie.Logging;
 
 namespace Pookie.Audio;
@@ -14,6 +12,7 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
     private readonly object gate = new();
     private readonly Dictionary<Key, Task<string>> files = [];
     private readonly Dictionary<string, long> progressiveLengths = [];
+    private readonly Dictionary<string, ProgressiveTrackDownload> sequential = [];
     private readonly CancellationTokenSource lifetime = new();
     private readonly string directory = Path.Combine(CacheRoot, Guid.NewGuid().ToString("N"));
     private readonly object directorySync = new();
@@ -21,7 +20,7 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
     private static readonly Lazy<Task> orphanCleanup = new(() => Task.Run(() => PruneOrphans(CacheRoot,DateTime.UtcNow.AddDays(-7))));
     private Task prefetch = Task.CompletedTask;
     private bool disposed;
-    private bool prefetchFailed;
+    private readonly HashSet<string> progressivePrefetch = [];
     internal string DirectoryPath => directory;
     public Task Completion { get; private set; } = Task.CompletedTask;
 
@@ -58,22 +57,11 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
 
     private async Task<string> DownloadAsync(Request request)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Get, request.Uri);
-        if (request.Offset is { } start && request.Length is { } count)
-            message.Headers.Range = new RangeHeaderValue(start, checked(start + count - 1));
-        using var response = await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, lifetime.Token);
-        response.EnsureSuccessStatusCode();
-        if (request.Offset is { } offset && request.Length is { } length &&
-            (response.StatusCode != HttpStatusCode.PartialContent || response.Content.Headers.ContentRange?.From != offset ||
-             response.Content.Headers.ContentRange?.To != offset + length - 1 ||
-             request.Total is { } total && response.Content.Headers.ContentRange?.Length != total))
-            throw new IOException("Server did not honor the media byte range.");
-        var bytes = await HttpRangeStream.ReadBoundedAsync(response.Content, request.Maximum, lifetime.Token);
-        if (request.Length is { } expected && bytes.Length != expected) throw new IOException("Incomplete media byte range.");
+        var bytes = await AudioHttp.ReadAsync(http, request.Uri, request.Maximum, lifetime.Token, request.Offset, request.Length, request.Total);
         return await StoreAsync(bytes);
     }
 
-    private async Task<string> StoreAsync(byte[] bytes)
+    private string CreatePath()
     {
         lock (directorySync)
         {
@@ -82,9 +70,35 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
             directoryLease ??= new FileStream(Path.Combine(directory,".active"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         }
         _ = orphanCleanup.Value;
-        var path = Path.Combine(directory, Guid.NewGuid().ToString("N"));
+        return Path.Combine(directory, Guid.NewGuid().ToString("N"));
+    }
+
+    private async Task<string> StoreAsync(byte[] bytes)
+    {
+        var path = CreatePath();
         await File.WriteAllBytesAsync(path, bytes, lifetime.Token);
         return path;
+    }
+
+    internal Stream? OpenSequential(Uri uri, CancellationToken token)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return sequential.TryGetValue(uri.AbsoluteUri, out var download) ? download.Open(token) : null;
+        }
+    }
+
+    internal Stream StartSequential(Uri uri, HttpResponseMessage response, CancellationToken token)
+    {
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (!sequential.TryGetValue(uri.AbsoluteUri, out var download))
+                sequential[uri.AbsoluteUri] = download = new(http, uri, CreatePath(), response, lifetime.Token);
+            else response.Dispose();
+            return download.Open(token);
+        }
     }
 
     public async Task StoreFirstAsync(Uri uri, long total, byte[] bytes, CancellationToken token)
@@ -118,12 +132,12 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
 
     public void PrefetchRanges(Uri uri, long position, long total, int blockSize, double duration, CancellationToken token)
     {
-        var start = Math.Max(0, position) / blockSize * blockSize;
-        // Match the browser's 45-second lookahead while bounding each window to 8 MiB.
-        var ahead = double.IsFinite(duration) && duration > 0 ? Math.Clamp(total / duration * 45, blockSize, 8 * 1024 * 1024) : blockSize * 2;
-        var end = Math.Min(total, start + (long)ahead);
+        lock (gate) if (disposed || token.IsCancellationRequested || !progressivePrefetch.Add(uri.AbsoluteUri)) return;
+        var start = Math.Min(total, Math.Max(0, position)) / blockSize * blockSize;
         var requests = new List<Request>();
-        for (var offset = start; offset < end; offset += blockSize)
+        for (var offset = start; offset < total; offset += blockSize)
+            requests.Add(new(uri, blockSize, offset, Math.Min(blockSize, total - offset), total));
+        for (var offset = 0L; offset < start; offset += blockSize)
             requests.Add(new(uri, blockSize, offset, Math.Min(blockSize, total - offset), total));
         Prefetch(requests, token);
     }
@@ -132,15 +146,15 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
     {
         lock (gate)
         {
-            if (disposed || prefetchFailed || !prefetch.IsCompleted || requests.All(Contains)) return;
+            if (disposed || !prefetch.IsCompleted || requests.All(Contains)) return;
             prefetch = Task.Run(async () =>
             {
                 try
                 {
                     foreach (var request in requests)
                     {
-                        token.ThrowIfCancellationRequested();
-                        if (!Contains(request)) await GetFile(request).WaitAsync(token);
+                        lifetime.Token.ThrowIfCancellationRequested();
+                        if (!Contains(request)) await GetFile(request);
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested || lifetime.IsCancellationRequested)
@@ -149,7 +163,6 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
                 { AppLog.For("Pookie.Audio").Debug("Кэш трека закрыт"); }
                 catch (Exception)
                 {
-                    lock (gate) prefetchFailed = true;
                     AppLog.For("Pookie.Audio").Debug("Опережающая загрузка недоступна; воспроизведение продолжит обычную загрузку");
                 }
             });
@@ -163,7 +176,7 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
             if (disposed) return;
             disposed = true;
             lifetime.Cancel();
-            var pendingCleanup = files.Values.Cast<Task>().Append(prefetch).ToArray();
+            var pendingCleanup = files.Values.Cast<Task>().Concat(sequential.Values.Select(download => download.Completion)).Append(prefetch).ToArray();
             Completion = Task.Run(() => CleanupAsync(pendingCleanup));
         }
     }

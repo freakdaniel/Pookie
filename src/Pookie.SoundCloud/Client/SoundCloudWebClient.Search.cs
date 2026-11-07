@@ -1,7 +1,5 @@
 namespace Pookie.SoundCloud;
 
-public enum SearchSection { All, Tracks, People, Albums, Playlists }
-
 public sealed partial class SoundCloudWebClient
 {
     public async Task<LibraryPage> SearchResultsAsync(string query, SearchSection section = SearchSection.All,

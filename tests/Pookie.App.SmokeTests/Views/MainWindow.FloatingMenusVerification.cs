@@ -102,25 +102,27 @@ internal sealed partial class MainWindow
             var contextRows = context.Buttons.ToArray();
             PopupAppearance.Attach(profileButton, context);
             var trigger = Center(profileButton);
-            if (OperatingSystem.IsWindows())
-            { SendLikedActionMouse(0x204, 2, trigger); SendLikedActionMouse(0x205, 0, trigger); }
-            else
-            {
-                var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", true)!;
-                var mouse = router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                    .Single(method => method.Name == "MouseButton" && method.GetParameters().Length == 10);
-                mouse.Invoke(null, [Window, trigger, Window.ClientToScreen(trigger), MouseButton.Right, true, false, true, false, 1, ModifierKeys.None]);
-                mouse.Invoke(null, [Window, trigger, Window.ClientToScreen(trigger), MouseButton.Right, false, false, false, false, 1, ModifierKeys.None]);
-            }
+            RouteContextRightClick(trigger);
             await WaitForLikedLayoutAsync(() => context.IsOpen && context.Reveal == 1);
             if (context.Model.FindVisualRoot() is Window || !context.Buttons.SequenceEqual(contextRows) || context.Buttons[1].IsEffectivelyEnabled)
                 throw new InvalidOperationException("Right click opened the native fallback, rebuilt rows, or enabled a disabled command.");
+            RouteContextRightClick(new(profileButton.Bounds.X + 3, profileButton.Bounds.Y + 3));
+            if (context.IsOpen) throw new InvalidOperationException("Repeated right click on the same owner reopened its menu.");
+            await WaitForLikedLayoutAsync(() => !context.IsVisible);
+            RouteContextRightClick(trigger);
+            await WaitForLikedLayoutAsync(() => context.IsOpen && context.Reveal == 1);
+            PopupAppearance.Attach(queueButton, context);
+            RouteContextRightClick(new(queueButton.Bounds.X + 3, queueButton.Bounds.Y + 3));
+            await WaitForLikedLayoutAsync(() => context.IsOpen && context.PlacementTarget == queueButton && context.Reveal == 1);
+            context.Close(true); RouteContextRightClick(trigger);
+            await WaitForLikedLayoutAsync(() => context.IsOpen && context.Reveal == 1);
             RouteSettingsKey(Key.End);
             await WaitForLikedLayoutAsync(() => contextButton.IsFocused);
             RouteSettingsKey(Key.Enter);
             await WaitForLikedLayoutAsync(() => !context.IsOpen && contextExecutions == 2);
             Console.WriteLine("CONTEXT_MENU_INPUT_OK: native right click, reused rows, disabled-command skipping and keyboard Enter use the original command scope");
             await WaitForLikedLayoutAsync(() => !context.IsVisible);
+            await VerifyPopupReopenAsync(profileButton);
             foreach (var (button, state, name) in new[] {
                 (profileButton, profileOpen, "profile"), (queueButton, queueOpen, "queue") })
             {
@@ -286,6 +288,59 @@ internal sealed partial class MainWindow
         }
         finally { CloseShellMenus(true); Window.Close(); }
         static Point Center(FrameworkElement element) => new(element.Bounds.X + element.ActualWidth / 2, element.Bounds.Y + element.ActualHeight / 2);
+    }
+
+    private void RouteContextRightClick(Point point)
+    {
+        if (OperatingSystem.IsWindows())
+        { SendLikedActionMouse(0x204, 2, point); SendLikedActionMouse(0x205, 0, point); return; }
+        var router = typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter", true)!;
+        var mouse = router.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Single(method => method.Name == "MouseButton" && method.GetParameters().Length == 10);
+        mouse.Invoke(null, [Window, point, Window.ClientToScreen(point), MouseButton.Right, true, false, true, false, 1, ModifierKeys.None]);
+        mouse.Invoke(null, [Window, point, Window.ClientToScreen(point), MouseButton.Right, false, false, false, false, 1, ModifierKeys.None]);
+    }
+
+    private async Task VerifyPopupReopenAsync(Button trigger)
+    {
+        using var menu = PopupAppearance.CreateMenu();
+        for (var index = 0; index < 8; index++) menu.Item("Действие " + (index + 1));
+        var points = new[] { new Point(240, 180), new Point(310, 210), new Point(275, 195), new Point(800, 500), new Point(180, 260), new Point(330, 290) };
+        ChatPopupLayer? layer = null;
+        var intermediate = 0;
+        void Frame() { if (menu.Reveal is > .05 and < .95) intermediate++; }
+        Window.FrameRendered += Frame;
+        try
+        {
+            foreach (var point in points)
+            {
+                var painted = menu.Card.PopupBackdropPaintVersion;
+                menu.Show(trigger, point);
+                layer ??= (ChatPopupLayer)VisualTree.Find(menu, element => element is ChatPopupLayer)!;
+                if (menu.Reveal != 0 || layer.HasGlassBackdrop)
+                    throw new InvalidOperationException("Repositioned menu reused its reveal or old background before a new capture.");
+                var frames = intermediate;
+                await WaitForLikedLayoutAsync(() => menu.Reveal == 1 && layer.HasGlassBackdrop && menu.Card.PopupBackdropPaintVersion > painted);
+                if (intermediate - frames < 2 || layer.GlassCaptureBounds != layer.SurfaceBounds.Inflate(40, 40))
+                    throw new InvalidOperationException("Menu reopen skipped intermediate frames or retained a capture from another position.");
+            }
+            menu.Show(trigger, points[0]);
+            await WaitForLikedLayoutAsync(() => menu.Reveal is > .1 and < .8);
+            menu.Show(trigger, points[1]);
+            if (menu.Reveal != 0 || layer!.HasGlassBackdrop)
+                throw new InvalidOperationException("Rapid relocation retained an unfinished reveal or stale glass.");
+            await WaitForLikedLayoutAsync(() => menu.Reveal == 1 && layer.HasGlassBackdrop);
+            menu.Close();
+            await WaitForLikedLayoutAsync(() => menu.Reveal is > .1 and < .9);
+            var closing = menu.Reveal;
+            menu.Show(trigger, points[1]);
+            if (Math.Abs(menu.Reveal - closing) > .001)
+                throw new InvalidOperationException("Reversing a close at the same position snapped its animation.");
+            await WaitForLikedLayoutAsync(() => menu.Reveal == 1 && layer.HasGlassBackdrop);
+            CaptureUiPreview("menu-context-reopened", menu);
+            Console.WriteLine("POPUP_REOPEN_OK: repeated overlapping positions and rapid relocation restart entrance with fresh glass; native card painting follows capture versions; same-anchor close reversal stays continuous");
+        }
+        finally { Window.FrameRendered -= Frame; menu.Close(true); }
     }
     private void VerifyMenuSurfaceAlpha(AnimatedContextMenu menu)
     {

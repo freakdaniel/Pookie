@@ -38,6 +38,18 @@
         break;
       }
     }
+    if (st.cachedSegments && st.playlist) {
+      let start = 0, end = 0;
+      for (let index = 0; index < st.playlist.segments.length; index++) {
+        const segment = st.playlist.segments[index];
+        if (segment.start + segment.duration <= st.audio.currentTime) continue;
+        if (!st.cachedSegments.has(index)) break;
+        if (!end) start = segment.start;
+        end = segment.start + segment.duration;
+      }
+      if (end > bufferedEnd) bufferedStart = bufferedEnd > 0 ? Math.min(bufferedStart, start) : start;
+      bufferedEnd = Math.max(bufferedEnd, Math.min(st.duration, end));
+    }
     return {position: Math.max(0, st.audio.currentTime || 0), duration: st.duration || 0,
       buffered_start:bufferedStart, buffered_end:bufferedEnd,
       normalization_gain_db:st.gainDb,
@@ -63,6 +75,7 @@
     if (!st) return;
     if (current === st) current = null;
     clearInterval(st.timer); st.controller.abort(); st.audio.pause();
+    if (st.mediaStore) st.mediaStore.then(store => store && caches.delete(st.cacheName)).catch(() => {});
     st.audio.removeAttribute('src'); st.audio.load(); st.audio.remove();
     closeNormalization(st);
     if (st.objectUrl) URL.revokeObjectURL(st.objectUrl);
@@ -112,20 +125,43 @@
     } finally { URL.revokeObjectURL(url); }
   }
   async function bytes(url, limit, st) {
+    let delay = 250;
+    while (!st.controller.signal.aborted) {
+      try { return await requestBytes(url, limit, st); }
+      catch (error) {
+        if (st.controller.signal.aborted || error.message === 'playlist' || error.retryable === false) throw error;
+        await new Promise((resolve, reject) => {
+          const cleanup = () => { clearTimeout(timer); st.controller.signal.removeEventListener('abort', abort); window.removeEventListener('online', finish); };
+          const finish = () => { cleanup(); resolve(); };
+          const abort = () => { cleanup(); reject(new Error('closed')); };
+          const timer = setTimeout(finish, delay);
+          st.controller.signal.addEventListener('abort', abort, {once:true}); window.addEventListener('online', finish, {once:true});
+        });
+        delay = Math.min(4000, delay * 2);
+      }
+    }
+    throw new Error('closed');
+  }
+  async function requestBytes(url, limit, st) {
     if (st.controller.signal.aborted) throw new Error('closed');
     const timeout = new AbortController();
     const abort = () => timeout.abort();
     st.controller.signal.addEventListener('abort', abort, {once:true});
-    const timer = setTimeout(abort, 30000);
+    const timer = setTimeout(abort, 15000);
     try {
       const response = await fetch(mediaUrl(url), {signal:timeout.signal, redirect:'error', credentials:'omit'});
-      if (!response.ok || !response.body) throw new Error('network');
+      if (!response.ok) {
+        const error = new Error('network');
+        error.retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        throw error;
+      }
+      if (!response.body) throw new Error('network');
       const reader = response.body.getReader(), parts = []; let length = 0;
       try {
         while (true) {
           const item = await reader.read(); if (item.done) break;
           length += item.value.length;
-          if (length > limit) { await reader.cancel(); throw new Error('network'); }
+          if (length > limit) { await reader.cancel(); throw new Error('playlist'); }
           parts.push(item.value);
         }
       } finally { reader.releaseLock(); }
@@ -133,6 +169,45 @@
       for (const part of parts) { output.set(part, offset); offset += part.length; }
       return output;
     } finally { clearTimeout(timer); st.controller.signal.removeEventListener('abort', abort); }
+  }
+  async function cacheSegment(st, index) {
+    const store = await st.mediaStore;
+    if (!store || st.controller.signal.aborted) return;
+    const url = st.playlist.segments[index].url;
+    if (await store.match(url)) { st.cachedSegments.add(index); return; }
+    if (!st.segmentJobs.has(index)) {
+      const job = (async () => {
+        const data = await bytes(url, 16 * 1024 * 1024, st);
+        if (st.controller.signal.aborted) throw new Error('closed');
+        await store.put(url, new Response(data)); st.cachedSegments.add(index);
+      })();
+      st.segmentJobs.set(index, job);
+    }
+    try { await st.segmentJobs.get(index); }
+    finally { st.segmentJobs.delete(index); }
+  }
+  async function segmentBytes(st, index) {
+    const store = await st.mediaStore;
+    if (!store) return bytes(st.playlist.segments[index].url, 16 * 1024 * 1024, st);
+    try {
+      await cacheSegment(st, index);
+      const response = await store.match(st.playlist.segments[index].url);
+      if (!response) throw new Error('network');
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      if (st.controller.signal.aborted) throw error;
+      // Storage restrictions must not disable otherwise working playback.
+      if (error.name === 'QuotaExceededError' || error.name === 'SecurityError') return bytes(st.playlist.segments[index].url, 16 * 1024 * 1024, st);
+      throw error;
+    }
+  }
+  async function downloadTrack(st) {
+    // Store encrypted media, never CDM keys or decrypted audio. MSE retains a
+    // small playback window while this independent worker downloads to the end.
+    if (!await st.mediaStore) return;
+    for (let index = 0; index < st.playlist.segments.length && !st.controller.signal.aborted; index++) {
+      await cacheSegment(st, index);
+    }
   }
   function attributes(text) {
     const result = new Map();
@@ -273,10 +348,11 @@
       try { await (st.startPlay || st.audio.play()); } catch (error) { throw new Error(error.name === 'NotAllowedError' ? 'autoplay' : 'decode'); }
     }
     st.prepared = true; st.stage = 'ready'; st.resolveReady(); publish(st); pump(st);
+    downloadTrack(st).catch(() => { /* Foreground reads report an unavailable segment when it is actually needed. */ });
   }
   async function appendNext(st) {
     if (st.index >= st.playlist.segments.length || st.mediaSource.readyState !== 'open') return;
-    const data = await bytes(st.playlist.segments[st.index].url, 16 * 1024 * 1024, st);
+    const data = await segmentBytes(st, st.index);
     if (current !== st) return;
     await event(st.buffer, 'updateend', () => st.buffer.appendBuffer(data), st); st.index++;
     if (st.index === st.playlist.segments.length && st.mediaSource.readyState === 'open') st.mediaSource.endOfStream();
@@ -330,7 +406,10 @@
       if (c.action === 'start') {
         mediaUrl(c.source); stop(current);
         st = {id:c.playback_id, requestId:request.id, send, paused:c.paused, volume:c.volume, gainDb:c.normalization_gain_db ?? 0, duration:0, index:0,
-          controller:new AbortController(), operations:Promise.resolve(), error:null, stage:'manifest', seekRevision:0};
+          controller:new AbortController(), operations:Promise.resolve(), error:null, stage:'manifest', seekRevision:0, cachedSegments:new Set(), segmentJobs:new Map()};
+        st.cacheName = 'pookie-encrypted-audio-' + st.id;
+        st.mediaStore = window.caches ? caches.open(st.cacheName).catch(() => null) : Promise.resolve(null);
+        if (window.caches) caches.keys().then(names => { if (current !== st || st.controller.signal.aborted) return; return Promise.all(names.filter(name => name.startsWith('pookie-encrypted-audio-') && name !== current.cacheName).map(name => caches.delete(name))); }).catch(() => {});
         st.keys = new Promise((resolve, reject) => { st.resolveKeys = resolve; st.rejectKeys = reject; }); st.keys.catch(() => {});
         st.ready = new Promise((resolve, reject) => { st.resolveReady = resolve; st.rejectReady = reject; }); st.ready.catch(() => {});
         current = st;

@@ -68,15 +68,18 @@ internal sealed partial class MainWindow
         ((MaterialTrackButton)cancel).UseLightGlassFinish();
         embeddedLoginContent = new ContentControl().Width(900).Height(700);
         embeddedLoginDialog = new ModalDialog(embeddedLoginContent, cancel, cancel) { DismissRequested = CancelEmbeddedBrowser };
+        // Programmatic resizing can update layout before a native size event.
+        embeddedLoginDialog.SizeChanged += e => FitEmbeddedLogin(e.NewSize);
         ((MaterialTrackButton)cancel).UseOverlayBackdrop(embeddedLoginDialog, embeddedLoginDialog.RenderGlassBackdrop);
         return embeddedLoginDialog;
     }
 
-    private async Task<object> AuthorizeEmbeddedAsync(CancellationToken token, string? fixture = null, string? profilePath = null)
+    private async Task<object> AuthorizeEmbeddedAsync(CancellationToken token, string? fixture = null, string? profilePath = null,
+        TimeSpan? preparationTimeout = null)
     {
         token.ThrowIfCancellationRequested();
         var path = profilePath ?? BrowserProfile.DefaultPath();
-        var view = new EmbeddedLoginView(path, fixture);
+        var view = new EmbeddedLoginView(path, fixture) { PreparationTimeout = preparationTimeout ?? TimeSpan.FromSeconds(30) };
         var surface = new EmbeddedLoginSurface(view);
         embeddedLogin = view;
         embeddedLoginSurface = surface;

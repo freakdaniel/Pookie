@@ -101,6 +101,8 @@ internal sealed class MaterialTrackButton : Button
         RefreshShape(true);
     }
 
+    internal void Disconnect() { shapeClock.Stop(); connected = false; InvalidateVisual(); }
+
     private void RefreshShape(bool snap = false)
     {
         if (!connected) return;

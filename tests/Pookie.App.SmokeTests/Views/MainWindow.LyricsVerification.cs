@@ -39,6 +39,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Active lyric was not centered/highlighted.");
             if (lyricsRows.Count > 64) throw new InvalidOperationException("Lyrics materialized all 1000 rows instead of virtualizing them.");
             CaptureExpandedPanelPreview("lyrics-synced");
+            await VerifyLyricsFollowPixelAlignmentAsync();
             var restingGap = lyricsRows.Values.Single(view => view.Row?.Index == 3);
             if (LyricsWaveDots.Diameter <= 10 || restingGap.Dots.WaveAmount != 0 ||
                 Enumerable.Range(0, 3).Any(index => restingGap.Dots.VerticalOffset(index) != 0) ||
@@ -217,6 +218,43 @@ internal sealed partial class MainWindow
         }
         audio.State = audio.State with { Position = 15 }; Poll();
         Console.WriteLine("LYRICS_SEEK_OK: forward/backward/zero slider drags while playing and paused, preview, one commit and subsequent lyric timing");
+    }
+
+    private async Task VerifyLyricsFollowPixelAlignmentAsync()
+    {
+        var scroll = smoothScrolls[lyricsScroll];
+        var height = lyricsScroll.Height;
+        var scale = Window.DpiScale;
+        // At this viewport height the 40% anchor falls between device pixels.
+        var testHeight = (Math.Floor(lyricsScroll.ActualHeight * scale / 5) * 5 - 1) / scale;
+        try
+        {
+            lyricsScroll.Height = testHeight;
+            await WaitForLikedLayoutAsync(() => Math.Abs(lyricsScroll.ActualHeight - testHeight) < .1 / scale && !scroll.IsRunning);
+            var offset = LayoutRounding.RoundToPixel(lyricsScroll.VerticalOffset, scale);
+            var before = await SampleTargetAsync(offset - .49 / scale);
+            var after = await SampleTargetAsync(offset + .49 / scale);
+            if (before == null || before != after)
+                throw new InvalidOperationException($"Lyric follow retargeted while the rendered row was stationary: {before} → {after}.");
+        }
+        finally
+        {
+            lyricsScroll.Height = height;
+            scroll.Stop();
+            ResumeLyricsFollowing();
+        }
+
+        async Task<double?> SampleTargetAsync(double offset)
+        {
+            scroll.Stop();
+            lyricsScroll.SetScrollOffsets(0, offset);
+            lyricsFollowTarget = null;
+            double? target = null;
+            void Sample() => target ??= lyricsFollowTarget;
+            Window.FrameRendered += Sample;
+            try { await WaitForLoginFrameAsync(); return target; }
+            finally { Window.FrameRendered -= Sample; }
+        }
     }
 
     private async Task VerifyLyricsLoadingFadeAsync(string preview)

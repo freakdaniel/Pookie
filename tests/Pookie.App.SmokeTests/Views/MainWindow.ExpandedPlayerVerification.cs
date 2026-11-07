@@ -113,17 +113,17 @@ internal sealed partial class MainWindow
             if (shareTarget?.Track?.Id != current?.Id || !expandedHost.IsVisible)
                 throw new InvalidOperationException("Expanded player Share lost the playing track or dismissed expanded playback.");
             CloseShare(true);
-            Console.WriteLine("PLAYER_SHARE_UI_OK: real buttons beside repost open the current track in normal and expanded players");
+            Console.WriteLine("PLAYER_SHARE_UI_OK: normal and expanded player buttons open sharing for the current track");
             await VerifyExpandedGlassAsync();
+            await VerifyPausedExpandedReentryAsync();
             if (expandedGlassUiSmoke)
             {
-                await VerifyPausedExpandedReentryAsync();
+                await VerifyExpandedCoverHeaderAsync();
                 SetExpandedPlayer(false);
                 await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible && Window.WindowState == previous);
                 Console.WriteLine("EXPANDED_GLASS_UI_OK: in-window player, blurred artwork pixels, connected feedback shapes, live shuffle click, pointer focus, artwork replacement, hover reveal and repeated paused reentry");
                 return;
             }
-            await VerifyPausedExpandedReentryAsync();
             frames.Clear();
             ToggleExpandedPanel(PlayerPanel.Queue);
             await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && expandedQueue.ActualHeight > 100);
@@ -339,6 +339,51 @@ internal sealed partial class MainWindow
         RouteWaveformPointer(point);
     }
 
+    private async Task VerifyExpandedCoverHeaderAsync()
+    {
+        var previousSize = Window.WindowSize;
+        var previousState = Window.WindowState;
+        MoveActionPointer(new Point(1, 1));
+        await Task.Delay(350, lifetime.Token);
+        var overlapped = false;
+        void Sample() => overlapped |= expandedVolume.Bounds.Right > expandedShareButton.Bounds.X;
+        Window.FrameRendered += Sample;
+        try
+        {
+            Window.WindowState = WindowState.Normal;
+            SetExpandedVolumeOpen(true);
+            var wide = await SampleWidthAsync(1440, 900);
+            var narrow = await SampleWidthAsync(1000, 680);
+            var restored = await SampleWidthAsync(1440, 900);
+            if (wide - narrow < 20 || Math.Abs(restored - wide) > 1 || overlapped)
+                throw new InvalidOperationException($"Cover volume did not resize beside Share: widths {wide}, {narrow}, {restored}, overlap={overlapped}.");
+        }
+        finally
+        {
+            Window.FrameRendered -= Sample;
+            SetExpandedVolumeOpen(false);
+            Window.WindowSize = previousSize;
+            Window.WindowState = previousState;
+        }
+        await WaitForLoginFrameAsync();
+        Console.WriteLine("EXPANDED_HEADER_UI_OK: centered Share and adaptive volume without overlap during resize");
+
+        async Task<double> SampleWidthAsync(double width, double height)
+        {
+            Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
+            await WaitForLoginFrameAsync();
+            var pixel = 1 / Window.DpiScale;
+            await WaitForLikedLayoutAsync(() => Math.Abs(expandedHost.ActualWidth - width) <= pixel &&
+                !expandedCover.IsArrangeDirty && Math.Abs(expandedVolume.ActualWidth - expandedVolume.MaxWidth) <= pixel && expandedVolumeSlider.Opacity > .99);
+            var share = expandedShareButton.Bounds;
+            if (Math.Abs(SettingsCenter(expandedShareButton).X - SettingsCenter(expandedCover).X) > pixel ||
+                Math.Abs(share.Y - expandedVolume.Bounds.Y) > pixel || expandedVolumeSlider.ActualWidth <= 0 ||
+                expandedVolumeSlider.Bounds.Right > expandedVolume.Bounds.Right)
+                throw new InvalidOperationException("Cover header did not center Share or fit the volume slider.");
+            return expandedVolume.ActualWidth;
+        }
+    }
+
     private async Task VerifyExpandedVolumeAsync()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -355,14 +400,15 @@ internal sealed partial class MainWindow
         Window.Activate();
         try
         {
+            var openWidth = expandedVolume.MaxWidth;
             var coverPoint = new Point(expandedCover.Bounds.X + expandedCover.Bounds.Width / 2,
                 expandedCover.Bounds.Y + expandedCover.Bounds.Height / 2);
             MoveLikedActionCursor(coverPoint); SendLikedActionMouse(0x200, 0, coverPoint);
             await WaitForExpandedPointerAsync(coverPoint, () => expandedCover.IsMouseOver && (expandedVolume.Parent as UIElement)?.Opacity > .99);
             var icon = new Point(expandedVolume.Bounds.X + 19, expandedVolume.Bounds.Y + 19);
             MoveLikedActionCursor(icon); SendLikedActionMouse(0x200, 0, icon);
-            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == 160 && expandedVolume.ActualWidth > 159 && expandedVolumeSlider.Opacity > .99);
-            if (widths.Count(width => width is > 38 and < 160) < 3 ||
+            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == openWidth && expandedVolume.ActualWidth > openWidth - 1 && expandedVolumeSlider.Opacity > .99);
+            if (widths.Count(width => width > CoverHeaderButtonSize && width < openWidth - 1) < 3 ||
                 expandedVolume.Bounds.X < expandedCover.Bounds.X || expandedVolume.Bounds.Y < expandedCover.Bounds.Y)
                 throw new InvalidOperationException("Volume did not unfold on the cover's top left with rendered intermediate frames.");
             var previous = volume.Value;
@@ -380,14 +426,14 @@ internal sealed partial class MainWindow
             var outside = new Point(1, 1);
             MoveLikedActionCursor(outside); SendLikedActionMouse(0x200, 0, outside);
             await WaitForLikedLayoutAsync(() => !expandedVolume.IsMouseOver);
-            if (expandedVolume.Width != 160 || !expandedVolumeSlider.IsEnabled)
+            if (expandedVolume.Width != openWidth || !expandedVolumeSlider.IsEnabled)
                 throw new InvalidOperationException("Volume collapsed before the hover debounce elapsed.");
             MoveLikedActionCursor(icon); SendLikedActionMouse(0x200, 0, icon);
-            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == 160 && expandedVolume.ActualWidth > 159);
+            await WaitForExpandedPointerAsync(icon, () => expandedVolume.IsMouseOver && expandedVolume.Width == openWidth && expandedVolume.ActualWidth > openWidth - 1);
             widths.Clear();
             MoveLikedActionCursor(outside); SendLikedActionMouse(0x200, 0, outside);
             await WaitForLikedLayoutAsync(() => Math.Abs(expandedVolume.ActualWidth - 38) <= 1 / Window.DpiScale && expandedVolumeSlider.Opacity == 0);
-            if (widths.Count(width => width is > 38 and < 160) < 3 || expandedVolumeSlider.IsEnabled)
+            if (widths.Count(width => width > CoverHeaderButtonSize && width < openWidth - 1) < 3 || expandedVolumeSlider.IsEnabled)
                 throw new InvalidOperationException("Volume did not fold smoothly or left a hidden slider enabled.");
         }
         finally

@@ -25,7 +25,7 @@ internal static class PopupAppearance
         {
             if (e.Handled || e.Button != MouseButton.Right) return;
             e.Handled = true;
-            if (owner.FindVisualRoot() is Window window) menu.Show(owner, e.GetPosition(window));
+            if (owner.FindVisualRoot() is Window window) menu.Toggle(owner, e.GetPosition(window));
         };
         owner.KeyDown += e =>
         {

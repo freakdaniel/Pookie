@@ -27,11 +27,7 @@ internal sealed partial class EmbeddedLoginView
     {
         frozen = active = false; preparing = true; preparationBounds = bounds;
         UpdateBounds();
-        while (!stopped)
-        {
-            await PresentFrameAsync(window, token);
-            if (await CaptureAsync(window, token)) break;
-        }
+        await CapturePreviewAsync(window, token);
         token.ThrowIfCancellationRequested();
         if (stopped) throw new OperationCanceledException("Браузер проверки закрыт.");
         preparing = false; browser?.SetVisible(false);

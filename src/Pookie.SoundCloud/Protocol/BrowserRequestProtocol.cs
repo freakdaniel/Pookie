@@ -102,9 +102,20 @@ public sealed record BrowserAudioState(double Position, double Duration, bool Pl
         MediaError is >= 0 and <= 4 && ReadyState is >= 0 and <= 4 && NetworkState is >= 0 and <= 3;
 }
 
+// Diagnostic metadata is deliberately finite: no URL, header, body, cookie or exception text.
+public sealed record BrowserRequestTrace(string Stage, string Method, int FetchNumber, int Attempt,
+    int Generation, bool ChallengeActive, bool HasProtection, string Reason = "none")
+{
+    public bool IsValid() => Stage is "wait-ready" or "wait-check" or "send" or "response" or "retry" or "fetch-error" &&
+        Method is "GET" or "POST" or "PUT" or "DELETE" or "PATCH" &&
+        FetchNumber is > 0 and <= 1000000 && Attempt is >= 0 and <= 2 && Generation is >= 0 and <= 1000000 &&
+        Reason is "none" or "challenge-response" or "challenge-fetch-error";
+}
+
 public sealed record BrowserRequestEvent(string Kind, string RequestId = "", int Status = 0, bool Interactive = false,
     SoundCloudUser? User = null, string? ChallengeType = null, long[]? Ids = null, string? DataDomeClientId = null, string? Chunk = null, int ChunkIndex = 0, BrowserAudioState? Audio = null)
 {
+    public BrowserRequestTrace? Trace { get; init; }
     [JsonIgnore] public string? Json { get; init; }
     public WebSession? Session { get; init; }
     public override string ToString() => $"Browser event ({Kind}, HTTP {Status}; session redacted)";
@@ -131,14 +142,17 @@ public static class BrowserRequestProtocol
             if (message.ChallengeType != null && message.ChallengeType is not ("device_check" or "device_check_invisible_mode" or "block" or "hard_block" or "unknown")) return null;
             if (message.Kind == "protection-session" && !WebSession.IsDataDomeClientId(message.DataDomeClientId)) return null;
             if (message.Kind != "protection-session" && message.DataDomeClientId != null) return null;
+            if (message.Kind == "pass-ignored" && message.ChallengeType != "hard_block") return null;
             if (message.Kind == "blocked" && (message.ChallengeType != "hard_block" || !message.Interactive)) return null;
             if (message.Kind is "complete" or "ids" or "json-chunk" or "audio-state" && !Guid.TryParseExact(message.RequestId, "N", out _)) return null;
+            if (message.Kind == "request-trace" && (!Guid.TryParseExact(message.RequestId, "N", out _) || message.Trace?.IsValid() != true)) return null;
+            if (message.Kind != "request-trace" && message.Trace != null) return null;
             if (message.Audio != null && (message.Kind is not ("audio-state" or "complete") || !message.Audio.IsValid())) return null;
             if (message.Kind == "audio-state" && message.Audio == null) return null;
             if (message.Kind == "json-chunk" && (message.Chunk is not { Length: > 0 and <= 1024 } || message.ChunkIndex is < 0 or >= 4096)) return null;
             if (message.Kind != "json-chunk" && message.Chunk != null) return null;
             if (message.Ids is { } ids && (ids.Length > 200 || ids.Any(id => id is <= 0 or > 9007199254740991))) return null;
-            return message.Kind is "ready" or "complete" or "ids" or "json-chunk" or "audio-state" or "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" ? message : null;
+            return message.Kind is "ready" or "complete" or "ids" or "json-chunk" or "audio-state" or "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "request-trace" or "pass-ignored" ? message : null;
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or FormatException) { return null; }
     }

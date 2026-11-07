@@ -19,6 +19,7 @@ internal sealed partial class MainWindow
     private TextBlock loginButtonLabel = null!;
     private LoadingSpinner loginSpinner = null!;
     private PathShape loginButtonGlyph = null!;
+    private TextBlock loginError = null!;
     private LoginButtonState loginButtonState;
     private static readonly Color LoginOrange = Color.FromRgb(255, 85, 0);
     private static readonly Color LoginPaper = Color.FromRgb(239, 239, 239);
@@ -55,6 +56,8 @@ internal sealed partial class MainWindow
         loginBrand = new StackPanel().Horizontal().Spacing(16).CenterHorizontal().Children(
             Icons.LogoMark(58, 56).Fill(LoginPaper).CenterVertical(),
             new TextBlock().Text("Pookie").FontFamily(brandFontFamily).FontSize(44).Foreground(LoginPaper).CenterVertical());
+        loginError = new TextBlock().FontSize(13).Foreground(Color.FromRgb(255, 177, 193))
+            .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap).IsVisible(false);
         loginContent = new StackPanel().Vertical().Spacing(36).Width(400).CenterHorizontal().CenterVertical().Children(
             loginBrand,
             new StackPanel().Vertical().Spacing(14).Children(
@@ -63,7 +66,7 @@ internal sealed partial class MainWindow
                 new TextBlock().Text("Для использования Pookie необходима учётная запись SoundCloud. Выполните вход с помощью кнопки ниже")
                     .FontSize(15).Foreground(Color.FromRgb(195, 195, 195))
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap)),
-            loginButton.CenterHorizontal());
+            new StackPanel().Vertical().Spacing(14).Children(loginButton.CenterHorizontal(), loginError));
         var composition = new Grid().Columns("*").Rows("*").Children(loginContent);
         loginScreen = new Border().Background(Surface).ClipToBounds().Child(composition);
         loginScreen.IsVisible = false;
@@ -160,8 +163,15 @@ internal sealed partial class MainWindow
     {
         if (disposed || loginBusy.Value || signedIn.Value) return;
         loginBusy.Value = true;
+        loginError.Text = ""; loginError.IsVisible = false;
         SetLoginButtonState(LoginButtonState.Waiting);
         try { await connect(); }
+        catch (Exception error)
+        {
+            if (!disposed && !signedIn.Value && error is not OperationCanceledException)
+            { loginError.Text = FriendlyError(error); loginError.IsVisible = true; }
+            throw;
+        }
         finally
         {
             if (!disposed && !signedIn.Value) SetLoginButtonState(LoginButtonState.Idle);

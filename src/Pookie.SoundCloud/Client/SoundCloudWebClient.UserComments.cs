@@ -2,9 +2,6 @@ using System.Text.Json;
 
 namespace Pookie.SoundCloud;
 
-public sealed record UserComment(SoundCloudComment Comment, SoundCloudTrack? Track);
-public sealed record UserCommentPage(UserComment[] Comments, string? NextHref);
-
 public sealed partial class SoundCloudWebClient
 {
     public async Task<UserCommentPage> GetUserCommentsAsync(long userId, string? cursor = null, CancellationToken token = default)

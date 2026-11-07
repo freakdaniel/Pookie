@@ -2,11 +2,11 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const querySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/TrackReadRequest.cs'), 'utf8');
+const querySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/Requests/TrackReadRequest.cs'), 'utf8');
 let script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
 for (const name of ['Comments', 'Replies', 'Sidebar'])
   script = script.replace(`__POOKIE_TRACK_${name.toUpperCase()}__`, JSON.stringify(querySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
-const commentQuerySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/CommentWriteRequest.cs'), 'utf8');
+const commentQuerySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/Requests/CommentWriteRequest.cs'), 'utf8');
 for (const name of ['Create', 'Delete'])
   script = script.replace(`__POOKIE_COMMENT_${name.toUpperCase()}__`, JSON.stringify(commentQuerySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -347,6 +347,7 @@ test('hard block fails the write promptly, ignores a later pass, and prevents fu
   h.window.__pookieRequest(command(2));await tick();
   assert.equal(h.calls.length,1);assert.equal(h.messages.at(-1).status,403);
   assert.equal(h.messages.some(m=>m.kind==='passed' || m.kind==='challenge-error'),false);
+  assert.equal(h.messages.filter(m=>m.kind==='pass-ignored'&&m.challenge_type==='hard_block').length,1);
 });
 
 test('hard block before readiness rejects queued commands without an API request', async () => {
@@ -375,7 +376,7 @@ test('403 device check pauses action, then retries exactly once after pass', asy
   let count=0;
   const h=harness(async()=>{if(++count===1){h.emit('dd_blocked','device_check'); return response(403);} return response(200);});
   h.window.__pookieRequest(command(1)); await tick();
-  assert.equal(count,1); assert.equal(h.messages.at(-1).kind,'checking'); assert.equal(h.messages.at(-1).interactive,false);
+  assert.equal(count,1); assert.equal(h.messages.findLast(m=>m.kind==='checking').interactive,false);
   h.emit('dd_response_passed'); await tick();
   assert.equal(count,2); assert.equal(h.messages.at(-1).status,200);
 });
@@ -384,7 +385,7 @@ test('fetch aborted by an interactive challenge waits; pending commands preserve
   let count=0;
   const h=harness(async()=>{if(++count===1){h.emit('dd_blocked','block'); throw Error('secret-url');} return response(204);});
   h.window.__pookieRequest(command(1)); h.window.__pookieRequest(command(2,'like',false)); await tick();
-  assert.equal(count,1); assert.equal(h.messages.at(-1).interactive,true);
+  assert.equal(count,1); assert.equal(h.messages.findLast(m=>m.kind==='checking').interactive,true);
   h.emit('dd_response_passed'); await tick();
   assert.deepEqual(h.calls.map(c=>c[1].method),['PUT','PUT','DELETE']);
   assert.equal(JSON.stringify(h.messages).includes('secret-url'),false);
@@ -853,4 +854,37 @@ test('user profile reads allow metadata, urn web links and scoped music/social c
     h.window.__pookieRequest(apiRead(2100+i,path)); await tick();
   }
   assert.equal(h.calls.length,paths.length);
+});
+
+
+test('diagnostics distinguish a post-pass 403 from the initial check and never contain private request data', async () => {
+  let count=0;
+  const h=harness(async()=>{
+    if(++count===1)h.emit('dd_response_displayed','block');
+    return response(403,{secret:'private-response-body'});
+  });
+  const cmd=command(101);
+  h.window.__pookieRequest(cmd); await tick();
+  h.emit('dd_response_passed','block'); await tick();
+  const events=h.messages.filter(m=>m.kind==='request-trace');
+  assert.deepEqual(events.map(m=>[m.trace.stage,m.trace.attempt,m.status,m.trace.generation]),[
+    ['send',1,0,0],['response',1,403,0],['retry',1,403,0],['send',2,0,1],['response',2,403,1]
+  ]);
+  assert.ok(events.every(m=>m.request_id===cmd.id&&m.trace.method==='PUT'&&m.trace.fetch_number===1));
+  assert.equal(events[1].trace.challenge_active,true);
+  assert.equal(events[3].trace.challenge_active,false);
+  assert.equal(events[3].trace.has_protection,true);
+  assert.equal(h.messages.at(-1).status,403);
+  const journal=JSON.stringify(events);
+  for(const secret of ['secret-token','own-browser-session','private-response-body','https://','Authorization'])
+    assert.equal(journal.includes(secret),false);
+});
+
+test('ordinary 403 has a response trace and no challenge retry', async () => {
+  const h=harness(()=>response(403));
+  h.window.__pookieRequest(command(102)); await tick();
+  const events=h.messages.filter(m=>m.kind==='request-trace');
+  assert.deepEqual(events.map(m=>m.trace.stage),['send','response']);
+  assert.equal(events[1].trace.generation,0);
+  assert.equal(events[1].trace.challenge_active,false);
 });

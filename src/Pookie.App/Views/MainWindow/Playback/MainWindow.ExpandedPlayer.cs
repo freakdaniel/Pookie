@@ -8,6 +8,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private enum PlayerPanel { None, Lyrics, Queue }
+    private const double CoverHeaderButtonSize = 38, CoverHeaderInset = 14, CoverHeaderGap = 8, ExpandedVolumeMaxWidth = 160;
     private readonly PlayerBackdrop expandedBackdrop = new();
     private readonly AnimationClock expandedAnimation = new(TimeSpan.FromMilliseconds(380), Easing.CubicBezier(.16, 1, .3, 1));
     private readonly AnimationClock panelAnimation = new(TimeSpan.FromMilliseconds(460), PanelSpring);
@@ -70,7 +71,7 @@ internal sealed partial class MainWindow
         ((ExpandedGlassButton)like).Connect(true);
         ((ExpandedGlassButton)repost).Connect(false, TrackButtons.RepostedSurface);
         var share = expandedShareButton = ExpandedActionButton(Icons.View("arrow-square-out", 22, Color.White),
-            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }, 38);
+            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }, CoverHeaderButtonSize);
         var shuffleControl = ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle);
         var repeatControl = ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive);
         var playbackTint = Color.FromRgb(28, 76, 76);
@@ -79,15 +80,17 @@ internal sealed partial class MainWindow
         transport.Children(
             new Border().Background(Color.FromArgb(100, 0, 0, 0)).IsHitTestVisible(false),
             coverControls,
-            ExpandedVolumeControl().Left().Top().Margin(14),
-            ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), 38, expandedQueueActive)
-                .Right().Top().Margin(14),
+            ExpandedVolumeControl().Left().Top().Margin(CoverHeaderInset),
+            share.CenterHorizontal().Top().Margin(0, CoverHeaderInset),
+            ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), CoverHeaderButtonSize, expandedQueueActive)
+                .Right().Top().Margin(CoverHeaderInset),
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
-                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost, share)));
+                new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost)));
         expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
+        expandedCover.SizeChanged += args => FitExpandedVolume(args.NewSize.Width);
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>
             { transport.IsHitTestVisible = visible; transport.Opacity = visible ? 1 : 0; },
             () => expandedVolumeSlider.IsMouseCaptured));
@@ -177,25 +180,32 @@ internal sealed partial class MainWindow
 
     private ExpandedGlassSurface ExpandedVolumeControl()
     {
-        expandedVolumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(100).CenterVertical();
+        expandedVolumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).CenterVertical();
         expandedVolumeSlider.Opacity = 0;
         expandedVolumeSlider.IsEnabled = false;
         expandedVolumeSlider.Transitions = [.. expandedVolumeSlider.Transitions ?? [],
             Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(.2, 0, 0, 1))];
-        expandedVolume = new ExpandedGlassSurface(expandedGlassBackdrop).Background(Color.Transparent).BorderThickness(0).CornerRadius(19)
-            .Width(38).Height(38).Content(new Grid().Columns("38,*").Rows("*").Children(
+        expandedVolume = new ExpandedGlassSurface(expandedGlassBackdrop).Background(Color.Transparent).BorderThickness(0).CornerRadius(CoverHeaderButtonSize / 2)
+            .Width(CoverHeaderButtonSize).Height(CoverHeaderButtonSize).Content(new Grid().Columns("38,*").Rows("*").Children(
                 ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                     Icons.View("speaker-high", 20, Color.White).Center().BindIsVisible(muted, value => !value),
-                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, 38, paintSurface: false).Column(0),
+                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, CoverHeaderButtonSize, paintSurface: false).Column(0),
                 expandedVolumeSlider.Margin(8, 0, 14, 0).Column(1)));
         expandedVolume.Transitions = [Transition.Create(FrameworkElement.WidthProperty, 250, Easing.CubicBezier(.2, 0, 0, 1))];
         hoverReveals.Add(new HoverReveal(expandedVolume, SetExpandedVolumeOpen, () => expandedVolumeSlider.IsMouseCaptured));
         return expandedVolume;
     }
 
+    private void FitExpandedVolume(double coverWidth)
+    {
+        var spaceBeforeShare = (coverWidth - CoverHeaderButtonSize) / 2 - CoverHeaderInset - CoverHeaderGap;
+        expandedVolume.MaxWidth = Math.Clamp(spaceBeforeShare, CoverHeaderButtonSize, ExpandedVolumeMaxWidth);
+        if (expandedVolumeSlider.IsEnabled) expandedVolume.Width = expandedVolume.MaxWidth;
+    }
+
     private void SetExpandedVolumeOpen(bool open)
     {
-        expandedVolume.Width = open ? 160 : 38;
+        expandedVolume.Width = open ? expandedVolume.MaxWidth : CoverHeaderButtonSize;
         expandedVolumeSlider.Opacity = open ? 1 : 0;
         expandedVolumeSlider.IsEnabled = open;
     }

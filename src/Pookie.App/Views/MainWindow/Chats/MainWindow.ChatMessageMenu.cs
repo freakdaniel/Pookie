@@ -53,9 +53,11 @@ internal sealed partial class MainWindow
         });
         return chatMessageMenu;
     }
-    private void OpenChatMessageMenu(ChatBubbleRow row, Point point)
+    private void OpenChatMessageMenu(ChatBubbleRow row, Point point, bool toggle = false)
     {
         if (row.Message is not { } message || !row.Bound || chatRecipient == null || chatFavoritesOpen) return;
+        if (toggle && chatMessageMenu.IsOpen && CurrentChatMenu(chatMenuContext) && chatMenuContext!.Message.Id == message.Id)
+        { CloseChatMessageMenu(); return; }
         CloseChatGifs(); CloseChatAttachMenu(); CloseShellMenus();
         var copy = row.Body.SelectedText ?? (row.Body.Text.Length > 0 ? row.Body.Text : null);
         chatMenuContext = new(message, chatAccountId, chatRecipient.Id, point, copy);

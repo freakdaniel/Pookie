@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
+using Pookie.Logging;
 
 namespace Pookie.App.Browser;
 
@@ -18,6 +19,7 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
     internal event Action<BrowserRequestEvent>? Changed;
     internal EmbeddedLoginView View => view ?? throw new InvalidOperationException("Браузер ещё не открыт.");
     internal Task Challenge => challenge.Task;
+    internal string DiagnosticInstance { get; private set; } = "uninitialized";
 
     internal Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token) => OnUiAsync(async () =>
     {
@@ -25,6 +27,8 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
         await resetting;
         if (view == null)
         {
+            DiagnosticInstance = Guid.NewGuid().ToString("N");
+            AppLog.For("Pookie.Browser.Protection").Debug("browser_instance={BrowserInstance} stage=created request={RequestId}", DiagnosticInstance, command.Id);
             view = new(profilePath ?? BrowserProfile.DefaultPath(), fixture, account);
             view.Changed += Observe;
             initializing = view.PrepareWorkerAsync(window, token);
@@ -54,6 +58,7 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
         var previousChallenge = challenge;
         if (previous != null)
         {
+            AppLog.For("Pookie.Browser.Protection").Debug("browser_instance={BrowserInstance} stage=reset", DiagnosticInstance);
             resetting = previous.StopAsync();
             previous.Changed -= Observe;
             if (previous.FindVisualRoot() == null) previous.Dispose();

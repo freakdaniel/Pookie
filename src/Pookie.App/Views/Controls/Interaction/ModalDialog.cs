@@ -163,7 +163,7 @@ internal sealed class ModalDialog : Panel
                 live.Opacity = 0;
                 InvalidateVisual();
             }
-            if (IsOpen && !IsFocusWithin) KeyboardFocusFeedback.Restore(initialFocus, triggerKeyboard);
+            if (IsOpen && !IsFocusWithin && !InAppPopup.HasFocusFor(this)) KeyboardFocusFeedback.Restore(initialFocus, triggerKeyboard);
         }
         finally { preparing = false; }
     }

@@ -24,7 +24,6 @@ SPDX-FileCopyrightText = ["2023 Richard Habitzreuter", "2026 Daniel Freak"]
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie is distributed under BSD-3-Clause; the original MIT attribution and permission notice are retained in licenses/MIT.txt."
 
-# REUSE applies matching annotations in order; keep this after the JSON defaults.
 [[annotations]]
 path = "src/Pookie.App/Assets/Emoji/catalog.json"
 precedence = "override"
@@ -55,6 +54,18 @@ the filled dislike variant is assets/fill/thumbs-down-fill.svg.
 Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
 Profile badges also use upstream fill assets seal-fill.svg and crown-simple-fill.svg.
 Full terms and attribution: licenses/MIT.txt.
+"""
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Icons/SimpleIcons/*.svg"
+precedence = "override"
+SPDX-FileCopyrightText = "Simple Icons contributors"
+SPDX-License-Identifier = "CC0-1.0"
+SPDX-FileComment = """
+Telegram, VK and X icons from Simple Icons 16.0.0:
+https://github.com/simple-icons/simple-icons/tree/16.0.0
+Only fill="currentColor" was added for application tinting.
+Full license and upstream provenance: licenses/CC0-1.0.txt.
 """
 
 [[annotations]]

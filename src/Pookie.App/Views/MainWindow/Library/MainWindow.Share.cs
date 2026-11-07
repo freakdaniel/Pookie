@@ -1,4 +1,3 @@
-using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -11,11 +10,15 @@ internal sealed partial class MainWindow
     private PlaylistDialogContent shareContent = null!;
     private PaletteGlassCard sharePreview = null!;
     private Image shareCover = null!;
-    private TextBlock shareTitle = null!, shareAuthor = null!, shareMessage = null!, shareCopyLabel = null!;
-    private TextBox shareLink = null!, shareTime = null!;
-    private CheckBox shareAt = null!;
-    private FrameworkElement shareTimeRow = null!;
+    private TextBlock shareTitle = null!, shareAuthor = null!, shareMessage = null!;
+    private TextBlock shareTrackDuration = null!, shareTrackPlays = null!;
+    private StackPanel shareTrackStats = null!;
+    private TextBox shareLink = null!;
+    private Image shareCopyIcon = null!;
     private Button shareCopy = null!;
+    private StackPanel shareForm = null!;
+    private FrameworkElement shareLinksPanel = null!, shareComposePanel = null!, shareEmbedPanel = null!;
+    private readonly ObservableValue<int> shareTab = new(0);
     private Button playerShareButton = null!, expandedShareButton = null!;
     private readonly List<Button> shareDestinations = [];
     private LibraryItem? shareTarget;
@@ -34,37 +37,36 @@ internal sealed partial class MainWindow
         shareTitle = new TextBlock().FontSize(15).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         shareAuthor = new TextBlock().FontSize(13).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         shareCover = new Image().Width(56).Height(56).StretchMode(Stretch.UniformToFill);
-        sharePreview = new PaletteGlassCard { HoverEnabled = false }.CornerRadius(20).Padding(14).Height(84);
-        sharePreview.Child(new Grid().Columns("56,*").Rows("*").Spacing(14).Children(
-            new Border().CornerRadius(10).ClipToBounds().Child(ArtworkLayer(shareCover)),
-            new StackPanel().Vertical().Spacing(5).CenterVertical().Column(1).Children(shareTitle, shareAuthor)));
+        shareTrackDuration = new TextBlock().FontSize(13).Foreground(Muted).Right();
+        shareTrackPlays = new TextBlock().FontSize(12).Foreground(Muted).Right();
+        shareTrackStats = new StackPanel().Vertical().Spacing(5).Children(shareTrackDuration, shareTrackPlays);
+        sharePreview = TrackDialogChrome.Preview(ArtworkLayer(shareCover), shareTitle, shareAuthor, shareTrackStats);
         shareLink = new TextBox { IsReadOnly = true }.FontSize(13).Background(Color.Transparent).BorderThickness(0).Padding(0).Height(26);
-        shareCopyLabel = new TextBlock().Text("Скопировать").FontSize(13).SemiBold();
-        shareCopy = TrackButtons.Action(shareCopyLabel, CopyShareLink, TrackButtons.Glass, 44);
-        ((MaterialTrackButton)shareCopy).UseLightGlassFinish();
-        shareAt = new CheckBox().Content("Начать с").FontSize(13).CenterVertical();
-        shareTime = new TextBox().Text("0:00").MaxLength(12).FontSize(13).Width(92).Height(36).Padding(10, 6);
-        shareTime.IsEnabled = false;
-        shareTime.OnTextChanged(_ => RefreshShareLink());
-        shareAt.CheckedChanged += value => { shareTime.IsEnabled = value == true; RefreshShareLink(); };
-        shareTimeRow = new StackPanel().Horizontal().Spacing(12).Children(shareAt, shareTime);
-        shareMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Height(36);
-        var destinations = new Grid().Columns("*,*,*").Rows("44").Spacing(8);
-        foreach (var (label, service) in new[] { ("Telegram", "telegram"), ("ВКонтакте", "vk"), ("X", "x") })
+        shareCopyIcon = Icons.View("copy", 20);
+        shareCopy = TrackButtons.Icon(shareCopyIcon, CopyShareLink, TrackButtons.Tonal, 48).Hint("Скопировать ссылку");
+        var actions = TrackButtons.Connected(ShareTimeButton(), shareCopy);
+        shareMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
+        var destinations = new Grid().Columns("*,*,*,*").Rows("48").Spacing(8);
+        foreach (var (label, service, icon) in new[] { ("Telegram", "telegram", "SimpleIcons.social-telegram"), ("ВКонтакте", "vk", "SimpleIcons.social-vk"), ("X", "x", "SimpleIcons.social-x"), ("Почта", "email", "envelope") })
         {
-            var button = TrackButtons.Action(new TextBlock().Text(label).FontSize(13).SemiBold(), () => OpenShareDestination(service), TrackButtons.Tonal, 44);
+            var button = TrackButtons.Action(new StackPanel().Horizontal().Spacing(7).Center().Children(Icons.View(icon, 17),
+                new TextBlock().Text(label).FontSize(12).SemiBold()), () => OpenShareDestination(service), TrackButtons.Tonal, 48).Padding(4, 0).CornerRadius(14);
             destinations.Add(button.Column(shareDestinations.Count)); shareDestinations.Add(button);
         }
-        var open = TrackButtons.Action(new TextBlock().Text("Открыть в SoundCloud").FontSize(13),
-            () => OpenSoundCloudPage(shareLink.Text), TrackButtons.Text, 36);
-        shareDestinations.Add(open);
-        var form = new StackPanel().Vertical().Spacing(16).Margin(24).Children(
-            new TextBlock().Text("Поделиться").FontSize(21).Bold(), destinations,
-            new Grid().Columns("*,Auto").Rows("44").Spacing(10).Children(
-                new GlassCard { HoverEnabled = false }.CornerRadius(14).Padding(14, 9).Child(shareLink), shareCopy.Column(1)),
-            shareTimeRow, shareMessage, open);
+        shareLinksPanel = new StackPanel().Vertical().Spacing(16).Children(
+            new Grid().Columns("*,Auto").Rows("48").Spacing(12).Children(
+                new Border().Background(TrackButtons.TonalSurface).BorderThickness(0).CornerRadius(24).Padding(16, 0)
+                    .Child(shareLink.CenterVertical()), actions.Column(1)), destinations);
+        shareComposePanel = ShareComposeView().IsVisible(false);
+        shareEmbedPanel = ShareEmbedView().IsVisible(false);
+        var tabs = new StackPanel().Horizontal().Spacing(24).Children(
+            SectionTab("Ссылка", shareTab, 0, () => SelectShareTab(0)),
+            SectionTab("Сообщение", shareTab, 1, () => SelectShareTab(1)),
+            SectionTab("Встроить", shareTab, 2, () => SelectShareTab(2)));
+        shareForm = new StackPanel().Vertical().Spacing(16).Margin(24).Children(
+            tabs, shareLinksPanel, shareComposePanel, shareEmbedPanel, shareMessage);
         var card = new Border().Background(PopupAppearance.Surface).BorderThickness(0).CornerRadius(24).ClipToBounds()
-            .MaxWidth(PlaylistDialogContent.MaximumWidth).Child(form);
+            .MaxWidth(PlaylistDialogContent.MaximumWidth).Child(shareForm);
         shareContent = new PlaylistDialogContent(card, sharePreview);
         var close = TrackButtons.Icon(Icons.View("x", 20), () => CloseShare(), TrackButtons.Glass).Top();
         ((MaterialTrackButton)close).UseLightGlassFinish();
@@ -91,15 +93,17 @@ internal sealed partial class MainWindow
         shareClosing = false; shareContent.IsHitTestVisible = true;
         shareTarget = item; shareUri = TrackLink(item.Track?.PermalinkUrl ?? item.Playlist?.PermalinkUrl);
         shareTitle.Text = item.Title; shareAuthor.Text = item.Track?.Author ?? item.Playlist?.User?.Username ?? item.Subtitle;
-        shareTimeRow.IsVisible = item.Track != null;
-        shareAt.IsChecked = false;
-        shareTime.Text = FormatTime(item.Track?.Id == current?.Id ? progress.Value : 0);
-        shareTime.IsEnabled = false;
+        RefreshShareTrackStats();
+        shareStartSeconds = null; UpdateShareTimeLabel(false);
+        shareTimeAction.IsVisible = item.Track != null;
+        if (item.Track != null) ((MaterialTrackButton)shareCopy).Connect(false);
+        else ((MaterialTrackButton)shareCopy).Disconnect();
+        ResetShareCompose(); ResetShareEmbed(); SelectShareTab(0);
         RefreshShareLink();
         SetCardArtwork(shareCover, null, item.ArtworkUrl);
         shareRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = shareRequest.Token;
-        shareContent.FitCreation(item.Track != null ? 360 : 308);
+        FitShareContent();
         shareDialog.Show();
         if (reopening) shareContent.RevealTrack();
         Run(() => LoadShareArtworkAsync(item, generation, token));
@@ -108,7 +112,8 @@ internal sealed partial class MainWindow
 
     private void ResetShareRequest()
     {
-        ++shareGeneration; shareRequest?.Cancel(); shareRequest?.Dispose(); shareRequest = null;
+        shareTimePopup?.Close(true, false);
+        ++shareGeneration; StopShareSearch(); shareRequest?.Cancel(); shareRequest?.Dispose(); shareRequest = null;
     }
 
     private void CloseShare(bool immediate = false)
@@ -126,11 +131,11 @@ internal sealed partial class MainWindow
         {
             var resolved = await api.GetTrackAsync(track.Id, token);
             if (disposed || generation != shareGeneration) return;
-            shareUri = TrackLink(resolved.PermalinkUrl); shareTarget = LibraryItem.FromTrack(resolved); RefreshShareLink();
+            shareUri = TrackLink(resolved.PermalinkUrl); shareTarget = LibraryItem.FromTrack(resolved); RefreshShareTrackStats(); RefreshShareLink();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
         catch (Exception error)
-        { if (!disposed && generation == shareGeneration) shareMessage.Text = FriendlyError(error); }
+        { if (!disposed && generation == shareGeneration) SetShareMessage(FriendlyError(error)); }
     }
 
     private async Task LoadShareArtworkAsync(LibraryItem item, long generation, CancellationToken token)
@@ -145,28 +150,22 @@ internal sealed partial class MainWindow
 
     private void RefreshShareLink()
     {
-        var seconds = 0;
-        var validTime = shareTarget?.Track is not { } track || shareAt.IsChecked != true ||
-            TryShareTime(shareTime.Text, track.DurationSeconds, out seconds);
-        var link = shareUri == null || !validTime ? "" : new UriBuilder(shareUri) { Fragment = shareAt.IsChecked == true && shareTarget?.Track != null ? "t=" + FormatTime(seconds) : "" }.Uri.AbsoluteUri;
-        shareLink.Text = link; shareCopyLabel.Text = "Скопировать";
+        var link = shareUri == null ? "" : new UriBuilder(shareUri) { Fragment = shareStartSeconds is { } seconds && shareTarget?.Track != null ? "t=" + FormatTime(seconds) : "" }.Uri.AbsoluteUri;
+        shareLink.Text = link; shareCopyIcon.Source = Icons.Source("copy"); shareCopy.Hint("Скопировать ссылку");
         shareCopy.IsEnabled = link.Length > 0;
+        shareTimeAction.IsEnabled = shareCopy.IsEnabled && shareTarget?.Track is { DurationSeconds: > 0 } track && double.IsFinite(track.DurationSeconds);
         foreach (var button in shareDestinations) button.IsEnabled = shareCopy.IsEnabled;
-        shareMessage.Text = !validTime ? "Укажи время в формате 0:00 в пределах длительности трека." :
-            shareUri == null ? "У этого трека или плейлиста пока нет ссылки для отправки." : "";
+        if (shareTab.Value != 2)
+            SetShareMessage(shareUri == null ? "У этого трека или плейлиста пока нет ссылки для отправки." : "");
+        RefreshShareCompose(); RefreshShareEmbed();
     }
 
-    private static bool TryShareTime(string text, double duration, out int seconds)
+    private void RefreshShareTrackStats()
     {
-        seconds = 0; var parts = text.Trim().Split(':');
-        if (parts.Length is < 2 or > 3) return false;
-        for (var index = 0; index < parts.Length; index++)
-        {
-            if (!int.TryParse(parts[index], NumberStyles.None, CultureInfo.InvariantCulture, out var value) || value < 0 ||
-                (index > 0 && value > 59) || seconds > (int.MaxValue - value) / 60) return false;
-            seconds = seconds * 60 + value;
-        }
-        return duration > 0 && seconds <= duration;
+        var track = shareTarget?.Track;
+        shareTrackStats.IsVisible = track != null;
+        shareTrackDuration.Text = track == null ? "" : FormatTime(track.DurationSeconds);
+        shareTrackPlays.Text = track?.PlaybackCount is { } count ? LikedTrackRow.ShortCount(count) : "—";
     }
 
     private void CopyShareLink()
@@ -175,12 +174,24 @@ internal sealed partial class MainWindow
         var clipboard = shareLink.ClipboardService ?? Application.Current.PlatformServices.Clipboard;
         var copied = clipboard?.TrySetText(shareLink.Text) == true;
         status.Value = copied ? "Скопировано." : "Не удалось скопировать.";
-        shareCopyLabel.Text = copied ? "Скопировано" : "Повторить";
+        shareCopyIcon.Source = Icons.Source(copied ? "check" : "copy");
+        shareCopy.Hint(copied ? "Скопировано" : "Не удалось скопировать. Повторить");
     }
 
     private void OpenShareDestination(string service)
     {
         if (!shareCopy.IsEnabled || shareTarget == null) return;
+        if (service == "email")
+        {
+            var title = shareTarget.Title; var body = shareLink.Text;
+            Run(async () =>
+            {
+                try { await Platform.ExternalBrowser.OpenMailAsync(title, body, lifetime.Token); }
+                catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+                catch (Exception error) { if (!disposed) SetShareMessage("Не удалось открыть почтовое приложение."); Pookie.Logging.AppLog.Failure("Pookie.Share", "Не удалось открыть почту", error); }
+            });
+            return;
+        }
         var link = Uri.EscapeDataString(shareLink.Text); var text = Uri.EscapeDataString(shareTarget.Title);
         var url = service switch
         {
@@ -189,6 +200,35 @@ internal sealed partial class MainWindow
             "x" => $"https://twitter.com/intent/tweet?url={link}&text={text}",
             _ => null
         };
-        if (url != null) OpenExternalUrl(url, () => shareMessage.Text = "Не удалось открыть браузер.");
+        if (url != null) OpenExternalUrl(url, () => SetShareMessage("Не удалось открыть браузер."));
+    }
+
+    private void SelectShareTab(int tab)
+    {
+        shareTimePopup?.Close(true, false);
+        if (tab != 1) StopShareSearch();
+        shareTab.Value = tab;
+        shareLinksPanel.IsVisible = tab == 0; shareComposePanel.IsVisible = tab == 1; shareEmbedPanel.IsVisible = tab == 2;
+        SetShareMessage("");
+        if (tab == 1) { RefreshShareCompose(); Run(SearchShareRecipientsAsync); }
+        if (tab == 2) RefreshShareEmbed();
+        FitShareContent();
+        if (shareDialog?.IsOpen == true)
+        {
+            if (tab == 0) shareLink.Focus();
+            else if (tab == 1) { if (shareRecipient == null) shareRecipientSearch.Focus(); else shareComposeText.Focus(); }
+            else shareEmbedColor.Focus();
+        }
+    }
+
+    private void SetShareMessage(string text)
+    { shareMessage.Text = text; shareMessage.IsVisible = text.Length > 0; FitShareContent(); }
+
+    private void FitShareContent()
+    {
+        if (shareContent == null || shareForm == null || shareClosing) return;
+        var width = shareContent.BodyBounds.Width > 0 ? shareContent.BodyBounds.Width : PlaylistDialogContent.PreferredWidth;
+        shareForm.Measure(new(width, double.PositiveInfinity));
+        shareContent.FitCreation(shareForm.DesiredSize.Height);
     }
 }

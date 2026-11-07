@@ -2,10 +2,6 @@ using System.Text.Json;
 
 namespace Pookie.SoundCloud;
 
-public sealed record UserWebProfile(string Url, string? Title, string? Service);
-public sealed record UserVisual(string? VisualUrl);
-public sealed record UserVisuals(UserVisual[]? Visuals);
-
 public sealed partial class SoundCloudWebClient
 {
     public async Task<SoundCloudUser> GetUserAsync(long userId, CancellationToken token = default)

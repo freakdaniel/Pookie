@@ -47,6 +47,11 @@ internal sealed class AnimatedContextMenu : InAppPopup
     internal AnimatedContextMenu Separator() { Model.AddSeparator(); return this; }
 
     internal void Show(UIElement owner) => Show(owner, null);
+    internal void Toggle(UIElement owner, Point pointer)
+    {
+        if (IsOpen && ReferenceEquals(PlacementTarget, owner)) { Close(); return; }
+        Show(owner, pointer);
+    }
     internal void Show(UIElement owner, Point? pointer)
     {
         if (owner.FindVisualRoot() is not Window window) return;

@@ -240,9 +240,13 @@ internal sealed partial class MainWindow
         var index = Math.Max(0, lyricsActiveLine);
         var selected = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
         if (selected == null) { lyricsList.ScrollIntoView(index + 1); return; }
-        var position = lyricsScroll.VerticalOffset + selected.Bounds.Y + selected.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4;
-        position = Math.Round(position * Window.DpiScale) / Window.DpiScale;
-        if (lyricsFollowTarget is { } previous && Math.Abs(previous - position) < .5 / Window.DpiScale) return;
+        var scale = Window.DpiScale;
+        // Row bounds already include the presenter's pixel-snapped scroll offset.
+        // Adding the fractional offset back makes the target move as the spring advances.
+        var renderedOffset = LayoutRounding.RoundToPixel(lyricsScroll.VerticalOffset, scale);
+        var position = renderedOffset + (selected.Bounds.Y - lyricsScroll.Bounds.Y) + selected.ActualHeight / 2 - lyricsScroll.ActualHeight * .4;
+        position = LayoutRounding.RoundToPixel(position, scale);
+        if (lyricsFollowTarget is { } previous && Math.Abs(previous - position) * scale < 1.5) return;
         lyricsFollowTarget = position;
         smoothScrolls[lyricsScroll].ScrollTo(position);
     }

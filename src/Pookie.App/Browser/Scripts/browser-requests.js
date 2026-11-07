@@ -77,7 +77,7 @@
   window.addEventListener('dd_blocked', checking);
   window.addEventListener('dd_response_displayed', checking);
   window.addEventListener('dd_response_passed', event => {
-    if (blocked) return;
+    if (blocked) { send({ kind: 'pass-ignored', challenge_type: 'hard_block' }); return; }
     protectionReady = true;
     generation++;
     const pending = challenge; challenge = null;
@@ -143,11 +143,19 @@
   function wait(promise, context) { return Promise.race([promise, context.cancelled]); }
   function checkCancelled(context) { if (context.controller.signal.aborted) throw new Error('cancelled'); }
 
+  function trace(context, stage, method, fetchNumber, attempt = 0, status = 0, reason = 'none') {
+    send({ kind: 'request-trace', request_id: context.id, status,
+      trace: { stage, method, fetch_number: fetchNumber, attempt, generation,
+        challenge_active: Boolean(challenge), has_protection: hasBrowserSession(), reason } });
+  }
+
   async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json') {
+    const fetchNumber = ++context.fetchNumber;
     checkCancelled(context);
+    if (!readySent) trace(context, 'wait-ready', method, fetchNumber);
     await wait(ready, context);
     if (blocked) throw new Error('site-blocked');
-    if (challenge) await wait(challenge.promise, context);
+    if (challenge) { trace(context, 'wait-check', method, fetchNumber); await wait(challenge.promise, context); }
     url.searchParams.set('client_id', account.client_id);
     const version = window.__sc_version || account.app_version;
     if (version) url.searchParams.set('app_version', version);
@@ -158,6 +166,7 @@
       checkCancelled(context);
       if (blocked) throw new Error('site-blocked');
       let response;
+      trace(context, 'send', method, fetchNumber, attempt + 1);
       try {
         // Use the live fetch intercepted by the website's DataDome tag, not .NET HTTP or a saved cookie.
         response = await wait(window.fetch(url.href, {
@@ -174,17 +183,21 @@
           redirect: 'error', signal: context.controller.signal
         }), context);
       } catch (error) {
+        trace(context, 'fetch-error', method, fetchNumber, attempt + 1);
         checkCancelled(context);
         if (blocked) throw new Error('site-blocked');
         // The tag can abort Fetch while its challenge remains active.
         if (replay === true && attempt === 0 && (challenge || generation !== initialGeneration)) {
+          trace(context, 'retry', method, fetchNumber, attempt + 1, 0, 'challenge-fetch-error');
           if (challenge) await wait(challenge.promise, context);
           continue;
         }
         throw error;
       }
+      trace(context, 'response', method, fetchNumber, attempt + 1, response.status);
       if (blocked) throw new Error('site-blocked');
       if (replay && response.status === 403 && attempt === 0 && (challenge || generation !== initialGeneration)) {
+        trace(context, 'retry', method, fetchNumber, attempt + 1, response.status, 'challenge-response');
         if (challenge) await wait(challenge.promise, context);
         continue;
       }
@@ -558,7 +571,7 @@
     let rejectCancel;
     const cancelled = new Promise((_, reject) => { rejectCancel = reject; });
     cancelled.catch(() => {});
-    const context = { operation: command.operation, chatWrite: command.operation === 'chat' && ['send', 'read'].includes(command.chat.kind), controller: new AbortController(), cancelled, rejectCancel };
+    const context = { id: command.id, fetchNumber: 0, operation: command.operation, chatWrite: command.operation === 'chat' && ['send', 'read'].includes(command.chat.kind), controller: new AbortController(), cancelled, rejectCancel };
     active.set(command.id, context);
     // Preserve order even when a check interrupts a request or arrives between requests.
     queue = queue.then(() => request(command, context)).catch(() =>

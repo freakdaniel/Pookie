@@ -33,6 +33,28 @@ public sealed class BrowserRequestProtocolTests
         Assert.Null(BrowserRequestProtocol.Parse(raw, "https://evil.test", Origin));
         Assert.Null(BrowserRequestProtocol.Parse(raw.Replace("hard_block", "device_check"), Origin, Origin));
         Assert.Null(BrowserRequestProtocol.Parse(raw.Replace("true", "false"), Origin, Origin));
+        Assert.Equal("pass-ignored", BrowserRequestProtocol.Parse(Message("{\"kind\":\"pass-ignored\",\"challenge_type\":\"hard_block\"}"), Origin, Origin)!.Kind);
+        Assert.Null(BrowserRequestProtocol.Parse(Message("{\"kind\":\"pass-ignored\",\"challenge_type\":\"block\"}"), Origin, Origin));
+    }
+
+    [Fact]
+    public void RequestTraceAcceptsOnlyBoundedMetadataFromThePairedSite()
+    {
+        var value = new BrowserRequestEvent("request-trace", Guid.NewGuid().ToString("N"), 403)
+        { Trace = new("response", "PUT", 1, 2, 1, false, true) };
+        BrowserRequestEvent? Parse(BrowserRequestEvent message, string source = Origin, string pairing = "pair") =>
+            BrowserRequestProtocol.Parse(Message(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent)), source, Origin, pairing);
+        Assert.Equal(value.Trace, Parse(value)!.Trace);
+        Assert.Null(Parse(value, "https://evil.test"));
+        Assert.Null(Parse(value, Origin, "wrong"));
+        Assert.Null(Parse(value with { Trace = null }));
+        Assert.Null(Parse(value with { RequestId = "invalid" }));
+        Assert.Null(Parse(value with { Kind = "passed" }));
+        foreach (var trace in new[] {
+            value.Trace with { Stage = "https://private.test/token" }, value.Trace with { Method = "secret" },
+            value.Trace with { Reason = "private exception" }, value.Trace with { Attempt = 3 },
+            value.Trace with { FetchNumber = 0 }, value.Trace with { Generation = -1 } })
+            Assert.Null(Parse(value with { Trace = trace }));
     }
 
     [Fact]

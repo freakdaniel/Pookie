@@ -28,7 +28,7 @@ internal sealed partial class MainWindow
         playlistCreateMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         playlistCreateForm = new StackPanel().Vertical().Spacing(20).Children(
             new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).Children(
-                new TextBlock().Text("Создать плейлист").FontSize(21).Bold().CenterVertical(),
+                TrackDialogChrome.Heading("Создать плейлист"),
                 TrackButtons.Icon(Icons.View("arrow-left", 20), () => ShowPlaylistCreation(false), TrackButtons.Glass).Column(1)),
             new StackPanel().Vertical().Spacing(18).Margin(24, 0, 24, 24).Children(
                 name,

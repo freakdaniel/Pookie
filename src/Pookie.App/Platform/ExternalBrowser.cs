@@ -9,6 +9,16 @@ internal static class ExternalBrowser
         token.ThrowIfCancellationRequested();
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length != 0)
             throw new ArgumentException("Некорректная ссылка", nameof(value));
+        await OpenUriAsync(uri, token);
+    }
+
+    internal static Task OpenMailAsync(string subject, string body, CancellationToken token) =>
+        OpenUriAsync(new Uri("mailto:?subject=" + Uri.EscapeDataString(subject.Replace('\r', ' ').Replace('\n', ' ')) +
+            "&body=" + Uri.EscapeDataString(body)), token);
+
+    private static async Task OpenUriAsync(Uri uri, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
         var start = OperatingSystem.IsLinux() ? LinuxStartInfo(uri) :
             new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true };
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить системный браузер");

@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using Serilog;
 using Serilog.Events;
-using Serilog.Formatting.Json;
+using System.Globalization;
+using Serilog.Formatting;
+using Serilog.Formatting.Display;
 
 namespace Pookie.Logging;
 
@@ -41,7 +43,7 @@ public static class AppLog
                     Directory.CreateDirectory(DirectoryPath);
                     if (!OperatingSystem.IsWindows())
                         File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                    var fileLogger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.File(new JsonFormatter(renderMessage: true), Path.Combine(DirectoryPath, "pookie-.log"),
+                    var fileLogger = new LoggerConfiguration().MinimumLevel.Verbose().WriteTo.File(new ReadableLogFormatter(), Path.Combine(DirectoryPath, "pookie-text-.log"),
                         restrictedToMinimumLevel: file, rollingInterval: RollingInterval.Day,
                         fileSizeLimitBytes: 8 * 1024 * 1024, rollOnFileSizeLimit: true,
                         retainedFileCountLimit: 14, shared: true).CreateLogger();
@@ -84,6 +86,32 @@ public static class AppLog
             Log.CloseAndFlush();
             IsInitialized = false;
             DirectoryPath = null;
+        }
+    }
+
+    // A separate filename keeps new text records out of an older process's JSON log.
+    // Exception messages are intentionally omitted; Failure supplies safe stacks separately.
+    private sealed class ReadableLogFormatter : ITextFormatter
+    {
+        private readonly MessageTemplateTextFormatter message = new(
+            "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level:u3}] [{SourceContext}] [pid={ProcessId}] {Message:lj}{NewLine}",
+            CultureInfo.InvariantCulture);
+
+        public void Format(LogEvent logEvent, TextWriter output)
+        {
+            message.Format(logEvent, output);
+            var stack = Stack("StackTrace");
+            var rootStack = Stack("RootStackTrace");
+            WriteStack(stack);
+            if (rootStack != stack) WriteStack(rootStack);
+
+            string? Stack(string key) => logEvent.Properties.TryGetValue(key, out var value) &&
+                value is ScalarValue { Value: string text } ? text : null;
+            void WriteStack(string? text)
+            {
+                if (string.IsNullOrWhiteSpace(text)) return;
+                foreach (var line in text.Split('\n')) output.WriteLine("    " + line.TrimEnd('\r'));
+            }
         }
     }
 

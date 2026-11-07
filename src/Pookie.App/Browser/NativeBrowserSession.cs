@@ -13,6 +13,7 @@ namespace Pookie.App.Browser;
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, ISoundCloudSessionVerifier, IBrowserAudioSession
 {
     private WebSession account = account;
+    private readonly BrowserRequestLog requestLog = new();
     private readonly SemaphoreSlim requests = new(1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
@@ -43,6 +44,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     private void BrowserChanged(BrowserRequestEvent message)
     {
+        requestLog.Observe(message, embedded?.DiagnosticInstance ?? "child-process");
         if (message.Kind == "session" && message.Session?.IsValid() == true)
             lock (sync) account = message.Session;
         if (message.Kind == "protection-session" && message.DataDomeClientId is { } value)
@@ -132,9 +134,15 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректную переписку."); }
     }
 
-    private async Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
+    private Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
     {
         if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
+        return requestLog.RunAsync(command, embedded != null ? "embedded-browser" : "browser-process",
+            () => RequestCoreAsync(command, token));
+    }
+
+    private async Task<BrowserRequestEvent> RequestCoreAsync(BrowserRequestCommand command, CancellationToken token)
+    {
         if (embedded is { } web) return await RequestEmbeddedAsync(web, command, token).ConfigureAwait(false);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
@@ -443,7 +451,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                         if (bodies.Remove(message.RequestId, out var body)) message = message with { Json = body.Text.ToString() };
                         pending.TrySetResult(message);
                     }
-                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state")
+                    if (message.Kind is "checking" or "blocked" or "passed" or "challenge-error" or "protection-session" or "audio-state" or "request-trace" or "ready" or "pass-ignored")
                         try { changed(message); } catch (InvalidOperationException) { StartupLog.Event("browser.operation-unavailable"); }
                 }
             }

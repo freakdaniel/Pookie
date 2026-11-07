@@ -291,6 +291,7 @@ internal sealed partial class MainWindow
         }
         public Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
         {
+            if (uri.AbsolutePath == "/search/users") return Task.FromResult(JsonDocument.Parse("{\"collection\":[]}"));
             if (uri.AbsolutePath == "/me/playlist_likes/ids") return Task.FromResult(JsonDocument.Parse("[11]"));
             if (uri.AbsolutePath == "/me/playlist_reposts/ids") return Task.FromResult(JsonDocument.Parse("[]"));
             if (uri.AbsolutePath == "/playlists/11") return Task.FromResult(JsonDocument.Parse(JsonSerializer.Serialize(Playlist, SoundCloudJson.Default.SoundCloudPlaylist)));

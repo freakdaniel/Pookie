@@ -141,6 +141,11 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => chatMessageMenu.Reveal > .999);
             if (chatQuickReactions.Count != 6 || chatMessageMenuActions.Count(a => a.Button.IsVisible) != 4)
                 throw new InvalidOperationException("Message menu did not separate quick reactions from its real actions.");
+            RouteContextRightClick(new(row.Bubble.Bounds.X + 2, row.Bubble.Bounds.Y + 8));
+            if (chatMessageMenu.IsOpen) throw new InvalidOperationException("Repeated right click on the same message reopened its menu.");
+            await WaitForLikedLayoutAsync(() => !chatMessageMenu.IsVisible);
+            RouteContextRightClick(point);
+            await WaitForLikedLayoutAsync(() => chatMessageMenu.Reveal > .999);
             CaptureUiPreview("chat-message-menu");
             await OpenChatMenuEmojiAsync();
             await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);

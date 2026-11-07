@@ -55,7 +55,9 @@ internal sealed partial class WebKitLoginWindow
             Native.g_object_unref(manager);
             var view = Native.webkit_web_view_new_with_context(context); Native.g_object_unref(context);
             plug = Native.gtk_plug_new(parent);
-            container = Native.gtk_fixed_new(); Native.gtk_container_add(plug, container);
+            // A box allocates the page to the viewport. GtkFixed instead uses
+            // its child's natural size, which can grow beyond the login panel.
+            container = Native.gtk_box_new(1, 0); Native.gtk_container_add(plug, container);
             AddPage(view);
             Native.gtk_widget_realize(plug);
             var gdk = Native.gtk_widget_get_window(plug);
@@ -69,7 +71,7 @@ internal sealed partial class WebKitLoginWindow
         {
             if (pages.Count > 0) Native.gtk_widget_hide(pages[^1]);
             Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
-            Native.gtk_fixed_put(container, view, 0, 0);
+            Native.gtk_box_pack_start(container, view, 1, 1, 0);
             Native.gtk_widget_set_size_request(view, width, height);
             pages.Add(view);
             var manager = Native.webkit_web_view_get_user_content_manager(view);
@@ -147,17 +149,34 @@ internal sealed partial class WebKitLoginWindow
             var gtkScale = Math.Max(1, Native.gtk_widget_get_scale_factor(plug));
             width = Math.Max(1, (int)Math.Round(bounds.Width * scale / gtkScale));
             height = Math.Max(1, (int)Math.Round(bounds.Height * scale / gtkScale));
+            // X11 positions are signed 16-bit values. In particular, staging at
+            // -32000 DIPs must not wrap back onscreen at HiDPI.
+            var x = Math.Clamp((int)Math.Round(bounds.X * scale), short.MinValue, short.MaxValue);
+            var y = Math.Clamp((int)Math.Round(bounds.Y * scale), short.MinValue, short.MaxValue);
+            // The MewUI viewport owns this child's size, including when page
+            // content requests a larger natural size after navigation.
+            var geometry = new Native.Geometry { MinWidth = width, MinHeight = height, MaxWidth = width, MaxHeight = height };
+            Native.gtk_window_set_geometry_hints(plug, 0, ref geometry, 6); // GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE
             Native.gtk_window_resize(plug, width, height);
             foreach (var page in pages) Native.gtk_widget_set_size_request(page, width, height);
-            Native.XMoveResizeWindow(display, xid, (int)Math.Round(bounds.X * scale), (int)Math.Round(bounds.Y * scale),
+            Native.XMoveResizeWindow(display, xid, x, y,
                 (uint)Math.Max(1, Math.Round(bounds.Width * scale)), (uint)Math.Max(1, Math.Round(bounds.Height * scale)));
             Native.XFlush(display);
         }
         public void SetVisible(bool visible)
         {
             if (plug == 0 || disposed) return;
-            if (visible) { Native.gtk_widget_show_all(plug); foreach (var page in pages.SkipLast(1)) Native.gtk_widget_hide(page); }
-            else Native.gtk_widget_hide(plug);
+            // GtkPlug delegates X11 mapping to its XEmbed host. MewUI's parent
+            // is a plain X11 window, not a GtkSocket, so we must map/unmap the
+            // child ourselves in addition to updating GTK's widget visibility.
+            if (visible)
+            {
+                Native.gtk_widget_show_all(plug);
+                foreach (var page in pages.SkipLast(1)) Native.gtk_widget_hide(page);
+                Native.XMapRaised(display, xid);
+            }
+            else { Native.gtk_widget_hide(plug); Native.XUnmapWindow(display, xid); }
+            Native.XFlush(display);
         }
     
 
@@ -221,13 +240,18 @@ internal sealed partial class WebKitLoginWindow
         [DllImport("libcairo.so.2")] public static extern void cairo_surface_destroy(nint surface);
         [DllImport("libgdk-3.so.0")] public static extern void gdk_set_allowed_backends([MarshalAs(UnmanagedType.LPUTF8Str)] string backends);
         [DllImport(Gtk)] public static extern nint gtk_plug_new(nint socket);
-        [DllImport(Gtk)] public static extern nint gtk_fixed_new();
-        [DllImport(Gtk)] public static extern void gtk_fixed_put(nint container, nint child, int x, int y);
         [DllImport(Gtk)] public static extern void gtk_widget_set_size_request(nint widget, int width, int height);
         [DllImport(Gtk)] public static extern void gtk_widget_grab_focus(nint widget);
         [DllImport(Gtk)] public static extern int gtk_widget_get_scale_factor(nint widget);
         [DllImport(Gtk)] public static extern nint gtk_widget_get_window(nint widget);
         [DllImport(Gtk)] public static extern void gtk_window_resize(nint window, int width, int height);
+        [StructLayout(LayoutKind.Sequential)] public struct Geometry
+        {
+            public int MinWidth, MinHeight, MaxWidth, MaxHeight, BaseWidth, BaseHeight, WidthIncrement, HeightIncrement;
+            public double MinAspect, MaxAspect;
+            public int Gravity;
+        }
+        [DllImport(Gtk)] public static extern void gtk_window_set_geometry_hints(nint window, nint widget, ref Geometry geometry, int mask);
         [DllImport("libgdk-3.so.0")] public static extern nint gdk_window_get_display(nint window);
         [DllImport("libgdk-3.so.0")] public static extern nint gdk_x11_display_get_xdisplay(nint display);
         [DllImport("libgdk-3.so.0")] public static extern nint gdk_x11_window_get_xid(nint window);
@@ -235,6 +259,8 @@ internal sealed partial class WebKitLoginWindow
         [DllImport("libglib-2.0.so.0")] public static extern int g_main_context_iteration(nint context, int mayBlock);
         [DllImport("libX11.so.6")] public static extern int XMoveResizeWindow(nint display, nint window, int x, int y, uint width, uint height);
         [DllImport("libX11.so.6")] public static extern int XFlush(nint display);
+        [DllImport("libX11.so.6")] public static extern int XMapRaised(nint display, nint window);
+        [DllImport("libX11.so.6")] public static extern int XUnmapWindow(nint display, nint window);
         [DllImport("libX11.so.6")] public static extern int XSetInputFocus(nint display, nint window, int revert, nint time);
         [DllImport(WebKit)] public static extern void webkit_permission_request_deny(nint request);
         [DllImport(WebKit)] public static extern nint webkit_navigation_policy_decision_get_frame_name(nint decision);

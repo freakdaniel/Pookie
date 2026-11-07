@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 namespace Pookie.Audio;
 
 // FFmpeg reads synchronously on the decoder worker, never on the UI or audio callback.
-// Keep a few HTTP ranges in memory instead of downloading a whole progressive track.
+// Keep a few HTTP ranges in memory; the track cache downloads the full encoded file to disk.
 internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byte[] firstBlock, CancellationToken token,
     EncodedTrackCache? cache = null, double duration = 0) : Stream
 {
@@ -35,8 +35,12 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
         }
     }
 
-    public static async Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken token, EncodedTrackCache? cache = null, double duration = 0)
+    public static Task<Stream> OpenAsync(HttpClient http, Uri uri, CancellationToken token, EncodedTrackCache? cache = null, double duration = 0) =>
+        AudioHttp.RetryAsync(stop => OpenCoreAsync(http, uri, stop, token, cache, duration), token);
+
+    private static async Task<Stream> OpenCoreAsync(HttpClient http, Uri uri, CancellationToken attempt, CancellationToken token, EncodedTrackCache? cache, double duration)
     {
+        if (cache?.OpenSequential(uri, token) is { } sequential) return sequential;
         if (cache != null && await cache.ReadFirstAsync(uri, BlockSize, token) is { } saved)
         {
             cache.PrefetchRanges(uri, 0, saved.Total, BlockSize, duration, token);
@@ -44,16 +48,16 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
         }
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Range = new RangeHeaderValue(0, BlockSize - 1);
-        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, attempt);
         try
         {
             response.EnsureSuccessStatusCode();
             if (response.StatusCode != HttpStatusCode.PartialContent)
-                return new ResponseStream(await response.Content.ReadAsStreamAsync(token), response, token);
+                return cache != null ? cache.StartSequential(uri, response, token) : new ResponseStream(await response.Content.ReadAsStreamAsync(token), response, token);
             var range = response.Content.Headers.ContentRange;
             if (range?.From != 0 || range.To == null || range.Length == null || range.Length <= 0 || range.To >= BlockSize)
-                throw new IOException("Invalid HTTP byte range.");
-            var first = await ReadBoundedAsync(response.Content, BlockSize, token);
+                throw new InvalidDataException("Invalid HTTP byte range.");
+            var first = await ReadBoundedAsync(response.Content, BlockSize, attempt);
             if (first.Length != range.To + 1) throw new IOException("Incomplete HTTP byte range.");
             if (cache != null)
             {
@@ -68,16 +72,17 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
 
     internal static async Task<byte[]> ReadBoundedAsync(HttpContent content, int limit, CancellationToken token)
     {
-        if (content.Headers.ContentLength > limit) throw new IOException("Media response exceeds the buffer limit.");
+        if (content.Headers.ContentLength > limit) throw new InvalidDataException("Media response exceeds the buffer limit.");
         await using var stream = await content.ReadAsStreamAsync(token);
         using var memory = new MemoryStream();
         var buffer = new byte[16384];
         int read;
         while ((read = await stream.ReadAsync(buffer, token)) > 0)
         {
-            if (memory.Length + read > limit) throw new IOException("Media response exceeds the buffer limit.");
+            if (memory.Length + read > limit) throw new InvalidDataException("Media response exceeds the buffer limit.");
             memory.Write(buffer, 0, read);
         }
+        if (content.Headers.ContentLength is { } expected && memory.Length != expected) throw new IOException("Incomplete media response.");
         return memory.ToArray();
     }
 
@@ -96,16 +101,7 @@ internal sealed class HttpRangeStream(HttpClient http, Uri uri, long length, byt
                         block = cache.ReadAsync(new(uri, BlockSize, start, Math.Min(BlockSize, length - start), length), token).GetAwaiter().GetResult();
                     else
                     {
-                        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                        var end = Math.Min(length - 1, start + BlockSize - 1);
-                        request.Headers.Range = new RangeHeaderValue(start, end);
-                        using var response = http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).GetAwaiter().GetResult();
-                        response.EnsureSuccessStatusCode();
-                        var range = response.Content.Headers.ContentRange;
-                        if (response.StatusCode != HttpStatusCode.PartialContent || range?.From != start || range.To != end || range.Length != length)
-                            throw new IOException("Server did not honor the HTTP byte range.");
-                        block = ReadBoundedAsync(response.Content, BlockSize, token).GetAwaiter().GetResult();
-                        if (block.Length != end - start + 1) throw new IOException("Incomplete HTTP byte range.");
+                        block = AudioHttp.ReadAsync(http, uri, BlockSize, token, start, Math.Min(BlockSize, length - start), length).GetAwaiter().GetResult();
                     }
                     if (blocks.Count == 8) blocks.Remove(blocks.Keys.First());
                     blocks[start] = block;

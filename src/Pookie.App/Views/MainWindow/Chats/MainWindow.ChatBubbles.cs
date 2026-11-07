@@ -105,7 +105,7 @@ internal sealed partial class MainWindow
             Root.MouseDown += e =>
             {
                 if (e.Button != MouseButton.Right) return;
-                e.Handled = true; Root.Focus(); owner.OpenChatMessageMenu(this, e.GetPosition(owner.Window));
+                e.Handled = true; Root.Focus(); owner.OpenChatMessageMenu(this, e.GetPosition(owner.Window), toggle: true);
             };
             Root.KeyDown += e =>
             {

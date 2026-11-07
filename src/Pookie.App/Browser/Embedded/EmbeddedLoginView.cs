@@ -40,6 +40,7 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
     internal double SnapshotOpacity { get; set; } = 1;
     internal bool NativePresented => active && !preparing && !stopped;
     internal bool Stopped => stopped;
+    internal TimeSpan PreparationTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     internal EmbeddedLoginView(string profilePath, string? fixture = null, WebSession? account = null)
     {
@@ -136,21 +137,51 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
 
     internal async Task PrepareAsync(Window window, Rect bounds, CancellationToken token)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(PreparationTimeout);
+        try { await PrepareCoreAsync(window, bounds, timeout.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested && timeout.IsCancellationRequested)
+        { throw new InvalidOperationException("Страница входа SoundCloud не загрузилась вовремя. Проверь подключение и попробуй открыть вход ещё раз."); }
+    }
+
+    private async Task PrepareCoreAsync(Window window, Rect bounds, CancellationToken token)
+    {
         preparing = true; preparationBounds = bounds;
         initialization = InitializeAsync(window);
         await initialization.WaitAsync(token);
-        var first = await Task.WhenAny(ready.Task, completed.Task).WaitAsync(token);
+        // A page may already be interactive while analytics or long-polling
+        // keep the engine's load-finished event pending. The paired DOM signal
+        // is sufficient; provider origins use their native load event instead.
+        var first = await Task.WhenAny(controlsReady.Task, completed.Task).WaitAsync(token);
         if (first == completed.Task) return;
-        first = await Task.WhenAny(controlsReady.Task, completed.Task).WaitAsync(token);
-        if (first == completed.Task) return;
-        // Navigation completion may precede the first painted page. Keep the
-        // loader until a nonempty frame exists instead of crossfading a blank image.
-        while (!completed.Task.IsCompleted)
-        {
-            await PresentFrameAsync(window, token);
-            if (await CaptureAsync(window, token)) break;
-        }
+        // Navigation completion may precede the first painted page. Try to
+        // capture it before revealing, within a separate preview deadline.
+        await CapturePreviewAsync(window, token);
         preparing = false; browser?.SetVisible(false);
+    }
+
+    private async Task CapturePreviewAsync(Window window, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (!completed.Task.IsCompleted)
+            {
+                await PresentFrameAsync(window, timeout.Token);
+                try { if (await CaptureAsync(window, timeout.Token)) return; }
+                catch (InvalidOperationException) { /* Native layout may not have painted yet. Retry within the preview deadline. */ }
+                await Task.Delay(100, timeout.Token);
+            }
+        }
+        catch (Exception error) when (!token.IsCancellationRequested &&
+            (error is TimeoutException or InvalidOperationException or NotSupportedException || error is OperationCanceledException && timeout.IsCancellationRequested))
+        {
+            // Some native engines cannot paint a clipped/offscreen child. The
+            // loaded interactive page can still be displayed without a preview.
+            Pookie.Logging.AppLog.Failure("Pookie.Login", "Предпросмотр входа недоступен; показываем загруженную страницу", error, Serilog.Events.LogEventLevel.Debug);
+        }
+        token.ThrowIfCancellationRequested();
     }
 
     internal async Task ActivateAsync()

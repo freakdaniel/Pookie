@@ -365,6 +365,29 @@ narrow/wide hero layout, back-navigation filter/scroll, playlist likes/reposts,
 following/unfollowing, isolated pending states, playlist selection and stale account
 replies. All writes use a local fixture transport.
 
+The Share checks use the same `TrackDialogChrome` plaque as playlist dialogs,
+with equal 16 DIP insets and no playback controls or redundant dialog headings.
+They cover four destination icons (Telegram/VK/X brand marks and email), link
+copying with an icon/tooltip, an opaque rounded URL field, and a connected button
+group. The timecode popup always shows minutes/seconds and adds hours for long tracks,
+focuses the first visible field, and validates drafts without changing the applied
+link. Invalid inputs and digits animate red and shake; correcting them restores
+their colors. Fields have labels without redundant tooltips or error prose.
+Checks also cover the plaque's right-aligned duration and play count, Enter/Escape/Tab,
+popup focus, blank-area clicks that dismiss the caret without closing the popup,
+pixel-verified live backdrop colors and blurred edges without foreground feedback,
+native retained card repainting before offscreen probes can mask a stale image,
+animated time label/button width, zero timestamps, private URL
+preservation, and focus return after closing. The message tab searches recipients and prepares a draft
+in the regular chat composer, preserving existing text; opening Share never sends
+a message. Recipient checks cover circular cached avatars, left-aligned names and
+profile details, recent conversations, search clear/loading states and row selection.
+List captions are omitted; an empty search shows the bundled route sticker with
+the “А тут тупик” title and its description, and clearing the query restores users.
+Embed checks parse the generated iframe, verify escaped/private URLs,
+layout/color settings, disabled autoplay, invalid-color handling, and exact HTML
+copying with an isolated clipboard. No real message or social post is sent.
+
 `--memory-ui-smoke-test` creates and discards three batches of 100 sidebar cards with
 500px artwork, including cards removed during an active loading shimmer. Weak-reference
 checks verify that removed controls/pixels collect, cached SVG icons do not retain views,
@@ -511,8 +534,13 @@ continuous filling from the start, loading shimmer visibility and track changes
 with an isolated audio fixture. It also samples intermediate rendered frames for
 playback/buffer growth and contraction, checks that animation never issues seek
 commands, and keeps the timeline visible during a seek or temporary underrun.
-Audio unit tests also exercise encoded MP3/HLS
-lookahead, reuse across seeks, sparse byte ranges and temporary-file cleanup.
+Audio unit tests exercise full-track encoded MP3/HLS downloads while PCM is not
+consumed, reuse across seeks, sparse byte ranges, non-range disk spooling and
+temporary-file cleanup. Recovery fixtures interrupt responses, restore connectivity,
+verify that underruns preserve the playhead without reporting end-of-track, and
+cancel retries on stop. Browser audio tests check encrypted disk prefetch while
+paused, reconnecting without replacing the media element, cancellation/cache cleanup
+and terminal authorization errors. These checks use local fixtures rather than a VPN.
 
 `--content-blocker-smoke-test` checks reviewed rules and actual Chromium request
 cancellation. The same embedded rules apply before navigation in the login and
@@ -653,6 +681,10 @@ pointer departure, outside clicks and focus transfer, internal focus, Escape and
 focus restoration, window deactivation, exclusive open state, transparent hit testing
 and anchoring at 1000×680, 1280×840 and 1600×900. Queue checks include current/manual/next
 groups, actual playback order, scrolling, collapse action and hiding with the player.
+Context menu checks toggle an open menu off on a repeated right click on the same
+owner, while another owner opens its own context. Programmatic reopens at overlapping positions relocate it
+during its entrance, require fresh glass and intermediate animation frames, and
+retain continuous close reversal at the same anchor.
 It uses demo queue data.
 
 `--chat-navigation-ui-smoke-test --no-audio` checks opening and reopening Chats,
@@ -948,17 +980,41 @@ ready-page crossfade finish.
 An opaque backdrop matches the browser viewport. The centered SoundCloud logo
 remains still during modal opening, then slides upwards while the spinner appears
 below it. A delayed-document/SPA fixture with initially transparent form controls
-requires the loader to remain visible until those controls have painted, a GPU
-pixel-verified crossfade of the actual page, and retention of the closing snapshot until the entire
+requires the loader to remain visible until those controls become available, a GPU
+pixel-verified crossfade when the engine supplies a preview, and retention of the closing snapshot until the entire
 modal exit finishes. Scanline checks cover five tilt poses at four DPI scales
 to detect transparent strip seams or repeated alpha blending.
 Pixel samples check the page's intermediate opacity, and pointer-opened close
 buttons must retain their glass backdrop without a keyboard highlight. Immediate,
 loaded and repeated cancellation must restore the enabled idle login button.
+On Linux, X11 readback of the actual parent window must contain the fixture's
+blue page before closing, after resizing, and after reopening. Browser snapshots
+and `NativePresented` alone do not prove the child window was mapped onscreen.
+The GtkPlug host explicitly maps/unmaps its X11 child, and staging coordinates
+are clamped to X11's signed 16-bit range at HiDPI. X11 geometry must match the
+arranged viewport: GTK size hints constrain late page-driven size requests, and
+the page fills a GtkBox instead of growing freely inside GtkFixed.
+Link-only controls are also exercised with animation frames disabled. Readiness
+polling has a timer fallback and recognizes a fade-in transition suspended by an
+offscreen native view. Preparation times out after 30 seconds with a visible,
+retryable error; the fixture exercises this with a shortened deadline and checks
+profile release. Preview capture has its own five-second deadline, after which
+the interactive native page is shown directly. On that path the fixture captures
+the displayed page to verify it really painted.
 Neither real credentials nor a SoundCloud account are used. Windows uses
 CoreWebView2, Linux uses WebKitGTK 4.1 in a GtkPlug inside MewUI's X11 window
 (also under XWayland), and macOS uses a WKWebView subview. Run this test on the
 target OS to verify its native implementation; cross-building is not runtime QA.
+
+`dotnet run --project tests/Pookie.App.SmokeTests -- --embedded-login-live-probe`
+opens the real SoundCloud page in a temporary signed-out profile, waits 15 seconds,
+asserts that the native page replaced the loading surface, and saves a screenshot
+to `/tmp/pookie-embedded-live-page.png`. On Linux it also verifies color variation
+inside the actual displayed viewport and captures the full X11 application window
+to `/tmp/pookie-embedded-live-window.ppm` before cancellation.
+It enters no credentials or account data
+and deletes its isolated profile after cancellation. This check requires network
+access and is separate from the deterministic loopback tests.
 
 `dotnet run --project tests/Pookie.App.SmokeTests -- --embedded-web-challenge-smoke-test`
 uses the production in-app worker with a local website and a slider iframe. It
