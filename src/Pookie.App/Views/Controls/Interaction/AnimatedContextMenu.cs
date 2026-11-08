@@ -21,6 +21,7 @@ internal sealed class AnimatedContextMenu : InAppPopup
     private CommandTarget commandTarget;
     private AnimatedContextMenu? parent, child;
     private Point? pointer;
+    private bool keepTriggerClear;
 
     internal AnimatedContextMenu(MenuPlacement placement, Point offset, Menu? model = null)
     {
@@ -39,7 +40,8 @@ internal sealed class AnimatedContextMenu : InAppPopup
             .CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding).FontSize(14).MinWidth(224).Focusable(true)
             .Child(new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0).Content(rows));
         card.MaxWidth = 360; card.MaxHeight = 520;
-        InitializePopup(card, Anchor, () => pointer != null ? MenuPlacement.Pointer : Model.Placement);
+        InitializePopup(card, Anchor, () => pointer != null ? MenuPlacement.Pointer : Model.Placement,
+            keepTriggerClear: () => keepTriggerClear);
     }
 
     internal AnimatedContextMenu Item(Command command) { Model.Item(command); return this; }
@@ -47,16 +49,17 @@ internal sealed class AnimatedContextMenu : InAppPopup
     internal AnimatedContextMenu Separator() { Model.AddSeparator(); return this; }
 
     internal void Show(UIElement owner) => Show(owner, null);
-    internal void Toggle(UIElement owner, Point pointer)
+    internal void Toggle(UIElement owner, Point? pointer = null)
     {
         if (IsOpen && ReferenceEquals(PlacementTarget, owner)) { Close(); return; }
-        Show(owner, pointer);
+        Show(owner, pointer, keepTriggerClear: pointer == null && Model.Placement == MenuPlacement.Below);
     }
-    internal void Show(UIElement owner, Point? pointer)
+    internal void Show(UIElement owner, Point? pointer, bool keepTriggerClear = false)
     {
         if (owner.FindVisualRoot() is not Window window) return;
         sourceWindow = window; PlacementTarget = owner;
         this.pointer = pointer;
+        this.keepTriggerClear = keepTriggerClear;
         commandTarget = parent?.commandTarget ?? window.CommandRouter.CaptureTarget(owner);
         BuildRows();
         ShowPopup(owner, Card);
@@ -65,6 +68,8 @@ internal sealed class AnimatedContextMenu : InAppPopup
     private Rect Anchor()
     {
         var anchor = PlacementTarget?.Bounds ?? Rect.Empty;
+        if (keepTriggerClear && PlacementTarget is { } trigger && sourceWindow is { } window && trigger.FindVisualRoot() == window)
+            anchor = trigger.TranslateRect(new Rect(Point.Zero, anchor.Size), window);
         if (pointer != null || Model.Placement == MenuPlacement.Pointer)
         { var position = pointer ?? new Point(anchor.X, anchor.Bottom); anchor = new(position.X, position.Y, 0, 0); }
         var offset = Model.PlacementOffset;
@@ -88,7 +93,8 @@ internal sealed class AnimatedContextMenu : InAppPopup
                 text => (text.Length == 0 ? item.Command?.Text ?? "" : text).Replace("_", ""));
             var line = new StackPanel().Horizontal().Spacing(12);
             if ((item.Icon ?? item.Command?.Icon) is { } icon)
-                line.Children(icon.Build(new IconTemplateSize(20, (int)Math.Ceiling(20 * (sourceWindow?.DpiScale ?? 1)))).CenterVertical());
+                line.Children(icon.Build(new IconTemplateSize(PopupAppearance.IconSize,
+                    (int)Math.Ceiling(PopupAppearance.IconSize * (sourceWindow?.DpiScale ?? 1)))).CenterVertical());
             line.Add(label);
             var button = TrackButtons.Action(line, () => { }, TrackButtons.Text, PopupAppearance.RowHeight).Padding(12, 0);
             line.HorizontalAlignment = HorizontalAlignment.Stretch;

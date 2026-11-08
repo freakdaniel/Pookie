@@ -6,6 +6,48 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private async Task VerifyTrackPlayGlassEntranceAsync()
+    {
+        var glass = trackDetailGlass!;
+        var original = trackDetailBackdrop.Source;
+        var customArt = trackDetailWaveform.OnArtwork;
+        Element? ancestor = trackDetailPlay.Parent;
+        while (ancestor != null && ancestor is not TrackPageColumns) ancestor = ancestor.Parent;
+        var hero = (TrackPageColumns)ancestor!;
+
+        int ReadRim()
+        {
+            var bounds = trackDetailPlay.Bounds;
+            using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(8, 8, 1));
+            using var context = Window.GraphicsFactory.CreateContext(surface);
+            context.BeginFrame(surface);
+            context.Translate(4 - bounds.Center.X, -bounds.Y);
+            hero.RenderGlassBackground(context);
+            trackDetailPlay.Render(context);
+            context.EndFrame();
+            var cpu = (ICpuPixelSurface)surface;
+            return cpu.GetReadOnlyPixelSpan()[cpu.StrideBytes + 4 * 4 + 2];
+        }
+
+        try
+        {
+            SetTrackDetailBackdrop(null, customArt: false);
+            glass.Reset();
+            var firstRim = ReadRim();
+            await WaitForLikedLayoutAsync(() => { glass.Prepare(); return glass.IsCurrent; });
+            var readyRim = ReadRim();
+            if (Math.Abs(firstRim - readyRim) > 8)
+                throw new InvalidOperationException($"The play button rim flashes when its first sample arrives ({firstRim} → {readyRim}).");
+            SetTrackDetailBackdrop(ImageSource.FromBgraPixels(1, 1, [128, 160, 192, 255]), customArt: false);
+            if (!glass.HasBlurredArtwork || glass.IsCurrent)
+                throw new InvalidOperationException("The play button discarded its glass while preparing new artwork.");
+            await WaitForLikedLayoutAsync(() => { glass.Prepare(); return glass.IsCurrent; });
+        }
+        finally { SetTrackDetailBackdrop(original as ImageSource, customArt); }
+        Console.WriteLine("TRACK_PLAY_GLASS_ENTRANCE_OK: stable rim before and after first sample, retained glass during artwork replacement");
+    }
+
     private async Task VerifyCardGlassSourceAsync(CoverGlassBackdrop glass, Image cover, Image background, FrameworkElement reference)
     {
         var originalCover = cover.Source; var originalBackground = background.Source;

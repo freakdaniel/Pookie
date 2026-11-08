@@ -163,16 +163,16 @@ internal sealed partial class MainWindow
     private void AttachPlaylistTrackEdits(FrameworkElement root, Func<SoundCloudTrack?> track, Func<int> position)
     {
         if (root.ContextMenu is not { } menu) return;
-        void Item(string id, string label, Action action, Func<bool> enabled)
+        void Item(string id, string label, string icon, Action action, Func<bool> enabled)
         {
-            var command = new Command("pookie.playlist." + id, label);
+            var command = PopupAppearance.MenuCommand("pookie.playlist." + id, label, icon);
             root.Commands.Register(command, action, enabled); menu.Item(command);
         }
-        Item("remove", "Удалить из плейлиста", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 0)); },
+        Item("remove", "Удалить из плейлиста", "x", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 0)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder());
-        Item("up", "Выше в плейлисте", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), -1)); },
+        Item("up", "Выше в плейлисте", "caret-up", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), -1)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder() && position() > 0);
-        Item("down", "Ниже в плейлисте", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 1)); },
+        Item("down", "Ниже в плейлисте", "caret-down", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 1)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder() && position() >= 0 && position() < activeCollection!.Items.Length - 1);
     }
 

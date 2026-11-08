@@ -11,6 +11,8 @@ public interface ILyricsProvider
 
 public sealed class LrclibClient(HttpClient http, TimeProvider? timeProvider = null) : ILyricsProvider, IDisposable
 {
+    internal const string Name = "LRCLIB";
+    internal const string Source = "https://lrclib.net/";
     public const int MaxResponseBytes = 1024 * 1024;
     private readonly TimeProvider time = timeProvider ?? TimeProvider.System;
     private readonly SemaphoreSlim requests = new(1);
@@ -37,7 +39,7 @@ public sealed class LrclibClient(HttpClient http, TimeProvider? timeProvider = n
         try
         {
             if (blockedUntil > time.GetUtcNow()) throw new LyricsRateLimitException(blockedUntil - time.GetUtcNow());
-            var url = "https://lrclib.net/api/" + route + "?" + string.Join('&', values.Select(pair =>
+            var url = Source + "api/" + route + "?" + string.Join('&', values.Select(pair =>
                 Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.UserAgent.ParseAdd("Pookie/0.1 (+https://github.com/freakdaniel/Pookie)");

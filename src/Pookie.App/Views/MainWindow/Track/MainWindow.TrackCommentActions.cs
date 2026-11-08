@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement TrackCommentComposerView()
     {
-        trackCommentOwnAvatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(28).Height(28).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", Muted));
+        trackCommentOwnAvatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(28).Height(28).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", MutedIcon));
         trackCommentInput = new TextBox().Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(13)
             .Placeholder("Твой комментарий").CenterVertical().OnTextChanged(text =>
             {
@@ -82,9 +82,9 @@ internal sealed partial class MainWindow
         trackCommentSortLabel = new TextBlock().FontSize(13).Foreground(Muted).CenterVertical();
         var button = TrackButtons.Action(trackCommentSortLabel, () => { }, TrackButtons.Text, 32).Padding(12, 0);
         var menu = PopupAppearance.CreateMenu();
-        foreach (var sort in new[] { "NEWEST", "OLDEST", "TIMESTAMP" })
+        foreach (var (sort, icon) in new[] { ("NEWEST", "clock-counter-clockwise"), ("OLDEST", "clock"), ("TIMESTAMP", "waveform") })
         {
-            var command = new Command("pookie.comments.sort." + sort, CommentSortLabel(sort));
+            var command = PopupAppearance.MenuCommand("pookie.comments.sort." + sort, CommentSortLabel(sort), icon);
             button.Commands.Register(command, () => Run(() => ChangeTrackCommentSortAsync(sort)), () => trackDetailState != null);
             menu.Item(command);
         }
@@ -135,7 +135,7 @@ internal sealed partial class MainWindow
         RefreshCommentSendAvailability();
         var userId = me?.Id ?? 0;
         if (trackCommentAvatarUser == userId) return;
-        trackCommentAvatarUser = userId; trackCommentOwnAvatar.Source = Icons.Source("user", Muted);
+        trackCommentAvatarUser = userId; trackCommentOwnAvatar.Source = Icons.Source("user", MutedIcon);
         if (me?.AvatarUrl is not { } url) return;
         var session = api.Session;
         Run(async () =>

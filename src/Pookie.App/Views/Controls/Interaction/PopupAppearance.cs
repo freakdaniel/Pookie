@@ -11,6 +11,10 @@ internal static class PopupAppearance
     internal const double Radius = 16;
     internal const double Padding = 4;
     internal const double RowHeight = 36;
+    internal const double IconSize = 21;
+
+    internal static Command MenuCommand(string id, string label, string icon) =>
+        new(id, label, new IconTemplate(size => Icons.View(icon, size.Dip).IsHitTestVisible(false)));
 
     private static readonly ConditionalWeakTable<ContextMenu, AnimatedContextMenu> menus = new();
     internal static AnimatedContextMenu CreateMenu(MenuPlacement placement = MenuPlacement.Pointer, Point offset = default)
@@ -23,14 +27,16 @@ internal static class PopupAppearance
         owner.ContextMenu = menu.Model;
         owner.MouseDown += e =>
         {
-            if (e.Handled || e.Button != MouseButton.Right) return;
+            if (e.Handled || e.Button != MouseButton.Right || owner.ContextMenu is not { } model ||
+                !menus.TryGetValue(model, out var current)) return;
             e.Handled = true;
-            if (owner.FindVisualRoot() is Window window) menu.Toggle(owner, e.GetPosition(window));
+            if (owner.FindVisualRoot() is Window window) current.Toggle(owner, e.GetPosition(window));
         };
         owner.KeyDown += e =>
         {
-            if (e.Handled || e.Key != Key.F10 || !e.Modifiers.HasFlag(ModifierKeys.Shift)) return;
-            e.Handled = true; menu.Show(owner, new Point(owner.Bounds.X, owner.Bounds.Bottom));
+            if (e.Handled || e.Key != Key.F10 || !e.Modifiers.HasFlag(ModifierKeys.Shift) ||
+                owner.ContextMenu is not { } model || !menus.TryGetValue(model, out var current)) return;
+            e.Handled = true; current.Show(owner, new Point(owner.Bounds.X, owner.Bounds.Bottom));
         };
     }
 

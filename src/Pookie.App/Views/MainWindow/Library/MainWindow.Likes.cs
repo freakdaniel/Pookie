@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> likedEmpty = new(false);
     private readonly ObservableValue<string> likedActionError = new("");
     private readonly Dictionary<Button, LikedTrackTile> likedTiles = [];
-    private readonly Dictionary<Image, long> likedArtworkTracks = [];
+    private readonly Dictionary<Image, (long Id, string? Url)> likedArtworkTracks = [];
     private ItemsControl likedGrid = null!;
     private ItemsControl likedList = null!;
     private ItemsControl likedCompactList = null!;
@@ -52,7 +52,7 @@ internal sealed partial class MainWindow
             .ItemPadding(new Thickness(0, 0, 24, 0)).WrapPresenter(likedArtworkSize + 24, likedArtworkSize + 90);
         grid.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var tile = new LikedTrackTile(SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), ArtworkLayer);
+            var tile = new LikedTrackTile(this, SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)));
             tile.SetSize(likedArtworkSize);
             AttachTrackQueueMenu(tile.Root, () => tile.Track);
             AttachTrackTitle(tile.Title, () => tile.Track);
@@ -69,7 +69,7 @@ internal sealed partial class MainWindow
             tile.SetSize(likedArtworkSize);
             tile.SetPlaying(current?.Id == track.Id, isPlaying.Value, animate: false);
             SetCardArtwork(tile.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
-            likedArtworkTracks[tile.Cover] = track.Id;
+            likedArtworkTracks[tile.Cover] = (track.Id, track.ArtworkUrl ?? track.User?.AvatarUrl);
             Run(() => LoadLikedArtworkAsync(tile.Cover, track));
         }, (_, _, _, context) =>
         {
@@ -77,7 +77,7 @@ internal sealed partial class MainWindow
             var tile = tiles[context.Get<Button>("tile")];
             tile.Track = null;
             tile.Reset();
-            StopCardArtwork(tile.Cover);
+            ClearCardArtwork(tile.Cover);
             likedArtworkTracks.Remove(tile.Cover);
         });
         grid.SizeChanged += e => UpdateLikedGridSize(e.NewSize.Width);
@@ -117,7 +117,7 @@ internal sealed partial class MainWindow
         paginationLoading.Changed += RefreshLikedFilterState;
         likesLoadingView.ContentRevealed += RefreshLikedFilterState;
         var tools = TrackViewSwitch(likesMode);
-        var filterField = MaterialSearchField.CreateGlass(likedFilter);
+        var filterField = MaterialSearchField.CreateGlass(likedFilter, liveGlass: true);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
@@ -135,15 +135,16 @@ internal sealed partial class MainWindow
             new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(),
             new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
                 TrackViewButton("squares-four", TrackViewMode.Cards, mode), TrackViewButton("waveform", TrackViewMode.Waveform, mode),
-                TrackViewButton("list-bullets", TrackViewMode.List, mode))));
+                TrackViewButton("list-bullets", TrackViewMode.List, mode)), new Thickness(4)));
 
     private Button TrackViewButton(string icon, TrackViewMode selected, ObservableValue<TrackViewMode> mode)
     {
-        var image = Icons.View(icon, 20);
-        image.Bind(Image.SourceProperty, mode, value => Icons.Source(icon, value == selected ? TrackButtons.OnPrimary : TrackButtons.OnSurface));
-        var button = TrackButtons.Icon(image, () => { if (mode.Value != selected) mode.Value = selected; }, TrackButtons.Text, 32)
-            .Width(40).Hint(selected switch { TrackViewMode.Cards => "Квадратные карточки", TrackViewMode.Waveform => "Карточки с волной", _ => "Список" });
-        void Refresh() => TrackButtons.SetVariant(button, mode.Value == selected ? TrackButtons.Filled : TrackButtons.Text);
+        var image = Icons.TintableView(icon, 20, out var ink);
+        var button = new HeaderButton(new CornerRadius(16)).Width(40).Height(32)
+            .Content(image.Center()).OnClick(() => mode.Value = selected)
+            .Hint(selected switch { TrackViewMode.Cards => "Квадратные карточки", TrackViewMode.Waveform => "Карточки с волной", _ => "Список" });
+        button.UseAnimatedInk(ink, NavInk, NavHover, Color.White);
+        void Refresh() => button.SetSelected(mode.Value == selected);
         mode.Changed += Refresh; Refresh();
         return button;
     }
@@ -225,8 +226,9 @@ internal sealed partial class MainWindow
 
     private async Task LoadLikedArtworkAsync(Image image, SoundCloudTrack track)
     {
+        var url = track.ArtworkUrl ?? track.User?.AvatarUrl;
         var source = await GetLibraryArtworkAsync(track);
-        if (!disposed && likedArtworkTracks.TryGetValue(image, out var id) && id == track.Id)
-            SetCardArtwork(image, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true);
+        if (!disposed && likedArtworkTracks.TryGetValue(image, out var binding) && binding == (track.Id, url))
+            SetCardArtwork(image, source, url, finished: true);
     }
 }

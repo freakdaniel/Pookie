@@ -155,7 +155,7 @@ internal sealed partial class MainWindow
         SetCollectionArtwork(cover, item);
         Button button = null!;
         var title = new DockPanel().LastChildFill().Spacing(6).Children(
-            Icons.View("lock-simple", 14, Muted).DockRight().CenterVertical().IsVisible(playlist.Sharing == "private"),
+            Icons.View("lock-simple", 14, MutedIcon).DockRight().CenterVertical().IsVisible(playlist.Sharing == "private"),
             new TextBlock().Text(item.Title).FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis));
         title.HorizontalAlignment = HorizontalAlignment.Left;
         button = TrackButtons.Action(new Grid().Columns("44,*").Rows("Auto").Spacing(12).Children(

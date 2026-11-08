@@ -52,8 +52,13 @@ internal sealed partial class MainWindow
     private void SetTrackDetailBackdrop(ImageSource? source, bool customArt)
     {
         trackDetailBackdrop.Source = source;
-        trackDetailScrim.Background = customArt ? ArtworkBackdrop.TrackArtScrim : ArtworkBackdrop.CardScrim;
+        var scrim = customArt ? ArtworkBackdrop.TrackArtScrim : ArtworkBackdrop.CardScrim;
+        if (trackDetailScrim.Background != scrim)
+        {
+            trackDetailScrim.Background = scrim;
+            trackDetailGlass?.Invalidate();
+        }
         trackDetailWaveform.OnArtwork = customArt;
-        trackDetailGlass?.RefreshArtwork();
+        trackDetailGlass?.RefreshArtwork(keepCurrent: true);
     }
 }

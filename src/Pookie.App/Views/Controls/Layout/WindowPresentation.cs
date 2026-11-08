@@ -8,6 +8,32 @@ namespace Pookie.App;
 // Typed build-time extension of our pinned MewUI assembly; no runtime patching.
 internal static class WindowPresentation
 {
+    internal static void EnableLiveGlass(bool enabled)
+    {
+        BeforeReplay(null) = enabled ? static (element, context) =>
+        {
+            if (element is ChatPopupLayer popup) popup.CaptureLiveGlass(context);
+            else if (element is ShellHeader.BackdropLayer header) header.CaptureLiveGlass(context);
+            else if (element is GlassToolGroup tool)
+            {
+                tool.CaptureLiveGlass(context);
+                tool.DrawLiveGlass(context);
+            }
+            else if (element is GlassCard card) card.DrawLiveGlass(context);
+            else if (element is PresentationRoot root && root.FindVisualRoot() is Window window)
+                LiveGlassBackdrop.WarmInFrame(window, context);
+        } : null;
+        PopupDamage(null) = enabled ? LiveGlassBackdrop.ExpandDamage : null;
+    }
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "PookieBeforeReplay")]
+    private static extern ref Action<UIElement, IGraphicsContext>? BeforeReplay(UIElement? declaringType);
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "PookiePopupDamage")]
+    private static extern ref Action<Window, IReadOnlyList<Rect>, Action<Rect>>? PopupDamage(Window? declaringType);
+
+    internal static bool IsRecording(IGraphicsContext context) => context.GetType().Name == "RenderDataRecorder";
+
     [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "_renderCullViewport")]
     private static extern ref Rect? CullViewport(UIElement? declaringType);
 

@@ -245,11 +245,12 @@ internal sealed partial class MainWindow
             var card = (GlassCard)VisualTree.Find(popup, element => element is GlassCard)!;
             var painted = card.PopupBackdropPaintVersion;
             fixture.LeftColor = left; fixture.RightColor = right; fixture.InvalidateVisual();
-            for (var frame = 0; frame < 4; frame++) await WaitForLoginFrameAsync();
             // Assert the real window's retained drawing before any offscreen
-            // Render() below can hide a missing card invalidation.
+            // Render() below can hide a stale retained drawing. The new color
+            // must already be in the same window frame as the new glass.
+            await WaitForLoginFrameAsync();
             if (card.PopupBackdropPaintVersion <= painted)
-                throw new InvalidOperationException("Native popup drawing retained an old backdrop while offscreen rendering refreshed it.");
+                throw new InvalidOperationException("The popup did not sample the changed background on its next frame.");
         }
         Color Read(Point location)
         {
@@ -272,6 +273,16 @@ internal sealed partial class MainWindow
             var left = Read(new(point.X - 3, point.Y)); var right = Read(new(point.X + 3, point.Y));
             if (Math.Min(left.R, left.B) < 30 || Math.Min(right.R, right.B) < 30 || Math.Abs(left.R - right.R) > 30)
                 throw new InvalidOperationException($"Popup glass retained a sharp background edge instead of blurring: left={left}, right={right}.");
+            for (var step = 0; step < 6; step++)
+            {
+                var showRed = step % 2 == 0;
+                fixture.Split = point.X + (showRed ? 24 : -24);
+                await SetColors(red, blue);
+                var pixel = Read(point);
+                if (showRed ? pixel.R < pixel.B + 30 : pixel.B < pixel.R + 30)
+                    throw new InvalidOperationException($"Moving backdrop was a frame behind the popup at step {step}: {pixel}.");
+            }
+            Console.WriteLine("LIVE_POPUP_BACKDROP_OK: six consecutive positions sampled in the same frame");
         }
         finally
         {

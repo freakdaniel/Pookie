@@ -30,7 +30,7 @@ internal sealed class CacheUsageView : Panel
         for (var index = 0; index < 3; index++)
         {
             amounts[index] = new TextBlock().Text("—").FontSize(19).SemiBold();
-            shares[index] = new TextBlock().Text("—").FontSize(12).Foreground(Color.FromRgb(170, 170, 170));
+            shares[index] = new TextBlock().Text("—").FontSize(12).Foreground(TextAppearance.Secondary);
             var item = index;
             legends[index] = new CacheUsageLegend(Names[index], Colors[index], amounts[index], shares[index],
                 hovered => Chart.Hover(hovered ? item : -1));

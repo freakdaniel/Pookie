@@ -8,10 +8,11 @@ namespace Pookie.App;
 // overlay's controls so the close icon cannot feed back into its own glass.
 internal sealed class OverlayButtonBackdrop(FrameworkElement button, FrameworkElement overlay, Action<IGraphicsContext> drawOverlay) : IDisposable
 {
-    private DialogSnapshot? sample;
+    private readonly LiquidGlassLens lens = new();
+    private LiquidGlassSnapshot? sample;
     private Window? window;
     private bool preparing, presenting;
-    internal bool Ready => sample != null;
+    internal bool Ready => sample is { Ready: true };
     internal Rect CaptureBounds => sample?.Bounds ?? default;
     internal void Attach(Window? source)
     {
@@ -44,20 +45,16 @@ internal sealed class OverlayButtonBackdrop(FrameworkElement button, FrameworkEl
                     sibling.Render(context);
                 }
                 drawOverlay(context);
-            }, Color.FromRgb(24, 24, 24));
-            sample.Blur(12);
+            }, Color.FromRgb(24, 24, 24), blurRadius: 12);
             presenting = true; button.InvalidateVisual();
         }
         finally { preparing = false; }
     }
     internal void Draw(IGraphicsContext context, Rect bounds, double radius)
     {
-        if (sample == null) return;
-        context.Save();
-        try { context.SetClipRoundedRect(bounds, radius, radius); context.DrawImage(sample.Image, sample.ImageBounds); }
-        finally { context.Restore(); }
+        if (sample is { Ready: true }) sample.Draw(lens, context, bounds, radius);
     }
-    private void Clear() { sample?.Dispose(); sample = null; presenting = false; }
+    private void Clear() { lens.Dispose(); sample?.Dispose(); sample = null; presenting = false; }
     public void Dispose()
     {
         if (window != null) window.FrameRendered -= Prepare;

@@ -22,6 +22,7 @@ internal sealed partial class MainWindow
     private readonly Storage.ResourceCache<string, ImageSource> collectionImages = new(256, ArtworkCacheBudget, ArtworkBytes);
     private readonly ObservableValue<string> librarySectionTitle = new("");
     private readonly ObservableValue<string> librarySectionStatus = new("");
+    private readonly ObservableValue<bool> librarySectionRetry = new(false);
     private readonly List<LibraryItem> localRecent = [];
     private long overviewRefreshGeneration;
     private readonly HashSet<string> overviewPending = [];
@@ -68,8 +69,12 @@ internal sealed partial class MainWindow
     private FrameworkElement CollectionPage()
     {
         collectionGrid = CreateCollectionGrid(false);
+        var statusPanel = new StackPanel().Vertical().Spacing(10).Children(
+            new TextBlock().BindText(librarySectionStatus).FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap),
+            TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), () => Run(RetryLibrarySectionAsync), TrackButtons.Tonal, 36)
+                .Left().BindIsVisible(librarySectionRetry)).BindIsVisible(librarySectionStatus, value => !string.IsNullOrWhiteSpace(value));
         var ordinary = new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
-            new TextBlock().BindText(librarySectionTitle).FontSize(22).Bold().DockTop(), collectionGrid)
+            new StackPanel().Vertical().Spacing(12).Children(new TextBlock().BindText(librarySectionTitle).FontSize(22).Bold(), statusPanel).DockTop(), collectionGrid)
             .BindIsVisible(playlistCollectionVisible, value => !value);
         var playlist = PlaylistCollectionPage().BindIsVisible(playlistCollectionVisible);
         collectionLoadingView = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(ordinary, playlist));
@@ -101,7 +106,7 @@ internal sealed partial class MainWindow
             var image = visual.Cover; var playback = visual.Playback; var frame = visual.Frame;
             var title = visual.Title; var author = visual.Author; var followersIcon = visual.Followers;
             var subtitle = visual.Subtitle; var root = visual.Root;
-            AttachTrackQueueMenu(root, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
+            visual.TrackMenu = AttachTrackQueueMenu(root, () => visual.Item?.Track);
             AttachTrackTitle(title, () => collectionCards.TryGetValue(root, out var bound) ? bound.Item.Track : null);
             root.Click += () => { if (collectionCards.TryGetValue(root, out var card)) Run(() => OpenLibraryCardAsync(card.Item)); };
             context.Register("root", root); context.Register("cover", image); context.Register("frame", frame);
@@ -115,9 +120,11 @@ internal sealed partial class MainWindow
             var title = context.Get<TextBlock>("title"); var author = context.Get<TextBlock>("author");
             var playback = context.Get<TrackArtworkOverlay>("playback");
             var visual = CollectionCard(root); visual.Item = item;
+            root.ContextMenu = item.Playlist != null ? (visual.PlaylistMenu ??= CreatePlaylistCardMenu(visual)).Model :
+                item.Track != null ? visual.TrackMenu!.Model : null;
             playback.Reset();
             playback.IsVisible = item.Track != null || item.Playlist != null;
-            playback.SetHovered(root.IsMouseOver);
+            playback.SetHovered(playback.IsVisible && root.IsMouseOver);
             RefreshCollectionCardPlayback(visual, animate: false);
             collectionCards[root] = (item, image, frame, title, author, playback);
             collectionCardPositions[root] = index;
@@ -128,11 +135,14 @@ internal sealed partial class MainWindow
             Run(() => LoadCollectionImageAsync(root, item));
         }, (_, _, _, context) =>
         {
-            StopCardArtwork(context.Get<Image>("cover"));
-            CollectionCard(context.Get<Button>("root")).Item = null;
+            var root = context.Get<Button>("root");
+            if (root.ContextMenu != null) PopupAppearance.MenuFor(root).Close(immediate: true, restoreFocus: false);
+            root.ContextMenu = null;
+            ClearCardArtwork(context.Get<Image>("cover"));
+            CollectionCard(root).Item = null;
             context.Get<TrackArtworkOverlay>("playback").Reset();
-            collectionCards.Remove(context.Get<Button>("root"));
-            collectionCardPositions.Remove(context.Get<Button>("root"));
+            collectionCards.Remove(root);
+            collectionCardPositions.Remove(root);
         });
         return grid;
     }
@@ -248,7 +258,7 @@ internal sealed partial class MainWindow
             var items = LibraryItems(key).Take(6).ToArray();
             var source = key is "playlists" or "albums" ? "collections" : key;
             overviewLoadingViews[key].SetLoading(overviewPending.Contains(source) && !overviewReady.Contains(source));
-            section.Grid.Items(items, item => item.Title);
+            SetPageItems(section.Grid, items, LoadingRowStyle.Card);
             section.Grid.Height = Math.Max(1, Math.Ceiling(items.Length / (double)libraryColumns)) * (likedArtworkSize + 90);
             section.Grid.IsVisible = items.Length > 0;
             section.Empty.IsVisible = items.Length == 0 && !overviewErrors.ContainsKey(key) && !overviewPending.Contains(source);
@@ -259,12 +269,13 @@ internal sealed partial class MainWindow
 
     private Task ShowLibrarySectionAsync(Page target) => NavigateRouteAsync(new(target), async generation =>
     {
-        librarySectionTitle.Value = SectionTitle(target); librarySectionStatus.Value = "Загрузка…";
+        librarySectionTitle.Value = SectionTitle(target);
         activeLibrarySource = SectionSource(target);
         activeCollection = libraryPages.GetValueOrDefault(activeLibrarySource);
-        if (activeCollection != null) RenderLibrarySection();
-        else SetPageItems(collectionGrid, Array.Empty<LibraryItem>(), LoadingRowStyle.Card);
-        collectionLoadingView.SetLoading(!libraryPages.ContainsKey(activeLibrarySource) && !demo && me != null);
+        var hasLocalHistory = target == Page.LibraryHistory && localRecent.Any(item => item.Track != null);
+        RenderLibrarySection();
+        librarySectionStatus.Value = "";
+        collectionLoadingView.SetLoading(activeCollection == null && !hasLocalHistory && !demo && me != null);
         var session = api.Session;
         var source = activeLibrarySource;
         var token = loading?.Token ?? lifetime.Token;
@@ -275,6 +286,16 @@ internal sealed partial class MainWindow
         activeCollection = result;
         RenderLibrarySection();
     });
+
+    private async Task RetryLibrarySectionAsync()
+    {
+        var target = page.Value;
+        if (!librarySectionRetry.Value || !IsCollectionPage(target) || target == Page.LibraryCollection) return;
+        var generation = navigationGeneration;
+        librarySectionRetry.Value = false;
+        if (browser is { } connected) await connected.ResetBlockedBrowserAsync(loading?.Token ?? lifetime.Token);
+        if (!disposed && generation == navigationGeneration) await ShowLibrarySectionAsync(target);
+    }
 
     private void RenderLibrarySection()
     {
@@ -324,7 +345,7 @@ internal sealed partial class MainWindow
         }
         await NavigateRouteAsync(new(Page.LibraryCollection, Item: item), async _ =>
         {
-            librarySectionTitle.Value = item.Title; librarySectionStatus.Value = "Загрузка…";
+            librarySectionTitle.Value = item.Title; librarySectionStatus.Value = "";
             activeCollection = null; SetCollectionPresentation(item);
             SetPageItems(collectionGrid, Array.Empty<LibraryItem>(), LoadingRowStyle.Card);
             ClearCollectionTrackViews();
@@ -335,7 +356,7 @@ internal sealed partial class MainWindow
             if (demo) { librarySectionStatus.Value = "В демо-режиме подборки не загружаются."; return; }
             var detail = await api.GetCollectionDetailAsync(item, token);
             var result = detail.Tracks;
-            await PrepareTrackArtworkAsync(result.Tracks, token);
+            await PrepareTrackArtworkAsync(result.Tracks, token, mode: collectionMode.Value);
             if (disposed || token.IsCancellationRequested || api.Session != session) return;
             librarySectionTitle.Value = detail.Item.Title;
             collectionDetails[item.Key] = detail;

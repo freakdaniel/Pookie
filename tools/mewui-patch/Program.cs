@@ -24,6 +24,7 @@ if (assembly.Name.Name == "Aprillz.MewUI")
     captureDepth.CustomAttributes.Add(new CustomAttribute(module.ImportReference(typeof(ThreadStaticAttribute).GetConstructor(Type.EmptyTypes)!)));
     visual.Fields.Add(captureDepth);
     var render = visual.Methods.Single(m => m.Name == "Render");
+    AddPopupCompositorHooks(module, visual);
     foreach (var call in render.Body.Instructions.Where(i => i.Operand is MethodReference m && m.Name is "MarkSubtreeCulled" or "MarkCulledWhileCaching" or "MarkRendered").ToArray())
     {
         var entry = call.Previous;
@@ -91,3 +92,70 @@ assembly.Write(temporary);
 if (File.Exists(output) && File.ReadAllBytes(output).AsSpan().SequenceEqual(File.ReadAllBytes(temporary))) File.Delete(temporary);
 else File.Move(temporary, output, overwrite: true);
 Console.WriteLine($"MewUI: applied Pookie extension to {assembly.Name.Name} (6cda4f98).");
+
+static void AddPopupCompositorHooks(ModuleDefinition module, TypeDefinition visual)
+{
+    // Run the backdrop at the layer's place in the finished scene. The popup
+    // layer samples the parent, and the card paints inside its opacity group.
+    var renderer = module.GetType("Aprillz.MewUI.Rendering.Retained.FrameRenderer");
+    var replay = renderer.Methods.Single(method => method.Name == "ReplayEntries");
+    var element = replay.Parameters[1].ParameterType.Resolve().Properties.Single(property => property.Name == "Element").GetMethod;
+    var graphics = replay.Parameters[2].ParameterType;
+    var drawType = new GenericInstanceType(module.ImportReference(typeof(Action<,>)));
+    drawType.GenericArguments.Add(visual);
+    drawType.GenericArguments.Add(graphics);
+    var draw = new FieldDefinition("PookieBeforeReplay", FieldAttributes.Public | FieldAttributes.Static, drawType);
+    visual.Fields.Add(draw);
+    var drawInvoke = module.ImportReference(typeof(Action<,>).GetMethod("Invoke")!);
+    drawInvoke.DeclaringType = drawType;
+    var il = replay.Body.GetILProcessor();
+    var first = replay.Body.Instructions[0];
+    foreach (var instruction in new[]
+    {
+        Instruction.Create(OpCodes.Ldarg_3), Instruction.Create(OpCodes.Brtrue, first),
+        Instruction.Create(OpCodes.Ldsfld, draw), Instruction.Create(OpCodes.Brfalse, first),
+        Instruction.Create(OpCodes.Ldsfld, draw), Instruction.Create(OpCodes.Ldarg_1),
+        Instruction.Create(OpCodes.Callvirt, element), Instruction.Create(OpCodes.Ldarg_2),
+        Instruction.Create(OpCodes.Callvirt, drawInvoke)
+    }) il.InsertBefore(first, instruction);
+
+    // A partial repaint must also erase the old popup inside its sampling
+    // footprint, otherwise an undamaged part can feed back into the glass.
+    var window = module.GetType("Aprillz.MewUI.Window");
+    var sceneField = window.Fields.Single(field => field.Name == "_renderScene");
+    var scene = sceneField.FieldType.Resolve();
+    var dirtyRegion = scene.Properties.Single(property => property.Name == "DirtyRegion").GetMethod;
+    var areas = dirtyRegion.ReturnType.Resolve().Properties.Single(property => property.Name == "Areas").GetMethod;
+    var addDirty = scene.Methods.Single(method => method.Name == "AddDirtyRect");
+    var addType = new GenericInstanceType(module.ImportReference(typeof(Action<>)));
+    addType.GenericArguments.Add(addDirty.Parameters[0].ParameterType);
+    var addConstructor = module.ImportReference(typeof(Action<>).GetConstructors().Single());
+    addConstructor.DeclaringType = addType;
+    var dirtyType = new GenericInstanceType(module.ImportReference(typeof(Action<,,>)));
+    dirtyType.GenericArguments.Add(window);
+    dirtyType.GenericArguments.Add(areas.ReturnType);
+    dirtyType.GenericArguments.Add(addType);
+    var expand = new FieldDefinition("PookiePopupDamage", FieldAttributes.Public | FieldAttributes.Static, dirtyType);
+    window.Fields.Add(expand);
+    var dirtyInvoke = module.ImportReference(typeof(Action<,,>).GetMethod("Invoke")!);
+    dirtyInvoke.DeclaringType = dirtyType;
+    var update = window.Methods.Single(method => method.Name == "UpdateRetainedScene");
+    var dirtyCheck = update.Body.Instructions.First(instruction => instruction.Operand is MethodReference { Name: "get_IsFullyDirty" });
+    var entry = dirtyCheck.Previous.Previous;
+    if (entry.OpCode != OpCodes.Ldarg_0 || dirtyCheck.Previous.Operand != sceneField)
+        throw new InvalidOperationException("Unexpected retained dirty region IL.");
+    var check = Instruction.Create(OpCodes.Ldsfld, expand);
+    foreach (var instruction in update.Body.Instructions)
+        if (ReferenceEquals(instruction.Operand, entry)) instruction.Operand = check;
+    il = update.Body.GetILProcessor();
+    foreach (var instruction in new[]
+    {
+        check, Instruction.Create(OpCodes.Brfalse, entry),
+        Instruction.Create(OpCodes.Ldsfld, expand), Instruction.Create(OpCodes.Ldarg_0),
+        Instruction.Create(OpCodes.Ldarg_0), Instruction.Create(OpCodes.Ldfld, sceneField),
+        Instruction.Create(OpCodes.Callvirt, dirtyRegion), Instruction.Create(OpCodes.Callvirt, areas),
+        Instruction.Create(OpCodes.Ldarg_0), Instruction.Create(OpCodes.Ldfld, sceneField),
+        Instruction.Create(OpCodes.Ldftn, addDirty), Instruction.Create(OpCodes.Newobj, addConstructor),
+        Instruction.Create(OpCodes.Callvirt, dirtyInvoke)
+    }) il.InsertBefore(entry, instruction);
+}

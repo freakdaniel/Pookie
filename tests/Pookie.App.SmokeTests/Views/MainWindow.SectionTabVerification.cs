@@ -11,7 +11,8 @@ internal sealed partial class MainWindow
     private async Task VerifySectionTabsAsync()
     {
         Button Tab(string title) => (Button)VisualTree.Find(Window.Content, element => element is Button button &&
-            button.StyleName == "section-button" && button.FindVisualChild<TextBlock>() is TextBlock label && label.Text == title)!;
+            (button.StyleName == "section-button" || button is HeaderButton && topNavigation.IsAncestorOf(button)) &&
+            button.FindVisualChild<TextBlock>() is TextBlock label && label.Text == title)!;
         async Task StableActive(Button button, string name)
         {
             await WaitForLikedLayoutAsync(() => button.ActualWidth > 20 && shellPageScroll.IsReady &&
@@ -87,17 +88,17 @@ internal sealed partial class MainWindow
         await StableActive(Tab("Треки"), "scrolled search tracks tab");
         CaptureUiPreview("active-search-tab");
         var all = Tab("Всё");
-        var bright = ((Grid)((StackPanel)all.Content!).Children[0]).Children.OfType<TextBlock>().Last();
+        var label = (TextBlock)all.FindVisualChild<TextBlock>()!;
         RouteWaveformPointer(new Point(all.Bounds.X + all.ActualWidth / 2, all.Bounds.Y + all.ActualHeight / 2));
-        await WaitForLikedLayoutAsync(() => bright.Opacity > .999);
+        await WaitForLikedLayoutAsync(() => label.Foreground == Color.White);
         if (!all.IsEnabled || all.Background != Color.Transparent)
             throw new InvalidOperationException("Inactive search tab lost its interaction or acquired a hover background");
         RouteWaveformPointer(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => bright.Opacity < .001);
+        await WaitForLikedLayoutAsync(() => label.Foreground == Muted);
         Console.WriteLine("UI_SECTION_TABS_OK: active tabs remain white without hover/click changes, reject mouse and keyboard activation, preserve scroll and navigation generation, and allow library overview from child pages; inactive hover remains available");
     }
 
-    private byte[] CaptureSectionButton(Button button)
+    private byte[] CaptureSectionButton(FrameworkElement button)
     {
         var scale = Window.DpiScale;
         using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();

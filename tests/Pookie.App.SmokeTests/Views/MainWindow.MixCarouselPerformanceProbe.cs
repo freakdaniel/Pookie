@@ -25,25 +25,27 @@ internal sealed partial class MainWindow
             api.Session = new("homefixture", "fixture-token", "Test"); api.BrowserTransport = fixture;
             me = new() { Id = 42, Username = "Home fixture" };
             await imageDiskCache.WriteAsync(HomeFixtureTransport.Artwork, ArtworkFixtureBitmap(500), lifetime.Token);
+            SeedHomeMixArtwork();
         }
         signedIn.Value = true;
         await ShowWorkspaceAsync();
         await NavigateHomeAsync();
         Window.Activate();
-        await WaitForLikedLayoutAsync(() => Window.IsActive && homeMixCarousel.ActualHeight > 290 && HomeItems("mixes").Length > 1);
+        await WaitForLikedLayoutAsync(() => Window.IsActive && homeMixCarousel.ActualHeight > 265 && HomeItems("mixes").Length > 1);
         await Task.WhenAll(HomeItems("mixes").Select(GetCollectionArtworkAsync));
         MoveActionPointer(new Point(homeMixCarousel.Bounds.X + 2, homeMixCarousel.Bounds.Y + 2));
         await ObserveAsync(TimeSpan.FromSeconds(2));
         Action? beginInput = null;
         Console.WriteLine($"MIX_PROBE_SETUP live={live}; mixes={HomeItems("mixes").Length}; dpi={Window.DpiScale}; size={Window.ClientSize}");
-        await MeasureAsync("auto", async () => await ObserveAsync(TimeSpan.FromSeconds(4)));
-        await MeasureAsync("rear-click", async () =>
+        await MeasureAsync("idle", async () => await ObserveAsync(TimeSpan.FromSeconds(4)));
+        await MeasureAsync("side-click", async () =>
         {
             for (var i = 0; i < 5; i++)
             {
-                var rear = (homeMixCarousel.FrontIndex + HomeItems("mixes").Length / 2) % HomeItems("mixes").Length;
+                var count = HomeItems("mixes").Length;
+                var side = (homeMixCarousel.FrontIndex + Math.Min(2, count - 1)) % count;
                 var inputStarted = Stopwatch.GetTimestamp();
-                var point = RearPoint(rear);
+                var point = FindHomeMixPoint(side);
                 var searchMs = Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds;
                 inputStarted = Stopwatch.GetTimestamp();
                 beginInput?.Invoke();
@@ -58,16 +60,6 @@ internal sealed partial class MainWindow
         await MeasureAsync("hover-idle", async () => await ObserveAsync(TimeSpan.FromSeconds(1)));
         CaptureUiPreview("mix-carousel-probe");
         Console.WriteLine("MIX_CAROUSEL_PROBE_OK");
-
-        Point RearPoint(int index)
-        {
-            var bounds = homeMixCarousel.Bounds;
-            for (var y = bounds.Y + 10; y < bounds.Bottom - 10; y += 16)
-                for (var x = bounds.X + 10; x < bounds.Right - 10; x += 16)
-                    if (homeMixCarousel.CardAt(new Point(x, y), out var badge) == index && !badge &&
-                        homeMixCarousel.CardAt(new Point(x + 4, y + 4), out badge) == index && !badge) return new(x, y);
-            throw new InvalidOperationException("No visible rear cover body in the carousel probe.");
-        }
 
         async Task MeasureAsync(string phase, Func<Task> action)
         {

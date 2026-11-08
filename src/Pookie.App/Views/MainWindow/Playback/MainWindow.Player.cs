@@ -8,11 +8,12 @@ internal sealed partial class MainWindow
 {
     private const double PlayerBarHeight = 72;
     private const int PlayerControlsWidth = 380;
+    private const double PlayerIdleIconOpacity = .60;
     private StackPanel playerTrackInfo = null!;
     private TextBlock playerTrackTitle = null!, playerTrackArtist = null!;
     private Grid playerTimeline = null!;
     private static readonly Color LikedHeart = Color.FromRgb(184, 51, 78);
-    private static readonly Color PlayerSecondaryText = Color.FromArgb(153, 255, 255, 255);
+    private static readonly Color PlayerSecondaryText = TextAppearance.Secondary;
 
     private readonly List<HoverReveal> hoverReveals = [];
     private TextBlock positionLabel = null!, durationLabel = null!;
@@ -34,7 +35,7 @@ internal sealed partial class MainWindow
         progress.Background = Color.Transparent;
         progress.Padding = new Thickness(0);
         RefreshPlayerTimeline();
-        var idleHeart = Icons.View("heart", 19, Color.FromRgb(190, 190, 190));
+        var idleHeart = Icons.View("heart", 19, Color.White);
         var likedHeart = Icons.View("heart-filled", 19, LikedHeart);
         var hoverHeart = Icons.View("heart-filled", 19, Color.FromRgb(255, 255, 255));
         likedHeart.Opacity = 0;
@@ -44,7 +45,7 @@ internal sealed partial class MainWindow
         bool heartHovered = false;
         void RefreshHeart()
         {
-            idleHeart.Opacity = !heartHovered && !isLiked.Value ? 1 : 0;
+            idleHeart.Opacity = !heartHovered && !isLiked.Value ? PlayerIdleIconOpacity : 0;
             likedHeart.Opacity = isLiked.Value ? 1 : 0;
             hoverHeart.Opacity = heartHovered && !isLiked.Value ? 1 : 0;
         }
@@ -60,12 +61,12 @@ internal sealed partial class MainWindow
             .OnClick(() => Run(ToggleLikeAsync));
         RefreshHeart();
         heartButton.Hint("Нравится");
-        playerRepostButton = PlayerButton(PlayerRepostGlyph(19, Color.FromRgb(190, 190, 190)),
+        playerRepostButton = PlayerButton(PlayerRepostGlyph(19, Color.White),
             () => Run(ToggleCurrentTrackRepostAsync), isReposted).BindIsEnabled(repostAvailable);
         void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? "Убрать репост" : "Сделать репост");
         isReposted.Changed += RefreshRepostHint;
         RefreshRepostHint();
-        var share = playerShareButton = PlayerButton(Icons.View("arrow-square-out", 19, Color.FromRgb(190, 190, 190)),
+        var share = playerShareButton = PlayerButton(Icons.View("arrow-square-out", 19, Color.White),
             () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }).BindIsEnabled(playerVisible).Hint("Поделиться");
 
         playerArtworkOverlay = new Border().Background(Color.FromArgb(140, 0, 0, 0))
@@ -116,23 +117,23 @@ internal sealed partial class MainWindow
                 heartButton.CenterVertical().Column(2), playerRepostButton.Column(3), share.Column(4)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
-                    PlayerButton(Icons.View("skip-back-solid", 18), () => Run(() => SkipAsync(-1))).CenterVertical(),
+                    PlayerButton(Icons.View("skip-back-solid", 18, Color.White), () => Run(() => SkipAsync(-1))).CenterVertical(),
                     new Button().Content(new Grid().Columns("*").Rows("*").Children(
                         Icons.PlaybackDisc(false, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying, value => !value),
                         Icons.PlaybackDisc(true, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying)))
                         .Padding(0).Width(34).Height(34).CornerRadius(17).Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0)
                         .OnClick(() => Run(ToggleAsync)),
-                    PlayerButton(Icons.View("skip-forward-solid", 18), () => Run(() => SkipAsync(1))).CenterVertical()),
+                    PlayerButton(Icons.View("skip-forward-solid", 18, Color.White), () => Run(() => SkipAsync(1))).CenterVertical()),
                 playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(
-                queueButton = PlayerButton(Icons.View("queue", 19), () =>
+                queueButton = PlayerButton(Icons.View("queue", 19, Color.White), () =>
                     { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
-                PlayerButton(Icons.View("shuffle", 19), () => shuffle.Value = !shuffle.Value, shuffle),
+                PlayerButton(Icons.View("shuffle", 19, Color.White), () => shuffle.Value = !shuffle.Value, shuffle),
                 PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                     PlayerButton(new Grid().Columns("*").Rows("*").Children(
-                        Icons.View("speaker-high", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),
-                        Icons.View("speaker-slash", 19).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute),
+                        Icons.View("speaker-high", 19, Color.White).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),
+                        Icons.View("speaker-slash", 19, Color.White).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute),
                     volumeSlider))));
         // The backdrop is shared with the rounded content corners above the player.
         playerBackdrop.Height(0).Bottom().BindIsVisible(playerVisible);
@@ -154,7 +155,7 @@ internal sealed partial class MainWindow
     private static Button PlayerButton(FrameworkElement content, Action action, ObservableValue<bool>? active = null)
     {
         bool hovered = false;
-        void Refresh() => content.Opacity = hovered || active?.Value == true ? 1 : .72;
+        void Refresh() => content.Opacity = hovered || active?.Value == true ? 1 : PlayerIdleIconOpacity;
         Refresh();
         if (active != null) active.Changed += Refresh;
         content.Transitions = [Transition.Create(UIElement.OpacityProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1))];

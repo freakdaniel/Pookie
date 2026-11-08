@@ -12,7 +12,7 @@ internal sealed partial class MainWindow
         public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && TrackSection == other.TrackSection && SettingsSection == other.SettingsSection && UserSection == other.UserSection;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
-        LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus,
+        LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus, bool CollectionRetry,
         string Filter, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter, UserProfileState? UserProfile,
         FeedState? Feed, bool FeedReposts);
     private sealed class NavigationEntry(NavigationRoute route)
@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
     private ScrollViewer overviewScroll = null!;
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
-        activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value,
+        activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value, librarySectionRetry.Value,
         likedFilterText, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilterText, userProfileState, feedState, feedReposts.Value);
 
     private ScrollViewer? NavigationScroll() => page.Value == Page.Chats || !shellPageScroll.IsReady ? null : shellScroll;
@@ -63,6 +63,7 @@ internal sealed partial class MainWindow
             if (navigationHistory.Count > 100) { navigationHistory.RemoveAt(0); navigationIndex--; }
         }
         navigationHistory[navigationIndex].Pending = pending;
+        librarySectionRetry.Value = false;
         RenewLoadToken();
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
         feedLoading = false; feedSkeleton.SetActive(false); ResetUserLoading();
@@ -85,7 +86,11 @@ internal sealed partial class MainWindow
         catch (Exception) when (generation != navigationGeneration || disposed) { return; }
         catch (Exception error)
         {
-            if (IsCollectionPage(route.Page)) librarySectionStatus.Value = FriendlyError(error);
+            if (IsCollectionPage(route.Page))
+            {
+                librarySectionStatus.Value = FriendlyError(error);
+                librarySectionRetry.Value = route.Page != Page.LibraryCollection && error is not OperationCanceledException;
+            }
             if (route.Page == Page.Search) searchStatus.Value = "";
             throw;
         }
@@ -107,6 +112,7 @@ internal sealed partial class MainWindow
         if (index < 0 || index >= navigationHistory.Count) return;
         navigationHistory[navigationIndex].Snapshot = CaptureNavigation();
         RenewLoadToken();
+        librarySectionRetry.Value = false;
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
         feedLoading = false; feedSkeleton.SetActive(false); ResetUserLoading();
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
@@ -154,7 +160,11 @@ internal sealed partial class MainWindow
         else if (entry.Route.Page == Page.Chats) Run(RefreshChatsAsync);
         else if (entry.Route.Page == Page.Settings) { settingsSection.Value = entry.Route.SettingsSection; RefreshSettingsControls(); RefreshSettingsData(); }
         else if (IsCollectionPage(entry.Route.Page))
-        { RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; }
+        {
+            RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter;
+            librarySectionStatus.Value = state.CollectionStatus;
+            librarySectionRetry.Value = state.CollectionRetry;
+        }
         // Restore against arranged virtualized extents, rather than a guessed delay.
         pendingNavigationScroll = (generation, state.Scroll);
         Window.InvalidateVisual();
@@ -192,12 +202,13 @@ internal sealed partial class MainWindow
     {
         Button Arrow(string icon, ObservableValue<bool> enabled, int offset)
         {
-            return new HeaderIconButton(icon, offset < 0).BindIsEnabled(enabled)
+            const double radius = ShellHeader.HistoryButtonSize / 2;
+            var corners = offset < 0 ? new CornerRadius(radius, 6, 6, radius) : new CornerRadius(6, radius, radius, 6);
+            return new HeaderButton(corners, dimDisabledContent: true).Width(ShellHeader.HistoryButtonSize).Height(ShellHeader.HistoryButtonSize)
+                .Content(Icons.View(icon, 20, TrackButtons.OnSurface).Center()).BindIsEnabled(enabled)
                 .OnClick(() => Run(() => MoveNavigationAsync(offset)));
         }
         backButton = Arrow("arrow-left", canGoBack, -1); forwardButton = Arrow("arrow-right", canGoForward, 1);
-        return new CardShadow(new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton),
-            blur: 6, offset: 2, radius: 18, color: Color.FromArgb(65, 0, 0, 0))
-            .Margin(-6, -4, -6, -8).CenterVertical();
+        return new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton).CenterVertical();
     }
 }

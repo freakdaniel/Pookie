@@ -35,7 +35,7 @@ internal sealed partial class MainWindow
         // A realized row can belong to the prefetch band. Showing the native
         // window may also reduce the client height; move the tested row into
         // the actual viewport before delivering physical pointer input.
-        var visibleTop = Math.Max(headerGlass.Bounds.Bottom + 16, shellScroll.Bounds.Y + 16);
+        var visibleTop = Math.Max(startupHeader.Bounds.Bottom + 16, shellScroll.Bounds.Y + 16);
         var visibleBottom = Math.Min(shellScroll.Bounds.Bottom, Window.ClientSize.Height - PlayerBarHeight) - 16;
         if (row.Root.Bounds.Y < visibleTop || row.Root.Bounds.Bottom > visibleBottom)
         {

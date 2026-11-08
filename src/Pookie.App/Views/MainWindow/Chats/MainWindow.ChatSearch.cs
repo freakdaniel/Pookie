@@ -58,7 +58,7 @@ internal sealed partial class MainWindow
             chatSidebarSearching = searching;
             chatSidebarTransition.Show(searching ? chatSidebarSearch : chatSidebarNormal, searching ? 1 : -1);
         }
-        if (chatSidebarBack != null) chatSidebarBack.Content = Icons.View(searching ? "arrow-left" : "list", 22, Muted).Center();
+        if (chatSidebarBack != null) chatSidebarBack.Content = Icons.View(searching ? "arrow-left" : "list", 22, MutedIcon).Center();
         chatGlobalSearchModes.IsVisible = true;
         if (chatGlobalSearchClear != null) chatGlobalSearchClear.IsVisible = chatSearch.Text.Length > 0;
     }
@@ -74,7 +74,7 @@ internal sealed partial class MainWindow
         for (var i=0; i<recent.Length; i++)
         {
             var dialog = recent[i]; var avatar = new Image().Width(42).Height(42).StretchMode(Stretch.UniformToFill);
-            avatar.Source = Icons.Source("user",Muted);
+            avatar.Source = Icons.Source("user",MutedIcon);
             var content = new StackPanel().Vertical().Spacing(7).Children(
                 new Border().Width(42).Height(42).CornerRadius(21).ClipToBounds().Child(avatar).CenterHorizontal(),
                 new TextBlock().Text(dialog.Recipient.Username).FontSize(11).TextTrimming(TextTrimming.CharacterEllipsis).CenterHorizontal().MaxWidth(62));
@@ -96,9 +96,9 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ChatGlobalSearchField()
     {
-        chatGlobalSearchClear = TrackButtons.Icon(Icons.View("x-mark", 16, Muted), () => { chatSearch.Text = ""; chatSearch.Focus(); }, TrackButtons.Text, 28).IsVisible(false).Hint("Очистить поиск");
+        chatGlobalSearchClear = TrackButtons.Icon(Icons.View("x-mark", 16, MutedIcon), () => { chatSearch.Text = ""; chatSearch.Focus(); }, TrackButtons.Text, 28).IsVisible(false).Hint("Очистить поиск");
         chatSearch.Padding = new Thickness(0);
-        chatGlobalSearchIcon = Icons.View("magnifying-glass",20,Muted).Center();
+        chatGlobalSearchIcon = Icons.View("magnifying-glass",20,MutedIcon).Center();
         chatGlobalSearchBusy = new LoadingSpinner().Width(16).Height(16).IsActive(false).IsVisible(false).Center();
         var card = new GlassCard().Height(40).CornerRadius(20).Padding(12,0).Child(new Grid().Columns("20,*,Auto").Rows("*").Spacing(10).Children(
             new Grid().Columns("*").Rows("*").Children(chatGlobalSearchIcon,chatGlobalSearchBusy).Column(0), chatSearch.Column(1).CenterVertical(), chatGlobalSearchClear.Column(2).CenterVertical()));
@@ -130,10 +130,10 @@ internal sealed partial class MainWindow
         });
         chatThreadSearchBusy = new LoadingSpinner().Width(12).Height(12).IsActive(false).IsVisible(false).CenterVertical();
         chatSearchCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
-        chatSearchPrevious = TrackButtons.Icon(Icons.View("arrow-left", 17, Muted), () => Run(() => NavigateChatSearchAsync(-1)), TrackButtons.Text, 30).Hint("Предыдущий результат · Shift+Enter");
-        chatSearchNext = TrackButtons.Icon(Icons.View("arrow-right", 17, Muted), () => Run(() => NavigateChatSearchAsync(1)), TrackButtons.Text, 30).Hint("Следующий результат · Enter");
-        var close = TrackButtons.Icon(Icons.View("x-mark", 18, Muted), () => { if (chatMessageSearch.Text.Length > 0) chatMessageSearch.Text = ""; else CloseChatSearch(); }, TrackButtons.Text, 30).Hint("Очистить / закрыть поиск");
-        chatSearchIdentity = new Grid().Columns("20,*,Auto,30,30,30").Rows("*").Spacing(4).Children(Icons.View("magnifying-glass", 20, Muted).Center().Column(0), chatMessageSearch.Column(1).CenterVertical(), new StackPanel().Horizontal().Spacing(5).Children(chatThreadSearchBusy,chatSearchCount).Column(2).CenterVertical(), chatSearchPrevious.Column(3).CenterVertical(), chatSearchNext.Column(4).CenterVertical(), close.Column(5).CenterVertical()).IsVisible(false);
+        chatSearchPrevious = TrackButtons.Icon(Icons.View("arrow-left", 17, MutedIcon), () => Run(() => NavigateChatSearchAsync(-1)), TrackButtons.Text, 30).Hint("Предыдущий результат · Shift+Enter");
+        chatSearchNext = TrackButtons.Icon(Icons.View("arrow-right", 17, MutedIcon), () => Run(() => NavigateChatSearchAsync(1)), TrackButtons.Text, 30).Hint("Следующий результат · Enter");
+        var close = TrackButtons.Icon(Icons.View("x-mark", 18, MutedIcon), () => { if (chatMessageSearch.Text.Length > 0) chatMessageSearch.Text = ""; else CloseChatSearch(); }, TrackButtons.Text, 30).Hint("Очистить / закрыть поиск");
+        chatSearchIdentity = new Grid().Columns("20,*,Auto,30,30,30").Rows("*").Spacing(4).Children(Icons.View("magnifying-glass", 20, MutedIcon).Center().Column(0), chatMessageSearch.Column(1).CenterVertical(), new StackPanel().Horizontal().Spacing(5).Children(chatThreadSearchBusy,chatSearchCount).Column(2).CenterVertical(), chatSearchPrevious.Column(3).CenterVertical(), chatSearchNext.Column(4).CenterVertical(), close.Column(5).CenterVertical()).IsVisible(false);
         return chatSearchIdentity;
     }
     private FrameworkElement ChatThreadSearchResults()
@@ -229,7 +229,7 @@ internal sealed partial class MainWindow
         var dialog = chatConversations.FirstOrDefault(c => c.Recipient.Id == hit.PeerId);
         var author = chatThreadSearchOpen && hit.Message.SenderId == chatAccountId ? me : dialog?.Recipient;
         var name = author?.Username ?? "Переписка";
-        var avatar = new Image().Width(32).Height(32).StretchMode(Stretch.UniformToFill); avatar.Source = Icons.Source("user", Muted);
+        var avatar = new Image().Width(32).Height(32).StretchMode(Stretch.UniformToFill); avatar.Source = Icons.Source("user", MutedIcon);
         var content = new Grid().Columns("32,*").Rows("*").Spacing(10).Children(new Border().CornerRadius(16).ClipToBounds().BorderThickness(0).Child(avatar).Width(32).Height(32).Column(0).CenterVertical(),
             new StackPanel().Vertical().Spacing(4).Column(1).CenterVertical().Children(new Grid().Columns("*,Auto").Rows("Auto").Spacing(6).Children(
                 new TextBlock().Text(name).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Column(0),

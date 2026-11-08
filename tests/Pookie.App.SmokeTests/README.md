@@ -188,10 +188,10 @@ browser descendants, independent browser lifetime and nonzero opener exit codes.
 It does not launch a real browser or change desktop associations.
 
 `POOKIE_SEARCH_ONLY=1` with `--chrome-ui-smoke-test` runs the existing search layout,
-virtualization and scrolling checks independently of the header interaction checks
+virtualization and scrolling checks after the header glass pixel check.
 
-`--chrome-ui-smoke-test --no-audio` verifies the shared page/top-bar surface,
-the real blurred scroll-under header, square scroll viewports, the player-edge fade,
+`--chrome-ui-smoke-test --no-audio` verifies the three glass header cards,
+same-frame backdrop updates with clear gaps between cards, square scroll viewports, the player-edge fade,
 one-to-one page scrolling with virtualized lists, the final item, responsive bounds,
 and back navigation with scroll restoration. The native scrollbar's track and hit
 area start below the glass header; native thumb dragging covers both ends of the range.
@@ -274,8 +274,8 @@ For a passive carousel performance probe, set `POOKIE_MIX_PROBE=fixture` or
 `POOKIE_MIX_PROBE=live` and run the same Home command. Live mode reads the saved
 account's actual mixes and artwork through a separate temporary browser profile;
 it does not submit playback, history, likes or messages. The probe observes
-`Window.FrameRendered` during automatic motion and five rear-cover clicks, then
-checks the paused hover state. It does not request frames during measurement.
+`Window.FrameRendered` while the covers rest, during five side-cover clicks,
+and after the pointer settles. It does not request frames during measurement.
 Active frame intervals exclude the intentional idle wait between completed turns
 and the next click. Optional `POOKIE_PERF_CAPTURE=<absolute-json-path>` enables
 MewUI timing/allocation counters; `POOKIE_UI_PREVIEW=<directory>` saves a visual
@@ -567,6 +567,40 @@ For DRM checks, close the normal app first: the diagnostic host needs the same
 SoundCloud profile. These checks preserve its existing session. Set
 `POOKIE_DRM_DIAGNOSTICS=1` for bounded failure metadata without credentials or
 license payloads in the output.
+
+The native reference check runs independently of the SoundCloud profile and
+can run while the app is open. It loads an installed Widevine CDM of the same
+architecture as the process, acquires a license for the public Shaka Angel One
+sample, and decodes one encrypted AAC fragment to non-silent PCM. Run the same
+command on Windows, Linux and macOS:
+
+```bash
+dotnet run --project tests/Pookie.App.SmokeTests -- --native-widevine-reference-probe
+```
+
+`NATIVE_WIDEVINE_REFERENCE_PCM_OK` confirms the local CDM and decoder work with
+the public sample. On Windows or Linux with a valid Pookie session, use
+`--protected-audio-smoke-test TRACK_URL --drm-native-cdm` for the SoundCloud
+license and playback check on the same host. In the Windows comparison recorded
+in `be564f28`, the public license succeeded while the SoundCloud native license
+request returned HTTP 403.
+
+To check the native host's VMP status separately, run the Castlabs lab's public
+Tears of Steel license exchange through Pookie's CDM. The default is Widevine
+UAT. Add `--vmp-production` to use the lab's production backend for the same
+test content:
+
+```bash
+dotnet run --project tests/Pookie.App.SmokeTests -- --native-widevine-vmp-probe
+```
+
+`NATIVE_WIDEVINE_VMP_STATUS` reports the explicit status in the server's license
+response. `not-reported` means the response provided no recognized status.
+`PLATFORM_UNVERIFIED` describes this host for the public test and is expected on
+Linux. To attribute a SoundCloud 403 to VMP, look for an explicit host verification
+rejection in the `POOKIE_DRM_DIAGNOSTICS=1` log on Windows, or compare the same
+native host and CDM against the same SoundCloud track before and after approved
+VMP signing. A public test license can succeed with an unverified host.
 
 The default protected-audio scenario uses the production platform route: browser
 EME/MSE on Windows and native Widevine/SoundFlow on Linux. It checks decoded

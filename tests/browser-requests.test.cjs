@@ -28,6 +28,59 @@ function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded
 }
 const response = (status, data = {}) => ({status,ok:status>=200&&status<300,json:async()=>data,text:async()=>JSON.stringify(data)});
 
+test('profile verification prefers the website token for the confirmed account', async () => {
+  for (const [savedId, cookieUser, accepted] of [[42,42,true],[42,99,false],[undefined,42,false]]) {
+    const h = harness((url, options) => {
+      if (new URL(url).pathname !== '/me') return response(401);
+      return options.headers.Authorization === 'OAuth refreshed-token' ? response(200, {id:cookieUser,username:'Fixture'}) : response(401);
+    }, 'https://soundcloud.com', false, true, true, true, {verified_user_id:savedId});
+    h.document.cookie = 'oauth_token=refreshed-token';
+    h.window.__pookieRequest(command(1,'me')); await tick();
+    const verified = h.messages.at(-1);
+    assert.equal(verified.status,accepted ? 200 : 401);
+    assert.equal(verified.session?.access_token,accepted ? 'refreshed-token' : undefined);
+    assert.equal(h.calls.length,1);
+    assert.equal(h.calls[0][1].headers.Authorization,savedId ? 'OAuth refreshed-token' : 'OAuth secret-token');
+
+    h.window.__pookieRequest(command(2)); await tick();
+    assert.equal(h.calls.at(-1)[1].headers.Authorization,accepted ? 'OAuth refreshed-token' : 'OAuth secret-token');
+    assert.equal(h.calls.filter(([,options])=>options.method==='PUT').length,1);
+    assert.equal(h.messages.at(-1).status,401);
+  }
+});
+
+test('profile verification refreshes the same-origin cookie once after 401', async () => {
+  for (const [refreshStatus, replacement, userId, expected] of [
+    [204, 'rotated-token', 42, 200], [204, 'rotated-token', 99, 401], [204, '', 42, 401],
+    [400, '', 42, 401], [403, '', 42, 403], [429, '', 42, 429], [503, '', 42, 503]
+  ]) {
+    const h = harness((url, options) => {
+      if (url === 'https://soundcloud.com/api/refresh-token') {
+        assert.equal(options.method,'POST');
+        assert.equal(options.credentials,'include');
+        assert.equal(options.redirect,'error');
+        assert.equal(options.headers,undefined);
+        assert.equal(options.body,undefined);
+        if (replacement) h.document.cookie = 'oauth_token=' + replacement;
+        if (refreshStatus === 403) {
+          h.emit('dd_response_displayed','device_check_invisible_mode');
+          h.emit('dd_response_passed','device_check_invisible_mode');
+        }
+        return response(refreshStatus, { access_token: 'unused-response-token' });
+      }
+      assert.equal(new URL(url).pathname,'/me');
+      return options.headers.Authorization === 'OAuth rotated-token' ? response(200, { id: userId }) : response(401);
+    }, 'https://soundcloud.com', false, true, true, true, { verified_user_id: 42 });
+    h.document.cookie = 'oauth_token=expired-website-token';
+    h.window.__pookieRequest(command(1,'me')); await tick();
+    const result = h.messages.at(-1);
+    assert.equal(result.status,expected);
+    assert.equal(result.session?.access_token,expected === 200 ? replacement : undefined);
+    assert.deepEqual(h.calls.map(([,options])=>options.method),replacement ? ['GET','POST','GET'] : ['GET','POST']);
+    assert.equal(h.calls[0][1].headers.Authorization,'OAuth expired-website-token');
+  }
+});
+
 test('web playlist metadata edits preserve duplicate track IDs and use the numeric web route', async () => {
   let playlist={id:77,user:{id:42},title:'Before',sharing:'private',description:'',track_count:3,tracks:[{id:8},{id:7},{id:8}]};
   const h=harness((url,options)=>{

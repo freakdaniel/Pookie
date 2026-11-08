@@ -110,7 +110,7 @@ internal sealed partial class MainWindow
         ++chatRevision; ++chatSearchRevision;
         if (chatHistory != null) { _ = chatHistory.DisposeAsync(); chatHistory = null; }
         ++chatAvatarGeneration;
-        if(chatHeaderAvatar!=null)chatHeaderAvatar.Source=Icons.Source("user",Muted);
+        if(chatHeaderAvatar!=null)chatHeaderAvatar.Source=Icons.Source("user",MutedIcon);
         chatPersistenceClosing = FlushChatPersistenceAsync();
         chatMedia.DiskCache=null; chatGifMedia = null; chatWorkspaceStore = null; chatWorkspace = ChatWorkspaceStore.Empty; chatReactions.Clear();
         chatAccountReady = false;

@@ -2,13 +2,14 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private LibrarySkeleton ArtworkSkeleton(Image image) => artworkLoading.TryGetValue(image, out var skeleton)
-        ? skeleton : throw new InvalidOperationException("Artwork skeleton is not registered.");
+    private LibrarySkeleton ArtworkSkeleton(Image image) => artworkLoading.TryGetValue(image, out var presentation)
+        ? presentation.Skeleton : throw new InvalidOperationException("Artwork skeleton is not registered.");
 
     private async Task VerifyArtworkLifetimeAsync()
     {
@@ -41,6 +42,7 @@ internal sealed partial class MainWindow
             if (!skeleton.Running) throw new InvalidOperationException("Reattached loading artwork did not resume its shimmer.");
             trackDetailPlaylists.Clear();
             StopCardArtwork(image); layer.Dispose();
+            VerifyRecycledArtworkLifetime();
             VerifyChatMenuOwnership();
             await VerifyUnrestoredVoiceDraftRetentionAsync();
             await VerifyVoiceStartupOwnershipAsync();
@@ -51,6 +53,40 @@ internal sealed partial class MainWindow
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("ARTWORK_LIFETIME_FAILED: " + error); }
         finally { Window.Close(); }
+    }
+
+    private void VerifyRecycledArtworkLifetime()
+    {
+        using var grid = CreateCollectionGrid(preview: false);
+        using var context = new TemplateContext();
+        using var card = grid.ItemTemplate.Build(context);
+        var row = CreateCompactTrackRow();
+        var sources = ReleaseRecycledArtwork(grid.ItemTemplate, card, context, row);
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        if (sources.Any(source => source.IsAlive))
+            throw new InvalidOperationException("Recycled collection card or compact row retained its old cover.");
+        GC.KeepAlive(card);
+        GC.KeepAlive(row);
+        compactTrackRows.Remove(row);
+        row.Root.Dispose();
+        Console.WriteLine("RECYCLED_ARTWORK_LIFETIME_OK: unbound card and row released their covers");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private WeakReference[] ReleaseRecycledArtwork(IDataTemplate template, FrameworkElement card, TemplateContext context, CompactTrackRow row)
+    {
+        var item = new LibraryItem("fixture", "Artwork fixture", "", null);
+        template.Bind(card, item, 0, context);
+        var cover = context.Get<Image>("cover");
+        var cardSource = ImageSource.FromBgraPixels(500, 500, new byte[500 * 500 * 4]);
+        SetCardArtwork(cover, cardSource, null);
+        template.Unbind(card, item, 0, context);
+
+        BindCompactTrackRow(row, new SoundCloudTrack { Id = -1, Title = "Artwork fixture" }, loadArtwork: false);
+        var rowSource = ImageSource.FromBgraPixels(500, 500, new byte[500 * 500 * 4]);
+        SetCardArtwork(row.Cover, rowSource, null);
+        BindCompactTrackRow(row, null);
+        return [new WeakReference(cardSource), new WeakReference(rowSource)];
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

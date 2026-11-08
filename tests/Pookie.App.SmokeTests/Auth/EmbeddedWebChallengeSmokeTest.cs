@@ -16,10 +16,14 @@ internal static class EmbeddedWebChallengeSmokeTest
         var calls = new ConcurrentDictionary<int, int>();
         var releases = new ConcurrentDictionary<int, TaskCompletionSource>();
         var documents = 0;
+        var refreshes = 0;
         server.MapGet("/", (HttpContext context) =>
         {
             Interlocked.Increment(ref documents);
             if (!context.Request.Cookies.ContainsKey("datadome")) context.Response.Cookies.Append("datadome", "initial");
+            if (!context.Request.Cookies.ContainsKey("oauth_token")) context.Response.Cookies.Append("oauth_token", "fixture-expired");
+            if (!context.Request.Cookies.ContainsKey("oauth_refresh_token"))
+                context.Response.Cookies.Append("oauth_refresh_token", "fixture-refresh", new CookieOptions { HttpOnly = true });
             return Results.Content("""
                 <!doctype html><html><head><title>Web session fixture</title></head><body style="background:#243055;color:#eee;font:22px sans-serif">
                 <h1>Existing SoundCloud website session</h1><button>Fixture website</button>
@@ -64,7 +68,19 @@ internal static class EmbeddedWebChallengeSmokeTest
             var id = int.Parse(context.Request.Query["id"].ToString());
             await releases.GetOrAdd(id, _ => new(TaskCreationOptions.RunContinuationsAsynchronously)).Task.WaitAsync(context.RequestAborted);
         });
-        server.MapGet("/me", () => Results.Json(new { id = 42, username = "Fixture" }));
+        server.MapGet("/me", (HttpContext context) => context.Request.Headers.Authorization == "OAuth fixture-token"
+            ? Results.Json(new { id = 42, username = "Fixture" }) : Results.Unauthorized());
+        server.MapPost("/api/refresh-token", (HttpContext context) =>
+        {
+            if (Interlocked.Increment(ref refreshes) != 1 || context.Request.Cookies["oauth_refresh_token"] != "fixture-refresh" ||
+                context.Request.Headers.ContainsKey("Authorization") || context.Request.QueryString.HasValue)
+                return Results.BadRequest();
+            context.Response.Cookies.Append("oauth_token", "fixture-token");
+            context.Response.Cookies.Append("oauth_refresh_token", "fixture-refresh-rotated", new CookieOptions { HttpOnly = true });
+            return Results.NoContent();
+        });
+        server.MapGet("/me/play-history/tracks", (HttpContext context) => context.Request.Headers.Authorization == "OAuth fixture-token"
+            ? Results.Json(new { collection = new[] { new { track = new { id = 32, title = "Server history fixture" } } } }) : Results.Unauthorized());
         server.MapMethods("/users/42/track_likes/{id:int}", ["PUT", "DELETE"], (int id, HttpContext context) =>
         {
             if (context.Request.Headers.Authorization != "OAuth fixture-token" || context.Request.Query["client_id"] != "fixture")
@@ -88,6 +104,7 @@ internal static class EmbeddedWebChallengeSmokeTest
                     id => calls.GetValueOrDefault(id), () => Volatile.Read(ref documents));
             });
             if (tested?.VerificationFailure is { } error) throw new InvalidOperationException("Embedded web challenge failed.", error);
+            if (refreshes != 1) throw new InvalidOperationException("Session recovery did not refresh exactly once.");
         }
         finally
         {

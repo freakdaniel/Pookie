@@ -41,7 +41,7 @@ internal sealed partial class MainWindow
         {
             var row = CreateUserTrackRow(publication: true, item: item); userPublicationRows.Add(row);
             row.Bind(track); SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
-            likedArtworkTracks[row.Cover] = track.Id; RefreshLikedRow(row);
+            likedArtworkTracks[row.Cover] = (track.Id, track.ArtworkUrl ?? track.User?.AvatarUrl); RefreshLikedRow(row);
             loads.Add(() => Task.WhenAll(LoadLikedArtworkAsync(row.Cover, track), LoadLikedWaveformAsync(row, track), LoadLikedTrackArtAsync(row, track)));
             content = row.Root;
         }
@@ -76,7 +76,7 @@ internal sealed partial class MainWindow
                 var row = CreateCompactTrackRow(value => Run(() => PlayUserPlaylistTrackAsync(item, value)), dense: true);
                 row.Root.Margin = new Thickness(-8, 0, -8, 0);
                 BindCompactTrackRow(row, track, loadArtwork: false); userPreviewRows.Add(row); preview.Add(row.Root);
-                loads.Add(async () => { var source = await GetLibraryArtworkAsync(track); if (!disposed && row.Track?.Id == track.Id) SetCardArtwork(row.Cover, source, track.ArtworkUrl ?? track.User?.AvatarUrl, finished: true); });
+                loads.Add(() => LoadCompactTrackArtworkAsync(row, track.ArtworkUrl ?? track.User?.AvatarUrl));
             }
         }
         BindPreview(playlist.Tracks ?? []);

@@ -69,7 +69,7 @@ internal sealed partial class MainWindow
         await sessionWrites.WaitAsync(lifetime.Token);
         try
         {
-            if (disposed || browser != connected) return;
+            if (disposed || browser != connected || me is not { } user || connected.Account.VerifiedUserId != user.Id) return;
             api.Session = connected.Account;
             if (vault != null)
                 try { await Task.Run(() => vault.Save(connected.Account), lifetime.Token); }

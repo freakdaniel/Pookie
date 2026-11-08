@@ -7,37 +7,6 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private async Task VerifyHeaderCaptureLifetimeAsync()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-        var root = (Panel)Window.Content!;
-        var host = new Grid().Width(320).Height(120).Left().Top();
-        using var frame = new GlassContentFrame(new Border().BorderThickness(0).Background(Color.FromRgb(190, 70, 20)));
-        root.Add(host);
-        try
-        {
-            IRenderSurface? previous = null;
-            for (var cycle = 0; cycle < 3; cycle++)
-            {
-                host.Add(frame);
-                await WaitForLikedLayoutAsync(() => frame.ActualWidth > 300 && frame.ActualHeight > 100);
-                var surface = frame.CaptureBackdrop(frame.Bounds, Surface);
-                if (ReferenceEquals(surface, previous))
-                    throw new InvalidOperationException("Reattached header capture retained its detached surface.");
-                if (!ReferenceEquals(surface, frame.CaptureBackdrop(frame.Bounds, Surface)))
-                    throw new InvalidOperationException("An unchanged header capture recreated its surface.");
-                var pixels = ((ICpuPixelSurface)surface).GetReadOnlyPixelSpan();
-                if (pixels[0] != 20 || pixels[1] != 70 || pixels[2] != 190 || pixels[3] != 255)
-                    throw new InvalidOperationException("Reattached header capture lost its pixels or alpha.");
-                previous = surface;
-                host.Remove(frame);
-                await WaitForLoginFrameAsync();
-            }
-            Console.WriteLine("HEADER_CAPTURE_LIFETIME_OK: retained attached surface, three detach/reattach cycles, opaque source pixels retained");
-        }
-        finally { root.Remove(host); host.Dispose(); }
-    }
-
     private void VerifyBackdropBlurPixels()
     {
         foreach (var (width, height) in new[] { (1, 1), (7, 9), (2, 17), (19, 11) })
@@ -82,6 +51,66 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException($"SIMD blur changed integer-rounded BGRA pixels: {width}x{height}, sigma={sigma}.");
         }
         Console.WriteLine("BACKDROP_BLUR_PIXELS_OK: SIMD output exactly matches direct clamped BGRA box sums");
+    }
+
+    private static void VerifyLiquidGlassPixels()
+    {
+        const int size = 48;
+        var backdrop = new byte[size * size * 4];
+        var lens = new byte[backdrop.Length];
+        var bounds = new Rect(0, 0, size, size);
+        var corners = new CornerRadius(12, 5, 12, 5);
+        int Pixel(int y, int channel) => (y * size + size / 2) * 4 + channel;
+        void Paint() => LiquidGlassLens.Render(lens, size, size, backdrop, backdrop, size, size, bounds, bounds.Size, corners);
+
+        for (var y = 0; y < size; y++)
+        for (var x = 0; x < size; x++)
+        {
+            var index = (y * size + x) * 4;
+            backdrop[index] = backdrop[index + 1] = backdrop[index + 2] = (byte)(4 * y);
+            backdrop[index + 3] = 255;
+        }
+        Paint();
+        if (lens[Pixel(0, 2)] <= lens[Pixel(0, 0)] + 3 ||
+            lens[Pixel(size - 1, 0)] <= lens[Pixel(size - 1, 2)] + 3 ||
+            lens[Pixel(size / 2, 1)] != backdrop[Pixel(size / 2, 1)])
+            throw new InvalidOperationException("The lens did not displace RGB channels around its edges while preserving its center.");
+
+        for (var i = 0; i < backdrop.Length; i += 4)
+            backdrop[i] = backdrop[i + 1] = backdrop[i + 2] = 80;
+        Paint();
+        if (lens[Pixel(0, 1)] <= lens[Pixel(size - 1, 1)] + 6 ||
+            lens[Pixel(size - 1, 1)] <= 80 || lens[Pixel(size / 2, 1)] != 80 || lens[Pixel(0, 3)] != 255)
+            throw new InvalidOperationException("Glass glare did not follow the surface normal with a weaker reflection on the far edge.");
+        Console.WriteLine("LIQUID_GLASS_PIXELS_OK: RGB refraction, directional reflection, undistorted center");
+    }
+
+    private void VerifyLiquidGlassEdgeCoverage()
+    {
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var lens = new LiquidGlassLens();
+        var pixels = Enumerable.Repeat((byte)255, 40 * 40 * 4).ToArray();
+        lens.Upload(Window.GraphicsFactory, new(40, 40, pixels, HasAlpha: false));
+        var bounds = new Rect(5.35, 6.25, 40, 40);
+        foreach (var scale in new[] { 1d, 110 / 96d, 1.5, 2 })
+        {
+            var size = (int)Math.Ceiling(55 * scale);
+            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(size, size, scale));
+            using var context = Window.GraphicsFactory.CreateContext(surface);
+            context.BeginFrame(surface);
+            context.Clear(Color.Black);
+            lens.DrawPrepared(context, bounds, new CornerRadius(18, 7, 15, 4));
+            context.EndFrame();
+            var raster = (ICpuPixelSurface)surface;
+            var data = raster.GetReadOnlyPixelSpan();
+            var partial = 0;
+            for (var y = (int)(7 * scale); y < (int)(20 * scale); y++)
+            for (var x = (int)(6 * scale); x < (int)(19 * scale); x++)
+                if (data[y * raster.StrideBytes + x * 4] is > 4 and < 251) partial++;
+            if (partial < 5 || data[0] != 0 || data[size / 2 * raster.StrideBytes + size / 2 * 4] < 251)
+                throw new InvalidOperationException($"The curved glass outline did not receive subpixel coverage at {scale:P0} DPI: {partial} pixels.");
+        }
+        Console.WriteLine("LIQUID_GLASS_EDGE_OK: antialiased curved corners at 96/110/144/192 DPI and fractional positions");
     }
 
     private void VerifyShadowRasterPixels()

@@ -15,31 +15,37 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
     private Task? initializing;
     private Task resetting = Task.CompletedTask;
     private bool disposed;
+    private volatile bool blocked;
+    private WebSession currentAccount = account;
     private TaskCompletionSource challenge = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal event Action<BrowserRequestEvent>? Changed;
     internal EmbeddedLoginView View => view ?? throw new InvalidOperationException("Браузер ещё не открыт.");
     internal Task Challenge => challenge.Task;
     internal string DiagnosticInstance { get; private set; } = "uninitialized";
+    internal bool IsBlocked => blocked;
+    internal void UpdateAccount(WebSession updated) => Volatile.Write(ref currentAccount, updated);
 
     internal Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token) => OnUiAsync(async () =>
     {
         token.ThrowIfCancellationRequested(); ObjectDisposedException.ThrowIf(disposed, this);
         await resetting;
+        if (IsBlocked) throw NativeBrowserSession.BrowserBlocked();
         if (view == null)
         {
             DiagnosticInstance = Guid.NewGuid().ToString("N");
             AppLog.For("Pookie.Browser.Protection").Debug("browser_instance={BrowserInstance} stage=created request={RequestId}", DiagnosticInstance, command.Id);
-            view = new(profilePath ?? BrowserProfile.DefaultPath(), fixture, account);
+            view = new(profilePath ?? BrowserProfile.DefaultPath(), fixture, Volatile.Read(ref currentAccount));
             view.Changed += Observe;
             initializing = view.PrepareWorkerAsync(window, token);
         }
         try { await initializing!; }
-        catch { await ResetAsync(); throw; }
+        catch { if (!IsBlocked) await ResetAsync(); throw; }
         return await view.RequestAsync(command, token);
     }, token);
 
     private void Observe(BrowserRequestEvent message)
     {
+        if (message.Kind == "blocked") blocked = true;
         if (message.Kind == "checking" && challenge.Task.IsCompleted)
             challenge = new(TaskCreationOptions.RunContinuationsAsynchronously);
         if (message.Kind is "passed" or "challenge-error" or "blocked") challenge.TrySetResult();
@@ -55,6 +61,7 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
     internal Task ResetAsync() => OnUiAsync(async () =>
     {
         var previous = view; view = null; initializing = null;
+        blocked = false;
         var previousChallenge = challenge;
         if (previous != null)
         {

@@ -10,12 +10,24 @@ public sealed class DrmLicenseFailureTests
     [InlineData("Forbidden", "unspecified")]
     [InlineData("VMP", "unspecified")]
     [InlineData("VMP validation failed", "host-verification")]
+    [InlineData("Widevine license acquisition failed >> Verified media path cannot be verified", "host-verification")]
     [InlineData("HOST_VERIFICATION_FAILED", "host-verification")]
     [InlineData("token_expired", "expired-authorization")]
     [InlineData("invalid token", "invalid-authorization")]
     [InlineData("captcha required", "browser-verification")]
     public void GenericRejectionDoesNotInventAHostVerificationFailure(string body, string category) =>
         Assert.Equal(category, DrmLicenseFailure.Classify(Encoding.UTF8.GetBytes(body)));
+
+    [Theory]
+    [InlineData("080212025000", "PLATFORM_UNVERIFIED")]
+    [InlineData("120250020802", "PLATFORM_SOFTWARE_VERIFIED")]
+    [InlineData("080212025005", "PLATFORM_SECURE_STORAGE_SOFTWARE_VERIFIED")]
+    [InlineData("080212020800", null)] // Missing status does not imply unverified.
+    [InlineData("080512025001", null)] // Service certificate, not a license.
+    [InlineData("080212035001", null)] // Truncated license message.
+    [InlineData("0802120250ff", null)] // Truncated status varint.
+    public void ReadOnlyExplicitPlatformVerificationStatus(string envelope, string? expected) =>
+        Assert.Equal(expected, WidevineVerificationStatus.Read(Convert.FromHexString(envelope)));
 
     [Theory]
     [InlineData("{\"code\":403}", "403")]

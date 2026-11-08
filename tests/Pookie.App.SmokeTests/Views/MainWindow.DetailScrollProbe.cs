@@ -183,7 +183,7 @@ internal sealed partial class MainWindow
                 smoothScrolls[shellScroll].Stop(); shellScroll.SetScrollOffsets(0, 0);
                 await WaitForLoginFrameAsync();
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && trackCommentMarkers.Count > 0 &&
-                    trackCommentMarkers[^1].Button.Bounds.Y > ShellChromeGlass.HeaderHeight);
+                    trackCommentMarkers[^1].Button.Bounds.Y > ShellHeader.HeaderHeight);
                 // The clustered timed avatars overlap: the last marker is the
                 // topmost hit target, so hovering the first can hit a later one.
                 var marker = trackCommentMarkers[^1].Button;

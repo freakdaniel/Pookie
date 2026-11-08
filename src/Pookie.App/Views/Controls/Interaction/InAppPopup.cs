@@ -22,9 +22,11 @@ internal class InAppPopup : Panel
     internal double Reveal => layer?.Reveal ?? 0;
     internal Action? Dismissing;
 
-    internal void InitializePopup(FrameworkElement content, Func<Rect> anchor, Func<MenuPlacement> placement, bool alignCenter = false)
+    internal void InitializePopup(FrameworkElement content, Func<Rect> anchor, Func<MenuPlacement> placement,
+        bool alignCenter = false, Func<bool>? keepTriggerClear = null)
     {
-        layer = new ChatPopupLayer(content, anchor, () => host?.Bounds ?? Rect.Empty, placement: placement, alignCenter: alignCenter).Initialize();
+        layer = new ChatPopupLayer(content, anchor, () => host?.Bounds ?? Rect.Empty, placement: placement,
+            alignCenter: alignCenter, keepTriggerClear: keepTriggerClear).Initialize();
         layer.Closed = Detach;
         Add(layer); IsVisible = false;
     }

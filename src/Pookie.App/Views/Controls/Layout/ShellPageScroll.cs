@@ -26,7 +26,7 @@ internal sealed class ShellPageScroll : Panel
         this.content = content; this.owner = owner; this.current = current; this.scroll = scroll; this.trailingSpace = trailingSpace;
         // Keep the native thumb, track and hit testing below the glass header.
         // The content viewport still spans the header for the scroll-under effect.
-        if (VerticalBar(owner) is { } bar) bar.Margin = new Thickness(0, ShellChromeGlass.HeaderHeight, 0, 0);
+        if (VerticalBar(owner) is { } bar) bar.Margin = new Thickness(0, ShellHeader.HeaderHeight, 0, 0);
         Add(content);
         owner.SizeChanged += OnViewportChanged;
     }

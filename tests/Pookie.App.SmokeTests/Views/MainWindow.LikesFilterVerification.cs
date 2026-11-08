@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Aprillz.MewUI;
+using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
 namespace Pookie.App;
@@ -26,6 +28,29 @@ internal sealed partial class MainWindow
             static SoundCloudTrack Track(long id, string title = "Другой трек", string author = "Library artist") =>
                 new() { Id = id, Title = title, Duration = 120000, User = new() { Username = author } };
             var initial = Enumerable.Range(1, 30).Select(i => Track(95000 + i)).ToArray();
+            const string removedArtwork = "https://i1.sndcdn.com/likes-removed-artwork-fixture.jpg";
+            artworkRequests[removedArtwork] = Task.FromResult<ImageSource?>(null);
+            initial[0] = initial[0] with { ArtworkUrl = removedArtwork };
+            libraryLikes = new(initial, null);
+            likesMode.Value = TrackViewMode.Cards;
+            ShowLibraryTracks();
+            var placeholder = Icons.Source(Icons.MissingTrackArtwork);
+            await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == initial[0].Id &&
+                ReferenceEquals(tile.Cover.Source, placeholder) && tile.Cover.ActualWidth > 0));
+            var filter = (GlassToolGroup)likedFilter.Parent!.Parent!.Parent!;
+            var modes = (GlassToolGroup)VisualTree.Find(filter.Parent!.Parent!, element =>
+                element is GlassToolGroup group && !ReferenceEquals(group, filter))!;
+            await WaitForLikedLayoutAsync(() => filter.PopupBackdropPaintVersion > 0 && modes.PopupBackdropPaintVersion > 0);
+            if (modes.Content is not StackPanel modeButtons || modeButtons.Children.Count != 3 ||
+                modeButtons.Children.Any(button => button is not HeaderButton))
+                throw new InvalidOperationException("Library view choices lost their shared navigation button style.");
+            var missingTile = likedTiles.Values.First(tile => tile.Track?.Id == initial[0].Id);
+            MoveActionPointer(missingTile.Cover.Bounds.Center);
+            await WaitForLikedLayoutAsync(() => missingTile.OverlayOpacity > .999);
+            if (missingTile.PlaybackButton is not ExpandedGlassButton)
+                throw new InvalidOperationException("The missing artwork tile lost its glass playback button.");
+            CaptureUiPreview("likes-glass-missing-cover");
+            MoveActionPointer(new Point(2, 2));
             string Cursor(string value) => "https://api-v2.soundcloud.com/users/42/likes?cursor=" + value;
             void Start(string cursor)
             {

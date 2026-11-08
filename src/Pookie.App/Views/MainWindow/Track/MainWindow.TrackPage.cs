@@ -164,6 +164,7 @@ internal sealed partial class MainWindow
     {
         if (trackDetailState == null) return;
         renderedTrackDetailSamples = null; trackDetailWaveform.SetSamples([]); trackDetailBackdrop.Source = null;
+        trackDetailScrim.Background = ArtworkBackdrop.CardScrim;
         trackDetailWaveform.OnArtwork = false;
         trackDetailGlass?.RefreshArtwork();
         var track = trackDetailState.Track;

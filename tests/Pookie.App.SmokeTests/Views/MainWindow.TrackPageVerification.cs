@@ -64,6 +64,13 @@ internal sealed partial class MainWindow
                     likedList.IsAncestorOf(row.Root) && row.Waveform.ActualWidth > 100 && row.Waveform.Bounds.IntersectsWith(shellScroll.Bounds)));
                 var row = likedRows.Values.First(row => row.Track?.Id == fixtures[1].Id && likedList.IsAncestorOf(row.Root));
                 await VerifyWaveformRevealAsync(row.Waveform, "list");
+                var zoom = (TransformDecorator)row.Root.FindVisualChild<TransformDecorator>()!;
+                var coverSize = row.Cover.Bounds.Size;
+                MoveActionPointer(row.Cover.Bounds.Center);
+                await WaitForLikedLayoutAsync(() => zoom.Transform.M11 > 1.03f);
+                if (row.Cover.Bounds.Size != coverSize) throw new InvalidOperationException("Waveform cover hover changed the layout.");
+                MoveActionPointer(new Point(2, 2));
+                await WaitForLikedLayoutAsync(() => zoom.Transform.IsIdentity);
                 var bound = row.Track!;
                 revealedWaveforms.Remove(bound.Id);
                 row.Waveform.SetSamples([]);
@@ -108,6 +115,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => trackDetailDescription.Bounds.Y > 350 && trackDetailDescription.Bounds.Y < 650 &&
                 trackDetailCommentsTitle.ActualHeight > 0);
             await VerifyLongTrackHeroResizeAsync();
+            await VerifyTrackPlayGlassEntranceAsync();
             await VerifyCardGlassSourceAsync(trackDetailGlass!, trackDetailCover, trackDetailBackdrop, trackDetailPlay);
             await VerifyTrackArtHeroAsync(trackArt);
             await WaitForLoginFrameAsync(); CaptureUiPreview("track-page");
@@ -154,13 +162,8 @@ internal sealed partial class MainWindow
             await SeekLikedTrackAsync(fixtures[1], .25);
             if (Math.Abs(progress.Value - progress.Maximum * .25) > .1 || trackDetailPosition.Text != FormatTime(progress.Value))
                 throw new InvalidOperationException("Track page seek is not connected to the shared player.");
-            var copyButtons = new List<Aprillz.MewUI.Controls.Button>();
-            Aprillz.MewUI.VisualTree.Visit(trackDetailScroll, element => {
-                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName == TrackButtons.Glass && button.Width == 44 &&
-                    button.Content is Aprillz.MewUI.Controls.Image) copyButtons.Add(button);
-            });
-            await VerifyTrackPlaylistButtonAsync(copyButtons[0], trackDetailState!.Track);
-            await VerifyTrackClipboardAsync(copyButtons[1], trackDetailState!.Track);
+            await VerifyTrackPlaylistButtonAsync(FindTrackAction(trackDetailScroll, "Добавить в плейлист"), trackDetailState!.Track);
+            await VerifyTrackClipboardAsync(FindTrackAction(trackDetailScroll, "Скопировать ссылку"), trackDetailState!.Track);
             repostedIds.Add(fixtures[1].Id); RefreshRepostState();
             if (trackDetailRepost.StyleName != TrackButtons.Reposted)
                 throw new InvalidOperationException("Hero repost state was not selected.");
@@ -184,13 +187,8 @@ internal sealed partial class MainWindow
                     : !rowCounter.IsVisible && rowCounter.Text.Length == 0 && Math.Abs(rowRepost.ActualWidth - TrackRowLayout.ActionSize) < 1 / Window.DpiScale);
             }
             BindLibraryTrackRow(copyRow, fixtures[0] with { PermalinkUrl = null });
-            var listActions = new List<Aprillz.MewUI.Controls.Button>();
-            VisualTree.Visit(copyRow.Root, element => {
-                if (element is Aprillz.MewUI.Controls.Button button && button.StyleName is TrackButtons.Glass or TrackButtons.Reposted &&
-                    button.Content is Aprillz.MewUI.Controls.Image) listActions.Add(button);
-            });
-            await VerifyTrackPlaylistButtonAsync(listActions[0], fixtures[0]);
-            await VerifyTrackClipboardAsync(listActions[1], fixtures[0]);
+            await VerifyTrackPlaylistButtonAsync(FindTrackAction(copyRow.Root, "Добавить в плейлист"), fixtures[0]);
+            await VerifyTrackClipboardAsync(FindTrackAction(copyRow.Root, "Скопировать ссылку"), fixtures[0]);
             Console.WriteLine("TRACK_PAGE_UI_OK: reference hero, responsive cover/sidebar, threaded comments/replies, shared seek, sidebar fans/playlists/albums, pagination, back/forward and stale response protection");
         }
         catch (Exception error)
@@ -252,11 +250,22 @@ internal sealed partial class MainWindow
         }
     }
 
-    private async Task VerifyTrackPlaylistButtonAsync(Aprillz.MewUI.Controls.Button button, SoundCloudTrack track)
+    private static Button FindTrackAction(FrameworkElement root, string hint)
+    {
+        var matches = new List<Button>();
+        VisualTree.Visit(root, element =>
+        {
+            if (element is Button button && TooltipHints.TextFor(button) == hint) matches.Add(button);
+        });
+        return matches.Single();
+    }
+
+    private async Task VerifyTrackPlaylistButtonAsync(Button button, SoundCloudTrack track)
     {
         RouteWaveformClick(new(button.Bounds.X + button.ActualWidth / 2, button.Bounds.Y + button.ActualHeight / 2));
         await WaitForLikedLayoutAsync(() => playlistPickerOpen.Value && playlistPickerTarget?.Id == track.Id);
         ClosePlaylistPicker();
+        await WaitForLikedLayoutAsync(() => !playlistDialog.IsVisible);
         Console.WriteLine("TRACK_PLAYLIST_BUTTON_OK: real icon click opens the picker for the bound track");
     }
 

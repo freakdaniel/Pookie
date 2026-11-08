@@ -391,7 +391,7 @@ internal sealed partial class MainWindow
                     else if (item.Playlist != null)
                     {
                         library.Add(TrackButtons.Action(new Grid().Columns("32,*").Rows("*").Spacing(10).Children(
-                            Icons.View("queue", 25, Muted).Center().Column(0), new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(
+                            Icons.View("queue", 25, MutedIcon).Center().Column(0), new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(
                                 new TextBlock().Text(item.Title).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis),
                                 new TextBlock().Text("Плейлист").FontSize(11).Foreground(Muted))),
                             () => Run(() => OpenChatMusicUrlAsync(url)), TrackButtons.Text, 58).Padding(8, 0));
@@ -425,7 +425,7 @@ internal sealed partial class MainWindow
                         tiles.Add(CreateChatLibraryPreview(message,peer,index,photo,file.Name,library)); continue;
                     }
                     library.Add(TrackButtons.Action(new Grid().Columns("32,*").Rows("*").Spacing(10).Children(
-                        Icons.View(kind == "Фото" ? "image" : kind == "Видео" ? "play" : "file", 24, Muted).Center().Column(0),
+                        Icons.View(kind == "Фото" ? "image" : kind == "Видео" ? "play" : "file", 24, MutedIcon).Center().Column(0),
                         ChatDetailText(file.Name).Column(1).CenterVertical()), () => Run(() => JumpChatMessageAsync(peer, message.Id)), TrackButtons.Text, 56).Padding(8, 0));
                 }
             }
@@ -438,7 +438,7 @@ internal sealed partial class MainWindow
         }
         if (library.Children.Count == 0)
             library.Add(chatMediaEmpty = new StackPanel().Vertical().Spacing(12).Margin(8, 30).Children(
-                Icons.View(kind == "Музыка" ? "music-notes" : kind == "Фото" ? "image" : "file", 36, Muted).CenterHorizontal(),
+                Icons.View(kind == "Музыка" ? "music-notes" : kind == "Фото" ? "image" : "file", 36, MutedIcon).CenterHorizontal(),
                 new TextBlock().Text("Пока пусто").FontSize(15).SemiBold().CenterHorizontal(),
                 new TextBlock().Text("Здесь появятся " + (kind == "Музыка" ? "треки и плейлисты" : kind.ToLowerInvariant()) + " из переписки").FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).CenterHorizontal()));
         if (messages.Length == 50) library.Add(chatMediaMore = TrackButtons.Action(new TextBlock().Text("Показать ещё").FontSize(12), () => Run(() => RenderChatMediaLibraryAsync(kind, offset + 50)), TrackButtons.Text, 34));
@@ -465,9 +465,9 @@ internal sealed partial class MainWindow
     private async Task UpdateChatAvatarAsync(SoundCloudUser peer)
     {
         var generation = ++chatAvatarGeneration; var revision = chatRevision;
-        chatHeaderAvatar.Source = Icons.Source("user", Muted);
+        chatHeaderAvatar.Source = Icons.Source("user", MutedIcon);
         var avatar = await SharedArtworkAsync(peer.AvatarUrl);
         if (!disposed && chatRevision == revision && generation == chatAvatarGeneration && chatRecipient?.Id == peer.Id)
-            chatHeaderAvatar.Source = avatar is null ? Icons.Source("user", Muted) : avatar;
+            chatHeaderAvatar.Source = avatar is null ? Icons.Source("user", MutedIcon) : avatar;
     }
 }

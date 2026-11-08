@@ -24,10 +24,13 @@ internal sealed partial class MainWindow
     private static readonly TimeSpan LyricsFollowDelay = TimeSpan.FromSeconds(7);
     private readonly PaginationItems lyricsItems = new(LoadingRowStyle.Compact, item => ((LyricsDisplayRow)item).Index);
     private sealed record LyricsDisplayRow(int Index, string Text, double Spacer = 0);
-    private sealed class LyricsRowVisual(TextBlock text, LyricsWaveDots dots)
+    private sealed class LyricsRowVisual(Grid root, TextBlock text, LyricsWaveDots dots)
     {
+        internal Grid Root = root;
         internal TextBlock Text = text;
         internal LyricsWaveDots Dots = dots;
+        internal Button? Credit;
+        internal string? CreditProvider;
         internal LyricsDisplayRow? Row;
         internal bool Hovered, Pressed;
     }
@@ -44,7 +47,7 @@ internal sealed partial class MainWindow
     private void InitializeLyrics()
     {
         lyricsHttp = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(10) };
-        lyricsService = new(new LrclibClient(lyricsHttp), Path.Combine(dataPaths.Cache, "Lyrics"));
+        lyricsService = new(new LrclibClient(lyricsHttp), Path.Combine(dataPaths.Cache, "Lyrics"), lyricSearch.FindLyricsAsync);
         lyricsFollowTimer = new(LyricsFollowDelay);
         lyricsFollowTimer.Tick += ResumeLyricsFollowing;
     }
@@ -55,7 +58,8 @@ internal sealed partial class MainWindow
         var timing = !(track.FullDuration > track.Duration + 2000 ||
             track.Media?.Transcodings is { Length: > 0 } transcodings && transcodings.All(item => item.Snipped));
         var artist = string.IsNullOrWhiteSpace(track.PublisherMetadata?.Artist) ? track.Author : track.PublisherMetadata.Artist;
-        return new(track.Id, track.Title, artist, full, track.PublisherMetadata?.AlbumTitle, timing);
+        return new(track.Id, track.Title, artist, full, track.PublisherMetadata?.AlbumTitle, timing)
+        { Isrc = LrcRedSearch.NormalizeIsrc(track.PublisherMetadata?.Isrc) };
     }
 
     private FrameworkElement LyricsPanel()
@@ -81,32 +85,50 @@ internal sealed partial class MainWindow
             // allocates and paints another render surface for every visible line.
             text.Transitions = [Transition.Create(Control.ForegroundProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
             dots.Transitions = [Transition.Create(Control.ForegroundProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
-            lyricsRows[button] = new(text, dots);
+            var root = new Grid().Columns("*").Rows("Auto").Children(button);
+            lyricsRows[button] = new(root, text, dots);
             context.Register("button", button);
-            return button;
+            return root;
         }, (_, row, _, context) =>
         {
             var button = context.Get<Button>("button"); var view = lyricsRows[button];
             view.Hovered = button.IsMouseOver; view.Pressed = false; view.Row = row;
+            var branded = row.Index == -3 && row.Text is LrclibClient.Name or LrcRedSearch.Name;
+            if (branded && view.CreditProvider != row.Text) SetLyricsCredit(view, row.Text);
+            if (view.Credit is { } credit) credit.IsVisible = branded;
+            button.IsVisible = !branded;
             view.Text.FontSize = row.Index == -3 ? 13 : lyricsFontSize;
             view.Text.FontWeight = row.Index == -3 ? FontWeight.Normal : FontWeight.Bold;
-            view.Text.Text = row.Text;
+            view.Text.Text = row.Index == -3 ? "Текст предоставлен " + row.Text : row.Text;
             var gap = row.Index >= 0 && row.Text.Length == 0 && lyricsResult.Status == LyricsStatus.Synced;
             view.Text.IsVisible = !gap; view.Dots.IsVisible = gap;
             button.Height = row.Spacer > 0 ? row.Spacer : double.NaN;
             button.IsHitTestVisible = button.Focusable = row.Index >= 0 && lyricsResult.Status == LyricsStatus.Synced;
+            view.Root.IsHitTestVisible = branded || button.IsHitTestVisible;
             button.Cursor = button.IsHitTestVisible ? CursorType.Hand : null;
             RefreshLyricsRow(view);
         }, (_, _, _, context) =>
         {
             var button = context.Get<Button>("button"); var view = lyricsRows[button];
             button.IsHitTestVisible = button.Focusable = false;
+            view.Root.IsHitTestVisible = false;
+            if (view.Credit is { } credit) credit.IsVisible = false;
             view.Row = null; view.Hovered = view.Pressed = false; view.Dots.Reset();
         });
         lyricsScroll = (ScrollViewer)lyricsList.FindVisualChild<ScrollViewer>()!;
         ((IVisualTreeHost)lyricsScroll).VisitChildren(element =>
         { if (element is ScrollBar bar) { bar.Opacity = 0; bar.IsHitTestVisible = false; } return true; });
-        smoothScrolls[lyricsScroll] = new SmoothScroll(lyricsScroll);
+        smoothScrolls[lyricsScroll] = new SmoothScroll(lyricsScroll)
+        {
+            RestoringAnchor = () =>
+            {
+                if (!lyricsFollow || !preferences.LyricsAutoScroll || lyricsResult.Status != LyricsStatus.Synced) return false;
+                // Measuring a wrapped line can shift the virtualized viewport mid-scroll.
+                // Preserve momentum and recheck the active row against the corrected layout.
+                lyricsFollowTarget = null;
+                return true;
+            }
+        };
         lyricsScroll.MouseWheel += args => { if (args.Delta.Y != 0) PauseLyricsFollowing(); };
         lyricsScroll.KeyDown += args =>
         { if (args.Key is Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End) PauseLyricsFollowing(); };
@@ -123,6 +145,33 @@ internal sealed partial class MainWindow
         return new Grid().Columns("*").Rows("*").Children(lyricsContent, lyricsSkeleton);
     }
 
+    private void SetLyricsCredit(LyricsRowVisual view, string provider)
+    {
+        if (view.Credit is { } previous)
+        {
+            view.Root.Remove(previous);
+            previous.Dispose();
+        }
+        var url = provider == LrcRedSearch.Name ? LrcRedSearch.Source : LrclibClient.Source;
+        var mark = provider == LrcRedSearch.Name ? (FrameworkElement)LrcRedProviderMark() :
+            new Image().Source(ImageSource.FromResource<MainWindow>("Pookie.App.Assets.Branding.lrclib.png"))
+                .Width(18).Height(18).StretchMode(Stretch.Uniform);
+        var credit = LyricsProviderCredit("Текст предоставлен", provider, mark,
+            () => OpenExternalUrl(url, () => status.Value = "Не удалось открыть сайт " + provider)).CenterHorizontal();
+        view.CreditProvider = provider;
+        view.Credit = credit;
+        view.Root.Add(credit);
+    }
+
+    private static Border LrcRedProviderMark() => new Border().Width(8).Height(8).Background(Color.FromRgb(227, 6, 19));
+
+    private static Button LyricsProviderCredit(string label, string provider, FrameworkElement mark, Action open) =>
+        TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(
+                new TextBlock().Text(label).FontSize(12).Foreground(Muted).CenterVertical(),
+                new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(mark.CenterVertical(),
+                    new TextBlock().Text(provider).FontSize(12).Bold().Foreground(TrackButtons.OnSurface).CenterVertical())),
+            open, TrackButtons.Text, 26).Hint("Открыть " + provider);
+
     private void BeginLyricsTrack(SoundCloudTrack track)
     {
         CancelLyricsRequest(); lyricsGeneration++;
@@ -134,7 +183,11 @@ internal sealed partial class MainWindow
 
     private void RefreshLyricsMetadata(SoundCloudTrack track)
     {
-        if (lyricsIdentity?.Fingerprint != IdentifyLyrics(track).Fingerprint) BeginLyricsTrack(track);
+        var updated = IdentifyLyrics(track);
+        if (lyricsIdentity is not { } previous || previous.Fingerprint != updated.Fingerprint ||
+            previous.Isrc != updated.Isrc && lyricsResult.Status is not (LyricsStatus.Synced or LyricsStatus.Instrumental))
+            BeginLyricsTrack(track);
+        else lyricsIdentity = updated;
     }
 
     private void SetLyricsPanelActive(bool active)
@@ -191,7 +244,7 @@ internal sealed partial class MainWindow
                 document.PlainText.Replace("\r", "").Split('\n').Select((line, index) => new LyricsDisplayRow(index, line));
             lyricsItems.SetData(new[] { new LyricsDisplayRow(-1, "", lyricsSpacer) }.Concat(rows)
                 .Append(new LyricsDisplayRow(-4, "", 24))
-                .Append(new LyricsDisplayRow(-3, "Текст предоставлен " + document.Source))
+                .Append(new LyricsDisplayRow(-3, document.Source))
                 .Append(new LyricsDisplayRow(-2, "", Math.Max(120, lyricsScroll.ActualHeight * .55))).Cast<object>());
         }
         else lyricsItems.SetData([]);
@@ -208,7 +261,7 @@ internal sealed partial class MainWindow
 
     private void RefreshLyricsRow(LyricsRowVisual view)
     {
-        if (view.Row is not { } row) { view.Dots.Reset(); return; }
+        if (view.Row is not { } row || view.Credit?.IsVisible == true) { view.Dots.Reset(); return; }
         var opacity = row.Index == -3 ? .5 : row.Index < 0 ? 0 : view.Pressed ? .75 :
             view.Hovered || row.Index == lyricsActiveLine ? 1 : lyricsResult.Status == LyricsStatus.Plain ? .85 :
             Math.Abs(row.Index - lyricsActiveLine) == 1 ? .48 : .23;
@@ -239,16 +292,24 @@ internal sealed partial class MainWindow
         if (!preferences.LyricsAutoScroll || !lyricsFollow || lyricsResult.Status != LyricsStatus.Synced) return;
         var index = Math.Max(0, lyricsActiveLine);
         var selected = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
-        if (selected == null) { lyricsList.ScrollIntoView(index + 1); return; }
+        var scroll = smoothScrolls[lyricsScroll];
+        if (selected == null)
+        {
+            scroll.Stop();
+            lyricsFollowTarget = null;
+            lyricsList.ScrollIntoView(index + 1);
+            return;
+        }
         var scale = Window.DpiScale;
         // Row bounds already include the presenter's pixel-snapped scroll offset.
         // Adding the fractional offset back makes the target move as the spring advances.
         var renderedOffset = LayoutRounding.RoundToPixel(lyricsScroll.VerticalOffset, scale);
         var position = renderedOffset + (selected.Bounds.Y - lyricsScroll.Bounds.Y) + selected.ActualHeight / 2 - lyricsScroll.ActualHeight * .4;
-        position = LayoutRounding.RoundToPixel(position, scale);
-        if (lyricsFollowTarget is { } previous && Math.Abs(previous - position) * scale < 1.5) return;
+        position = Math.Clamp(LayoutRounding.RoundToPixel(position, scale), 0, SmoothScroll.Maximum(lyricsScroll));
+        if (lyricsFollowTarget is { } previous && Math.Abs(previous - position) * scale < 1.5 &&
+            (scroll.IsRunning || Math.Abs(lyricsScroll.VerticalOffset - position) * scale < 1.5)) return;
         lyricsFollowTarget = position;
-        smoothScrolls[lyricsScroll].ScrollTo(position);
+        scroll.ScrollTo(position);
     }
 
     private void PauseLyricsFollowing()

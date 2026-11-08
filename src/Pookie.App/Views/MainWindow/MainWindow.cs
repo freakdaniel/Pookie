@@ -30,6 +30,7 @@ internal sealed partial class MainWindow : IDisposable
     private CancellationTokenSource? playLoading;
     private readonly HttpClient http;
     private readonly SoundCloudWebClient api;
+    private readonly LrcRedSearch lyricSearch;
     private readonly RegionalPlaybackPool? regionalPlayback;
     private readonly SoundCloudStreamResolver playbackResolver;
     private readonly ObservableValue<string> query = new("");
@@ -100,6 +101,7 @@ internal sealed partial class MainWindow : IDisposable
         http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
 
         api = new(http) { RequireSessionTransport = true };
+        lyricSearch = new(http);
         regionalPlayback = RegionalPlaybackPool.FromEnvironment(enabledByDefault: !isolatedRun);
         playbackResolver = new(api) { RegionalResolver = regionalPlayback };
         InitializePlaybackQueue();
@@ -155,6 +157,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered += DismissUnfocusedShellMenus;
         Window.FrameRendered += ObserveChatPopups;
         Window.FrameRendered += RefreshCardGlass;
+        Window.DpiChanged += (_, _) => RefreshCompactArtworkDpi();
         Window.ClientSizeChanged += size =>
         {
             UpdateContentFrameWidth(size.Width);
@@ -219,8 +222,7 @@ internal sealed partial class MainWindow : IDisposable
             try { await StartupLog.RunAsync("startup.initialize", InitializeAsync); }
             catch (SoundCloudException error) when (error.StatusCode == 401)
             {
-                await LogoutAsync();
-                status.Value = "Сессия SoundCloud истекла. Войди снова, чтобы продолжить.";
+                await DisconnectSoundCloudAsync(forgetAccount: false);
             }
             finally
             {
@@ -243,7 +245,7 @@ internal sealed partial class MainWindow : IDisposable
             var chats = page.Value == Page.Chats;
             contentFrame.MaxWidth = chats ? double.PositiveInfinity : 1440;
             contentFrame.Width = chats ? availableWidth : Math.Min(1440, availableWidth);
-            contentFrame.Padding = new Thickness(chats ? 16 : 36, ShellChromeGlass.HeaderHeight + 30, chats ? 16 : 36, 0);
+            contentFrame.Padding = new Thickness(chats ? 16 : 36, ShellHeader.HeaderHeight + 30, chats ? 16 : 36, 0);
             playerContentFrame.Width = Math.Min(1440, availableWidth);
             var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
             playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 28 - 24 - 4, 60, 180);
@@ -277,11 +279,11 @@ internal sealed partial class MainWindow : IDisposable
             if (saved != null)
             {
                 api.Session = saved;
+                var connected = CreateBrowserSession(saved);
                 try
                 {
-                    var connected = CreateBrowserSession(saved);
                     AttachBrowser(connected);
-                    var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => api.GetMeAsync(lifetime.Token));
+                    var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => connected.GetMeAsync(lifetime.Token));
                     lifetime.Token.ThrowIfCancellationRequested();
                     me = restoredProfile;
                     api.Session = connected.Account;
@@ -289,9 +291,21 @@ internal sealed partial class MainWindow : IDisposable
                     signedIn.Value = true;
                     StartupLog.Event("session.authenticated");
                     UpdateProfileAvatar(me);
+                    Run(() => PersistBrowserSessionAsync(connected));
                 }
-                catch (SoundCloudException error) when (error.StatusCode == 401)
-                { DetachBrowserNotifications(); browser?.Dispose(); browser = null; api.BrowserTransport = null; api.Session = null; }
+                catch (SoundCloudException error)
+                {
+                    DetachBrowserNotifications(); browser = null; api.BrowserTransport = null; api.Session = null;
+                    browserSessions.Remove(connected);
+                    await connected.DisposeAsync();
+                    status.Value = error.StatusCode switch
+                    {
+                        401 => "Не удалось восстановить сохранённую сессию SoundCloud. Подтверди вход в Pookie.",
+                        403 or 429 => "SoundCloud ограничил доступ к браузеру Pookie. Попробуй подключиться позже.",
+                        _ => "Не удалось проверить сессию SoundCloud. Попробуй подключиться ещё раз."
+                    };
+                    loginError.Text = status.Value; loginError.IsVisible = true;
+                }
             }
         }
         catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
@@ -321,7 +335,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (!CanUseWorkspace) return;
         var search = query.Value.Trim();
-        if (search.Length == 0) { status.Value = "Введи название, исполнителя или ссылку SoundCloud."; return; }
+        if (search.Length == 0) { status.Value = "Введи название, исполнителя, строку песни или ссылку SoundCloud."; return; }
         if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return; }
         var isLink = SoundCloudWebClient.IsSoundCloudUrl(search);
         if (isLink) { await OpenSearchLinkAsync(search); return; }
@@ -332,13 +346,11 @@ internal sealed partial class MainWindow : IDisposable
             var token = BeginLoad();
             searchSection.Value = section; searchHeading.Value = $"Результаты для «{search}»";
             searchStatus.Value = "Ничего не найдено. Попробуй изменить запрос.";
-            searchLoading.Value = true;
-            SetSearchResults(new([], null));
-            var result = await api.SearchResultsAsync(search, section, token);
-            await PrepareCollectionArtworkAsync(result.Items, token, rows: true);
-            token.ThrowIfCancellationRequested();
-            if (generation != navigationGeneration || disposed) return;
-            SetSearchResults(result);
+            var regular = api.SearchResultsAsync(search, section, token);
+            var matches = section is SearchSection.All or SearchSection.Tracks
+                ? lyricSearch.FindAsync(search, (title, cancellation) => api.SearchResultsAsync(title, SearchSection.Tracks, cancellation), token)
+                : Task.FromResult(Array.Empty<LibraryItem>());
+            await ShowSearchResultsAsync(regular, matches, search, section, generation, token);
         });
     }
 
@@ -354,7 +366,7 @@ internal sealed partial class MainWindow : IDisposable
         else ReplaceTracks(new([], null));
         RefreshLibraryCards();
         var result = await api.GetLikesAsync(me.Id, token);
-        await PrepareTrackArtworkAsync(result.Tracks, token, preview: !showAll);
+        await PrepareTrackArtworkAsync(result.Tracks, token, preview: !showAll, mode: showAll ? likesMode.Value : TrackViewMode.Cards);
         token.ThrowIfCancellationRequested();
         libraryLikes = result;
         ReplaceTracks(result);
@@ -600,7 +612,9 @@ internal sealed partial class MainWindow : IDisposable
         status.Value = saved ? "Сессия подключена и сохранена в хранилище паролей." : "Сессия подключена. Хранилище паролей недоступно: вход сохранён только до выхода.";
     }
 
-    private async Task LogoutAsync()
+    private Task LogoutAsync() => DisconnectSoundCloudAsync(forgetAccount: true);
+
+    private async Task DisconnectSoundCloudAsync(bool forgetAccount)
     {
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
@@ -642,9 +656,13 @@ internal sealed partial class MainWindow : IDisposable
             playerBackdrop.Reset();
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
             ReplaceTracks(new TrackPage([], null));
-            status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
+            status.Value = forgetAccount ? "Ты вышел из SoundCloud. Войди снова, чтобы продолжить." :
+                "Сессия SoundCloud истекла. Подтверди вход в Pookie.";
+            loginError.Text = forgetAccount ? "" : status.Value;
+            loginError.IsVisible = !forgetAccount;
             await ShowLoginScreenAsync();
             if (closedBrowser != null) await closedBrowser.DisposeAsync();
+            if (!forgetAccount) return;
             await Task.Run(() => BrowserProfile.Clear(dataPaths), lifetime.Token);
             if (vault != null)
             {
@@ -718,15 +736,16 @@ internal sealed partial class MainWindow : IDisposable
     }
     private async void Run(Func<Task> action)
     {
+        var startedBrowser = browser;
         try { await action(); }
         catch (OperationCanceledException) { AppLog.For("Pookie.UI").Debug("Операция отменена"); }
         catch (SoundCloudException error) when (error.StatusCode == 401 && signedIn.Value)
         {
+            if (browser != startedBrowser) return;
             AppLog.For("Pookie.Session").Warning("Сессия SoundCloud истекла; требуется вход");
-            try { await LogoutAsync(); }
-            catch (Exception logoutError) when (!disposed)
-            { AppLog.Failure("Pookie.Session", "Не удалось завершить выход", logoutError); status.Value = FriendlyError(logoutError); }
-            if (!disposed) status.Value = "Сессия SoundCloud истекла. Войди снова, чтобы продолжить.";
+            try { await DisconnectSoundCloudAsync(forgetAccount: false); }
+            catch (Exception disconnectError) when (!disposed)
+            { AppLog.Failure("Pookie.Session", "Не удалось отключить истёкшую сессию", disconnectError); status.Value = FriendlyError(disconnectError); }
         }
         catch (Exception error)
         {
@@ -845,7 +864,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 if (disposed || browser != connected) return;
                 if (message.Kind is "session" or "protection-session") Run(() => PersistBrowserSessionAsync(connected));
-                if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ. Капча не предложена; действие остановлено. Подробности — в окне сайта.";
+                if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ к браузеру Pookie. Действие остановлено.";
                 if (message.Kind == "checking" && message.Interactive && connected.Embedded is { } web)
                     Run(() => ShowEmbeddedChallengeAsync(web));
                 if (message.Kind == "checking") status.Value = message.ChallengeType == "hard_block"

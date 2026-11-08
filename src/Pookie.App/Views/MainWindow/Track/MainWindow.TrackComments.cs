@@ -23,7 +23,7 @@ internal sealed partial class MainWindow
     {
         var size = reply ? 28 : 44;
         var avatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(size).Height(size).StretchMode(Stretch.UniformToFill);
-        avatar.Source = Icons.Source("user", Muted);
+        avatar.Source = Icons.Source("user", MutedIcon);
         var name = new CommentTextBlock().Text(comment.User?.Username ?? "Пользователь SoundCloud").FontSize(14).Bold().CenterVertical()
             .MaxWidth(200).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachUserLink(name, () => comment.User); AttachUserLink(avatar, () => comment.User);
@@ -39,20 +39,20 @@ internal sealed partial class MainWindow
         var age = DetailAge(comment.CreatedAt);
         if (age.Length > 0) top.Add(new CommentTextBlock().Text("· " + age).FontSize(12).Foreground(Muted).CenterVertical());
         var more = TrackButtons.Icon(Icons.View("dots-three", 20).Center(), () => { }, TrackButtons.Text, 28);
-        var menu = PopupAppearance.CreateMenu();
-        var copy = new Command("pookie.comment.copy", "Скопировать текст");
+        var menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
+        var copy = PopupAppearance.MenuCommand("pookie.comment.copy", "Скопировать текст", "copy");
         more.Commands.Register(copy, () => CopyText(comment.Body));
         menu.Item(copy);
-        var open = new Command("pookie.comment.open", "Открыть в SoundCloud");
+        var open = PopupAppearance.MenuCommand("pookie.comment.open", "Открыть в SoundCloud", "arrow-square-out");
         more.Commands.Register(open, () => OpenSoundCloudPage(track.PermalinkUrl)); menu.Item(open);
         if (me is { } viewer && comment.User?.Id == viewer.Id)
         {
-            var delete = new Command("pookie.comment.delete", "Удалить");
+            var delete = PopupAppearance.MenuCommand("pookie.comment.delete", "Удалить", "trash");
             more.Commands.Register(delete, () => Run(() => ConfirmDeleteTrackCommentAsync(track, comment)),
                 () => CanDeleteTrackComment(track.Id, comment));
             menu.Item(delete);
         }
-        more.OnClick(() => menu.Show(more)); PopupAppearance.Attach(more, menu);
+        more.OnClick(() => menu.Toggle(more)); PopupAppearance.Attach(more, menu);
         var actions = new StackPanel().Horizontal().Spacing(12).Children(
             TrackButtons.Action(new CommentTextBlock().Text("Ответить").FontSize(13).SemiBold(),
                 () => OpenSoundCloudPage(track.PermalinkUrl), TrackButtons.Text, 28).Padding(0), more);
@@ -145,7 +145,7 @@ internal sealed partial class MainWindow
             var fraction = comment.Timestamp!.Value / state.Track.Duration;
             var image = new Image { VectorCacheMode = ImageVectorCacheMode.Direct, Opacity = 0 }.Width(24).Height(24).StretchMode(Stretch.UniformToFill);
             image.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
-            image.Source = Icons.Source("user", Muted);
+            image.Source = Icons.Source("user", MutedIcon);
             var marker = TrackButtons.Icon(new Border().Background(Color.FromRgb(51, 53, 59)).CornerRadius(12).ClipToBounds().Child(image),
                 () => Run(() => SeekLikedTrackAsync(state.Track, fraction)), TrackButtons.Text, 24).Left().Top();
             var slot = new TrackCommentMarker(marker, image, fraction, comment);

@@ -51,7 +51,7 @@ internal sealed partial class MainWindow
             if (context.Parent != Window.Content || context.FindVisualRoot() != Window)
                 throw new InvalidOperationException("Context menu created a separate popup surface instead of the chat overlay.");
             if (!openingPixels || contextFrames.Count(value => value > 0 && value < 1) < 3)
-                throw new InvalidOperationException("Context menu skipped its animated entrance.");
+                throw new InvalidOperationException($"Context menu skipped its animated entrance: {string.Join(", ", contextFrames.Select(value => value.ToString("F2")))}.");
             if (context.Card.Background != PopupAppearance.Surface || context.Card.CornerRadius != PopupAppearance.Radius ||
                 context.Buttons.Any(button => button.Height != PopupAppearance.RowHeight) || context.Card.FontSize != 14 || context.Card.Padding != new Thickness(PopupAppearance.Padding))
                 throw new InvalidOperationException("Framework context menu did not inherit the shared popup appearance.");
@@ -215,6 +215,7 @@ internal sealed partial class MainWindow
                         Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
                         await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(Window.ClientSize.Height - height) < 1 &&
                             Math.Abs(layer.ActualWidth - width) < 1 && !workspace.IsArrangeDirty && !layer.IsArrangeDirty);
+                        VerifyHeaderCardLayout();
                         CheckAnchor(); MoveActionPointer(Center(layer.Card));
                         if (layer is PlayerQueueDrawer) CaptureUiPreview($"queue-drawer-{width}x{height}");
                     }
@@ -308,7 +309,17 @@ internal sealed partial class MainWindow
         var points = new[] { new Point(240, 180), new Point(310, 210), new Point(275, 195), new Point(800, 500), new Point(180, 260), new Point(330, 290) };
         ChatPopupLayer? layer = null;
         var intermediate = 0;
-        void Frame() { if (menu.Reveal is > .05 and < .95) intermediate++; }
+        var missedLiveFrame = false;
+        long previousPaint = 0;
+        void Frame()
+        {
+            if (menu.Reveal is not (> 0 and < 1)) return;
+            intermediate++;
+            var paint = menu.Card.PopupBackdropPaintVersion;
+            if (layer?.HasGlassBackdrop != true || paint == previousPaint ||
+                OperatingSystem.IsLinux() && !layer.HasGpuGlassOptics) missedLiveFrame = true;
+            previousPaint = paint;
+        }
         Window.FrameRendered += Frame;
         try
         {
@@ -321,8 +332,8 @@ internal sealed partial class MainWindow
                     throw new InvalidOperationException("Repositioned menu reused its reveal or old background before a new capture.");
                 var frames = intermediate;
                 await WaitForLikedLayoutAsync(() => menu.Reveal == 1 && layer.HasGlassBackdrop && menu.Card.PopupBackdropPaintVersion > painted);
-                if (intermediate - frames < 2 || layer.GlassCaptureBounds != layer.SurfaceBounds.Inflate(40, 40))
-                    throw new InvalidOperationException("Menu reopen skipped intermediate frames or retained a capture from another position.");
+                if (intermediate - frames < 2 || missedLiveFrame || layer.GlassCaptureBounds != layer.SurfaceBounds.Inflate(40, 40))
+                    throw new InvalidOperationException("Menu reopen skipped intermediate frames, missed a live sample or retained a capture from another position.");
             }
             menu.Show(trigger, points[0]);
             await WaitForLikedLayoutAsync(() => menu.Reveal is > .1 and < .8);
@@ -338,7 +349,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Reversing a close at the same position snapped its animation.");
             await WaitForLikedLayoutAsync(() => menu.Reveal == 1 && layer.HasGlassBackdrop);
             CaptureUiPreview("menu-context-reopened", menu);
-            Console.WriteLine("POPUP_REOPEN_OK: repeated overlapping positions and rapid relocation restart entrance with fresh glass; native card painting follows capture versions; same-anchor close reversal stays continuous");
+            Console.WriteLine("POPUP_REOPEN_OK: fresh glass on every visible entrance frame, rapid relocation, and continuous close reversal");
         }
         finally { Window.FrameRendered -= Frame; menu.Close(true); }
     }

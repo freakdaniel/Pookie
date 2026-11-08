@@ -5,6 +5,7 @@
   const siteOrigin = 'https://soundcloud.com';
   const apiOrigin = 'https://api-v2.soundcloud.com';
   const graphOrigin = 'https://graph.soundcloud.com';
+  const sessionRefreshUrl = `${siteOrigin}/api/refresh-token`;
   const trackQueries = { comments: __POOKIE_TRACK_COMMENTS__, replies: __POOKIE_TRACK_REPLIES__, sidebar: __POOKIE_TRACK_SIDEBAR__ };
   const commentQueries = { create: __POOKIE_COMMENT_CREATE__, delete: __POOKIE_COMMENT_DELETE__ };
   if (location.origin !== siteOrigin || window !== window.top || window.__pookieBrowserRequests) return;
@@ -149,18 +150,21 @@
         challenge_active: Boolean(challenge), has_protection: hasBrowserSession(), reason } });
   }
 
-  async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json') {
+  async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json', accessToken = account.access_token) {
+    const sessionRefresh = url.href === sessionRefreshUrl && method === 'POST' && context.operation === 'me';
     const fetchNumber = ++context.fetchNumber;
     checkCancelled(context);
     if (!readySent) trace(context, 'wait-ready', method, fetchNumber);
     await wait(ready, context);
     if (blocked) throw new Error('site-blocked');
     if (challenge) { trace(context, 'wait-check', method, fetchNumber); await wait(challenge.promise, context); }
-    url.searchParams.set('client_id', account.client_id);
-    const version = window.__sc_version || account.app_version;
-    if (version) url.searchParams.set('app_version', version);
-    const locale = document.documentElement.lang || account.app_locale;
-    if (locale) url.searchParams.set('app_locale', locale);
+    if (!sessionRefresh) {
+      url.searchParams.set('client_id', account.client_id);
+      const version = window.__sc_version || account.app_version;
+      if (version) url.searchParams.set('app_version', version);
+      const locale = document.documentElement.lang || account.app_locale;
+      if (locale) url.searchParams.set('app_locale', locale);
+    }
     const initialGeneration = generation;
     for (let attempt = 0; attempt < 2; attempt++) {
       checkCancelled(context);
@@ -174,11 +178,12 @@
           ...(method === 'GET' && context.operation === 'chat' ? { cache: 'no-store' } : {}),
           ...(url.origin === apiOrigin && url.pathname.startsWith('/me/play-history') ?
             { credentials: 'include', ...(method === 'GET' ? { cache: 'no-store' } : {}) } : {}),
-          headers: { Authorization: `OAuth ${account.access_token}`, Accept: 'application/json, text/javascript, */*; q=0.1',
+          ...(sessionRefresh ? { credentials: 'include' } : { headers: {
+            Authorization: `OAuth ${accessToken}`, Accept: 'application/json, text/javascript, */*; q=0.1',
             ...(body && contentType ? { 'Content-Type': contentType } : {}),
             // REST preflights do not allow Apollo's client header. Scope it to
             // GraphQL, including fixtures where both services share an origin.
-            ...(body && url.origin === graphOrigin && url.pathname === '/graphql' ? { 'apollographql-client-name': 'webi' } : {}) },
+            ...(body && url.origin === graphOrigin && url.pathname === '/graphql' ? { 'apollographql-client-name': 'webi' } : {}) } }),
           ...(body ? { body } : {}),
           redirect: 'error', signal: context.controller.signal
         }), context);
@@ -204,6 +209,51 @@
       persistProtection();
       return response;
     }
+  }
+
+  function websiteOAuthToken() {
+    try {
+      const cookie = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('oauth_token='));
+      const token = cookie && decodeURIComponent(cookie.slice('oauth_token='.length));
+      return token && /^[A-Za-z0-9._-]{1,4096}$/.test(token) ? token : null;
+    } catch { return null; }
+  }
+
+  async function verifyProfile(url, command, context) {
+    const expected = account.verified_user_id;
+    const bound = Number.isSafeInteger(expected) && expected > 0;
+    const readProfile = token => fetchProtected(url, 'GET', context, undefined, true, undefined, token);
+    let token = (bound && websiteOAuthToken()) || account.access_token;
+    let response = await readProfile(token);
+    if (response.status === 401 && bound) {
+      let updated = websiteOAuthToken();
+      if (!updated || updated === token) {
+        // SoundCloud rotates its HttpOnly refresh cookie on the server. This
+        // request uses the live profile and is never replayed by the bridge.
+        const refresh = await fetchProtected(new URL(sessionRefreshUrl), 'POST', context, undefined, false);
+        if (refresh.ok) updated = websiteOAuthToken();
+        else if (refresh.status !== 400 && refresh.status !== 401) response = refresh;
+      }
+      if (updated && updated !== token) {
+        token = updated;
+        response = await readProfile(token);
+      }
+    }
+    const result = { kind: 'complete', request_id: command.id, status: response.status };
+    if (response.ok) {
+      const { json: user } = await readJson(response, context);
+      if (!Number.isSafeInteger(user?.id) || user.id <= 0 || (expected != null && expected !== user.id)) {
+        send({ ...result, status: 401 });
+        return;
+      }
+      historyUserId = account.verified_user_id = user.id;
+      result.user = { id: user.id, username: user.username, avatar_url: user.avatar_url };
+      if (token !== account.access_token) {
+        account.access_token = token;
+        result.session = { ...account, data_dome_client_id: null };
+      }
+    }
+    send(result);
   }
 
   function readUrl(value) {
@@ -462,7 +512,9 @@
     }
     const url = new URL(command.operation === 'me' ? '/me' : command.operation === 'liked-ids' ?
       '/me/track_likes/ids?limit=200&linked_partitioning=1' : command.operation === 'repost' ? `/me/track_reposts/${command.track_id}` : `/users/${command.user_id}/track_likes/${command.track_id}`, apiOrigin);
-    if (command.operation === 'liked-ids') {
+    if (command.operation === 'me') {
+      await verifyProfile(url, command, context);
+    } else if (command.operation === 'liked-ids') {
       let target = url, count = 0, pages = 0;
       const seen = new Set();
       while (target) {
@@ -487,14 +539,8 @@
       }
       send({ kind:'complete', request_id:command.id, status:200 });
     } else {
-      const response = await fetchProtected(url, command.operation === 'me' ? 'GET' : (command.operation === 'repost' ? command.reposted : command.liked) ? 'PUT' : 'DELETE', context);
-      const result = { kind: 'complete', request_id: command.id, status: response.status };
-      if (command.operation === 'me' && response.ok) {
-        const { json: user } = await readJson(response, context);
-        if (Number.isSafeInteger(user.id) && user.id > 0) historyUserId = user.id;
-        result.user = { id: user.id, username: user.username, avatar_url: user.avatar_url };
-      }
-      send(result);
+      const response = await fetchProtected(url, (command.operation === 'repost' ? command.reposted : command.liked) ? 'PUT' : 'DELETE', context);
+      send({ kind: 'complete', request_id: command.id, status: response.status });
     }
   }
 
@@ -526,7 +572,7 @@
     if (command.operation === 'session-update') {
       const next = command.session;
       if (!next || next.client_id !== account.client_id ||
-        Object.keys(next).some(key => !['client_id', 'access_token', 'user_agent', 'data_dome_client_id', 'app_version', 'app_locale', 'session_id'].includes(key)) ||
+        Object.keys(next).some(key => !['client_id', 'access_token', 'user_agent', 'data_dome_client_id', 'app_version', 'app_locale', 'session_id', 'verified_user_id'].includes(key)) ||
         typeof next.access_token !== 'string' || !/^[A-Za-z0-9._-]{1,4096}$/.test(next.access_token) ||
         account.session_id != null && next.session_id !== account.session_id) return;
       window.__pookieUpdateSession(next);

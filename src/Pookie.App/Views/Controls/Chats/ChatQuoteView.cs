@@ -24,7 +24,7 @@ internal sealed class ChatQuoteView : Panel
         this.accent = accent; this.composer = composer;
         if (composer) title.FontWeight = FontWeight.Normal;
         title.Foreground = accent;
-        preview.Foreground = composer ? Color.FromRgb(170,170,176) : TrackButtons.OnSurface;
+        preview.Foreground = composer ? TextAppearance.Secondary : TrackButtons.OnSurface;
         thumbnail = new Border().BorderThickness(0).Padding(0).CornerRadius(3).ClipToBounds().Child(image).IsVisible(false);
         Add(thumbnail); Add(title); Add(preview);
         IsHitTestVisible = false;

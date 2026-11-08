@@ -56,6 +56,8 @@ internal static class DiagnosticsRunner
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-drm-capability-probe")) { await BrowserDrmCapabilityProbe.RunAsync(); return true; }
+        if (args.Contains("--native-widevine-reference-probe")) { await NativeWidevineReferenceProbe.RunAsync(); return true; }
+        if (args.Contains("--native-widevine-vmp-probe")) { await NativeWidevineVmpProbe.RunAsync(args.Contains("--vmp-production")); return true; }
         if (args.Contains("--protected-audio-smoke-test"))
         {
             var flag = Array.IndexOf(args, "--protected-audio-smoke-test");

@@ -1,4 +1,5 @@
 using Aprillz.MewUI;
+using Aprillz.MewUI.Controls;
 
 namespace Pookie.App;
 
@@ -75,13 +76,20 @@ internal sealed partial class MainWindow
             static double Linear(byte value) => value <= 10 ? value / 255d / 12.92 : Math.Pow((value / 255d + .055) / 1.055, 2.4);
             return .2126 * Linear(color.R) + .7152 * Linear(color.G) + .0722 * Linear(color.B);
         }
+        if (PlayerSecondaryText is not { R: 255, G: 255, B: 255, A: > 0 and < 255 })
+            throw new InvalidOperationException("Secondary text did not retain a white translucent foreground.");
         foreach (var color in new[] { Color.FromRgb(255, 255, 0), Color.FromRgb(0, 255, 0), Color.FromRgb(255, 255, 255) })
         {
             var palette = PlayerPalette.FromArtwork(Cover(color));
             foreach (var stop in new[] { palette.Start, palette.Middle, palette.End })
-                if ((Luminance(Muted) + .05) / (Luminance(stop) + .05) < 4.5)
+                if ((Luminance(stop.Lerp(Color.White, PlayerSecondaryText.A / 255d)) + .05) / (Luminance(stop) + .05) < 4.5)
                     throw new InvalidOperationException("Player gradient reduced secondary text contrast");
         }
+        MoveActionPointer(new Point(2, 2));
+        if (playerShareButton.FindVisualChild<Image>() is not Image share ||
+            !ReferenceEquals(share.Source, Icons.Source("arrow-square-out", Color.White)))
+            throw new InvalidOperationException("The player used a gray glyph for an inactive control.");
+        await WaitForLikedLayoutAsync(() => Math.Abs(share.Opacity - PlayerIdleIconOpacity) < .001);
 
         playerBackdrop.Reset();
         SetPlayerArtwork(red, playGeneration);

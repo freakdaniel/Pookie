@@ -52,7 +52,7 @@ internal sealed partial class MainWindow
     {
         row.Bind(track);
         SetCardArtwork(row.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
-        likedArtworkTracks[row.Cover] = track.Id;
+        likedArtworkTracks[row.Cover] = (track.Id, track.ArtworkUrl ?? track.User?.AvatarUrl);
         Run(() => LoadLikedArtworkAsync(row.Cover, track));
         Run(() => LoadLikedWaveformAsync(row, track));
         Run(() => LoadLikedTrackArtAsync(row, track));
@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
     private void ClearLibraryTrackRow(LikedTrackRow row)
     {
         likedArtworkTracks.Remove(row.Cover);
-        StopCardArtwork(row.Cover);
+        ClearCardArtwork(row.Cover);
         row.Reset();
     }
 

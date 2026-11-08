@@ -15,7 +15,6 @@ internal sealed partial class MainWindow
             VerifyBackdropBlurPixels();
             VerifyShadowRasterPixels();
             VerifyGlassCachePixels();
-            await VerifyHeaderCaptureLifetimeAsync();
             timer.Stop();
             await ShowWorkspaceAsync();
             playerVisible.Value = true;
@@ -39,10 +38,12 @@ internal sealed partial class MainWindow
                 User = new() { Username = "Pookie" } }).ToArray(), null));
             await WaitForLikedLayoutAsync(() => SmoothScroll.Maximum(shellScroll) > 1000 &&
                 PageContentScroll() is { ViewportHeight: > 100 } && !shellPageScroll.IsMeasureDirty && Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 / Window.DpiScale &&
-                contentBottomFade.Strength == ContentBottomFade.PlayerOpacity);
-            if (headerGlass.GlassAmount != 0 || HeaderSurface != Surface || contentSurface.CornerRadius != 0 ||
+                contentBottomFade.Strength == ContentEdgeFade.PlayerOpacity);
+            if (HeaderSurface != Surface || contentSurface.CornerRadius != 0 ||
                 contentBottomFade.IsHitTestVisible || Math.Abs(contentBottomFade.Bounds.Bottom - playerChrome.Bounds.Y) > 1)
                 throw new InvalidOperationException("The resting chrome does not match the square content surface.");
+            VerifyTopFadePixels();
+            await VerifyHeaderCardsAsync();
             if (Environment.GetEnvironmentVariable("POOKIE_SEARCH_ONLY") == "1")
             {
                 await VerifySearchScrollingAsync();
@@ -52,7 +53,7 @@ internal sealed partial class MainWindow
             CheckShellScrollBarBounds();
             await VerifyShellScrollBarDragAsync();
             shellScroll.SetScrollOffsets(0, 48);
-            await WaitForLikedLayoutAsync(() => headerGlass.GlassAmount > .999 && headerGlass.HasBlurredBackdrop);
+            await WaitForLoginFrameAsync();
             VerifyGpuBlurState();
             VerifyIconRenderTargets();
             CaptureUiPreview("shell-chrome-glass");
@@ -64,9 +65,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => Math.Abs(native.VerticalOffset - before - 60) < 1);
             if (native.CornerRadius != 0 || contentFrame.Bounds.Y >= 0 || native.Bounds.Bottom > playerChrome.Bounds.Y + 1)
                 throw new InvalidOperationException("Page scrolling lost the under-header viewport, square clipping or player boundary.");
-            await VerifyLiveHeaderBackdropAsync();
             CaptureUiPreview("shell-chrome-scrolled");
-            VerifyHeaderBackdropPixels();
             var tile = likedTiles.Values.Where(item => item.Track != null && item.Cover.Bounds.Y > 200 &&
                 item.Cover.Bounds.Y < playerChrome.Bounds.Y).OrderByDescending(item => item.Cover.Bounds.Y).First();
             var fadeTrackId = tile.Track!.Id;
@@ -76,14 +75,14 @@ internal sealed partial class MainWindow
             {
                 tile = likedTiles.Values.Single(item => item.Track?.Id == fadeTrackId);
                 var correction = tile.Cover.Bounds.Y + tile.Cover.ActualHeight / 2 -
-                    (playerChrome.Bounds.Y - ContentBottomFade.FadeHeight / 2);
+                    (playerChrome.Bounds.Y - ContentEdgeFade.BottomHeight / 2);
                 if (shellPageScroll.IsReady && Math.Abs(correction) < 1) break;
                 shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + correction);
                 await WaitForLoginFrameAsync();
             }
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady &&
                 likedTiles.Values.Any(item => item.Track?.Id == fadeTrackId && Math.Abs(item.Cover.Bounds.Y + item.Cover.ActualHeight / 2 -
-                    (playerChrome.Bounds.Y - ContentBottomFade.FadeHeight / 2)) < 1));
+                    (playerChrome.Bounds.Y - ContentEdgeFade.BottomHeight / 2)) < 1));
             tile = likedTiles.Values.Single(item => item.Track?.Id == fadeTrackId);
             VerifyBottomFadePixels(tile.Cover.Bounds.X + tile.Cover.ActualWidth / 2);
             CaptureUiPreview("shell-chrome-fade-library");
@@ -99,12 +98,13 @@ internal sealed partial class MainWindow
                     Math.Abs(shellScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1 && !shellPageScroll.IsMeasureDirty);
                 CaptureUiPreview($"shell-chrome-{width}x{height}");
                 CheckShellScrollBarBounds();
+                VerifyHeaderCardLayout();
                 await VerifyHeaderSearchLayoutAsync(width);
             }
             shellScroll.SetScrollOffsets(0, 320);
             await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 320 && !shellPageScroll.IsArrangeDirty);
             await NavigateAsync(Page.Home);
-            await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 0 && headerGlass.GlassAmount == 0 &&
+            await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 0 &&
                 Math.Abs(contentFrame.ActualWidth - Math.Min(1440, Window.ClientSize.Width)) < 1 / Window.DpiScale && !contentFrame.IsArrangeDirty &&
                 shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) == 0);
             CaptureUiPreview("shell-chrome-home");
@@ -117,8 +117,6 @@ internal sealed partial class MainWindow
                 shellScroll.SetScrollOffsets(0, 500);
                 await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && samplingProbe.Bounds.Y < -300 &&
                     Math.Abs(homeScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1);
-                VerifyHeaderSampling(samplingProbe);
-                VerifyHeaderBlurMotion(samplingProbe);
                 VerifyBottomFadePixels(Window.ClientSize.Width / 2);
                 CaptureUiPreview("shell-chrome-fade-home");
                 var fadeSamples = new List<double>();
@@ -133,9 +131,9 @@ internal sealed partial class MainWindow
                     CheckShellScrollBarBounds();
                     CaptureUiPreview("shell-chrome-fade-without-player");
                     playerVisible.Value = true;
-                    await WaitForLikedLayoutAsync(() => contentBottomFade.Strength == ContentBottomFade.PlayerOpacity &&
+                    await WaitForLikedLayoutAsync(() => contentBottomFade.Strength == ContentEdgeFade.PlayerOpacity &&
                         Math.Abs(playerChrome.ActualHeight - PlayerBarHeight) < 1 / Window.DpiScale);
-                    if (fadeSamples.Distinct().Count(value => value > ContentBottomFade.PlayerOpacity && value < 1) < 3)
+                    if (fadeSamples.Distinct().Count(value => value > ContentEdgeFade.PlayerOpacity && value < 1) < 3)
                         throw new InvalidOperationException("The persistent bottom fade skipped its opacity transition when toggling the player.");
                 }
                 finally { Window.FrameRendered -= SampleFade; }
@@ -156,7 +154,7 @@ internal sealed partial class MainWindow
             playerVisible.Value = false;
             await WaitForLikedLayoutAsync(() => Math.Abs(shellScroll.ActualHeight - Window.ClientSize.Height) < 1 &&
                 contentBottomFade.IsVisible && contentBottomFade.Strength == 1);
-            Console.WriteLine("UI_SHELL_CHROME_OK: matching resting surfaces, real blurred under-header content, native scrollbar track/hit area below header and full-range dragging, one-to-one scroll, square viewport, pixel-verified compact persistent fade with visible content at player edge, animated opacity, readable final track, 1000x680/1600x900 bounds, glass search input/dismissal and compact connected history input without a stuck focus cue");
+            Console.WriteLine("UI_SHELL_CHROME_OK: three live glass cards, clear gaps over page content, native scrollbar track/hit area below header and full-range dragging, one-to-one scroll, square viewport, pixel-verified compact persistent fade with visible content at player edge, animated opacity, readable final track, 1000x680/1600x900 bounds, glass search input/dismissal and compact connected history input without a stuck focus cue");
         }
         catch (Exception error)
         {
@@ -193,159 +191,93 @@ internal sealed partial class MainWindow
 
     private sealed class HeaderSamplingProbe : Control
     {
-        internal readonly List<double> Scales = [];
-        internal double StripeY = double.NaN;
-        internal bool MotionSampling;
-        protected override void OnRender(IGraphicsContext context)
-        {
-            Scales.Add(context.DpiScale);
-            context.FillRectangle(Bounds, MotionSampling ? Color.Black : Color.FromRgb(220, 186, 140));
-            if (double.IsFinite(StripeY))
-                context.FillRectangle(new Rect(Bounds.X, StripeY, Bounds.Width, 12), Color.White);
-        }
+        internal Color Ink = Color.FromRgb(220, 186, 140);
+        protected override void OnRender(IGraphicsContext context) => context.FillRectangle(Bounds, Ink);
     }
 
-    private void VerifyHeaderBlurMotion(HeaderSamplingProbe probe)
+    private void VerifyHeaderCardLayout()
     {
-        var bounds = headerGlass.Bounds; var scale = Window.DpiScale;
-        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
-            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
-        using var context = Window.GraphicsFactory.CreateContext(surface);
-        var centers = new List<double>();
-        byte[] ReadColumn()
+        var history = startupHeader.HistoryCard.Bounds;
+        var nav = startupHeader.NavigationCard.Bounds;
+        var account = startupHeader.AccountCard.Bounds;
+        if (history.IsEmpty || nav.IsEmpty || account.IsEmpty || history.Right >= nav.X || nav.Right >= account.X ||
+            Math.Abs(nav.Y - startupHeader.Bounds.Y - 14) > 1 || Math.Abs(history.Y - nav.Y) > 1 || Math.Abs(account.Y - nav.Y) > 1 ||
+            Math.Abs(history.Height - nav.Height) > 1 || Math.Abs(nav.Height - account.Height) > 1 ||
+            Math.Abs(nav.X + nav.Width / 2 - Window.ClientSize.Width / 2) > 1)
+            throw new InvalidOperationException($"The header cards lost their spacing or alignment: {history}, {nav}, {account}.");
+
+        var firstNav = ShellHeader.StateLayerBounds((Button)topNavigation.Children[0], Window.DpiScale);
+        var lastNav = ShellHeader.StateLayerBounds((Button)topNavigation.Children[^1], Window.DpiScale);
+        var forward = ShellHeader.StateLayerBounds(forwardButton, Window.DpiScale);
+        var settings = ShellHeader.StateLayerBounds(settingsButton, Window.DpiScale);
+        VerifyHeaderInset(history, forward, history.Right - forward.Right);
+        VerifyHeaderInset(nav, firstNav, firstNav.X - nav.X);
+        VerifyHeaderInset(nav, lastNav, nav.Right - lastNav.Right);
+        VerifyHeaderInset(account, settings, settings.X - account.X);
+    }
+
+    private static void VerifyHeaderInset(Rect card, Rect item, double side)
+    {
+        var top = item.Y - card.Y;
+        var bottom = card.Bottom - item.Bottom;
+        if (top <= 0 || Math.Abs(side - top) > .001 || Math.Abs(bottom - top) > .001)
+            throw new InvalidOperationException($"Header highlight lost its even inset: side={side}, top={top}, bottom={bottom}, card={card}, item={item}.");
+    }
+
+    private async Task VerifyHeaderCardsAsync()
+    {
+        VerifyHeaderCardLayout();
+        var cards = new[] { startupHeader.HistoryCard, startupHeader.NavigationCard, startupHeader.AccountCard };
+        await WaitForLikedLayoutAsync(() => cards.All(card => card.PopupBackdropPaintVersion > 0));
+        if (!OperatingSystem.IsLinux()) return;
+
+        using var fixture = new HeaderSamplingProbe { IsHitTestVisible = false };
+        workspace.Insert(workspace.Children.ToList().IndexOf((UIElement)startupHeader.Parent!), fixture.Row(0));
+        var nav = startupHeader.NavigationCard.Bounds;
+        var gap = new Point((startupHeader.HistoryCard.Bounds.Right + nav.X) / 2, nav.Y + 7);
+        var inside = new Point(nav.X + nav.Width / 2, gap.Y);
+        Color Read(Point point)
         {
-            context.BeginFrame(surface); context.Clear(Surface); context.Translate(-bounds.X, -bounds.Y);
-            headerGlass.Render(context); context.EndFrame();
-            var cpu = (ICpuPixelSurface)surface;
-            return Enumerable.Range(0, surface.PixelHeight).Select(y => cpu.GetReadOnlyPixelSpan()[y * cpu.StrideBytes + surface.PixelWidth / 2 * 4 + 1]).ToArray();
+            using var scope = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+            using var target = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(4, 4, 1));
+            using var context = Window.GraphicsFactory.CreateContext(target);
+            context.BeginFrame(target);
+            context.Translate(2 - point.X, 2 - point.Y);
+            fixture.Render(context);
+            startupHeader.Render(context);
+            context.EndFrame();
+            var pixels = (ICpuPixelSurface)target;
+            var data = pixels.GetReadOnlyPixelSpan();
+            var offset = 2 * pixels.StrideBytes + 8;
+            return Color.FromRgb(data[offset + 2], data[offset + 1], data[offset]);
         }
-        probe.MotionSampling = true;
-        var background = ReadColumn();
         try
         {
-            for (var step = 0; step <= 16; step++)
-            {
-                probe.StripeY = 20 + step / scale;
-                var pixels = ReadColumn();
-                double sum = 0, moment = 0;
-                for (var y = 0; y < surface.PixelHeight; y++)
-                {
-                    var weight = Math.Max(0, pixels[y] - background[y]);
-                    sum += weight; moment += (y + .5) * weight;
-                }
-                if (sum <= 0) throw new InvalidOperationException("Header motion probe did not reach the blurred backdrop.");
-                centers.Add(moment / sum);
-            }
+            var versions = cards.Select(card => card.PopupBackdropPaintVersion).ToArray();
+            fixture.Ink = Color.FromRgb(235, 20, 20); fixture.InvalidateVisual();
+            await WaitForLoginFrameAsync();
+            if (cards.Where((card, index) => card.PopupBackdropPaintVersion <= versions[index]).Any())
+                throw new InvalidOperationException("A header card did not update with the same frame as its background.");
+            var clear = Read(gap);
+            var red = Read(inside);
+            fixture.Ink = Color.FromRgb(20, 20, 235); fixture.InvalidateVisual();
+            await WaitForLoginFrameAsync();
+            var blue = Read(inside);
+            if (clear != Color.FromRgb(235, 20, 20) || red.R < red.B + 20 || blue.B < blue.R + 20)
+                throw new InvalidOperationException($"The header painted its gap or lost the live card pixels: gap={clear}, red={red}, blue={blue}.");
+
+            startupHeader.Opacity = 0;
+            await WaitForLoginFrameAsync();
+            versions = cards.Select(card => card.PopupBackdropPaintVersion).ToArray();
+            fixture.Ink = Color.FromRgb(235, 20, 20); fixture.InvalidateVisual();
+            startupHeader.Opacity = .25;
+            await WaitForLoginFrameAsync();
+            if (cards.Where((card, index) => card.PopupBackdropPaintVersion <= versions[index]).Any())
+                throw new InvalidOperationException("A header card missed the first visible frame of the reveal.");
         }
-        finally { probe.StripeY = double.NaN; probe.MotionSampling = false; headerGlass.RefreshBackdrop(); }
-        var deltas = centers.Zip(centers.Skip(1), (a, b) => b - a).ToArray();
-        if (deltas.Any(delta => delta < .35 || delta > 1.65))
-            throw new InvalidOperationException($"Header backdrop moved in jumps instead of following one-pixel content motion: dpi={scale}, steps={string.Join(',', deltas.Select(v => v.ToString("F2")))}.");
-        Console.WriteLine($"HEADER_MOTION_OK: dpi={scale:F2}, blurred movement={deltas.Min():F2}..{deltas.Max():F2}px for each 1px input step, without frozen samples or coarse jumps");
-    }
-
-    private void VerifyHeaderSampling(HeaderSamplingProbe probe)
-    {
-        var bounds = headerGlass.Bounds;
-        var scale = Window.DpiScale;
-        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
-            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
-        using var context = Window.GraphicsFactory.CreateContext(surface);
-        probe.Scales.Clear();
-        context.BeginFrame(surface);
-        context.Translate(-bounds.X, -bounds.Y);
-        headerGlass.Render(context);
-        context.EndFrame();
-        if (probe.Scales.Count == 0 || probe.Scales.Any(value => Math.Abs(value - scale) > .0001))
-            throw new InvalidOperationException($"Header capture changed the page's pixel grid: native={scale}; captures={string.Join(',', probe.Scales)}.");
-        Console.WriteLine($"HEADER_SAMPLING_OK: page and header capture share native DPI {scale:F4} before downsampling");
-    }
-
-    private async Task VerifyLiveHeaderBackdropAsync()
-    {
+        finally { startupHeader.Opacity = 1; workspace.Remove(fixture); }
         await WaitForLoginFrameAsync();
-        var pixels = ReadLiveHeaderBackdrop();
-        var minimum = 255; var maximum = 0;
-        for (var i = 0; i < pixels.Length; i += 4)
-        {
-            if (pixels[i + 3] != 255)
-                throw new InvalidOperationException($"Native header capture lost its opaque page background: alpha={pixels[i + 3]}.");
-            minimum = Math.Min(minimum, pixels[i + 1]); maximum = Math.Max(maximum, pixels[i + 1]);
-        }
-        if (pixels.Length == 0 || maximum - minimum < 8)
-            throw new InvalidOperationException($"Native header capture lost page variation: green={minimum}..{maximum}.");
-        var before = pixels.ToArray();
-        var offset = shellScroll.VerticalOffset;
-        try
-        {
-            shellScroll.SetScrollOffsets(0, offset + 40);
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
-            await WaitForLoginFrameAsync();
-            var moved = ReadLiveHeaderBackdrop();
-            if (moved.AsSpan().SequenceEqual(before))
-                throw new InvalidOperationException("Native header capture reused stale pixels after scrolling.");
-            for (var i = 3; i < moved.Length; i += 4)
-                if (moved[i] != 255) throw new InvalidOperationException("Moving native header capture became transparent.");
-        }
-        finally
-        {
-            shellScroll.SetScrollOffsets(0, offset);
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
-            await WaitForLoginFrameAsync();
-        }
-        Console.WriteLine($"LIVE_HEADER_BACKDROP_OK: native frame, alpha=255, green={minimum}..{maximum}, refreshed after scrolling");
-    }
-
-    private byte[] ReadLiveHeaderBackdrop()
-    {
-        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-        if (typeof(ShellChromeGlass).GetField("nativeBlur", flags)!.GetValue(headerGlass) is NativeBackdropBlur { Result: { } result })
-        {
-            // Read the result of the real window frame, without calling Render.
-            // Gaussian halo pixels lie outside the header and are intentionally
-            // transparent. Every pixel inside the visible header must be opaque.
-            var span = result.ReadPixels(out var stride);
-            var scaleX = result.PixelWidth / result.Bounds.Width;
-            var scaleY = result.PixelHeight / result.Bounds.Height;
-            var x = (int)Math.Ceiling((headerGlass.Bounds.X - result.Bounds.X) * scaleX);
-            var y = (int)Math.Ceiling((headerGlass.Bounds.Y - result.Bounds.Y) * scaleY);
-            var width = (int)Math.Floor(headerGlass.Bounds.Width * scaleX);
-            var height = (int)Math.Floor(headerGlass.Bounds.Height * scaleY);
-            var pixels = new byte[width * height * 4];
-            for (var row = 0; row < height; row++)
-                span.Slice((y + row) * stride + x * 4, width * 4).CopyTo(pixels.AsSpan(row * width * 4));
-            return pixels;
-        }
-        var blur = typeof(ShellChromeGlass).GetField("blurred", flags)!.GetValue(headerGlass) as BackdropBlur;
-        if (blur is not { Ready: true }) throw new InvalidOperationException("Native frame did not prepare its header blur.");
-        return blur.Pixels.ToArray();
-    }
-
-    private void VerifyHeaderBackdropPixels()
-    {
-        var bounds = headerGlass.Bounds;
-        var scale = Window.DpiScale;
-        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.FilterIntermediate(
-            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
-        using var context = Window.GraphicsFactory.CreateContext(surface);
-        context.BeginFrame(surface);
-        context.Clear(Surface); context.Translate(-bounds.X, -bounds.Y);
-        headerGlass.Render(context);
-        context.EndFrame();
-        var cpu = (ICpuPixelSurface)surface;
-        var pixels = cpu.GetReadOnlyPixelSpan();
-        var minimum = 255; var maximum = 0;
-        for (var x = 20; x < surface.PixelWidth - 20; x++)
-        {
-            var green = pixels[(surface.PixelHeight / 2) * cpu.StrideBytes + x * 4 + 1];
-            minimum = Math.Min(minimum, green); maximum = Math.Max(maximum, green);
-        }
-        if (maximum - minimum < 8)
-            throw new InvalidOperationException($"Header blur lost the page pixels: green={minimum}..{maximum}.");
-        Console.WriteLine($"SHELL_GLASS_PIXELS_OK: visible page variation through the blurred header, green={minimum}..{maximum}");
+        Console.WriteLine("HEADER_GLASS_CARDS_OK: separate cards, exact page pixels in the gap, same-frame backdrop changes and first visible reveal frame");
     }
 
     private async Task VerifyHeaderSearchLayoutAsync(int width)
@@ -353,19 +285,20 @@ internal sealed partial class MainWindow
         Window.Activate();
         await WaitForLikedLayoutAsync(() => Window.IsActive);
         OpenTopSearch();
-        await WaitForLikedLayoutAsync(() => Math.Abs(topSearchBar.ActualWidth - 480) < 1 / Window.DpiScale && topSearchBar.Opacity == 1 && topSearchInput.IsFocused);
+        await WaitForLikedLayoutAsync(() => Math.Abs(topSearchBar.ActualWidth - ShellHeader.NavigationWidth) < 1 / Window.DpiScale && topSearchBar.Opacity == 1 && topSearchInput.IsFocused);
         query.Value = "Музыка для твоего вечера";
         await WaitForLikedLayoutAsync(() => topSearchInput.Text == query.Value);
+        var navigation = startupHeader.NavigationCard.Bounds;
         if (Math.Abs(backButton.ActualWidth - 36) > 1 / Window.DpiScale || Math.Abs(forwardButton.ActualHeight - 36) > 1 / Window.DpiScale ||
             Math.Abs(forwardButton.Bounds.X - backButton.Bounds.Right - 2) > 1 ||
             topSearchBar.Bounds.X <= forwardButton.Bounds.Right || topSearchBar.Bounds.Right >= settingsButton.Bounds.X ||
-            Math.Abs(topSearchInput.Bounds.Y + topSearchInput.ActualHeight / 2 - ShellChromeGlass.HeaderHeight / 2) > 1 ||
+            Math.Abs(topSearchInput.Bounds.Y + topSearchInput.ActualHeight / 2 - (navigation.Y + navigation.Height / 2)) > 1 ||
             topSearchInput.Text != query.Value)
             throw new InvalidOperationException("The glass search field overlaps the header actions or lost native input alignment/binding.");
         CaptureUiPreview($"shell-header-search-{width}");
         // A real outside click must still dismiss the field and restore navigation.
         RouteWaveformClick(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => !searching.Value && topSearchBar.Opacity == 0 && Math.Abs(topNavigation.ActualWidth - 480) < 1 / Window.DpiScale);
+        await WaitForLikedLayoutAsync(() => !searching.Value && topSearchBar.Opacity == 0 && Math.Abs(topNavigation.ActualWidth - ShellHeader.NavigationWidth) < 1 / Window.DpiScale);
         if (query.Value.Length != 0 || topSearchBar.IsHitTestVisible)
             throw new InvalidOperationException("Dismissing glass search left stale text or an invisible input target.");
     }
@@ -384,11 +317,11 @@ internal sealed partial class MainWindow
     private void CheckShellScrollBarBounds()
     {
         var bar = ShellVerticalBar();
-        var above = new Point(bar.Bounds.X + bar.ActualWidth / 2, shellScroll.Bounds.Y + ShellChromeGlass.HeaderHeight / 2);
+        var above = new Point(bar.Bounds.X + bar.ActualWidth / 2, shellScroll.Bounds.Y + ShellHeader.HeaderHeight / 2);
         if (Math.Abs(shellScroll.ViewportWidth - shellScroll.ActualWidth) > 1 ||
             Math.Abs(contentFrame.Bounds.X - (shellScroll.Bounds.X + (shellScroll.ActualWidth - contentFrame.ActualWidth) / 2)) > 1)
             throw new InvalidOperationException("The overlay scrollbar reduced the content width or shifted the centered frame.");
-        if (!bar.IsVisible || Math.Abs(bar.Bounds.Y - shellScroll.Bounds.Y - ShellChromeGlass.HeaderHeight) > 1 ||
+        if (!bar.IsVisible || Math.Abs(bar.Bounds.Y - shellScroll.Bounds.Y - ShellHeader.HeaderHeight) > 1 ||
             Math.Abs(bar.Bounds.Bottom - shellScroll.Bounds.Bottom) > 1 || bar.HitTest(above) != null ||
             ReferenceEquals(shellScroll.HitTest(above), bar) || shellScroll.Bounds.Y >= startupHeader.Bounds.Bottom)
             throw new InvalidOperationException($"The page scrollbar overlaps the glass header or shortened the content viewport: bar={bar.Bounds}, viewport={shellScroll.Bounds}.");
@@ -415,6 +348,29 @@ internal sealed partial class MainWindow
             finally { Window.ReleaseMouseCapture(); }
         }
         RouteWaveformPointer(new Point(2, 2));
+    }
+
+    private void VerifyTopFadePixels()
+    {
+        var bounds = contentTopFade.Bounds;
+        if (!contentSurface.IsAncestorOf(contentTopFade) || contentTopFade.IsHitTestVisible ||
+            Math.Abs(bounds.Y - contentSurface.Bounds.Y) > 1 || bounds.Bottom <= startupHeader.Bounds.Bottom)
+            throw new InvalidOperationException("The top fade must cover the content behind the header without intercepting input.");
+
+        var scale = Window.DpiScale;
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
+        using var context = Window.GraphicsFactory.CreateContext(surface);
+        context.BeginFrame(surface); context.Clear(Color.White); context.Translate(-bounds.X, -bounds.Y);
+        contentTopFade.Render(context); context.EndFrame();
+        var cpu = (ICpuPixelSurface)surface;
+        var pixels = cpu.GetReadOnlyPixelSpan();
+        var top = pixels[4];
+        var middle = pixels[(int)(bounds.Height * scale / 2) * cpu.StrideBytes + 4];
+        var bottom = pixels[(cpu.PixelHeight - 2) * cpu.StrideBytes + 4];
+        if (top > 75 || middle <= top + 45 || bottom < 250)
+            throw new InvalidOperationException($"The top fade does not smoothly uncover a light background: {top}, {middle}, {bottom}.");
     }
 
     private void VerifyBottomFadePixels(double x)

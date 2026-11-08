@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
             var recentHeader = recentSection.Children.OfType<Button>().First();
             var recentRow = feedSidebarRows.Single();
             if (Math.Abs(recentHeader.Bounds.X - recentRow.Cover.Bounds.X) > 1 || recentRow.Root.Bounds.X >= recentHeader.Bounds.X ||
-                recentHeader.FindVisualChild<Image>() is not Image { Opacity: < .01 } || feedFilters.Bounds.Y < ShellChromeGlass.HeaderHeight)
+                recentHeader.FindVisualChild<Image>() is not Image { Opacity: < .01 } || feedFilters.Bounds.Y < ShellHeader.HeaderHeight)
                 throw new InvalidOperationException("Feed history alignment/hover heading diverged from the shared section style");
             var first = feedViews.Values.First(view => view.Track?.Track?.TrackArtUrl != null).Track!;
             TextBlock? counter = null;
@@ -51,7 +51,7 @@ internal sealed partial class MainWindow
                 Math.Abs(playlistView.Covers[0].ActualHeight - TrackRowLayout.CoverSize) > 1 / Window.DpiScale)
                 throw new InvalidOperationException("Playlist preview did not fit the shared 184px publication geometry.");
             await WaitForLoginFrameAsync();
-            var pinnedTop = shellScroll.Bounds.Y + ShellChromeGlass.HeaderHeight + 16;
+            var pinnedTop = shellScroll.Bounds.Y + ShellHeader.HeaderHeight + 16;
             try { await WaitForLikedLayoutAsync(() => Math.Abs(feedSidebar.Bounds.Y - pinnedTop) <= 1); }
             catch (Exception error)
             {
@@ -82,7 +82,7 @@ internal sealed partial class MainWindow
             Window.WindowSize = WindowSize.Resizable(1000, 760, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => !feedSidebar.IsVisible && feedList.ActualWidth > 850 && shellPageScroll.IsReady);
             shellScroll.SetScrollOffsets(0, 0);
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && shellScroll.VerticalOffset < .5 && feedFilters.Bounds.Y > ShellChromeGlass.HeaderHeight);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && shellScroll.VerticalOffset < .5 && feedFilters.Bounds.Y > ShellHeader.HeaderHeight);
             await WaitForLoginFrameAsync(); CaptureUiPreview("feed-narrow");
             // No new page can overwrite a route selected while a refresh is pending.
             fixture.Hold = new(TaskCreationOptions.RunContinuationsAsynchronously);

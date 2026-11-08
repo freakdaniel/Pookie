@@ -11,11 +11,13 @@ internal sealed partial class MainWindow
         try
         {
             while (startupSplash.IsVisible) await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
-            var account = new WebSession("fixture", "fixture-token", "Test");
+            var account = new WebSession("fixture", "fixture-expired", "Test") { VerifiedUserId = 42 };
             var connected = new NativeBrowserSession(account);
             var worker = new EmbeddedWebWorker(Window, account, root + "/", profile);
             connected.UseEmbedded(worker); AttachBrowser(connected); api.Session = account;
             me = await connected.GetMeAsync(timeout.Token); signedIn.Value = true;
+            if (me.Id != 42 || connected.Account.AccessToken != "fixture-token")
+                throw new InvalidOperationException("The saved account was not renewed from the existing website profile.");
             await ShowWorkspaceAsync();
             likedIdsReady = true;
             current = new() { Id = 17, Title = "Local slider like" }; UpdateLikeState();
@@ -59,9 +61,22 @@ internal sealed partial class MainWindow
             Console.WriteLine("WEB_OPTIMISTIC_LIKE_OK: selected before/during slider; passing retains success, rejection after passing rolls back, closing rolls back cancellation");
             var blocked = false;
             try { await api.SetLikedAsync(42, 20, true, timeout.Token); }
-            catch (SoundCloudException error) when (error.StatusCode == 403) { blocked = true; }
+            catch (SoundCloudException error) when (error.StatusCode == 403 && error.ChallengeKind == SoundCloudChallengeKind.HardBlock) { blocked = true; }
             if (!blocked || calls(20) != 1 || embeddedLoginDialog.IsOpen) throw new InvalidOperationException("Hard block replayed a write or opened a slider.");
             Console.WriteLine("WEB_SLIDER_CANCEL_OK: close cancels the pending write; next request restores the same profile; invisible checks stay hidden and hard block is terminal");
+
+            localRecent.Add(LibraryItem.FromTrack(new() { Id = 31, Title = "Local history fixture" }));
+            var historyBlocked = false;
+            try { await ShowLibrarySectionAsync(Page.LibraryHistory).WaitAsync(timeout.Token); }
+            catch (SoundCloudException error) when (error.ChallengeKind == SoundCloudChallengeKind.HardBlock) { historyBlocked = true; }
+            if (!historyBlocked || !librarySectionRetry.Value || string.IsNullOrWhiteSpace(librarySectionStatus.Value) ||
+                collectionGrid.ItemsSource.Count != 1 || collectionGrid.ItemsSource.GetItem(0) is not LibraryItem { Track.Id: 31 } || documents() != 2)
+                throw new InvalidOperationException("Blocked history did not keep local tracks and offer a retry.");
+            await RetryLibrarySectionAsync().WaitAsync(timeout.Token);
+            if (librarySectionRetry.Value || librarySectionStatus.Value != "" || documents() != 3 || calls(20) != 1 ||
+                !LibraryItems("history").Select(item => item.Track?.Id).SequenceEqual(new long?[] { 31, 32 }))
+                throw new InvalidOperationException("Retrying history did not restore the read without replaying the blocked write.");
+            Console.WriteLine("WEB_SESSION_RECOVERY_OK: renewed saved credentials, kept local history through a hard block, retried the read only");
 
             async Task VisibleAsync(Task operation)
             {

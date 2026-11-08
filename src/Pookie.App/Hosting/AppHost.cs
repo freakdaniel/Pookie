@@ -52,6 +52,7 @@ internal static class AppHost
         ThemeManager.DefaultAccentColor = Color.FromRgb(180, 180, 180);
         ThemeManager.DefaultMetrics = ThemeMetrics.Default with { ControlCornerRadius = 10, FontFamily = appFont.FontFamily };
         using var native = StartupLog.Run("app.main-window-create", () => new MainWindow(options, brandFont.FontFamily));
+        LiveGlassBackdrop.WarmWindow(native.Window);
         configureWindow?.Invoke(native);
         try { Application.Create().UseTheme(ThemeVariant.Dark).UseAccent(Color.FromRgb(180, 180, 180)).Run(native.Window); }
         finally

@@ -23,8 +23,12 @@ internal sealed record CencAudioInitialization(uint TrackId, uint DefaultSampleS
         var minf = Mp4.One(bytes, mdia.Payload, mdia.End, "minf");
         var stbl = Mp4.One(bytes, minf.Payload, minf.End, "stbl");
         var stsd = Mp4.One(bytes, stbl.Payload, stbl.End, "stsd");
-        if (Mp4.U32(bytes, stsd.Payload + 4, stsd.End) != 1) throw Mp4.Invalid();
-        var entry = Mp4.One(bytes, stsd.Payload + 8, stsd.End, "enca");
+        var descriptions = Mp4.Boxes(bytes, stsd.Payload + 8, stsd.End);
+        // A packager may add a clear AAC description for the unencrypted lead.
+        // Protected fragments must still select the first, encrypted description.
+        if (descriptions.Count is < 1 or > 2 || Mp4.U32(bytes, stsd.Payload + 4, stsd.End) != descriptions.Count ||
+            descriptions[0].Type != "enca" || descriptions.Count == 2 && descriptions[1].Type != "mp4a") throw Mp4.Invalid();
+        var entry = descriptions[0];
         if (Mp4.U16(bytes, entry.Payload + 8, entry.End) != 0) throw Mp4.Invalid(); // sample entry version
         var channels = Mp4.U16(bytes, entry.Payload + 16, entry.End);
         var rate = (int)(Mp4.U32(bytes, entry.Payload + 24, entry.End) >> 16);
@@ -49,7 +53,7 @@ internal sealed record CencAudioInitialization(uint TrackId, uint DefaultSampleS
             throw new DrmPlaybackException("Этот вариант защищённого AAC не поддерживается; ожидается AAC-LC.");
         var mvex = Mp4.One(bytes, moov.Payload, moov.End, "mvex");
         var trex = Mp4.One(bytes, mvex.Payload, mvex.End, "trex");
-        if (Mp4.U32(bytes, trex.Payload + 4, trex.End) != trackId) throw Mp4.Invalid();
+        if (Mp4.U32(bytes, trex.Payload + 4, trex.End) != trackId || Mp4.U32(bytes, trex.Payload + 8, trex.End) != 1) throw Mp4.Invalid();
         return new(trackId, Mp4.U32(bytes, trex.Payload + 16, trex.End), kid, bytes[tenc.Payload + 7], frequency, channels);
     }
 
@@ -100,7 +104,9 @@ internal static class CencAudioFragment
         var traf = Mp4.One(bytes, moof.Payload, moof.End, "traf");
         if (Mp4.Boxes(bytes, moof.Payload, moof.End).Count(b => b.Type == "traf") != 1) throw Mp4.Invalid();
         var boxes = Mp4.Boxes(bytes, traf.Payload, traf.End);
-        if (boxes.Any(b => b.Type is "sgpd" or "sbgp")) throw new DrmPlaybackException("Смена DRM-параметров внутри MP4-фрагмента пока не поддерживается.");
+        // The AAC roll group describes decoder pre-roll, not encryption.
+        if (boxes.Any(b => b.Type is ("sgpd" or "sbgp") && Mp4.Type(bytes, b.Payload + 4, b.End) != "roll"))
+            throw new DrmPlaybackException("Смена DRM-параметров внутри MP4-фрагмента пока не поддерживается.");
         var tfhd = Mp4.One(bytes, traf.Payload, traf.End, "tfhd");
         var flags = Mp4.Flags(bytes, tfhd);
         if (Mp4.U32(bytes, tfhd.Payload + 4, tfhd.End) != initialization.TrackId) throw Mp4.Invalid();
@@ -108,7 +114,11 @@ internal static class CencAudioFragment
         long baseOffset = moof.Start;
         if ((flags & 1) != 0) { baseOffset = checked((long)Mp4.U64(bytes, cursor, tfhd.End)); cursor += 8; }
         else if ((flags & 0x20000) == 0) throw Mp4.Invalid();
-        if ((flags & 2) != 0) cursor += 4;
+        if ((flags & 2) != 0)
+        {
+            if (Mp4.U32(bytes, cursor, tfhd.End) != 1) throw Mp4.Invalid();
+            cursor += 4;
+        }
         if ((flags & 8) != 0) cursor += 4;
         var defaultSize = initialization.DefaultSampleSize;
         if ((flags & 16) != 0) { defaultSize = Mp4.U32(bytes, cursor, tfhd.End); cursor += 4; }

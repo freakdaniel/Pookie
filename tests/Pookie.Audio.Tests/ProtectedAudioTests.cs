@@ -67,6 +67,15 @@ public sealed class ProtectedAudioTests
         Assert.Equal(new CencSubsample(0, 4), Assert.Single(sample.Subsamples));
     }
 
+    [Fact]
+    public void ProtectedFragmentAcceptsClearLeadAndPrerollMetadataButRejectsEncryptionOverrides()
+    {
+        var init = CencAudioInitialization.Parse(Initialization(clearLead: true));
+        Assert.Single(CencAudioFragment.Parse(Fragment(sampleDescription: 1, group: "roll"), init));
+        Assert.Throws<DrmPlaybackException>(() => CencAudioFragment.Parse(Fragment(sampleDescription: 2), init));
+        Assert.Throws<DrmPlaybackException>(() => CencAudioFragment.Parse(Fragment(group: "seig"), init));
+    }
+
     [Theory]
     [InlineData(5, 0)] // sample overruns mdat
     [InlineData(4, 1)] // subsamples do not cover the sample
@@ -115,7 +124,7 @@ public sealed class ProtectedAudioTests
         #EXT-X-ENDLIST
         """;
 
-    private static byte[] Initialization()
+    private static byte[] Initialization(bool clearLead = false)
     {
         var entry = new byte[28];
         BinaryPrimitives.WriteUInt16BigEndian(entry.AsSpan(16), 2);
@@ -124,7 +133,9 @@ public sealed class ProtectedAudioTests
         byte[] descriptor = [3, 22, 0, 1, 0, 4, 17, 0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 0x12, 0x10];
         var tenc = Join(new byte[6], new byte[] { 1, 16 }, Enumerable.Repeat((byte)0x42, 16).ToArray());
         var sinf = Box("sinf", Join(Box("frma", Encoding.ASCII.GetBytes("mp4a")), Box("schm", Join(new byte[4], Encoding.ASCII.GetBytes("cenc"), U32(0x10000))), Box("schi", Box("tenc", tenc))));
-        var stsd = Box("stsd", Join(new byte[4], U32(1), Box("enca", Join(entry, Box("esds", Join(new byte[4], descriptor)), sinf))));
+        var esds = Box("esds", Join(new byte[4], descriptor));
+        var stsd = Box("stsd", Join(new byte[4], U32(clearLead ? 2u : 1u), Box("enca", Join(entry, esds, sinf)),
+            clearLead ? Box("mp4a", Join(entry, esds)) : []));
         var tkhd = Box("tkhd", Join(new byte[12], U32(1)));
         var hdlr = Box("hdlr", Join(new byte[8], Encoding.ASCII.GetBytes("soun")));
         var mdia = Box("mdia", Join(hdlr, Box("minf", Box("stbl", stsd))));
@@ -132,13 +143,15 @@ public sealed class ProtectedAudioTests
         return Box("moov", Join(Box("trak", Join(tkhd, mdia)), Box("mvex", trex)));
     }
 
-    private static byte[] Fragment(bool subsamples = false, int sampleSize = 4, int corruption = 0)
+    private static byte[] Fragment(bool subsamples = false, int sampleSize = 4, int corruption = 0, uint? sampleDescription = null, string? group = null)
     {
-        var tfhd = Box("tfhd", Join(U32(0x20000), U32(1)));
+        var tfhd = Box("tfhd", Join(U32(sampleDescription.HasValue ? 0x20002u : 0x20000u), U32(1),
+            sampleDescription is { } index ? U32(index) : []));
         var auxiliary = Join(U32(subsamples ? 2u : 0u), U32(corruption == 2 ? 2u : 1u), Enumerable.Repeat((byte)0x21, 16).ToArray(),
             subsamples ? new byte[] { 0, 1, 0, 1, 0, 0, 0, corruption == 1 ? (byte)2 : (byte)3 } : []);
         var senc = Box("senc", auxiliary);
-        byte[] Make(int offset) => Box("moof", Box("traf", Join(tfhd, Box("trun", Join(U32(0x201), U32(1), U32((uint)offset), U32((uint)sampleSize))), senc)));
+        var sbgp = group == null ? [] : Box("sbgp", Join(U32(0), Encoding.ASCII.GetBytes(group), U32(1), U32(1), U32(1)));
+        byte[] Make(int offset) => Box("moof", Box("traf", Join(tfhd, Box("trun", Join(U32(0x201), U32(1), U32((uint)offset), U32((uint)sampleSize))), senc, sbgp)));
         var moof = Make(0); moof = Make(moof.Length + 8);
         return Join(moof, Box("mdat", [1, 2, 3, 4]));
     }

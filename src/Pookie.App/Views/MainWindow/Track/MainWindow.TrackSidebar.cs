@@ -92,7 +92,7 @@ internal sealed partial class MainWindow
         foreach (var fan in data.Fans)
         {
             var avatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(36).Height(36).StretchMode(Stretch.UniformToFill);
-            avatar.Source = Icons.Source("user", Muted);
+            avatar.Source = Icons.Source("user", MutedIcon);
             var row = TrackButtons.Action(new Grid().Columns("36,*,Auto").Rows("Auto").Spacing(10).Children(
                 new Border().CornerRadius(18).ClipToBounds().Child(avatar).Column(0),
                 new TextBlock().Text(fan.User.Username).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Column(1).CenterVertical(),

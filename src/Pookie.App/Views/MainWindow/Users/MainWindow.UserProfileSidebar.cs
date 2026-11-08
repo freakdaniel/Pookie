@@ -82,7 +82,7 @@ internal sealed partial class MainWindow
     private FrameworkElement UserSidebarAvatar(SoundCloudUser user, int size, long profileId)
     {
         var image = new Image().Width(size).Height(size).StretchMode(Stretch.UniformToFill);
-        image.Source = Icons.Source("user-circle", Muted);
+        image.Source = Icons.Source("user-circle", MutedIcon);
         var generation = navigationGeneration;
         Run(async () =>
         {

@@ -123,7 +123,7 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
         arrays.Clear(); Image.Dispose(); target.Dispose(); scratch.Dispose();
     }
 
-    private const string VertexSource = """
+    internal const string VertexSource = """
         #version 140
         out vec2 uv;
         void main() {
@@ -151,7 +151,7 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
         }
         """;
 
-    private sealed class Gl
+    internal sealed class Gl
     {
         internal readonly delegate* unmanaged<uint, uint> CreateShader = (delegate* unmanaged<uint, uint>)Load("glCreateShader");
         internal readonly delegate* unmanaged<uint, int, byte**, int*, void> ShaderSource = (delegate* unmanaged<uint, int, byte**, int*, void>)Load("glShaderSource");
@@ -169,6 +169,8 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
         internal readonly delegate* unmanaged<uint, byte*, int> UniformLocation = (delegate* unmanaged<uint, byte*, int>)Load("glGetUniformLocation");
         internal readonly delegate* unmanaged<int, int, void> Uniform1i = (delegate* unmanaged<int, int, void>)Load("glUniform1i");
         internal readonly delegate* unmanaged<int, float, float, void> Uniform2f = (delegate* unmanaged<int, float, float, void>)Load("glUniform2f");
+        internal readonly delegate* unmanaged<int, float, void> Uniform1f = (delegate* unmanaged<int, float, void>)Load("glUniform1f");
+        internal readonly delegate* unmanaged<int, float, float, float, float, void> Uniform4f = (delegate* unmanaged<int, float, float, float, float, void>)Load("glUniform4f");
         internal readonly delegate* unmanaged<int, int, float*, void> Uniform1fv = (delegate* unmanaged<int, int, float*, void>)Load("glUniform1fv");
         internal readonly delegate* unmanaged<int, uint*, void> GenVertexArrays = (delegate* unmanaged<int, uint*, void>)Load("glGenVertexArrays");
         internal readonly delegate* unmanaged<int, uint*, void> DeleteVertexArrays = (delegate* unmanaged<int, uint*, void>)Load("glDeleteVertexArrays");
@@ -178,7 +180,7 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
 
         private static nint Load(string name)
         {
-            var address = GetProc(name);
+            var address = OperatingSystem.IsLinux() ? GetLinuxProc(name) : GetProc(name);
             if (address is 0 or 1 or 2 or 3 or -1) throw new NotSupportedException("OpenGL entry point is unavailable: " + name);
             return address;
         }
@@ -223,6 +225,7 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
 
         internal static int Integer(uint name) { int value = 0; GetIntegers(name, &value); return value; }
         [DllImport("opengl32.dll", EntryPoint = "wglGetProcAddress", CharSet = CharSet.Ansi)] private static extern nint GetProc(string name);
+        [DllImport("libGL.so.1", EntryPoint = "glXGetProcAddressARB", CharSet = CharSet.Ansi)] private static extern nint GetLinuxProc(string name);
         [DllImport("opengl32.dll", EntryPoint = "wglGetCurrentContext")] internal static extern nint CurrentContext();
         [DllImport("opengl32.dll", EntryPoint = "glGetIntegerv")] internal static extern void GetIntegers(uint name, int* value);
         [DllImport("opengl32.dll", EntryPoint = "glBindTexture")] internal static extern void BindTexture(uint target, uint texture);

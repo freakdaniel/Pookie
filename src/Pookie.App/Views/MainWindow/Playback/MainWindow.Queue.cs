@@ -201,8 +201,8 @@ internal sealed partial class MainWindow
         repeatTrack.Value = playbackQueue.Repeat == RepeatMode.Track;
     }
     private FrameworkElement RepeatIcon(int size) => new Grid().Columns("*").Rows("*").Children(
-        Icons.View("arrows-clockwise", size).Center(),
-        new TextBlock().Text("1").FontSize(8).Bold().Center().BindIsVisible(repeatTrack));
+        Icons.View("arrows-clockwise", size, Color.White).Center(),
+        new TextBlock().Text("1").FontSize(8).Bold().Foreground(Color.White).Center().BindIsVisible(repeatTrack));
 
     private void EnqueueTrack(SoundCloudTrack track, bool next)
     {
@@ -211,37 +211,38 @@ internal sealed partial class MainWindow
     }
     private void ChangeManualQueue(Action change) { change(); RefreshQueue(); }
 
-    private void AttachTrackQueueMenu(FrameworkElement root, Func<SoundCloudTrack?> track, Func<long?>? entryId = null, bool extraActions = false)
+    private AnimatedContextMenu AttachTrackQueueMenu(FrameworkElement root, Func<SoundCloudTrack?> track, Func<long?>? entryId = null, bool extraActions = false)
     {
-        var menu = PopupAppearance.CreateMenu();
-        void Item(string id, string label, Action execute, Func<bool> enabled)
+        var menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
+        void Item(string id, string label, string icon, Action execute, Func<bool> enabled)
         {
-            var command = new Command("pookie.queue." + id, label);
+            var command = PopupAppearance.MenuCommand("pookie.queue." + id, label, icon);
             root.Commands.Register(command, execute, enabled);
             menu.Item(command);
         }
-        Item("open", "Открыть страницу трека", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
-        Item("radio", "Запустить радио по треку", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
+        Item("open", "Открыть страницу трека", "music-notes", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
+        Item("radio", "Запустить радио по треку", "broadcast", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
             () => track() is { } item && CanStartTrackRadio(item));
-        Item("next", "Воспроизвести следующим", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
-        Item("add", "Добавить в очередь", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
-        Item("playlist", "Добавить в плейлист", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
-        Item("share", "Поделиться", () => { if (track() is { } item) ShareTrack(item); }, () => track() != null);
+        Item("next", "Воспроизвести следующим", "skip-forward", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
+        Item("add", "Добавить в очередь", "queue", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
+        Item("playlist", "Добавить в плейлист", "playlist-plus", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
+        Item("share", "Поделиться", "arrow-square-out", () => { if (track() is { } item) ShareTrack(item); }, () => track() != null);
         if (extraActions)
         {
-            Item("copy", "Скопировать ссылку", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);
-            Item("repost", "Сделать репост", () => { if (track() is { } item) Run(() => ToggleTrackRepostAsync(item)); },
+            Item("copy", "Скопировать ссылку", "copy", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);
+            Item("repost", "Сделать репост", "repeat", () => { if (track() is { } item) Run(() => ToggleTrackRepostAsync(item)); },
                 () => track() is { } item && CanRepostTrack(item));
         }
         if (entryId != null)
         {
             int Index() => playbackQueue.Snapshot.ManualUpcoming.ToList().FindIndex(entry => entry.EntryId == entryId());
-            Item("up", "Выше в очереди", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() - 1)), () => Index() > 0);
-            Item("down", "Ниже в очереди", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() + 1)),
+            Item("up", "Выше в очереди", "caret-up", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() - 1)), () => Index() > 0);
+            Item("down", "Ниже в очереди", "caret-down", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() + 1)),
                 () => Index() >= 0 && Index() < playbackQueue.Snapshot.ManualUpcoming.Count - 1);
-            Item("remove", "Убрать из очереди", () => ChangeManualQueue(() => playbackQueue.RemoveManual(entryId()!.Value)), () => Index() >= 0);
+            Item("remove", "Убрать из очереди", "x", () => ChangeManualQueue(() => playbackQueue.RemoveManual(entryId()!.Value)), () => Index() >= 0);
         }
         PopupAppearance.Attach(root, menu);
+        return menu;
     }
 
     private ItemsControl CreatePlaybackQueueList()

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text.Json;
+using Pookie.App;
 using Pookie.Lyrics;
 using Xunit;
 
@@ -76,6 +78,147 @@ public sealed class LyricsTests : IDisposable
         using var service = Service(provider);
         var result = await service.ResolveAsync(track, default);
         Assert.Equal(LyricsStatus.Synced, result.Status); Assert.Equal(2, result.Document!.ProviderId); Assert.Equal(2, provider.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TimedFallbackUpgradesOlderMissingOrPlainCacheAndKeepsItsSource(bool plain)
+    {
+        var identity = track with { Isrc = "USAAA2600001" };
+        var primary = new Provider { Exact = plain ? Candidate() with { SyncedLyrics = null } : null };
+        var requests = 0;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            requests++;
+            Assert.Equal("https://lrc.red/s/USAAA2600001.lrc", request.RequestUri!.AbsoluteUri);
+            Assert.StartsWith("Pookie/", request.Headers.UserAgent.ToString());
+            return new(HttpStatusCode.OK) { Content = new StringContent("[00:02.50]Строка\n[00:07.00]Вторая") };
+        }));
+        var clock = new Clock();
+        var cache = Path.Combine(root, "Cache");
+        using var service = new LyricsService(primary, cache, new LrcRedSearch(http).FindLyricsAsync, clock);
+        var older = new LyricsCacheRecord(identity.Fingerprint, clock.GetUtcNow(),
+            plain ? new(LyricsStatus.Plain, primary.Exact!.ToDocument()) : new(LyricsStatus.NotFound), SelectionVersion: 1);
+        await File.WriteAllTextAsync(Path.Combine(cache, $"{identity.TrackId}-{identity.Fingerprint}.json"),
+            JsonSerializer.Serialize(older, LyricsJson.Default.LyricsCacheRecord));
+
+        var result = await service.ResolveAsync(identity, default);
+        Assert.Equal(LyricsStatus.Synced, result.Status);
+        Assert.Equal(LrcRedSearch.Name, result.Document!.Source);
+        Assert.Equal(2.5, result.Document.Lines[0].Start);
+        Assert.Equal(LrcRedSearch.Name, (await service.ResolveAsync(identity, default)).Document!.Source);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task TimedFallbackChecksVersionArtistAndDurationAfterIsrcMiss()
+    {
+        var identity = new LyricsIdentity(18, "Пачка сигарет", "Кино", 266) { Isrc = "ru-zzz-26-00001" };
+        var requests = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            requests.Add(path);
+            return path switch
+            {
+                "/s/RUZZZ2600001.lrc" => new(HttpStatusCode.NotFound),
+                "/search.json" => new(HttpStatusCode.OK) { Content = new StringContent("""
+                    {"hits":[
+                        {"title":"Пачка сигарет (Live)","artist":"Kino","isrc":"RUZZZ2600002","duration":266},
+                        {"title":"Пачка сигарет","artist":"Другой артист","isrc":"RUZZZ2600003","duration":266},
+                        {"title":"Пачка сигарет","artist":"Kino","isrc":"RUZZZ2600004","duration":200},
+                        {"title":"Пачка сигарет","artist":"Kino","isrc":"RUB421401328","duration":266.018}
+                    ]}
+                    """) },
+                "/s/RUB421401328.lrc" => new(HttpStatusCode.OK) { Content = new StringContent("[00:10.00]Тест") },
+                _ => throw new InvalidOperationException(path)
+            };
+        }));
+        var result = await new LrcRedSearch(http).FindLyricsAsync(identity, allowPlain: false, default);
+        Assert.Equal(LrcRedSearch.Name, result!.Source);
+        Assert.Equal(new[] { "/s/RUZZZ2600001.lrc", "/search.json", "/s/RUB421401328.lrc" }, requests);
+    }
+
+    [Fact]
+    public async Task TimedFallbackFailureKeepsPlainLrclibAndLeavesTheLookupRetryable()
+    {
+        var primary = new Provider { Exact = Candidate() with { SyncedLyrics = null } };
+        var calls = 0;
+        using var service = new LyricsService(primary, Path.Combine(root, "Cache"), (_, allowPlain, _) =>
+        {
+            Assert.False(allowPlain);
+            if (++calls == 1) throw new HttpRequestException("offline");
+            return Task.FromResult<LyricsDocument?>(LrcParser.Parse("[00:02.00]Тест", null, LrcRedSearch.Name, null, track.Title, track.Artist));
+        });
+        var plain = await service.ResolveAsync(track, default);
+        Assert.Equal(LyricsStatus.Plain, plain.Status);
+        Assert.Equal(LrclibClient.Name, plain.Document!.Source);
+        var synced = await service.ResolveAsync(track, default);
+        Assert.Equal(LyricsStatus.Synced, synced.Status);
+        Assert.Equal(LrcRedSearch.Name, synced.Document!.Source);
+    }
+
+    [Fact]
+    public async Task SyncedLrclibAndPreviewsSkipTheTimedFallback()
+    {
+        var primary = new Provider { Exact = Candidate() };
+        using var service = new LyricsService(primary, Path.Combine(root, "Cache"),
+            (_, _, _) => throw new InvalidOperationException("Unexpected timed fallback."));
+        Assert.Equal(LrclibClient.Name, (await service.ResolveAsync(track, default)).Document!.Source);
+        primary.Exact = Candidate() with { SyncedLyrics = null };
+        var preview = await service.ResolveAsync(track with { TimingAvailable = false }, default);
+        Assert.Equal(LyricsStatus.Plain, preview.Status);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task UntimedLrcRedTextFillsMissingLyricsWithoutReplacingPlainLrclib(bool primaryHasText, bool timingAvailable)
+    {
+        // This SoundCloud upload has no published ISRC and is about three seconds shorter.
+        var identity = new LyricsIdentity(18, "Але? Ало!", "BUSHIDO ZHO", 158.054, TimingAvailable: timingAvailable);
+        var primary = new Provider
+        {
+            Exact = primaryHasText ? new LyricsCandidate
+            {
+                TrackName = identity.Title, ArtistName = identity.Artist, Duration = 158, PlainLyrics = "Текст LRCLIB"
+            } : null
+        };
+        var clock = new Clock();
+        var cache = Path.Combine(root, "Cache");
+        var downloads = 0;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/search.json":
+                    return new(HttpStatusCode.OK) { Content = new StringContent("""
+                        {"hits":[{"title":"Але? Ало!","artist":"BUSHIDO ZHO","isrc":"RUAGW2623506","duration":161.184}]}
+                        """) };
+                case "/s/RUAGW2623506.lrc":
+                    downloads++;
+                    return new(HttpStatusCode.OK) { Content = new StringContent("[ti:Але? Ало!]\n[ar:BUSHIDO ZHO]\n\nПервая строка\nВторая строка") };
+                default:
+                    throw new InvalidOperationException(request.RequestUri.AbsolutePath);
+            }
+        }));
+        using var service = new LyricsService(primary, cache, new LrcRedSearch(http).FindLyricsAsync, clock);
+        var old = new LyricsCacheRecord(identity.Fingerprint, clock.GetUtcNow(), new(LyricsStatus.NotFound), SelectionVersion: 2);
+        await File.WriteAllTextAsync(Path.Combine(cache, $"{identity.TrackId}-{identity.Fingerprint}.json"),
+            JsonSerializer.Serialize(old, LyricsJson.Default.LyricsCacheRecord));
+
+        var result = await service.ResolveAsync(identity, default);
+        Assert.Equal(LyricsStatus.Plain, result.Status);
+        Assert.Empty(result.Document!.Lines);
+        Assert.Equal(primaryHasText ? LrclibClient.Name : LrcRedSearch.Name, result.Document.Source);
+        Assert.Equal(primaryHasText ? "Текст LRCLIB" : "Первая строка\nВторая строка", result.Document.PlainText);
+        var cached = await service.ResolveAsync(identity, default);
+        Assert.Equal(result.Status, cached.Status);
+        Assert.Equal(result.Document.Source, cached.Document!.Source);
+        Assert.Equal(result.Document.PlainText, cached.Document.PlainText);
+        Assert.Equal(1, downloads);
     }
 
     [Fact] public void SwappedProviderMetadataCanWinOnlyWhenBothFieldsAndDurationMatch()

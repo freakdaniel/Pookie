@@ -19,8 +19,8 @@ internal sealed partial class MainWindow
         private readonly Border trackArtFrame;
         public CoverGlassBackdrop TrackArtGlass { get; }
         public Button PlayButton { get; }
-        private readonly Image play = Icons.View("play-solid", 20, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical();
-        private readonly Image pause = Icons.View("pause-solid", 20, TrackButtons.OnPrimary).CenterHorizontal().CenterVertical().IsVisible(false);
+        private readonly Image play = Icons.View("play-solid", 20, TrackButtons.OnSurface).CenterHorizontal().CenterVertical();
+        private readonly Image pause = Icons.View("pause-solid", 20, TrackButtons.OnSurface).CenterHorizontal().CenterVertical().IsVisible(false);
         private readonly Image heart = Icons.View("heart", 17, TrackButtons.OnSurface);
         private readonly TextBlock likeCount = new TextBlock().FontSize(13).Bold().CenterVertical();
         private readonly TextBlock playsCount = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
@@ -57,8 +57,6 @@ internal sealed partial class MainWindow
         {
             this.publication = publication;
             actionVariant = glass ? TrackButtons.Glass : TrackButtons.Tonal;
-            PlayButton = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(play, pause),
-                () => { if (Track is { } track) select(track); }, TrackButtons.Filled, TrackRowLayout.ActionSize);
             likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(heart.CenterVertical(), likeCount),
                 () => { if (Track is { } track) like(track); }, actionVariant, TrackRowLayout.ActionSize);
             copyButton = TrackButtons.Icon(Icons.View("copy", 18, TrackButtons.OnSurface),
@@ -68,14 +66,15 @@ internal sealed partial class MainWindow
             var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 18, TrackButtons.OnSurface),
                 () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Добавить в плейлист");
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
-                Icons.View("play-solid", 12, Muted).CenterVertical(), playsCount);
+                Icons.View("play-solid", 12, MutedIcon).CenterVertical(), playsCount);
             commentsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
-                Icons.View("chat-circle", 14, Muted).CenterVertical(), commentsCount);
+                Icons.View("chat-circle", 14, MutedIcon).CenterVertical(), commentsCount);
             genreBadge = new Border().Background(Raised).CornerRadius(9).Padding(8, 2).Right().Child(genre);
             positionLabel = new Border().Background(Surface).Padding(3, 1).Left().Bottom().Child(position).IsVisible(false);
             durationLabel = new Border().Background(Surface).Padding(3, 1).Right().Bottom().Child(duration);
             Waveform.SeekRequested += fraction => { if (Track is { } track) seek(track, fraction); };
-            artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).Child(artworkLayer(Cover));
+            var zoom = new ArtworkHoverZoom(artworkLayer(Cover));
+            artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).Child(zoom);
             metadata = new StackPanel().Vertical().Spacing(3).Right().CenterVertical().Children(posted, genreBadge);
             actionButtons = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton),
                 TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Track is { } track) share?.Invoke(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Поделиться").IsVisible(share != null), playlistButton, copyButton);
@@ -87,6 +86,10 @@ internal sealed partial class MainWindow
                 .IsHitTestVisible(false).IsVisible(false).Child(
                     new Grid().Columns("*").Rows("*").Children(TrackArt,
                         new Border().Background(ArtworkBackdrop.TrackArtScrim).IsHitTestVisible(false)));
+            TrackArtGlass = new(TrackArt, background: trackArtFrame);
+            PlayButton = new ExpandedGlassButton(TrackArtGlass).Initialize(new Grid().Columns("*").Rows("*").Children(play, pause))
+                .Width(TrackRowLayout.ActionSize).Height(TrackRowLayout.ActionSize).CornerRadius(TrackRowLayout.ActionSize / 2)
+                .OnClick(() => { if (Track is { } track) select(track); });
             var artworkButton = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
                 .Content(artworkFrame).OnClick(() => { if (Track is { } track) open(track); });
             heading = new Grid().Columns("36,*,Auto").Rows("*").Spacing(10).Children(
@@ -98,6 +101,7 @@ internal sealed partial class MainWindow
             Root = new ViewportGrid().Columns($"{TrackRowLayout.CoverSize},*").Rows("*").Spacing(TrackRowLayout.ColumnGap).Height(TrackRowLayout.Height).Children(
                 artworkButton, new Grid().Columns("*").Rows("*").Column(1).Children(trackArtFrame,
                     details.Children(heading.Row(0), wave.Row(1), new Grid().Columns("*").Rows("*").Row(2).Children(actions, collectionTrack))));
+            zoom.Follow(Root);
             if (publication) Root.SizeChanged += _ =>
             {
                 FitPublicationActions();
@@ -105,7 +109,6 @@ internal sealed partial class MainWindow
                 // after that pass, otherwise counters retain their compact bounds.
                 Application.Current.Dispatcher?.BeginInvoke(() => Root.InvalidateMeasure());
             };
-            TrackArtGlass = new(TrackArt, background: trackArtFrame);
             ReserveFooter(0);
         }
 
@@ -196,7 +199,6 @@ internal sealed partial class MainWindow
             commentsCount.Text = ShortCount(track.CommentCount ?? 0);
             copyButton.IsEnabled = TrackLink(track.PermalinkUrl) != null || track.Id > 0;
             duration.Text = FormatTime(track.DurationSeconds);
-            Cover.Source = Icons.Source("music-notes");
             Waveform.SetSamples([]);
             Waveform.IsPlaying = false;
             Waveform.Progress = 0;

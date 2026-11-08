@@ -20,6 +20,8 @@ internal sealed class DialogSnapshot : IDisposable
     internal double Scale { get; }
     internal IImage Image => blurred?.AsImage() ?? image!;
     internal Rect ImageBounds => blurred?.Bounds ?? Bounds;
+    internal IRenderSurface CaptureSurface => surface;
+    internal IRenderSurface? BlurSurface => blurred?.UnderlyingSurface;
 
     internal DialogSnapshot(IGraphicsFactory graphics, Rect bounds, double scale)
     {
@@ -40,6 +42,18 @@ internal sealed class DialogSnapshot : IDisposable
         using var viewport = WindowPresentation.CaptureViewport(surface);
         try { renderer.ResetTransform(); renderer.Clear(clear); renderer.Translate(-Bounds.X, -Bounds.Y); draw(renderer); }
         finally { renderer.Restore(); renderer.EndFrame(); }
+        FinishCapture();
+    }
+
+    internal bool CopyBackdrop(IGraphicsContext context, Rect pixelRegion)
+    {
+        if (!OpenGlBackdropCopy.TryCopy(context, surface, pixelRegion)) return false;
+        FinishCapture();
+        return true;
+    }
+
+    private void FinishCapture()
+    {
         if (image == null)
         {
             image = graphics.CreateImageView(surface);

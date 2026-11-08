@@ -79,11 +79,11 @@ internal sealed partial class MainWindow
         if (section.Cards is { } cards) SetCollectionPreviewHeight(cards, compactRows: true);
     }
 
-    private void RenderHome()
+    private void RenderHome(bool refreshChart = false)
     {
         if (homeEmpty == null) return;
         RenderHomeMixCarousel(HomeItems("mixes"));
-        RenderHomeChart(HomeItems("trends"));
+        RenderHomeChart(HomeItems("trends"), refreshChart);
         foreach (var section in homeSections)
         {
             BindHomeSectionItems(section);

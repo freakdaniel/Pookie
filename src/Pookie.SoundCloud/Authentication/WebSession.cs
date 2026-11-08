@@ -7,6 +7,7 @@ public sealed record WebSession(string ClientId, string AccessToken, string User
     public string? AppVersion { get; init; }
     public string? AppLocale { get; init; }
     public string? SessionId { get; init; }
+    public long? VerifiedUserId { get; init; }
 
     // The site's protection tag rotates this session value through x-set-cookie.
     // Keep it on the shared session, including clients used for cancellable requests.
@@ -43,7 +44,8 @@ public sealed record WebSession(string ClientId, string AccessToken, string User
         (DataDomeClientId == null || IsDataDomeClientId(DataDomeClientId)) &&
         (AppVersion == null || AppVersion is { Length: > 0 and <= 128 } && AppVersion.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '!' or '-' or '_')) &&
         (AppLocale == null || AppLocale is { Length: > 0 and <= 35 } && AppLocale.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')) &&
-        (SessionId == null || Guid.TryParseExact(SessionId, "N", out _));
+        (SessionId == null || Guid.TryParseExact(SessionId, "N", out _)) &&
+        (VerifiedUserId == null || VerifiedUserId is > 0 and <= 9007199254740991);
 
     public override string ToString() => "SoundCloud web session (credentials redacted)";
 

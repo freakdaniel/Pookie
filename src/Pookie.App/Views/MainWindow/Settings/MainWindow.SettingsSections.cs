@@ -51,7 +51,7 @@ internal sealed partial class MainWindow
             SettingsToggle("normalization", "Выравнивать громкость треков", "Приблизительная поправка по звуковой волне трека; применяется со следующего трека",
                 () => preferences.NormalizeVolume, value => UpdatePreferences(p => p with { NormalizeVolume = value }))),
         SettingsGroup("Текст песни",
-            SettingsToggle("lyrics", "Искать текст через LRCLIB", "Запрашивать текст при открытии соответствующей панели плеера",
+            SettingsToggle("lyrics", "Искать тексты песен", "Запрашивать текст в LRCLIB и при необходимости искать синхронизацию через lrc.red",
                 () => preferences.LyricsEnabled, value => UpdatePreferences(p => p with { LyricsEnabled = value })),
             SettingsToggle("lyrics_follow", "Автопрокрутка текста", "Следовать за текущей строкой; после ручной прокрутки следование возобновляется",
                 () => preferences.LyricsAutoScroll, value => UpdatePreferences(p => p with { LyricsAutoScroll = value }))));

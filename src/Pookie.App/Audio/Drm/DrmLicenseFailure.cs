@@ -10,7 +10,8 @@ internal static class DrmLicenseFailure
     internal static string Classify(ReadOnlySpan<byte> body)
     {
         var text = Encoding.UTF8.GetString(body);
-        if (text.Contains("vmp validation", StringComparison.OrdinalIgnoreCase) ||
+        if (text.Contains("verified media path cannot be verified", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("vmp validation", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("vmp_validation", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("vmp signature", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("host verification", StringComparison.OrdinalIgnoreCase) ||

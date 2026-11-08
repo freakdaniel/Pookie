@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Pookie.Lyrics;
 using Pookie.SoundCloud;
 
 namespace Pookie.App;
@@ -9,6 +10,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<SearchSection> searchSection = new(SearchSection.All);
     private readonly ObservableValue<string> searchHeading = new("Поиск"), searchStatus = new("");
     private readonly ObservableValue<bool> searchLoading = new(false), searchEmpty = new(false);
+    private readonly ObservableValue<bool> searchLyricsCredit = new(false);
     private LibraryPage? searchResults;
     private ItemsControl searchList = null!;
     private const double SearchShadowGutter = 14;
@@ -50,7 +52,11 @@ internal sealed partial class MainWindow
         };
         return new DockPanel().LastChildFill().Spacing(22).Children(
             new StackPanel().Vertical().Spacing(18).DockTop().Children(
-                new TextBlock().BindText(searchHeading).FontSize(22).Bold().TextTrimming(TextTrimming.CharacterEllipsis),
+                new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(
+                    new TextBlock().BindText(searchHeading).FontSize(22).Bold().TextTrimming(TextTrimming.CharacterEllipsis).Column(0),
+                    LyricsProviderCredit("Поиск по тексту предоставлен", LrcRedSearch.Name, LrcRedProviderMark(),
+                        () => OpenSettingsUrl(LrcRedSearch.Source))
+                        .BindIsVisible(searchLyricsCredit).Column(1)),
                 new StackPanel().Horizontal().Spacing(24).Children(
                     SearchTab("Всё", SearchSection.All), SearchTab("Треки", SearchSection.Tracks),
                     SearchTab("Люди", SearchSection.People), SearchTab("Альбомы", SearchSection.Albums),
@@ -121,6 +127,7 @@ internal sealed partial class MainWindow
         }
         SetPageItems(searchList, blocks, searchSection.Value == SearchSection.Tracks ? LoadingRowStyle.Waveform
             : blocks.LastOrDefault()?.Kind == SearchBlockKind.Track ? LoadingRowStyle.Compact : LoadingRowStyle.CardRow, SameSearchBlock);
+        searchLyricsCredit.Value = searchResults?.Items.Any(item => item.MatchedByLyrics) == true;
         searchEmpty.Value = !searchLoading.Value && (searchResults?.Items.Length ?? 0) == 0;
     }
 
@@ -134,6 +141,53 @@ internal sealed partial class MainWindow
         searchResults = results;
         ReplaceTracks(new(results.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray(), null));
         RefreshSearchViews();
+    }
+
+    private async Task ShowSearchResultsAsync(Task<LibraryPage> regular, Task<LibraryItem[]> lyrics, string query,
+        SearchSection section, long generation, CancellationToken token)
+    {
+        var session = api.Session;
+        searchLoading.Value = true;
+        SetSearchResults(new([], null));
+        await Task.WhenAll(regular, lyrics);
+        token.ThrowIfCancellationRequested();
+        if (disposed || generation != navigationGeneration || api.Session != session) return;
+
+        var result = MergeSearchResults(await regular, await lyrics, query);
+        if (section == SearchSection.All)
+        {
+            var compact = result.Items.Where(item => item.Track != null).Take(4).Select(item => item.Track!);
+            var cards = result.Items.Take(1).Concat(result.Items.Skip(1).Where(item => item.Track == null));
+            await Task.WhenAll(PrepareTrackArtworkAsync(compact, token, mode: TrackViewMode.List),
+                PrepareCollectionArtworkAsync(cards, token, rows: true));
+        }
+        else await PrepareCollectionArtworkAsync(result.Items, token, rows: true);
+
+        token.ThrowIfCancellationRequested();
+        if (disposed || generation != navigationGeneration || api.Session != session) return;
+        SetSearchResults(result);
+    }
+
+    private static LibraryPage MergeSearchResults(LibraryPage regular, LibraryItem[] matches, string query)
+    {
+        if (matches.Length == 0) return regular;
+        var normalized = LyricsMatcher.Normalize(query);
+        bool Exact(LibraryItem item)
+        {
+            if (LyricsMatcher.Normalize(item.Title) == normalized) return true;
+            if (item.Track is not { } track) return false;
+            var artist = track.PublisherMetadata?.Artist ?? track.Author;
+            return LyricsMatcher.Normalize(artist + " " + track.Title) == normalized ||
+                LyricsMatcher.Normalize(track.Title + " " + artist) == normalized;
+        }
+
+        var byKey = regular.Items.DistinctBy(item => item.Key).ToDictionary(item => item.Key);
+        var lyricKeys = matches.Select(item => item.Key).ToHashSet();
+        var merged = regular.Items.Where(Exact)
+            .Concat(matches.Select(item => byKey.GetValueOrDefault(item.Key) ?? item))
+            .Concat(regular.Items).DistinctBy(item => item.Key)
+            .Select(item => lyricKeys.Contains(item.Key) ? item with { MatchedByLyrics = true } : item).ToArray();
+        return new(merged, regular.NextHref);
     }
 
     private void CaptureSearchAnchor()

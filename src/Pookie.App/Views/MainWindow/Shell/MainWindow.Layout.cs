@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -16,13 +17,13 @@ internal sealed partial class MainWindow
     private Border contentSurface = null!;
     private Border startupBackdrop = null!;
     private Border contentFrame = null!;
-    private FrameworkElement startupHeader = null!;
+    private ShellHeader startupHeader = null!;
     private FrameworkElement startupContent = null!;
     private ScrollViewer shellScroll = null!;
     private ShellPageScroll shellPageScroll = null!;
-    private ShellChromeGlass headerGlass = null!;
-    private ContentBottomFade contentBottomFade = null!;
-    private StackPanel topNavigation = null!;
+    private ContentEdgeFade contentTopFade = null!;
+    private ContentEdgeFade contentBottomFade = null!;
+    private Grid topNavigation = null!;
     private HeaderSearchField topSearchBar = null!;
     private TextBox topSearchInput = null!;
     private Grid startupSplash = null!;
@@ -36,22 +37,23 @@ internal sealed partial class MainWindow
     private ItemsControl libraryGrid = null!;
     private readonly List<Action> navVisualRefreshers = [];
 
-    private static readonly Color Muted = Color.FromRgb(151, 151, 151);
+    private static readonly Color Muted = TextAppearance.Secondary;
+    private static readonly Color MutedIcon = Color.FromRgb(151, 151, 151);
     private static readonly Color Surface = PopupAppearance.AppBackground;
     private static readonly Color HeaderSurface = Surface;
     private static readonly Color Raised = Color.FromRgb(43, 43, 43);
     private static readonly Color Edge = Color.FromRgb(61, 61, 61);
-    private static readonly Color NavHover = Color.FromRgb(192, 192, 192);
+    private static readonly Color NavInk = Color.FromRgb(200, 200, 204);
+    private static readonly Color NavHover = Color.FromRgb(230, 230, 234);
+    private static readonly Color NavText = Color.FromArgb(196, 255, 255, 255);
+    private static readonly Color NavTextHover = Color.FromArgb(228, 255, 255, 255);
 
     private FrameworkElement Layout()
     {
-        // Background for the startup reveal and navigation chrome.
+        // Background for the startup reveal.
         startupBackdrop = new Border().Background(Surface).Height(96).Top();
 
         startupHeader = Header();
-        // Playback and page scrolling do not change the fixed navigation bar.
-        // Descendant invalidation still refreshes hover, text and search edits.
-        if (OperatingSystem.IsWindows()) startupHeader.CacheMode = new BitmapCache();
         startupHeader.Opacity = 0;
         startupHeader.IsHitTestVisible = false;
 
@@ -64,27 +66,28 @@ internal sealed partial class MainWindow
         startupContent.Opacity = 0;
         startupContent.IsHitTestVisible = false;
         contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
-            .Padding(36, ShellChromeGlass.HeaderHeight + 30, 36, 0).Child(startupContent);
+            .Padding(36, ShellHeader.HeaderHeight + 30, 36, 0).Child(startupContent);
         shellScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0);
-        var glassContent = new GlassContentFrame(contentFrame);
-        shellPageScroll = new ShellPageScroll(glassContent, shellScroll, PageContentScroll, args =>
+        shellPageScroll = new ShellPageScroll(contentFrame, shellScroll, PageContentScroll, args =>
         {
             if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.ScrollWheel(args.Delta.Y);
             var before = shellScroll.VerticalOffset;
             shellScroll.SetScrollOffsets(0, before - args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep);
             return Math.Abs(shellScroll.VerticalOffset - before) > .01;
-        }, () => page.Value != Page.Chats ? ContentBottomFade.FadeHeight : 0);
+        }, () => page.Value != Page.Chats ? ContentEdgeFade.BottomHeight : 0);
         shellScroll.Content = shellPageScroll;
         page.Changed += () =>
         {
             UpdateContentFrameWidth(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
         };
-        contentSurface = new Border().Background(Surface).Child(shellScroll);
-        headerGlass = new ShellChromeGlass(glassContent, Surface).Height(ShellChromeGlass.HeaderHeight).Top().IsHitTestVisible(false);
-        shellScroll.ScrollChanged += UpdateScrolledChrome;
-        contentBottomFade = new ContentBottomFade(Surface).Height(ContentBottomFade.FadeHeight).Bottom().IsHitTestVisible(false);
-        contentBottomFade.Transitions = [Transition.Create(ContentBottomFade.StrengthProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
-        contentBottomFade.Bind(ContentBottomFade.StrengthProperty, playerVisible, visible => visible ? ContentBottomFade.PlayerOpacity : 1d);
+        contentTopFade = new ContentEdgeFade(Surface, fromTop: true) { Strength = .85 };
+        contentTopFade.Height(ShellHeader.HeaderHeight + 32).Top().IsHitTestVisible(false);
+        // The header's backdrop samples this layer on both the live and replay paths.
+        contentSurface = new Border().Background(Surface).Child(
+            new Grid().Columns("*").Rows("*").Children(shellScroll, contentTopFade));
+        contentBottomFade = new ContentEdgeFade(Surface).Height(ContentEdgeFade.BottomHeight).Bottom().IsHitTestVisible(false);
+        contentBottomFade.Transitions = [Transition.Create(ContentEdgeFade.StrengthProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
+        contentBottomFade.Bind(ContentEdgeFade.StrengthProperty, playerVisible, visible => visible ? ContentEdgeFade.PlayerOpacity : 1d);
         // Use the arranged viewport as well as native resize notifications. Some platforms
         // apply programmatic window sizes without delivering ClientSizeChanged first.
         contentSurface.SizeChanged += e =>
@@ -107,8 +110,7 @@ internal sealed partial class MainWindow
             playerBackdrop.Row(1).RowSpan(2),
             contentSurface.Row(0).RowSpan(2),
             contentBottomFade.Row(0).RowSpan(2),
-            headerGlass.Row(0).RowSpan(2),
-            startupHeader.Row(0),
+            new ShellHeader.BackdropLayer(startupHeader).Row(0),
             playerBar.Row(2),
             QueuePanel().Row(0).RowSpan(3),
             ProfilePanel().Row(0).RowSpan(3));
@@ -143,12 +145,14 @@ internal sealed partial class MainWindow
         return startupSplash;
     }
 
-    private FrameworkElement Header()
+    private ShellHeader Header()
     {
-        topNavigation = new StackPanel().Horizontal().Spacing(5).CenterHorizontal().CenterVertical().Width(480).Height(44).Children(
-            Nav("house-simple", "Главная", Page.Home), Nav("broadcast", "Лента", Page.Feed), Nav("books", "Библиотека", Page.Library), Nav("chat-circle", "Чаты", Page.Chats),
-            NavAction("magnifying-glass", "Поиск", OpenTopSearch));
-        topSearchInput = new TextBox().BindText(query).Placeholder("Треки, люди, альбомы, плейлисты")
+        topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto,*,Auto").Rows("*")
+            .Width(ShellHeader.NavigationWidth).Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
+                Nav("house-simple", "Главная", Page.Home).Column(0), Nav("broadcast", "Лента", Page.Feed).Column(2),
+                Nav("books", "Библиотека", Page.Library).Column(4), Nav("chat-circle", "Чаты", Page.Chats).Column(6),
+                Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch).Column(8));
+        topSearchInput = new TextBox().BindText(query).Placeholder("Трек, исполнитель или строка песни")
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
@@ -169,89 +173,55 @@ internal sealed partial class MainWindow
                         new TextBlock().BindText(profileInitial).FontSize(12).Bold().CenterHorizontal().CenterVertical().BindIsVisible(hasAvatar, value => !value),
                         profileAvatar.BindIsVisible(hasAvatar))),
                 Icons.View("user-circle", 24).CenterHorizontal().CenterVertical().BindIsVisible(signedIn, value => !value)))
-            .Padding(2).Width(34).Height(34).CornerRadius(17)
+            .Padding(2).Width(ShellHeader.AccountButtonSize).Height(ShellHeader.AccountButtonSize).CornerRadius(ShellHeader.AccountButtonSize / 2)
             .OnClick(() => { profileOpen.Value = !profileOpen.Value; queueOpen.Value = false; }).CenterVertical();
-        var settingsGlyph = Icons.View("gear", 24, Muted);
-        var subduedSettings = Surface.Lerp(Muted, .84);
-        TrackButtons.SetGlyph(settingsGlyph, "gear", subduedSettings, animate: false);
-        settingsButton = new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Content(new Grid().Columns("*").Rows("*").Children(
-                settingsGlyph.CenterHorizontal().CenterVertical()))
-            .Padding(2).Width(34).Height(34).CornerRadius(17)
-            .OnMouseEnter(() => TrackButtons.SetGlyph(settingsGlyph, "gear", Muted))
-            .OnMouseLeave(() => TrackButtons.SetGlyph(settingsGlyph, "gear", page.Value == Page.Settings ? Muted : subduedSettings))
-            .OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value))).CenterVertical();
-        page.Changed += () => TrackButtons.SetGlyph(settingsGlyph, "gear", page.Value == Page.Settings || settingsButton.IsMouseOver ? Muted : subduedSettings);
+        var settingsGlyph = Icons.TintableView("gear", 24, out var settingsInk);
+        var settings = new HeaderButton(new CornerRadius(ShellHeader.AccountButtonSize / 2))
+            .Width(ShellHeader.AccountButtonSize).Height(ShellHeader.AccountButtonSize).CenterVertical();
+        var settingsIcon = settings.WithActivationMotion(settingsGlyph, progress => Matrix3x2.CreateRotation(progress * MathF.PI / 2));
+        settings.Content(settingsIcon.Center()).OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value)));
+        settings.UseAnimatedInk(settingsInk, Surface.Lerp(NavInk, .85), NavInk, NavInk);
+        settingsButton = settings;
+        page.Changed += () => settings.SetSelected(page.Value == Page.Settings);
 
-        return new Grid().Columns("Auto,*,Auto").Rows("*").Padding(36, 8, 36, 8).Children(
-            new StackPanel().Horizontal().Spacing(16).CenterVertical().Column(0).Children(
+        return new ShellHeader(() => contentSurface,
+            new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
                 Icons.LogoView(26, 25).CenterVertical(),
                 NavigationPill()),
-            new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Column(1).Children(
+            new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Children(
                 topNavigation.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
-            new StackPanel().Horizontal().Spacing(5).CenterVertical().Right().Column(2).Children(settingsButton, profileButton));
+            new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(settingsButton, profileButton));
     }
 
-    private Button Nav(string icon, string label, Page target)
+    private Button Nav(string icon, string label, Page target, Action? action = null)
     {
         bool Active(Page value) => value == target || target == Page.Library && IsLibrary(value);
-        var normalGlyph = Icons.View(icon, 18, Muted);
-        var hoverGlyph = Icons.View(icon, 18, NavHover);
-        var activeGlyph = Icons.View(icon, 18, Color.FromRgb(255, 255, 255));
-        hoverGlyph.Opacity = 0;
-        activeGlyph.Opacity = 0;
-        foreach (var glyphLayer in new[] { normalGlyph, hoverGlyph, activeGlyph })
-            glyphLayer.Transitions = [Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
-        var glyph = new Grid().Columns("*").Rows("*").Width(18).Height(18).Children(
-            normalGlyph.CenterHorizontal().CenterVertical(),
-            hoverGlyph.CenterHorizontal().CenterVertical(),
-            activeGlyph.CenterHorizontal().CenterVertical());
-        var textColor = new ObservableValue<Color>(Active(page.Value) ? Color.FromRgb(255, 255, 255) : Muted);
-        var text = new TextBlock().Text(label).FontSize(11).SemiBold()
-            .Bind(TextElement.ForegroundProperty, textColor).CenterVertical();
-        text.Transitions = [Transition.Create(TextElement.ForegroundProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
-        bool hovered = false;
-        void Refresh()
+        var glyph = Icons.TintableView(icon, 18, out var ink);
+        var text = new TextBlock().Text(label).FontSize(11).SemiBold().CenterVertical();
+        var button = new HeaderButton(new CornerRadius(ShellHeader.NavigationButtonHeight / 2)).Padding(11, 0).Height(ShellHeader.NavigationButtonHeight)
+            .BindIsEnabled(page, value => action != null || value != target);
+        Func<float, Matrix3x2>? activation = target switch
         {
-            var active = Active(page.Value);
-            normalGlyph.Opacity = active || hovered ? 0 : 1;
-            hoverGlyph.Opacity = !active && hovered ? 1 : 0;
-            activeGlyph.Opacity = active ? 1 : 0;
-            textColor.Value = active ? Color.FromRgb(255, 255, 255) : hovered ? NavHover : Muted;
-        }
+            Page.Home => progress => Matrix3x2.CreateTranslation(0, -3.2f * MathF.Sin(MathF.PI * progress)),
+            Page.Feed => progress => Matrix3x2.CreateScale(1 + .18f * MathF.Sin(MathF.PI * progress)),
+            Page.Library => progress => Matrix3x2.CreateRotation(-.24f * MathF.Sin(2 * MathF.PI * progress) * (1 - progress)),
+            Page.Chats => progress =>
+            {
+                var bounce = MathF.Sin(2 * MathF.PI * progress) * (1 - progress);
+                return Matrix3x2.CreateScale(1 + .14f * bounce, 1 - .14f * bounce) * Matrix3x2.CreateTranslation(0, 2.6f * bounce);
+            },
+            _ => null
+        };
+        // The damped motions already ease each swing. Give both phases time to read.
+        var damped = target is Page.Library or Page.Chats;
+        FrameworkElement iconView = activation == null ? glyph : button.WithActivationMotion(glyph, activation,
+            durationMs: damped ? 440 : 300, easing: damped ? Easing.Linear : null);
+        button.Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(iconView.CenterVertical(), text));
+        button.UseAnimatedInk(ink, NavInk, NavHover, Color.White, (text, NavText, NavTextHover));
+        void Refresh() => button.SetSelected(Active(page.Value));
         Refresh();
         navVisualRefreshers.Add(Refresh);
-        return new Button().StyleSheet(sectionButtonStyles).StyleName("section-button")
-            .Background(Color.Transparent).BorderThickness(0).Padding(11, 0).Height(40).CornerRadius(20)
-            .BindIsEnabled(page, value => value != target)
-            .Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(glyph.CenterVertical(), text))
-            .OnMouseEnter(() => { hovered = true; Refresh(); })
-            .OnMouseLeave(() => { hovered = false; Refresh(); })
-            .OnClick(() => { if (page.Value != target) Run(() => NavigateAsync(target)); });
-    }
-
-    private Button NavAction(string icon, string label, Action action)
-    {
-        var normalGlyph = Icons.View(icon, 18, Muted);
-        var hoverGlyph = Icons.View(icon, 18, NavHover);
-        hoverGlyph.Opacity = 0;
-        normalGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
-        hoverGlyph.Transitions = [Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
-        var glyph = new Grid().Columns("*").Rows("*").Width(18).Height(18).Children(
-            normalGlyph.CenterHorizontal().CenterVertical(), hoverGlyph.CenterHorizontal().CenterVertical());
-        var textColor = new ObservableValue<Color>(Muted);
-        var text = new TextBlock().Text(label).FontSize(11).SemiBold().Bind(TextElement.ForegroundProperty, textColor).CenterVertical();
-        text.Transitions = [Transition.Create(TextElement.ForegroundProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
-        void SetHovered(bool hovered)
-        {
-            normalGlyph.Opacity = hovered ? 0 : 1;
-            hoverGlyph.Opacity = hovered ? 1 : 0;
-            textColor.Value = hovered ? NavHover : Muted;
-        }
-        return new Button().StyleName("flat-button").Background(Color.Transparent).BorderThickness(0).Padding(11, 0).Height(40).CornerRadius(20)
-            .Content(new StackPanel().Horizontal().Spacing(6).CenterVertical().Children(glyph.CenterVertical(), text))
-            .OnMouseEnter(() => SetHovered(true))
-            .OnMouseLeave(() => SetHovered(false))
-            .OnClick(action);
+        return button.OnClick(action ?? (() => { if (page.Value != target) Run(() => NavigateAsync(target)); }));
     }
 
     private void RefreshNavVisuals()
@@ -265,7 +235,7 @@ internal sealed partial class MainWindow
         query.Value = "";
         searching.Value = true;
         topNavigation.Width = 0; topNavigation.Opacity = 0; topNavigation.IsHitTestVisible = false;
-        topSearchBar.Width = 480; topSearchBar.Opacity = 1; topSearchBar.IsHitTestVisible = true;
+        topSearchBar.Width = ShellHeader.NavigationWidth; topSearchBar.Opacity = 1; topSearchBar.IsHitTestVisible = true;
         topSearchInput.Focus();
     }
 
@@ -274,7 +244,7 @@ internal sealed partial class MainWindow
         if (!searching.Value) return;
         searching.Value = false;
         topSearchBar.Width = 0; topSearchBar.Opacity = 0; topSearchBar.IsHitTestVisible = false;
-        topNavigation.Width = 480; topNavigation.Opacity = 1; topNavigation.IsHitTestVisible = true;
+        topNavigation.Width = ShellHeader.NavigationWidth; topNavigation.Opacity = 1; topNavigation.IsHitTestVisible = true;
         if (clear) query.Value = "";
     }
 

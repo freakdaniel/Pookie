@@ -34,10 +34,12 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         {
             lifetime.Token.ThrowIfCancellationRequested();
             if (account.ClientId != updated.ClientId || account.UserAgent != updated.UserAgent ||
-                account.SessionId != null && account.SessionId != updated.SessionId)
+                account.SessionId != null && account.SessionId != updated.SessionId ||
+                account.VerifiedUserId != null && account.VerifiedUserId != updated.VerifiedUserId)
                 throw new InvalidOperationException("Обновление принадлежит другой сессии SoundCloud.");
             account = updated;
             worker?.UpdateAccount(updated);
+            embedded?.UpdateAccount(updated);
         }
         Changed?.Invoke(new("session") { Session = updated });
     }
@@ -55,7 +57,27 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<SoundCloudUser> GetMeAsync(CancellationToken token = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "me"), token);
-        return result.User is { Id: > 0 } user ? user : throw new InvalidOperationException("SoundCloud не вернул профиль.");
+        if (result.User is not { Id: > 0 and <= 9007199254740991 } user) throw new InvalidOperationException("SoundCloud не вернул профиль.");
+        var current = Account;
+        if (current.VerifiedUserId is { } expected && expected != user.Id)
+            throw new SoundCloudException("Аккаунт в браузере Pookie изменился. Подтверди вход в SoundCloud.", 401);
+        if (result.Session is { } refreshed)
+        {
+            if (current.VerifiedUserId != user.Id || refreshed.VerifiedUserId != user.Id ||
+                refreshed.ClientId != current.ClientId || refreshed.UserAgent != current.UserAgent || refreshed.SessionId != current.SessionId)
+                throw new SoundCloudException("SoundCloud не подтвердил восстановление сохранённого аккаунта.", 401);
+            UpdateAccount(current with { AccessToken = refreshed.AccessToken });
+        }
+        else if (current.VerifiedUserId == null) UpdateAccount(current with { VerifiedUserId = user.Id });
+        return user;
+    }
+
+    internal async Task ResetBlockedBrowserAsync(CancellationToken token)
+    {
+        if (embedded is not { IsBlocked: true } web) return;
+        await requests.WaitAsync(token).ConfigureAwait(false);
+        try { if (web.IsBlocked) await web.ResetAsync().ConfigureAwait(false); }
+        finally { requests.Release(); }
     }
 
     public async Task PrepareSessionAsync(CancellationToken cancellationToken = default) =>
@@ -239,8 +261,9 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         finally { if (ordered) requests.Release(); }
     }
 
-    private static SoundCloudException BrowserBlocked() => new(
-        "SoundCloud временно заблокировал доступ для этого браузера или сети. Капча не предложена. Подробности — в окне сайта; действие не повторяется.", 403);
+    internal static SoundCloudException BrowserBlocked() => new(
+        "SoundCloud временно ограничил доступ для браузера Pookie. Попробуй загрузить раздел снова позже.", 403)
+        { ChallengeKind = SoundCloudChallengeKind.HardBlock };
 
     public void Dispose()
     {

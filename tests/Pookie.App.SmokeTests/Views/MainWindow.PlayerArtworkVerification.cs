@@ -72,6 +72,7 @@ internal sealed partial class MainWindow
             if (!ReferenceEquals(artwork.Source, latest) || !ReferenceEquals(expandedArtwork.Source, latest))
                 throw new InvalidOperationException("A stale cover replaced the selected track.");
             await VerifyPlayerColorsAsync();
+            CaptureUiPreview("artwork-missing-fullscreen");
             Console.WriteLine("ARTWORK_UI_OK: thumbnail URL upgrades to 500px, shared player/card source, sharp native texture on first/repeated fullscreen and arriving while open, old thumbnail-cache upgrade, deduplicated lookup and stale completion rejection");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("ARTWORK_UI_FAILED: " + error); }

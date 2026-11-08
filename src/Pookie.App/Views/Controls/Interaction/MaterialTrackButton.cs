@@ -29,6 +29,7 @@ internal sealed class MaterialTrackButton : Button
     private bool glassFinish;
     private bool lightGlass, listStateLayer;
     private readonly GlassSheenRaster sheen = new();
+    private LiquidGlassLens? lens;
     private CoverGlassBackdrop? glassBackdrop;
     private OverlayButtonBackdrop? overlayBackdrop;
     internal bool HasOverlayBlur => overlayBackdrop?.Ready == true;
@@ -46,6 +47,7 @@ internal sealed class MaterialTrackButton : Button
     {
         if (!glassFinish) return;
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
+        lens?.Dispose();
         glassBackdrop = backdrop;
         if (backdrop != null) backdrop.Changed += InvalidateVisual;
         InvalidateVisual();
@@ -194,7 +196,7 @@ internal sealed class MaterialTrackButton : Button
             var bounds = GetSnappedBorderBounds(Bounds);
             var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
             var shape = geometry.Get(bounds,corners);
-            glassBackdrop.Draw(context, bounds, corners, shape);
+            glassBackdrop.Draw(context, bounds, corners, shape, lens ??= new(), GetDpi() / 96d);
             context.FillPath(shape, glassTint);
         }
         else if (connected)
@@ -213,7 +215,7 @@ internal sealed class MaterialTrackButton : Button
             surfaceClock.Stop(); shapeClock.Stop();
             if (target is { } color) Background = color;
             glassTint = glassTintTarget; innerCorner = shapeTarget;
-            sheen.Dispose();
+            lens?.Dispose(); sheen.Dispose();
         }
     }
 
@@ -221,7 +223,7 @@ internal sealed class MaterialTrackButton : Button
     {
         surfaceClock.Stop(); shapeClock.Stop();
         overlayBackdrop?.Dispose(); overlayBackdrop = null;
-        sheen.Dispose();
+        lens?.Dispose(); sheen.Dispose();
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
         base.OnDispose();
     }

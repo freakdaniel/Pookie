@@ -9,6 +9,7 @@ namespace Pookie.App;
 
 internal static class Icons
 {
+    internal const string MissingTrackArtwork = "missing-track-artwork";
     private static readonly Dictionary<(string, uint, int), IVectorImageSource> sources = [];
     private static readonly Dictionary<string, string> templates = [];
     internal static int CachedSourceCount => sources.Count;
@@ -66,6 +67,12 @@ internal static class Icons
 
     internal static Image View(string name, double size, Color color) =>
         new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Source(Source(name, color)).Width(size).Height(size).StretchMode(Stretch.Uniform);
+
+    internal static Image TintableView(string name, double size, out SimpleSvgSource source)
+    {
+        source = SimpleSvgSource.FromResource(typeof(Icons).Assembly, $"Pookie.App.Assets.Icons.{name}.svg");
+        return new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Source(source).Width(size).Height(size).StretchMode(Stretch.Uniform);
+    }
 
     // A few oversampled sizes cover continuous scale changes without creating
     // an SVG surface for every intermediate physical pixel width.

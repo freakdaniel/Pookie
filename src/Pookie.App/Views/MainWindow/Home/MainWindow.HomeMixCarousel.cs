@@ -19,11 +19,13 @@ internal sealed partial class MainWindow
         {
             Transition = ContentTransition.CreateSlide(SlideDirection.Up, durationMs: 220, easing: Easing.CubicBezier(.2, 0, 0, 1))
         };
-        var captionViewport = new Border().Height(42).BorderThickness(0).ClipToBounds().Child(homeMixCaption);
+        var captionViewport = new Border().Height(46).BorderThickness(0).ClipToBounds().Child(homeMixCaption);
         homeMixStatus = new TextBlock().FontSize(13).Foreground(Muted).CenterHorizontal().IsVisible(false);
+        var stage = new Grid().Columns("*").Rows("Auto").Children(
+            homeMixCarousel.Top().Margin(0, 2, 0, 0),
+            new TextBlock().Text("Миксы для тебя").FontSize(26).Bold().CenterHorizontal().Top().IsHitTestVisible(false));
         return homeMixSection = new StackPanel().Vertical().Spacing(5).Children(
-            new TextBlock().Text("Миксы для тебя").FontSize(26).Bold().CenterHorizontal(),
-            homeMixCarousel, captionViewport, homeMixStatus).IsVisible(false);
+            stage, captionViewport, homeMixStatus).IsVisible(false);
     }
 
     private void RenderHomeMixCarousel(LibraryItem[] mixes)
@@ -44,7 +46,7 @@ internal sealed partial class MainWindow
     private void SetHomeMixCaption(LibraryItem? mix)
     {
         homeMixCaption.Content = mix == null ? null : new StackPanel().Vertical().Spacing(3).CenterVertical().Children(
-            new TextBlock().Text(mix.Title).FontSize(16).SemiBold().CenterHorizontal().TextTrimming(TextTrimming.CharacterEllipsis),
+            new TextBlock().Text(mix.Title).FontSize(18).SemiBold().CenterHorizontal().TextTrimming(TextTrimming.CharacterEllipsis),
             new TextBlock().Text(mix.Playlist?.ShortDescription ?? "").FontSize(13).Foreground(Muted)
                 .CenterHorizontal().TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(!string.IsNullOrWhiteSpace(mix.Playlist?.ShortDescription)));
     }

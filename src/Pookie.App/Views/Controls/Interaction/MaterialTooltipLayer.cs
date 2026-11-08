@@ -121,7 +121,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     {
         if (!window.IsActive || target.FindVisualRoot() != window || !target.IsEffectivelyEnabled || TooltipHints.TextFor(target) == null) return false;
         for (Element? element = target; element != null; element = element.Parent)
-            if (element is UIElement { IsVisible: false }) return false;
+            if (element is UIElement visual && (!visual.IsVisible || visual.Opacity <= 0)) return false;
         var bounds = VisibleAnchor(target);
         return bounds.Width > 0 && bounds.Height > 0;
     }

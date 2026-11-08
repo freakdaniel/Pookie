@@ -8,6 +8,8 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyExpandedGlassAsync()
     {
+        VerifyLiquidGlassPixels();
+        VerifyLiquidGlassEdgeCoverage();
         var buttons = new List<ExpandedGlassButton>();
         VisualTree.Visit(expandedCover, element => { if (element is ExpandedGlassButton button) buttons.Add(button); });
         var feedback = buttons.Where(button => button.IsConnected &&

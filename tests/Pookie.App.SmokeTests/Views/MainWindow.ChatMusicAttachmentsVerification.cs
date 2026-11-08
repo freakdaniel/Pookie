@@ -25,7 +25,8 @@ internal sealed partial class MainWindow
         var multipleBubble = ChatRows.Single(row => row.Message?.Body == multiple);
         await WaitForLikedLayoutAsync(() => mentionBubble.Motion.Opacity > .999 && multipleBubble.Motion.Opacity > .999 && !chatScrollBottom);
         var views = multipleBubble.Attachments.Children.OfType<ChatCompactMusicView>().ToArray();
-        await WaitForLikedLayoutAsync(() => views.All(view => ReferenceEquals(view.Row.Cover.Source, CachedCollectionArtwork(view.Item!))));
+        await WaitForLikedLayoutAsync(() => views.All(view => view.Row.Cover.Source is ImageSource source &&
+            Math.Max(source.PixelWidth, source.PixelHeight) <= CompactArtworkSide(view.Row.Cover.Width)));
         await WaitForLikedLayoutAsync(() => multipleBubble.MusicBackdrop.Source != null);
         await WaitForLikedLayoutAsync(() => multipleBubble.MusicBackdrop.Opacity > .999 && views.All(view => view.Loading.Reveal > .999));
         if (multipleBubble.Bubble.ActualWidth is < 323 or > 340)

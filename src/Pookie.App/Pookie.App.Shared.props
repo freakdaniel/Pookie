@@ -50,6 +50,7 @@
     <InternalsVisibleTo Include="Pookie.Audio.Tests" />
     <InternalsVisibleTo Include="Pookie.Discord.Tests" />
     <InternalsVisibleTo Include="Pookie.App.SmokeTests" />
+    <InternalsVisibleTo Include="Pookie.Lyrics.Tests" />
 
     <ProjectReference Include="$(MSBuildThisFileDirectory)../Pookie.SoundCloud/Pookie.SoundCloud.csproj" />
   </ItemGroup>

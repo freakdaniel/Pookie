@@ -62,6 +62,7 @@ internal sealed class GlassSheenRaster : IDisposable
     private Rect edgeBounds;
     private double edgeEmphasis = double.NaN;
     private Pen? edgePen;
+    private ImageBrush? sheenBrush;
 
     internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0, bool resizing = false)
     {
@@ -78,12 +79,12 @@ internal sealed class GlassSheenRaster : IDisposable
         {
             Dispose(); factory = graphics;
             bitmap = new WriteableBitmap(width, height, clear: false);
-            image = OperatingSystem.IsWindows() ? BitmapImage.CreatePremultipliedView(graphics, bitmap) : BitmapImage.Create(graphics, bitmap);
+            image = BitmapImage.CreatePremultipliedView(graphics, bitmap);
         }
         if (paintedEmphasis != emphasis)
         {
             using var write = bitmap!.LockForWrite();
-            FillPixels(write.PixelsBgra32, image.PixelWidth, image.PixelHeight, emphasis, OperatingSystem.IsWindows());
+            FillPixels(write.PixelsBgra32, image.PixelWidth, image.PixelHeight, emphasis, premultiplied: true);
             paintedEmphasis = emphasis;
         }
         // Quantize only at the final physical pixel size. Stretching a small
@@ -96,13 +97,9 @@ internal sealed class GlassSheenRaster : IDisposable
             // collections instead of filling its caches with every position.
             context.Translate(bounds.X, bounds.Y);
             var local = new Rect(0, 0, bounds.Width, bounds.Height);
-            context.Save();
-            try
-            {
-                context.SetClipPath(clip.Get(local, corners));
-                context.DrawImage(image!, local);
-            }
-            finally { context.Restore(); }
+            if (sheenBrush == null || sheenBrush.DestinationRect != local)
+                sheenBrush = new(image, new Rect(0, 0, image.PixelWidth, image.PixelHeight), local, TileMode.None);
+            context.FillPath(clip.Get(local, corners), sheenBrush);
             DrawEdge(context, local, corners, emphasis);
         }
         finally { context.Restore(); }
@@ -152,6 +149,7 @@ internal sealed class GlassSheenRaster : IDisposable
 
     public void Dispose()
     {
+        sheenBrush = null;
         image?.Dispose(); image = null; bitmap?.Dispose(); bitmap = null;
         factory = null; paintedEmphasis = double.NaN;
     }

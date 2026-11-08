@@ -69,7 +69,7 @@ internal sealed partial class MainWindow
         chatSidebarSearch = new DockPanel().LastChildFill().Spacing(10).Children(searchModes.DockTop(),
             new Grid().Columns("*").Rows("*").Children(people, chatGlobalSearchFrame, chatSearchLanding));
         chatSidebarTransition = new ChatPanelTransition(); chatSidebarTransition.Show(chatSidebarNormal);
-        chatSidebarBack = TrackButtons.Icon(Icons.View("list",22,Muted), () =>
+        chatSidebarBack = TrackButtons.Icon(Icons.View("list",22,MutedIcon), () =>
         {
             if (chatSidebarSearching) CloseChatGlobalSearch(); else chatSidebarMenu.Show(chatSidebarBack);
         }, TrackButtons.Text,40).Hint("Меню / вернуться к диалогам");
@@ -80,7 +80,7 @@ internal sealed partial class MainWindow
         chatSidebarMenu.Item(savedCommand).Item(folderCommand);
         var inbox = new DockPanel().LastChildFill().Spacing(12).Children(
             new Grid().Columns("40,*,40").Rows("40").Spacing(6).Children(chatSidebarBack.Column(0), ChatGlobalSearchField().Column(1),
-                TrackButtons.Icon(Icons.View("bookmark-simple",21,Muted), OpenChatFavorites, TrackButtons.Text,40).Hint("Избранное").Column(2)).DockTop(),
+                TrackButtons.Icon(Icons.View("bookmark-simple",21,MutedIcon), OpenChatFavorites, TrackButtons.Text,40).Hint("Избранное").Column(2)).DockTop(),
             new TextBlock().BindText(chatsStatus).BindIsVisible(chatsStatus, text => text.Length > 0).FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).DockTop(),
             chatMore.DockBottom(), chatSidebarTransition);
 
@@ -145,13 +145,13 @@ internal sealed partial class MainWindow
         chatInput.GotFocus += () => RefreshChatComposerSurface();
         chatInput.LostFocus += () => RefreshChatComposerSurface();
         chatHeaderAvatar = new Image().Width(38).Height(38).StretchMode(Stretch.UniformToFill);
-        chatHeaderAvatar.Source = Icons.Source("user", Muted);
+        chatHeaderAvatar.Source = Icons.Source("user", MutedIcon);
         var identity = TrackButtons.Action(new Grid().Columns("38,*").Rows("*").Spacing(10).Children(
             new Border().Width(38).Height(38).CornerRadius(19).ClipToBounds().Child(chatHeaderAvatar).Column(0).CenterVertical(),
             chatName.Column(1).Left().CenterVertical()), () => { if (chatFavoritesOpen) OpenChatSavedInfo(); else OpenChatInfo(); }, TrackButtons.Text, 46).Padding(0);
         ((FrameworkElement)identity.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         ((MaterialTrackButton)identity).SuppressStateLayer();
-        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, Muted), OpenChatThreadSearch, TrackButtons.Text, 36).Hint("Поиск в переписке");
+        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, MutedIcon), OpenChatThreadSearch, TrackButtons.Text, 36).Hint("Поиск в переписке");
         chatNormalIdentity = new Grid().Columns("Auto,*,36,36").Rows("*").Spacing(8).Children(chatBack.Column(0).CenterVertical(), identity.Column(1).CenterVertical(), find.Column(2).CenterVertical());
         chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
         chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
@@ -189,7 +189,7 @@ internal sealed partial class MainWindow
         chatTimer = new DispatcherTimer(TimeSpan.FromSeconds(1));
         chatTimer.Tick += () =>
         {
-            if (disposed || demo || me == null || api.Session == null ||
+            if (disposed || demo || me == null || api.Session == null || browser?.Embedded?.IsBlocked == true ||
                 !preferences.ChatBackgroundRefresh && (page.Value != Page.Chats || !Window.IsActive) || DateTimeOffset.UtcNow < chatNextPoll) return;
             chatNextPoll = DateTimeOffset.UtcNow.AddSeconds(page.Value == Page.Chats && Window.IsActive ? 2 : 15);
             Run(RefreshChatsAsync);
@@ -251,7 +251,7 @@ internal sealed partial class MainWindow
         var visual = chatInboxVisuals.GetValue(button, _ => throw new InvalidOperationException());
         if (visual.AvatarPeer == conversation.Recipient.Id && visual.AvatarUrl == conversation.Recipient.AvatarUrl && avatar.Source != null) return;
         visual.AvatarPeer = conversation.Recipient.Id; visual.AvatarUrl = conversation.Recipient.AvatarUrl;
-        avatar.Source = Icons.Source("user", Muted);
+        avatar.Source = Icons.Source("user", MutedIcon);
         var revision = chatRevision; var session = api.Session;
         Run(async () =>
         {

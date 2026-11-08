@@ -20,6 +20,7 @@ internal sealed partial class MainWindow
             await ShowWorkspaceAsync();
             await imageDiskCache.WriteAsync(transport.Playlist.ArtworkUrl!, ArtworkFixtureBitmap(500), lifetime.Token);
             var item = LibraryData.FromPlaylist(transport.Playlist with { Tracks = [], TrackCount = 0, Title = "Old title" });
+            await VerifyOverviewCardHoverAsync(item);
             await VerifyCollectionCardPlaybackAsync(item);
             await OpenLibraryItemAsync(item);
             await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth > 150 && collectionTrackList.ActualHeight > 100 &&
@@ -74,6 +75,14 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Playlist hero did not match the track hero's title, play button, bottom actions and right-hand square cover layout.");
             await WaitForLikedLayoutAsync(() => !collectionLoadingView.Skeleton.IsVisible && collectionBackdrop.Source != null && collectionBackdrop.Opacity == 1);
             await VerifyCardGlassSourceAsync(collectionGlass!, collectionCover, collectionBackdrop, collectionPlay);
+            var collectionMore = (Button)VisualTree.Find(collectionPlay.Parent!.Parent!, element =>
+                element is Button button && button.ContextMenu?.Items.OfType<MenuItem>()
+                    .Any(item => item.Command?.Id == "pookie.collection.queue") == true)!;
+            RouteWaveformClick(collectionMore.Bounds.Center);
+            var collectionMenu = PopupAppearance.MenuFor(collectionMore);
+            await WaitForLikedLayoutAsync(() => collectionMenu.IsOpen && collectionMenu.Reveal == 1);
+            VerifyContextMenuIcons(collectionMenu);
+            await VerifyMoreClosesMenuAsync(collectionMore, collectionMenu);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 900, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => Math.Abs(collectionCover.ActualWidth - 208) < 1 / Window.DpiScale && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
@@ -94,6 +103,7 @@ internal sealed partial class MainWindow
                 likedRows.Values.Any(row => row.Root.FindVisualRoot() == Window && row.Track?.Id == 9000))
                 throw new InvalidOperationException("Playlist rows did not use compact unnumbered tracks and trailing actions.");
             await VerifyCompactTrackPresentationAsync(compact);
+            await VerifyCompactArtworkBudgetAsync();
             MoveActionPointer(new(compact.Cover.Bounds.X + 4, compact.Cover.Bounds.Y + 4));
             await WaitForLikedLayoutAsync(() => compact.Actions.Strength > .999);
             if (compact.More == null) throw new InvalidOperationException("Hovered playlist row did not realize its action menu.");
@@ -232,6 +242,75 @@ internal sealed partial class MainWindow
         }
         finally { player = originalPlayer; }
         Console.WriteLine("COLLECTION_CARD_PLAYBACK_OK: animated hover, isolated play-button click, full playlist queue, persistent active state and pause/play synchronization");
+    }
+
+    private async Task VerifyOverviewCardHoverAsync(LibraryItem item)
+    {
+        libraryPages["recent"] = libraryPages["collections"] = new([item], null);
+        BeginNavigation(new(Page.Library));
+        ReplaceTracks(libraryLikes!);
+        RefreshLibraryCards();
+        RefreshOverviewSections();
+        var tabs = new[] { "Лайки", "Плейлисты", "Альбомы", "Станции", "Подписки", "История" };
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && overviewSections["recent"].Grid.ActualWidth > 100);
+        foreach (var title in tabs)
+        {
+            var tab = (Button)VisualTree.Find(Window.Content, element => element is Button { StyleName: "section-button" } button &&
+                button.FindVisualChild<TextBlock>() is TextBlock label && label.Text == title)!;
+            var label = (TextBlock)tab.FindVisualChild<TextBlock>()!;
+            MoveActionPointer(tab.Bounds.Center);
+            try { await WaitForLikedLayoutAsync(() => label.Foreground == Color.White, timeoutMs: 900); }
+            catch (InvalidOperationException error)
+            { throw new InvalidOperationException($"No hover for {title}: hit={Window.HitTest(tab.Bounds.Center)?.GetType().Name}, hover={tab.IsMouseOver}.", error); }
+        }
+        async Task CheckCard(string section)
+        {
+            var grid = overviewSections[section].Grid;
+            await WaitForLikedLayoutAsync(() => collectionCards.Keys.Any(root => grid.IsAncestorOf(root) && root.ActualWidth > 100));
+            var root = collectionCards.Keys.First(grid.IsAncestorOf);
+            var card = CollectionCard(root);
+            var zoom = (TransformDecorator)card.Frame.FindVisualChild<TransformDecorator>()!;
+            var before = card.Frame.Bounds;
+            MoveActionPointer(before.Center);
+            await WaitForLikedLayoutAsync(() => card.Playback.Opacity > .999 && zoom.Transform.M11 > 1.03f);
+            if (card.Playback.Background != Color.FromArgb(64, 0, 0, 0) || card.Frame.Bounds.Size != before.Size)
+                throw new InvalidOperationException("Artwork hover lost its dimming or changed the card layout.");
+            if (!card.Playback.PlaybackButton!.Focus()) throw new InvalidOperationException("Overview play button cannot take focus.");
+            RefreshOverviewSections();
+            await WaitForLoginFrameAsync();
+            if (!card.Playback.PlaybackButton.IsFocused || !root.IsMouseOver || card.Playback.Opacity < .99)
+                throw new InvalidOperationException($"Refreshing {section} discarded the play button's hover or focus.");
+            CaptureUiPreview("overview-hover-" + section);
+            MoveActionPointer(new Point(2, 2));
+            Window.FocusManager.ClearFocus();
+            await WaitForLikedLayoutAsync(() => card.Playback.Opacity < .001 && zoom.Transform.IsIdentity);
+            if (card.Playback.PlaybackButton.IsHitTestVisible)
+                throw new InvalidOperationException("A hidden playback button remains a pointer target.");
+        }
+        await CheckCard("recent");
+        var recentGrid = overviewSections["recent"].Grid;
+        var playlistCard = CollectionCard(collectionCards.Keys.First(recentGrid.IsAncestorOf));
+        RouteContextRightClick(playlistCard.Frame.Bounds.Center);
+        var playlistMenu = PopupAppearance.MenuFor(playlistCard.Root);
+        await WaitForLikedLayoutAsync(() => playlistMenu.IsOpen && playlistMenu.Reveal == 1);
+        VerifyContextMenuIcons(playlistMenu);
+        if (playlistMenu.Items.OfType<MenuItem>().Any(entry => entry.Command?.Id.StartsWith("pookie.queue.", StringComparison.Ordinal) == true))
+            throw new InvalidOperationException("A playlist card still offers track actions.");
+        CaptureUiPreview("overview-playlist-menu");
+        var add = playlistMenu.Buttons.Single(button => button.Command?.Id == "pookie.collection.card.queue");
+        RouteWaveformClick(SettingsCenter(add));
+        await WaitForLikedLayoutAsync(() => !playlistMenu.IsOpen && playbackQueue.Snapshot.ManualUpcoming.Count == libraryLikes!.Tracks.Length);
+        if (page.Value != Page.Library || !playbackQueue.Snapshot.ManualUpcoming.Select(entry => entry.Track.Id).SequenceEqual(libraryLikes!.Tracks.Select(track => track.Id)))
+            throw new InvalidOperationException("The playlist card did not enqueue the whole playlist in order.");
+        playbackQueue.Clear();
+        var tile = libraryTiles.Values.First(tile => tile.Track != null && tile.Root.ActualWidth > 100);
+        MoveActionPointer(new Point(tile.Author.Bounds.X + 5, tile.Author.Bounds.Center.Y));
+        await WaitForLikedLayoutAsync(() => tile.Author.Foreground != Muted);
+        MoveActionPointer(new Point(2, 2));
+        await WaitForLikedLayoutAsync(() => tile.Author.Foreground == Muted);
+        shellScroll.SetScrollOffsets(0, Math.Max(0, overviewSections["playlists"].Grid.Bounds.Y - 210));
+        await WaitForLoginFrameAsync();
+        await CheckCard("playlists");
     }
 
     private void VerifyEmptyCollectionPaint(Rect previousBounds)

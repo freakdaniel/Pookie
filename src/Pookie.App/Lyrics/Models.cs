@@ -34,11 +34,12 @@ public sealed record LyricsCandidate
     public bool Instrumental { get; init; }
     public string? PlainLyrics { get; init; }
     public string? SyncedLyrics { get; init; }
-    public LyricsDocument ToDocument() => LrcParser.Parse(SyncedLyrics, PlainLyrics, "LRCLIB", Id, TrackName, ArtistName, Instrumental);
+    public LyricsDocument ToDocument() => LrcParser.Parse(SyncedLyrics, PlainLyrics, LrclibClient.Name, Id, TrackName, ArtistName, Instrumental);
 }
 public sealed record LyricsIdentity(long TrackId, string Title, string Artist, double Duration,
     string? Album = null, bool TimingAvailable = true)
 {
+    public string? Isrc { get; init; }
     public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         FormattableString.Invariant($"v7-speed-effects\n{Title}\n{Artist}\n{Duration:R}\n{Album}\n{TimingAvailable}"))));
     public LyricsQuery[] Queries(bool stripParentheses = false)
@@ -59,4 +60,5 @@ public sealed record LyricsQuery(string Title, string Artist, string? Album, dou
 [JsonSerializable(typeof(LyricsCacheRecord))]
 internal partial class LyricsJson : JsonSerializerContext;
 
-internal sealed record LyricsCacheRecord(string Fingerprint, DateTimeOffset At, LyricsResult Result, bool Complete = true, int SelectionVersion = 0);
+internal sealed record LyricsCacheRecord(string Fingerprint, DateTimeOffset At, LyricsResult Result,
+    bool Complete = true, int SelectionVersion = 0, string? Isrc = null);

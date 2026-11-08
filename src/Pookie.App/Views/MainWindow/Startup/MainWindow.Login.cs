@@ -64,7 +64,7 @@ internal sealed partial class MainWindow
                 new TextBlock().Text("Добро пожаловать").FontSize(34).Bold().Foreground(LoginPaper)
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap),
                 new TextBlock().Text("Для использования Pookie необходима учётная запись SoundCloud. Выполните вход с помощью кнопки ниже")
-                    .FontSize(15).Foreground(Color.FromRgb(195, 195, 195))
+                    .FontSize(15).Foreground(Color.FromArgb(191, 255, 255, 255))
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap)),
             new StackPanel().Vertical().Spacing(14).Children(loginButton.CenterHorizontal(), loginError));
         var composition = new Grid().Columns("*").Rows("*").Children(loginContent);

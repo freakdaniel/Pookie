@@ -47,6 +47,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Inactive dots were not thicker, aligned and shaded like lyric lines.");
             await Task.Delay(300, lifetime.Token); Poll();
             if (lyricsActiveLine != 4) throw new InvalidOperationException("Paused lyrics advanced with wall time.");
+            await VerifyLyricsFollowAcrossWrappedLinesAsync(audio);
 
             Window.Activate();
             await WaitForLikedLayoutAsync(() => Window.IsActive);
@@ -110,11 +111,25 @@ internal sealed partial class MainWindow
             CaptureExpandedPanelPreview("lyrics-gap-settled");
 
             PauseLyricsFollowing(); lyricsList.ScrollIntoView(lyricsItems.DataCount - 2);
-            await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == -3 && view.Text.ActualHeight > 0));
-            var credit = lyricsRows.Values.Single(view => view.Row?.Index == -3);
-            if (credit.Text.Text != "Текст предоставлен LRCLIB" || credit.Text.FontSize != 13)
-                throw new InvalidOperationException("Source credit was not at the end of the lyric list.");
+            await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == -3 && view.Credit is { ActualWidth: > 0 }));
+            var credit = lyricsRows.Values.Single(view => view.Row?.Index == -3).Credit!;
+            if (credit.FindVisualChild<TextBlock>() is not TextBlock { Text: "Текст предоставлен" } label ||
+                label.Foreground != TextAppearance.Secondary ||
+                credit.FindVisualChild<Image>() is not Image { Source: ImageSource { PixelWidth: 200, PixelHeight: 200 } } ||
+                !credit.IsVisible || !credit.IsHitTestVisible || !credit.Focusable)
+                throw new InvalidOperationException("The LRCLIB credit lost its clickable button or official logo.");
             CaptureExpandedPanelPreview("lyrics-credit");
+            var lrclib = lyricsResult;
+            ApplyLyrics(new(LyricsStatus.Plain, lrclib.Document! with { Source = LrcRedSearch.Name, Lines = [] }));
+            await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == -3 &&
+                view.CreditProvider == LrcRedSearch.Name && view.Credit is { IsVisible: true, IsHitTestVisible: true, Focusable: true }));
+            var fallbackCredit = lyricsRows.Values.Single(view => view.Row?.Index == -3).Credit!;
+            if (!lyricsList.IsVisible || lyricsMessage.IsVisible || lyricsActiveLine != -1 ||
+                fallbackCredit.FindVisualChild<Image>() != null ||
+                VisualTree.Find(fallbackCredit, element => element is TextBlock { Text: LrcRedSearch.Name }) == null)
+                throw new InvalidOperationException("Untimed lrc.red lyrics were not shown with their own credit.");
+            CaptureExpandedPanelPreview("lyrics-credit-lrc-red");
+            ApplyLyrics(lrclib);
             ResumeLyricsFollowing();
             SetExpandedPlayer(false); await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
             SetExpandedPlayer(true); VerifyDirectLyricsReveal(); await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
@@ -254,6 +269,37 @@ internal sealed partial class MainWindow
             Window.FrameRendered += Sample;
             try { await WaitForLoginFrameAsync(); return target; }
             finally { Window.FrameRendered -= Sample; }
+        }
+    }
+
+    private async Task VerifyLyricsFollowAcrossWrappedLinesAsync(BufferFixturePlayer audio)
+    {
+        var initial = audio.State;
+        var scroll = smoothScrolls[lyricsScroll];
+        // The next rows include wrapped text that is measured as it enters the virtualized list.
+        // Each line must reach the anchor without another playback update to restart the scroll.
+        for (var index = 5; index <= 18; index++)
+        {
+            audio.State = initial with { Position = index * 3, Playing = true };
+            Poll();
+            await WaitForCenterAsync(index);
+        }
+        audio.State = initial;
+        Poll();
+        await WaitForCenterAsync(4);
+
+        async Task WaitForCenterAsync(int index)
+        {
+            var deadline = Environment.TickCount64 + 1600;
+            while (Environment.TickCount64 < deadline)
+            {
+                var row = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
+                if (row != null && !scroll.IsRunning &&
+                    Math.Abs(row.Bounds.Center.Y - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4) < 4)
+                    return;
+                await Task.Delay(30, lifetime.Token);
+            }
+            throw new InvalidOperationException($"Lyric {index} stalled before centering at offset {lyricsScroll.VerticalOffset} (target {lyricsFollowTarget}).");
         }
     }
 

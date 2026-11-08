@@ -30,12 +30,12 @@ internal sealed partial class MainWindow
         Window.FrameRendered += SampleOpen;
         var hoverPoint = new Point(row.Cover.Bounds.X + 4, row.Cover.Bounds.Y + 4);
         MoveActionPointer(hoverPoint);
-        try { await WaitForLikedLayoutAsync(() => row.Actions.Strength > .999 && row.Summary.Strength < .001 && row.Overlay.Strength > .999); }
+        try { await WaitForLikedLayoutAsync(() => row.Actions.Strength > .999 && row.Summary.Strength < .001 && row.Overlay.Opacity > .999); }
         catch (InvalidOperationException error)
         {
             var actual = hoverPoint;
             if (OperatingSystem.IsWindows() && GetLikedActionCursor(out var cursor)) actual = Window.ScreenToClient(new Point(cursor.X, cursor.Y));
-            throw new InvalidOperationException($"Row reveal did not settle: wanted={hoverPoint}, actual={actual}, hit={Window.HitTest(actual)?.GetType().Name}, hovered={row.Hovered}, mouse={row.Root.IsMouseOver}, actions={row.Actions.Strength}, summary={row.Summary.Strength}, overlay={row.Overlay.Strength}, buttons={row.ActionButtons.Length}, root={row.Root.Bounds}, cover={row.Cover.Bounds}, visible={row.Actions.IsVisible}.", error);
+            throw new InvalidOperationException($"Row reveal did not settle: wanted={hoverPoint}, actual={actual}, hit={Window.HitTest(actual)?.GetType().Name}, hovered={row.Hovered}, mouse={row.Root.IsMouseOver}, actions={row.Actions.Strength}, summary={row.Summary.Strength}, overlay={row.Overlay.Opacity}, buttons={row.ActionButtons.Length}, root={row.Root.Bounds}, cover={row.Cover.Bounds}, visible={row.Actions.IsVisible}.", error);
         }
         finally { Window.FrameRendered -= SampleOpen; }
         if (!opening.Any(value => value is > .01 and < .99) || positions.Select(x => Math.Round(x, 1)).Distinct().Count() < 3 ||

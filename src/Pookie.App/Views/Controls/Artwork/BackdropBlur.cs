@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Rendering;
+using Aprillz.MewUI.Resources;
 using System.Numerics;
 
 namespace Pookie.App;
@@ -11,30 +12,41 @@ internal sealed class BackdropBlur : IDisposable
 {
     private readonly WriteableBitmap bitmap;
     private readonly byte[] first, second;
+    // Cover blur is prepared on a worker. Until Upload, the lens must see the
+    // previous sharp pixels together with the previous blurred bitmap.
+    private byte[]? capturedSharp, publishedSharp;
     private readonly int width, height;
     private BackdropDownsample? downsample;
     internal IImage Image { get; }
     internal bool Ready { get; private set; }
     internal ReadOnlySpan<byte> Pixels => first;
+    internal int Version => bitmap.Version;
+    internal ReadOnlySpan<byte> SharpPixels => publishedSharp;
+    internal PixelBufferLock LockPublishedPixels() => ((IPixelBufferSource)bitmap).Lock();
 
-    internal BackdropBlur(IGraphicsFactory factory, int width, int height)
+    internal BackdropBlur(IGraphicsFactory factory, int width, int height, bool preserveSharp = false)
     {
         this.width = width; this.height = height;
         first = new byte[width * height * 4]; second = new byte[first.Length];
+        if (preserveSharp)
+        {
+            capturedSharp = new byte[first.Length];
+            publishedSharp = new byte[first.Length];
+        }
         bitmap = new WriteableBitmap(width, height, clear: false);
         Image = ((IImageSource)bitmap).CreateImage(factory);
     }
 
     internal void Update(ICpuPixelSurface source, double sigma)
     {
-        var pixels = source.GetReadOnlyPixelSpan();
-        for (var y = 0; y < height; y++) pixels.Slice(y * source.StrideBytes, width * 4).CopyTo(first.AsSpan(y * width * 4));
+        Capture(source);
         Process(sigma); Upload();
     }
     internal void UpdateReduced(ICpuPixelSurface source, double sigma)
     {
         downsample ??= new BackdropDownsample();
         downsample.Resize(source.GetReadOnlyPixelSpan(), source.PixelWidth, source.PixelHeight, source.StrideBytes, first, width, height);
+        if (capturedSharp != null) first.CopyTo(capturedSharp, 0);
         Process(sigma); Upload();
     }
     // Capture while the render scope is current; process after it is released.
@@ -43,6 +55,7 @@ internal sealed class BackdropBlur : IDisposable
     {
         var pixels = source.GetReadOnlyPixelSpan();
         for (var y = 0; y < height; y++) pixels.Slice(y * source.StrideBytes,width * 4).CopyTo(first.AsSpan(y * width * 4));
+        if (capturedSharp != null) first.CopyTo(capturedSharp, 0);
     }
     internal void Process(double sigma)
     {
@@ -56,7 +69,13 @@ internal sealed class BackdropBlur : IDisposable
             Box(second, first, radius, horizontal: false);
         }
     }
-    internal void Upload() { using var write = bitmap.LockForWrite(); first.CopyTo(write.PixelsBgra32); Ready = true; }
+    internal void Upload()
+    {
+        using var write = bitmap.LockForWrite();
+        first.CopyTo(write.PixelsBgra32);
+        (publishedSharp, capturedSharp) = (capturedSharp, publishedSharp);
+        Ready = true;
+    }
 
     private void Box(byte[] input, byte[] output, int radius, bool horizontal)
     {

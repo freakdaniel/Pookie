@@ -36,7 +36,11 @@ internal sealed partial class MainWindow
     private void UpdateChatMusicMentions(ChatBubbleRow bubble, string[] urls)
     {
         if (bubble.Body.UpdateMusic(urls.Where(url => bubble.Body.Text.Contains(url, StringComparison.Ordinal)).Select(url =>
-            chatMusicCache.TryGetValue(url, out var item) ? new LinkPreviewData(url, item.Title, CachedCollectionArtwork(item)) : new(url, "Трек", null)).ToArray()))
+        {
+            if (!chatMusicCache.TryGetValue(url, out var item)) return new LinkPreviewData(url, "Трек", null);
+            var view = bubble.Attachments.Children.OfType<ChatCompactMusicView>().FirstOrDefault(view => view.Url == url);
+            return new LinkPreviewData(url, item.Title, view?.Row.Cover.Source as ImageSource ?? CachedCollectionArtwork(item));
+        }).ToArray()))
             BeginChatMusicChange(bubble);
     }
     private void BeginChatMusicChange(ChatBubbleRow bubble)
@@ -65,7 +69,6 @@ internal sealed partial class MainWindow
                 BeginChatMusicChange(bubble);
                 view.Item = item;
                 BindCompactTrackRow(row, item.Track ?? new SoundCloudTrack { Title = item.Title }, loadArtwork: false);
-                SetCollectionArtwork(row.Cover, item);
                 if (item.Playlist is { } playlist)
                 {
                     row.Title.Text = item.Title;
@@ -82,9 +85,9 @@ internal sealed partial class MainWindow
                     var item = view.Item ?? await ResolveChatMusicAsync(url);
                     if (!view.IsCurrent()) return null;
                     if (view.Item == null) Apply(item);
-                    var image = await GetCollectionArtworkAsync(item);
+                    var image = await LoadCompactTrackArtworkAsync(row, CollectionArtworkUrl(item),
+                        item.Track != null ? Icons.MissingTrackArtwork : "music-notes");
                     if (!view.IsCurrent()) return null;
-                    SetCollectionArtwork(row.Cover, item, image, finished: true);
                     UpdateChatMusicMentions(bubble, group.Urls);
                     return image;
                 }

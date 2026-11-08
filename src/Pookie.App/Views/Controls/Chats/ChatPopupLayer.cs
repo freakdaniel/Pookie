@@ -9,33 +9,42 @@ namespace Pookie.App;
 // One reusable, non-modal overlay. Animation transforms paint and hit testing,
 // never the history layout. Reversal starts at the current presentation value.
 internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor, Func<Rect> viewport, bool atPointer = false,
-    Func<MenuPlacement>? placement = null, bool alignRight = false, double gap = 8, bool alignCenter = false) : Panel
+    Func<MenuPlacement>? placement = null, bool alignRight = false, double gap = 8, bool alignCenter = false,
+    Func<bool>? keepTriggerClear = null) : Panel, IVisualTreeHost
 {
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(200), Easing.CubicBezier(.4, 0, .2, 1));
     private double amount, from;
     private Point origin;
     private Rect arrangedArea, arrangedTrigger;
     private Size measuredConstraint;
-    private PopupGlassBackdrop? glass;
-    private static ChatPopupLayer? captureBoundary;
+    private LiveGlassBackdrop? glass;
+    private static HashSet<ChatPopupLayer>? excludedFromCapture;
     private FrameworkElement Surface => content;
     internal bool HasGlassBackdrop => glass?.Ready == true;
+    internal bool HasGpuGlassOptics => glass?.HasGpuOptics == true;
     internal Rect GlassCaptureBounds => glass?.CaptureBounds ?? Rect.Empty;
     internal bool IsOpen { get; private set; }
     internal double Reveal => amount;
     internal Rect SurfaceBounds => content.Bounds;
+    internal Rect PresentedBounds(Rect bounds)
+    {
+        var scale = .94 + .06 * amount;
+        return new(origin.X + (bounds.X - origin.X) * scale, origin.Y + (bounds.Y - origin.Y) * scale,
+            bounds.Width * scale, bounds.Height * scale);
+    }
+    internal void CaptureLiveGlass(IGraphicsContext context) => glass?.CaptureLive(context);
     internal Action? Closed;
     internal ChatPopupLayer Initialize()
     {
         Add(content); IsVisible = false; content.Opacity = 0;
         content.Focusable = true; content.IsTabStop = false;
-        glass = new PopupGlassBackdrop(this);
+        glass = new LiveGlassBackdrop(this, RenderBehind, this);
         VisualTree.Visit(content, element =>
         {
             if (element is not GlassCard card) return;
             for (var parent = card.Parent; parent != null && parent != this; parent = parent.Parent)
                 if (parent is GlassCard) return;
-            card.UsePopupBackdrop(glass);
+            card.UseLiveBackdrop(glass);
         });
         return this;
     }
@@ -81,10 +90,17 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
         // A newly shown layer can be measured before its viewport is arranged.
         // Resolve the final constraint before using a zero/stale desired size.
         var constraint = new Size(Math.Max(0, area.Width - 16), Math.Max(0, area.Height - 16));
+        if (keepTriggerClear?.Invoke() == true)
+        {
+            // A long menu scrolls on the available side of its trigger.
+            var above = trigger.Y - area.Y - 8 - gap;
+            var below = area.Bottom - trigger.Bottom - 8 - gap;
+            constraint = new Size(constraint.Width, Math.Clamp(Math.Max(above, below), 0, constraint.Height));
+        }
         if (constraint != measuredConstraint) MeasurePopup(constraint);
         var size = content.DesiredSize;
         var width = Math.Min(size.Width, Math.Max(0, area.Width - 16));
-        var height = Math.Min(size.Height, Math.Max(0, area.Height - 16));
+        var height = Math.Min(size.Height, constraint.Height);
         var x = atPointer ? trigger.X : trigger.Right - width;
         var y = atPointer ? trigger.Y - 48 : trigger.Y - height - 8;
         if (!atPointer && y < area.Y + 8 && trigger.Bottom + height + 8 <= area.Bottom - 8) y = trigger.Bottom + 8;
@@ -116,7 +132,7 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
     }
     protected override void OnRender(IGraphicsContext context)
     {
-        if (captureBoundary != null) return;
+        if (excludedFromCapture != null) return;
         // The overlay can be arranged before its sibling chat columns during a
         // resize. Reconcile the live anchor/viewport before the first paint, so
         // an open picker/menu never retains the previous window's coordinates.
@@ -128,27 +144,30 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
         }
     }
 
+    bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor)
+    {
+        if (excludedFromCapture?.Contains(this) == true) return true;
+        foreach (var child in Children)
+            if (!visitor(child)) return false;
+        return true;
+    }
+
     internal void RenderBehind(IGraphicsContext context, Element root)
     {
-        var previous = captureBoundary;
-        var hidden = new List<(FrameworkElement Content, double Opacity)>();
+        var previous = excludedFromCapture;
+        var hidden = new HashSet<ChatPopupLayer>();
         var reached = false;
-        // The retained compositor owns child rendering. Suppress only the visual
-        // opacity for this capture, keeping layout, focus and the reveal intact.
+        // Exclude the popups from this draw only. Changing their opacity
+        // invalidates the window and can turn a capture into another frame.
         VisualTree.Visit(root, element =>
         {
             if (element is not ChatPopupLayer popup) return;
             if (ReferenceEquals(popup, this)) reached = true;
-            if (!reached) return;
-            hidden.Add((popup.Surface, popup.Surface.Opacity)); popup.Surface.Opacity = 0;
+            if (reached && popup.IsVisible) hidden.Add(popup);
         });
-        captureBoundary = this;
+        excludedFromCapture = hidden;
         try { root.Render(context); }
-        finally
-        {
-            foreach (var entry in hidden) entry.Content.Opacity = entry.Opacity;
-            captureBoundary = previous;
-        }
+        finally { excludedFromCapture = previous; }
     }
 
     protected override void OnMouseDown(MouseEventArgs e)

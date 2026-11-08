@@ -60,7 +60,7 @@ internal sealed partial class EmbeddedLoginView
             if (message.Kind == "ready") workerReady.TrySetResult();
             if (message.Kind == "blocked")
             {
-                var error = new SoundCloudException("SoundCloud временно ограничил доступ к браузеру.", 403);
+                var error = NativeBrowserSession.BrowserBlocked();
                 workerReady.TrySetException(error);
                 foreach (var request in pendingRequests.Values) request.TrySetException(error);
             }

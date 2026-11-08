@@ -10,46 +10,53 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    // Orbit projects a tilted ring while the covers stay facing the viewer.
+    // Project five positions along an arc with the outer covers turning inward.
     private sealed class MixCarousel : Panel, IVisualTreeHost
     {
-        private const double BaseSide = 200;
+        private const double BaseSide = 220;
         private const double PlayButtonSize = 64;
-        private const double BaseHeight = 258;
-        private const double Drift = .244; // 14 degrees per second
-        private const double Perspective = 1500;
+        private const double BaseHeight = 310;
         private readonly MainWindow owner;
         private readonly AnimationClock motion;
-        private readonly DispatcherTimer returnTimer = new(TimeSpan.FromSeconds(3));
+        private readonly BoxShadowRaster shadow = new(28, 5, Color.FromArgb(118, 0, 0, 0));
         private LibraryItem[] items = [];
         private Card[] cards = [];
         private Projection[] projections = [];
-        private double angle, velocity, intro = 1, fit = 1, radius, pointerLean, pointerAim;
+        private double angle, velocity, fit = 1;
         private double? target;
-        private int front = -1, direction = -1, playingIndex = -1, hovered = -1;
+        private int front = -1, playingIndex = -1, hovered = -1;
         private bool canAnimate, pressed, dragging;
         private double sceneScale = 1;
         private double Side => BaseSide * sceneScale;
         private Point pressPoint, lastPointer;
         private Point? hoverPoint;
-        private long lastTick, lastMove, holdUntil, returnAt;
-        private bool returnAfterTurn, projectionDirty = true;
+        private Vector2 parallax, parallaxTarget;
+        private long lastTick, lastMove;
+        private bool projectionDirty = true;
         private string? playingKey;
 
-        private sealed record Card(LibraryItem Item, Image Artwork, Border Cover, TrackArtworkOverlay Overlay, CardSlot Slot)
+        private sealed record Card(LibraryItem Item, Image Artwork, OrbitCover Cover, TrackArtworkOverlay Overlay, CardSlot Slot)
         {
             internal double Emphasis;
         }
-        private readonly record struct Projection(int Index, double Depth, double Shade, Matrix3x2 Transform) : IComparable<Projection>
+        private readonly record struct Projection(int Index, double Depth, double Shade, double Opacity, Matrix3x2 Transform) : IComparable<Projection>
         {
             public int CompareTo(Projection other) => Depth.CompareTo(other.Depth);
         }
 
         internal int FrontIndex => front;
         internal bool MotionActive => motion.IsRunning;
-        internal string MotionState => $"hover={hovered}, point={hoverPoint}, velocity={velocity}, target={target}, lean={pointerLean}/{pointerAim}, intro={intro}, angle={angle}";
+        internal string MotionState => $"hover={hovered}, point={hoverPoint}, velocity={velocity}, target={target}, angle={angle}";
         internal double FrontCoverEmphasis => front >= 0 ? cards[front].Emphasis : 0;
         internal double PlayingEmphasis => playingIndex >= 0 ? cards[playingIndex].Emphasis : 0;
+        internal bool SelectedMixIsPlaying => front >= 0 && front == playingIndex;
+        internal bool SelectedGlassReady => front >= 0 && cards[front].Cover.Glass.IsCurrent;
+        internal double SelectedOverlayOpacity => front >= 0 ? cards[front].Overlay.Opacity : 0;
+        internal Vector2 ParallaxOffset => parallax;
+        internal int VisibleCoverCount
+        {
+            get { EnsureProjections(); return projections.Count(pose => pose.Opacity > 0); }
+        }
         private double Step => Math.Tau / Math.Max(1, cards.Length);
 
         internal MixCarousel(MainWindow owner)
@@ -60,7 +67,6 @@ internal sealed partial class MainWindow
             Cursor = CursorType.Hand;
             ClipToBounds = true;
             motion = new AnimationClock(TimeSpan.FromSeconds(1), Easing.Linear) { RepeatCount = -1, TickCallback = _ => Tick() };
-            returnTimer.Tick += ReturnToPlaying;
         }
 
         internal bool SetItems(LibraryItem[] next)
@@ -75,11 +81,8 @@ internal sealed partial class MainWindow
             angle = -Math.Max(0, Array.FindIndex(items, item => item.Key == previous)) * Step;
             velocity = 0;
             target = null;
-            CancelReturn();
-            holdUntil = 0;
             UpdatePlayingIndex();
             if (playingIndex >= 0) angle = -playingIndex * Step;
-            if (front < 0 && cards.Length > 0) intro = 0;
             front = -2;
             hovered = -1;
             UpdateOverlays(animate: false);
@@ -95,10 +98,9 @@ internal sealed partial class MainWindow
         {
             var artwork = new Image().StretchMode(Stretch.UniformToFill);
             artwork.ImageScaleQuality = ImageScaleQuality.HighQuality;
-            var overlay = new TrackArtworkOverlay(buttonSize: PlayButtonSize, scalingGlyphs: true);
-            var cover = new Border().CornerRadius(12).ClipToBounds().BorderThickness(0).Background(TrackButtons.TonalSurface)
-                .Child(new Grid().Columns("*").Rows("*").Children(owner.ArtworkLayer(artwork), overlay)).IsHitTestVisible(false);
-            var slot = new CardSlot(cover);
+            var cover = new OrbitCover(artwork, owner.ArtworkLayer(artwork), PlayButtonSize);
+            var overlay = new TrackArtworkOverlay(cover.Glass, buttonSize: PlayButtonSize, scalingGlyphs: true);
+            var slot = new CardSlot(new Grid().Columns("*").Rows("*").Children(cover, overlay), shadow);
             Add(slot);
             return new(item, artwork, cover, overlay, slot);
         }
@@ -106,12 +108,30 @@ internal sealed partial class MainWindow
         private void LoadArtwork(Card card)
         {
             owner.SetCollectionArtwork(card.Artwork, card.Item);
+            card.Cover.RefreshArtwork();
             owner.Run(async () =>
             {
                 var source = await owner.GetCollectionArtworkAsync(card.Item);
                 if (!owner.disposed && cards.Any(candidate => ReferenceEquals(candidate, card)))
+                {
                     owner.SetCollectionArtwork(card.Artwork, card.Item, source, finished: true);
+                    card.Cover.RefreshArtwork();
+                }
             });
+        }
+
+        internal void PrepareGlass()
+        {
+            if (!canAnimate || front < 0) return;
+            // Warm one cover per presented frame, starting with the selected
+            // cover and its closest neighbors in either direction.
+            for (var offset = 0; offset < cards.Length; offset++)
+            {
+                var distance = (offset + 1) / 2;
+                var index = (front + (offset % 2 == 0 ? -distance : distance) + cards.Length) % cards.Length;
+                var glass = cards[index].Cover.Glass;
+                if (glass.HasBitmapArtwork && glass.Prepare()) break;
+            }
         }
 
         internal void UpdatePlayback(string? key, bool playing)
@@ -119,7 +139,6 @@ internal sealed partial class MainWindow
             var next = playing ? key : null;
             if (playingKey == next) return;
             playingKey = next;
-            CancelReturn();
             UpdatePlayingIndex();
             if (playingIndex >= 0) FocusIndex(playingIndex);
             UpdateOverlays();
@@ -130,19 +149,16 @@ internal sealed partial class MainWindow
         {
             if (canAnimate == active) return;
             canAnimate = active;
-            if (active)
-            {
-                if (returnAt != 0) ScheduleReturn();
-                Wake();
-            }
+            if (active) Wake();
             else
             {
                 motion.Stop();
-                returnTimer.Stop();
                 if (pressed && FindVisualRoot() is Window window && IsMouseCaptured) window.ReleaseMouseCapture();
+                if (dragging) target = Math.Round(angle / Step) * Step;
                 pressed = dragging = false;
-                pointerAim = pointerLean = 0;
                 hoverPoint = null;
+                parallaxTarget = Vector2.Zero;
+                if (parallax != Vector2.Zero) { parallax = Vector2.Zero; InvalidatePose(); }
                 UpdateHover();
                 velocity = 0;
             }
@@ -161,40 +177,22 @@ internal sealed partial class MainWindow
             var dt = Math.Min(.05, Stopwatch.GetElapsedTime(lastTick, now).TotalSeconds);
             lastTick = now;
             var oldAngle = angle;
-            var oldIntro = intro;
-            var oldLean = pointerLean;
-            intro = Math.Min(1, intro + dt / .68);
             if (pressed && !IsMouseCaptured)
             {
+                if (dragging) target = Math.Round(angle / Step) * Step;
                 pressed = dragging = false;
-                FinishTurn();
             }
-            pointerLean = Approach(pointerLean, pointerAim, dt);
-            var paused = hovered >= 0 || playingIndex >= 0;
 
             if (!pressed && target is { } destination)
             {
                 angle = Approach(angle, destination, dt);
-                if (angle == destination) { target = null; FinishTurn(); }
-            }
-            else if (!pressed && cards.Length > 1 && intro >= 1)
-            {
-                var desired = paused || now < holdUntil ? 0 : direction * Drift;
-                velocity += (desired - velocity) * (1 - Math.Exp(-dt * 7));
-                if (desired == 0 && Math.Abs(velocity) < .04)
-                {
-                    velocity = 0;
-                    if (!paused || playingIndex < 0)
-                    {
-                        var nearest = Math.Round(angle / Step) * Step;
-                        if (Math.Abs(nearest - angle) > .002) target = nearest;
-                    }
-                }
-                else angle += velocity * dt;
+                if (angle == destination) target = null;
             }
 
             if (target == null && !pressed) angle = Math.IEEERemainder(angle, Math.Tau);
-            var changed = oldAngle != angle || oldIntro != intro || oldLean != pointerLean;
+            var nextParallax = new Vector2((float)Approach(parallax.X, parallaxTarget.X, dt), (float)Approach(parallax.Y, parallaxTarget.Y, dt));
+            var changed = oldAngle != angle || parallax != nextParallax;
+            parallax = nextParallax;
             var emphasisMoving = false;
             for (var i = 0; i < cards.Length; i++)
             {
@@ -211,9 +209,7 @@ internal sealed partial class MainWindow
                 InvalidatePose();
                 UpdateHover();
             }
-            if (intro >= 1 && target == null && pointerLean == pointerAim && !emphasisMoving &&
-                (pressed || cards.Length == 1 || (paused && velocity == 0)))
-                motion.Stop();
+            if (target == null && !emphasisMoving && parallax == parallaxTarget) motion.Stop();
         }
 
         private static double Approach(double value, double goal, double dt)
@@ -231,37 +227,6 @@ internal sealed partial class MainWindow
         private void UpdatePlayingIndex() =>
             playingIndex = playingKey == null ? -1 : Array.FindIndex(cards, card => card.Item.Key == playingKey);
 
-        private void CancelReturn()
-        {
-            returnTimer.Stop();
-            returnAt = 0;
-            returnAfterTurn = false;
-        }
-
-        private void FinishTurn()
-        {
-            if (!returnAfterTurn) return;
-            returnAfterTurn = false;
-            if (playingIndex < 0) return;
-            returnAt = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 3;
-            ScheduleReturn();
-        }
-
-        private void ScheduleReturn()
-        {
-            if (!canAnimate) return;
-            returnTimer.Stop();
-            returnTimer.Interval = TimeSpan.FromSeconds(Math.Max(.001,
-                (returnAt - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency));
-            returnTimer.Start();
-        }
-
-        private void ReturnToPlaying()
-        {
-            CancelReturn();
-            if (playingIndex >= 0 && !pressed) FocusIndex(playingIndex);
-        }
-
         private void UpdateFront()
         {
             var next = cards.Length == 0 ? -1 : (int)Math.Round(-angle / Step);
@@ -271,25 +236,36 @@ internal sealed partial class MainWindow
             owner.SetHomeMixCaption(front >= 0 ? items[front] : null);
         }
 
+        private void AimParallax(Point? position)
+        {
+            var next = Vector2.Zero;
+            if (position is { } point && Bounds.Contains(point))
+            {
+                var center = Bounds.Center;
+                next = new Vector2((float)((point.X - center.X) / (Bounds.Width / 2)),
+                    (float)((point.Y - center.Y) / (Bounds.Height / 2)));
+            }
+            if (next == parallaxTarget) return;
+            parallaxTarget = next;
+            Wake();
+        }
+
         internal void StepBy(int offset)
         {
             if (cards.Length < 2) return;
             TurnTo(Math.Round((target ?? angle) / Step) * Step - offset * Step);
         }
 
-        private void TurnTo(double destination, bool manual = true)
+        private void TurnTo(double destination)
         {
-            CancelReturn();
-            returnAfterTurn = manual && playingIndex >= 0;
             target = destination;
             velocity = 0;
-            holdUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
             Wake();
         }
 
         internal void SetViewportWidth(double width)
         {
-            var scale = 1 + Math.Clamp((width - 1000) / 800, 0, 1) * .38;
+            var scale = 1 + Math.Clamp((width - 1000) / 800, 0, 1) * .14;
             if (Math.Abs(scale - sceneScale) < .001) return;
             sceneScale = scale;
             Height = BaseHeight * scale;
@@ -303,8 +279,7 @@ internal sealed partial class MainWindow
 
         protected override Size ArrangeOverride(Size finalSize)
         {
-            radius = (BaseSide + 25) * sceneScale * 1.45 / (2 * Math.Sin(Math.PI / Math.Max(3, cards.Length)));
-            fit = Math.Min(1, Math.Min(finalSize.Width / (radius * 2 + Side), finalSize.Height / (Side * 1.09 + radius * .48)));
+            fit = Math.Min(1, finalSize.Width / (4.1 * Side));
             projectionDirty = true;
             var center = Bounds.Center;
             foreach (var card in cards) card.Slot.Arrange(new Rect(center.X - Side / 2, center.Y - Side / 2, Side, Side));
@@ -321,27 +296,24 @@ internal sealed partial class MainWindow
             return Math.Max(0, 1 - distance / 1.6);
         }
 
-        private bool IsFrontCard(int index)
-        {
-            var distance = Math.Abs(index - front);
-            return Math.Min(distance, cards.Length - distance) <= 1;
-        }
-
         private Projection Project(int index)
         {
-            var azimuth = cards.Length == 1 ? 0 : index * Step + angle;
-            var facing = Math.Cos(azimuth);
-            var lateral = Math.Sin(azimuth);
-            var depth = radius * (facing - 1);
-            var scale = Perspective / (Perspective - depth) * fit;
-            var rise = Math.Pow(1 - intro, 3) * (100 + 56 * (1 - facing));
+            var offset = Math.IEEERemainder(index * Step + angle, Math.Tau) / Step;
+            var distance = Math.Abs(offset);
+            var opacity = Math.Clamp((2.5 - distance) * 2, 0, 1);
             var center = Bounds.Center;
             var pivot = new Vector2((float)center.X, (float)center.Y);
-            var size = scale * (1 + cards[index].Emphasis * .085);
+            var size = fit * (1 + cards[index].Emphasis * .025) / (1 + .34 * distance + .025 * distance * distance);
+            var span = Side * fit;
+            var depth = 1 / (1 + .7 * distance);
+            var x = span * (offset * (.92 - .13 * distance) + .057 * parallax.X * depth);
+            var rise = distance * (.16 + .006 * distance) + .085 * Math.Min(1, distance * distance / 4);
+            var y = Bounds.Height / 2 - span / 2 - 28 + span * (.036 * parallax.Y * depth - rise);
+            var turn = (float)-Math.Clamp(offset * .078, -.17, .17);
             var transform = Matrix3x2.CreateScale((float)size, pivot) *
-                Matrix3x2.CreateTranslation((float)(scale * (radius * lateral + pointerLean * (1 - facing) * 9)),
-                    (float)(scale * (depth * .276 + radius * .24 + rise)));
-            return new(index, facing, (1 - facing) * .22, transform);
+                Matrix3x2.CreateRotation(turn, pivot) *
+                Matrix3x2.CreateTranslation((float)x, (float)y);
+            return new(index, -distance, Math.Min(.20, distance * .08), opacity, transform);
         }
 
         private void EnsureProjections()
@@ -358,6 +330,7 @@ internal sealed partial class MainWindow
             foreach (var pose in projections)
             {
                 var slot = cards[pose.Index].Slot;
+                slot.Opacity = pose.Opacity;
                 slot.SetPose(pose.Transform, pose.Shade);
                 if (!visitor(slot)) return false;
             }
@@ -368,7 +341,8 @@ internal sealed partial class MainWindow
         {
             private readonly CardInk ink;
             private Matrix3x2 transform = Matrix3x2.Identity;
-            internal CardSlot(Border cover) { IsHitTestVisible = false; ink = new CardInk(cover); Add(ink); }
+            internal CardSlot(FrameworkElement cover, BoxShadowRaster shadow)
+            { IsHitTestVisible = false; ink = new CardInk(cover, shadow); Add(ink); }
             internal void SetPose(Matrix3x2 next, double shade)
             {
                 if (transform != next) { transform = next; InvalidateVisual(); }
@@ -381,9 +355,15 @@ internal sealed partial class MainWindow
 
         private sealed class CardInk : ContentControl
         {
+            private readonly BoxShadowRaster shadow;
             private double shade;
-            internal CardInk(Border cover) { Content = cover; Padding = new Thickness(0); BorderThickness = 0; Background = Color.Transparent; }
+            internal CardInk(FrameworkElement cover, BoxShadowRaster shadow)
+            {
+                this.shadow = shadow;
+                Content = cover; Padding = new Thickness(0); BorderThickness = 0; Background = Color.Transparent;
+            }
             internal void SetShade(double value) { if (shade == value) return; shade = value; InvalidateVisual(); }
+            protected override void OnRender(IGraphicsContext context) => shadow.Draw(context, Bounds, 12);
             protected override void OnRenderOverlay(IGraphicsContext context)
             {
                 if (shade >= .01) context.FillRoundedRectangle(Bounds, 12, 12, Color.FromArgb((byte)(shade * 255), 18, 18, 20));
@@ -399,6 +379,7 @@ internal sealed partial class MainWindow
             for (var i = projections.Length - 1; i >= 0; i--)
             {
                 var pose = projections[i];
+                if (pose.Opacity < .15) continue;
                 if (!Matrix3x2.Invert(pose.Transform, out var inverse)) continue;
                 var mapped = Vector2.Transform(p, inverse);
                 var frame = cards[pose.Index].Cover.Bounds;
@@ -406,26 +387,25 @@ internal sealed partial class MainWindow
                 var dx = mapped.X - frame.Center.X;
                 var dy = mapped.Y - frame.Center.Y;
                 var radius = PlayButtonSize / 2;
-                playHit = dx * dx + dy * dy <= radius * radius;
+                playHit = pose.Index == front && dx * dx + dy * dy <= radius * radius;
                 return pose.Index;
             }
             return -1;
         }
 
-        private void FocusIndex(int index, bool manual = false)
+        private void FocusIndex(int index)
         {
             var heading = -index * Step;
-            TurnTo(angle + Math.IEEERemainder(heading - angle, Math.Tau), manual);
+            TurnTo(angle + Math.IEEERemainder(heading - angle, Math.Tau));
         }
 
         private void UpdateHover()
         {
-            var next = !dragging && hoverPoint is { } point ? CardAt(point, out _) : -1;
+            var next = !dragging && hoverPoint is { } point && CardAt(point, out _) == front ? front : -1;
             if (next == hovered) return;
             if (hovered >= 0) cards[hovered].Overlay.SetHovered(false);
             hovered = next;
             if (hovered >= 0) cards[hovered].Overlay.SetHovered(true);
-            Wake();
         }
 
         private void UpdateOverlays(bool animate = true)
@@ -447,14 +427,12 @@ internal sealed partial class MainWindow
             owner.Run(() => owner.OpenLibraryItemAsync(item));
         }
 
-        protected override void OnMouseEnter() { base.OnMouseEnter(); Wake(); }
         protected override void OnMouseLeave()
         {
             base.OnMouseLeave();
             hoverPoint = null;
+            AimParallax(null);
             UpdateHover();
-            pointerAim = 0;
-            Wake();
         }
 
         private Point Pointer(MouseEventArgs e)
@@ -470,11 +448,7 @@ internal sealed partial class MainWindow
             Focus();
             window.CaptureMouse(this);
             pressed = IsMouseCaptured;
-            if (pressed)
-            {
-                CancelReturn();
-                target = null;
-            }
+            if (pressed) target = null;
             dragging = false;
             pressPoint = lastPointer = Pointer(e);
             hoverPoint = pressPoint;
@@ -488,15 +462,18 @@ internal sealed partial class MainWindow
             base.OnMouseMove(e);
             var position = Pointer(e);
             hoverPoint = position;
-            var aim = Math.Clamp((position.X - Bounds.Center.X) / Math.Max(1, Bounds.Width / 2), -1, 1);
-            if (Math.Abs(aim - pointerAim) > .002) { pointerAim = aim; Wake(); }
             if (!pressed || !IsMouseCaptured || cards.Length < 2 || (!dragging && Math.Abs(position.X - pressPoint.X) < 5))
-            { UpdateHover(); return; }
+            {
+                if (!pressed) AimParallax(position);
+                UpdateHover();
+                return;
+            }
             dragging = true;
+            AimParallax(null);
             UpdateHover();
             target = null;
             var now = Stopwatch.GetTimestamp();
-            var delta = (position.X - lastPointer.X) / Math.Max(44, radius * fit);
+            var delta = (position.X - lastPointer.X) / Math.Max(44, Side * fit * .83) * Step;
             velocity = Math.Clamp(delta / Math.Max(.008, Stopwatch.GetElapsedTime(lastMove, now).TotalSeconds), -7, 7);
             lastMove = now;
             lastPointer = position;
@@ -516,7 +493,6 @@ internal sealed partial class MainWindow
             {
                 dragging = false;
                 var flick = Stopwatch.GetElapsedTime(lastMove).TotalSeconds < .13 ? velocity * .18 : 0;
-                if (Math.Abs(flick) > .10) direction = Math.Sign(flick);
                 TurnTo(Math.Round((angle + flick) / Step) * Step);
             }
             else
@@ -525,17 +501,11 @@ internal sealed partial class MainWindow
                 UpdateHover();
                 var index = CardAt(hoverPoint.Value, out var playHit);
                 if (index >= 0 && playHit) PlayMix(index);
-                else if (index >= 0 && IsFrontCard(index)) OpenMix(index);
-                else if (index >= 0)
-                {
-                    FocusIndex(index, manual: true);
-                }
-                else
-                {
-                    returnAfterTurn = playingIndex >= 0;
-                    FinishTurn();
-                }
+                else if (index >= 0 && index == front) OpenMix(index);
+                else if (index >= 0) FocusIndex(index);
+                else TurnTo(Math.Round(angle / Step) * Step);
             }
+            AimParallax(Pointer(e));
             UpdateHover();
             Wake();
             e.Handled = true;
@@ -568,9 +538,9 @@ internal sealed partial class MainWindow
         protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
         {
             base.OnVisualRootChanged(oldRoot, newRoot);
-            if (newRoot == null) SetMotionActive(false);
+            if (newRoot == null) { SetMotionActive(false); shadow.Dispose(); }
         }
 
-        protected override void OnDispose() { motion.Stop(); returnTimer.Dispose(); base.OnDispose(); }
+        protected override void OnDispose() { motion.Stop(); shadow.Dispose(); base.OnDispose(); }
     }
 }

@@ -138,7 +138,9 @@ public static class BrowserRequestProtocol
                 if (value == null || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(value), Encoding.UTF8.GetBytes(pairing))) return null;
             }
             var message = root.GetProperty("data").Deserialize(SoundCloudJson.Default.BrowserRequestEvent);
-            if (message == null || message.Session != null || message.Status is < 0 or > 599) return null;
+            if (message == null || message.Status is < 0 or > 599) return null;
+            if (message.Session is { } session && (string.IsNullOrEmpty(pairing) || message.Kind != "complete" || message.Status is < 200 or >= 300 ||
+                message.User is not { Id: > 0 } user || session.VerifiedUserId != user.Id || session.DataDomeClientId != null || !session.IsValid())) return null;
             if (message.ChallengeType != null && message.ChallengeType is not ("device_check" or "device_check_invisible_mode" or "block" or "hard_block" or "unknown")) return null;
             if (message.Kind == "protection-session" && !WebSession.IsDataDomeClientId(message.DataDomeClientId)) return null;
             if (message.Kind != "protection-session" && message.DataDomeClientId != null) return null;

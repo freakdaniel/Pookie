@@ -25,6 +25,13 @@ SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Pookie is distributed under BSD-3-Clause; the original MIT attribution and permission notice are retained in licenses/MIT.txt."
 
 [[annotations]]
+path = ["src/Pookie.App/Views/Controls/Artwork/LiquidGlassLens.cs", "src/Pookie.App/Views/Controls/Artwork/OpenGlPopupLens.cs"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Daniel Freak", "2024 Charles Yin"]
+SPDX-License-Identifier = "BSD-3-Clause AND MIT"
+SPDX-FileComment = "Edge refraction and RGB dispersion adapted from Liquid Glass Studio at f7b28c36305a862f5cffed3ddd51511cf1204f56. Upstream terms and attribution: licenses/MIT.txt."
+
+[[annotations]]
 path = "src/Pookie.App/Assets/Emoji/catalog.json"
 precedence = "override"
 SPDX-FileCopyrightText = "1991-2026 Unicode, Inc."
@@ -55,6 +62,13 @@ Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
 Profile badges also use upstream fill assets seal-fill.svg and crown-simple-fill.svg.
 Full terms and attribution: licenses/MIT.txt.
 """
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Icons/missing-track-artwork.svg"
+precedence = "override"
+SPDX-FileCopyrightText = ["SoundCloud", "2026 Daniel Freak"]
+SPDX-License-Identifier = "LicenseRef-SoundCloud-Marks"
+SPDX-FileComment = "SoundCloud mark redrawn from the missing artwork reference for the native track cover placeholder."
 
 [[annotations]]
 path = "src/Pookie.App/Assets/Icons/SimpleIcons/*.svg"
@@ -123,6 +137,13 @@ Branding, SoundCloud Marks and Design Assets) and Buttons & Logos guidance;
 not an open-source license or trademark sublicense. Pookie is an unofficial client.
 Terms retrieved 2026-10-05 and retained in licenses/LicenseRef-SoundCloud-Marks.txt.
 """
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Branding/lrclib.png"
+precedence = "closest"
+SPDX-FileCopyrightText = "2025 tranxuanthang"
+SPDX-License-Identifier = "MIT"
+SPDX-FileComment = "Unmodified LRCLIB homepage logo from https://github.com/tranxuanthang/lrclib-homepage/blob/f37c07042be1af5fdcc7932d090af32141089751/src/assets/lrclib.png. Full terms: licenses/MIT.txt."
 
 [[annotations]]
 path = "src/Pookie.App/Audio/Drm/CdmAbi.cs"

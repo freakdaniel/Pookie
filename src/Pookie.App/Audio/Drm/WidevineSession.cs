@@ -11,23 +11,44 @@ internal sealed class WidevineSession : IDisposable
 {
     private readonly NativeWidevine handle;
     private readonly HttpClient http;
-    private readonly string authorization;
+    private readonly Func<HttpRequestMessage> createLicenseRequest;
+    private readonly Action<string>? reportVerification;
     private uint promise;
     private bool licensed;
 
-    private WidevineSession(NativeWidevine handle, HttpClient http, string authorization)
-    { this.handle = handle; this.http = http; this.authorization = authorization; }
+    private WidevineSession(NativeWidevine handle, HttpClient http, Func<HttpRequestMessage> createLicenseRequest, Action<string>? reportVerification)
+    {
+        this.handle = handle;
+        this.http = http;
+        this.createLicenseRequest = createLicenseRequest;
+        this.reportVerification = reportVerification;
+    }
 
-    public static async Task<WidevineSession> OpenAsync(HttpClient http, string authorization, byte[] initData, CancellationToken token, byte[]? serverCertificate = null)
+    public static Task<WidevineSession> OpenAsync(HttpClient http, string authorization, byte[] initData, CancellationToken token, byte[]? serverCertificate = null)
     {
         if (authorization is not { Length: > 0 and <= 16384 } || authorization.Any(c => c < 32 || c == 127))
             throw new DrmPlaybackException("SoundCloud не предоставил авторизацию DRM-лицензии.");
+        // Endpoint and public website application id verified in SoundCloud's player.
+        var uri = new Uri("https://license.media-streaming.soundcloud.cloud/playback/widevine?license_token=" + Uri.EscapeDataString(authorization));
+        return OpenAsync(http, initData, () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, uri);
+            request.Headers.Referrer = new("https://soundcloud.com/");
+            request.Headers.TryAddWithoutValidation("Origin", "https://soundcloud.com");
+            request.Headers.TryAddWithoutValidation("X-SC-Application-Id", "46941");
+            return request;
+        }, token, serverCertificate);
+    }
+
+    internal static async Task<WidevineSession> OpenAsync(HttpClient http, byte[] initData,
+        Func<HttpRequestMessage> createLicenseRequest, CancellationToken token, byte[]? serverCertificate = null, Action<string>? reportVerification = null)
+    {
         var library = CdmLocator.Find() ?? throw new DrmPlaybackException("Не найден Widevine CDM. Установи модуль защищённого воспроизведения через Chrome, Brave или Firefox.");
         NativeWidevine handle;
         try { handle = new(library); }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         { throw new DrmPlaybackException("Установленный модуль Widevine отсутствует или несовместим с этой платформой."); }
-        var result = new WidevineSession(handle, http, authorization);
+        var result = new WidevineSession(handle, http, createLicenseRequest, reportVerification);
         try
         {
             var initialized = await result.NextAsync(token);
@@ -67,21 +88,22 @@ internal sealed class WidevineSession : IDisposable
     {
         try
         {
-            // Endpoint and public website application id verified in SoundCloud's current player.
-            var uri = new Uri("https://license.media-streaming.soundcloud.cloud/playback/widevine?license_token=" + Uri.EscapeDataString(authorization));
-            using var request = new HttpRequestMessage(HttpMethod.Post, uri);
-            request.Headers.Referrer = new("https://soundcloud.com/");
-            request.Headers.TryAddWithoutValidation("Origin", "https://soundcloud.com");
-            request.Headers.TryAddWithoutValidation("X-SC-Application-Id", "46941");
+            using var request = createLicenseRequest();
             request.Content = new ByteArrayContent(challenge);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             if (!response.IsSuccessStatusCode)
-                throw new DrmPlaybackException($"SoundCloud не выдал DRM-лицензию (HTTP {(int)response.StatusCode})." +
+                throw new DrmPlaybackException($"Сервер не выдал DRM-лицензию (HTTP {(int)response.StatusCode})." +
                     await DrmLicenseFailure.ReadAsync(response, token));
             var license = await HttpRangeStream.ReadBoundedAsync(response.Content, 2 * 1024 * 1024, token);
             try
             {
+                var diagnostics = Environment.GetEnvironmentVariable("POOKIE_DRM_DIAGNOSTICS") == "1";
+                if ((diagnostics || reportVerification != null) && WidevineVerificationStatus.Read(license) is { } verification)
+                {
+                    reportVerification?.Invoke(verification);
+                    if (diagnostics) Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug("Статус проверки Widevine из ответа сервера: {VerificationStatus}", verification);
+                }
                 handle.Update(++promise, license);
             }
             finally { CryptographicOperations.ZeroMemory(license); }

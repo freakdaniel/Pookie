@@ -34,7 +34,10 @@ internal sealed partial class MainWindow
             if (!Current()) return;
             homePending.ExceptWith(sections);
             var content = HomeRecommendations.Build(localRecent.Concat(recent).ToArray(), history, likes, seeds, related, feed, following, DateTimeOffset.UtcNow, knownLikes);
-            content = content with { Discover = discover };
+            content = content with
+            {
+                Discover = discover ?? (previous?.Discover is { Trending.Length: > 0 } cached ? new([], [], cached.Trending) : null)
+            };
             homeContent = previous == null ? content : content with
             {
                 Recent = homePending.Contains("recent") ? previous.Recent : content.Recent,
@@ -43,7 +46,7 @@ internal sealed partial class MainWindow
                 Discover = homePending.Contains("mixes") ? previous.Discover : content.Discover,
                 Seeds = homePending.Contains("recommendations") ? previous.Seeds : content.Seeds
             };
-            RenderHome();
+            RenderHome(refreshChart: discover != null && sections.Contains("trends"));
         }
         async Task<T> Read<T>(string section, Func<Task<T>> fetch, T fallback)
         {
@@ -91,7 +94,6 @@ internal sealed partial class MainWindow
         async Task Discover()
         {
             discover = await Read<SoundCloudDiscoverShelves?>("mixes", async () => await api.GetDiscoverShelvesAsync(user.Id, token), null);
-            if (Current() && discover != null) ResetHomeChartCache();
             Update("mixes", "made-for-you", "trends");
         }
         await Task.WhenAll(Recent(), Recommendations(), Releases(), Discover());

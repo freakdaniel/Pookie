@@ -64,19 +64,19 @@ internal sealed partial class MainWindow
                     collectionMeta.Column(1).CenterVertical())));
         var coverFrame = new Border().CornerRadius(10).ClipToBounds().Child(ArtworkLayer(collectionCover));
         var more = TrackButtons.Icon(Icons.View("dots-three", 22), () => { }, TrackButtons.Glass, 44);
-        var menu = PopupAppearance.CreateMenu();
-        void MenuItem(string id, string label, Action execute, Func<bool> enabled)
+        var menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
+        void MenuItem(string id, string label, string icon, Action execute, Func<bool> enabled)
         {
-            var command = new Command("pookie.collection." + id, label);
+            var command = PopupAppearance.MenuCommand("pookie.collection." + id, label, icon);
             more.Commands.Register(command, execute, enabled); menu.Item(command);
         }
-        MenuItem("queue", "Добавить в очередь", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
-        MenuItem("edit", "Редактировать плейлист", () => OpenPlaylistEditor(), CanEditDisplayedPlaylist);
-        MenuItem("artwork", "Изменить обложку", () => Run(PickPlaylistArtworkAsync), CanEditDisplayedPlaylist);
-        MenuItem("delete", "Удалить плейлист", () => OpenPlaylistEditor(deleting: true), CanEditDisplayedPlaylist);
-        MenuItem("open", "Открыть в SoundCloud", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
+        MenuItem("queue", "Добавить в очередь", "queue", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
+        MenuItem("edit", "Редактировать плейлист", "text-align-left", () => OpenPlaylistEditor(), CanEditDisplayedPlaylist);
+        MenuItem("artwork", "Изменить обложку", "image", () => Run(PickPlaylistArtworkAsync), CanEditDisplayedPlaylist);
+        MenuItem("delete", "Удалить плейлист", "trash", () => OpenPlaylistEditor(deleting: true), CanEditDisplayedPlaylist);
+        MenuItem("open", "Открыть в SoundCloud", "arrow-square-out", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
             () => TrackLink(displayedCollection?.Playlist?.PermalinkUrl) != null);
-        PopupAppearance.Attach(more, menu); more.OnClick(() => menu.Show(more));
+        PopupAppearance.Attach(more, menu); more.OnClick(() => menu.Toggle(more));
         CreateCollectionActionButtons();
         var hero = new TrackPageColumns(
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),
@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
         collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
         var tools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
             new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
-            TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter).Column(2));
+            TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter, liveGlass: true).Column(2));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
             .Children(collectionDescriptionScroll,
@@ -173,11 +173,8 @@ internal sealed partial class MainWindow
             collectionDescriptionScroll.MaxHeight = Math.Clamp(Window.ClientSize.Height - collectionDescriptionScroll.Bounds.Y - 180, 48, 180);
     }
 
-    private void EnqueueDisplayedCollection()
-    {
-        foreach (var track in activeCollection?.Items.Select(item => item.Track).OfType<SoundCloudTrack>() ?? []) playbackQueue.Enqueue(track, false);
-        RefreshQueue(); status.Value = "Треки добавлены в очередь.";
-    }
+    private void EnqueueDisplayedCollection() =>
+        EnqueueCollectionTracks(activeCollection?.Items.Select(item => item.Track).OfType<SoundCloudTrack>() ?? []);
 
     private void SetCollectionPresentation(LibraryItem? item)
     {

@@ -54,7 +54,7 @@ internal sealed partial class MainWindow
             VisualTree.Visit(privateRow, element =>
             {
                 if (element is TextBlock text && text.Text.Contains("Приватный")) throw new InvalidOperationException("Playlist privacy remained a text label.");
-                if (element is Image image && ReferenceEquals(image.Source, Icons.Source("lock-simple", Muted))) privacy = image;
+                if (element is Image image && ReferenceEquals(image.Source, Icons.Source("lock-simple", MutedIcon))) privacy = image;
             });
             if (privacy?.IsVisible != true || privateRow.CornerRadius != 10 || playlistDialogContent.BodyBounds.Right - playlistPickerLoading.Root.Bounds.Right > 10)
                 throw new InvalidOperationException("Playlist row lost its lock, compact highlight shape or edge-aligned scrollbar.");
@@ -201,8 +201,13 @@ internal sealed partial class MainWindow
         MoveActionPointer(row.Cover.Bounds.Center);
         await WaitForLikedLayoutAsync(() => row.More != null && row.Actions.Strength > .999);
         var origin = row.More!.TranslatePoint(default, Window);
-        RouteWaveformClick(new(origin.X + row.More.ActualWidth / 2, origin.Y + row.More.ActualHeight / 2));
+        var trigger = new Point(origin.X + row.More.ActualWidth / 2, origin.Y + row.More.ActualHeight / 2);
+        RouteWaveformClick(trigger);
         var menu = PopupAppearance.MenuFor(row.Root);
+        await WaitForLikedLayoutAsync(() => menu.IsOpen && menu.Reveal == 1);
+        VerifyContextMenuIcons(menu);
+        await VerifyMoreClosesMenuAsync(row.More, menu);
+        RouteWaveformClick(trigger);
         await WaitForLikedLayoutAsync(() => menu.IsOpen && menu.Reveal == 1);
         var command = menu.Buttons.Single(button =>
         {
@@ -224,6 +229,30 @@ internal sealed partial class MainWindow
         Window.FocusManager.ClearFocus();
         await WaitForLikedLayoutAsync(() => row.Actions.Strength < .001);
         Console.WriteLine("PLAYLIST_MORE_FOCUS_OK: real More/menu/dialog round trip does not latch hover actions; deliberate keyboard focus still reveals them");
+    }
+
+    private static void VerifyContextMenuIcons(AnimatedContextMenu menu)
+    {
+        foreach (var button in menu.Buttons)
+        {
+            if (button.Content is not StackPanel line || line.Children.Count != 2 ||
+                line.Children[0] is not Image { IsHitTestVisible: false } icon || line.Children[1] is not TextBlock label ||
+                icon.Source == null || Math.Abs(label.Bounds.X - icon.Bounds.Right - 12) > 1)
+                throw new InvalidOperationException("An action menu row lost its leading icon or its label alignment.");
+        }
+    }
+
+    private async Task VerifyMoreClosesMenuAsync(Button trigger, AnimatedContextMenu menu)
+    {
+        var origin = trigger.TranslatePoint(default, Window);
+        var bounds = new Rect(origin, trigger.Bounds.Size);
+        if (menu.Card.Bounds.IntersectsWith(bounds))
+            throw new InvalidOperationException("The menu covers the button used to close it.");
+        MoveActionPointer(bounds.Center);
+        PressActionPointer(bounds.Center, true);
+        await WaitForLoginFrameAsync();
+        PressActionPointer(bounds.Center, false);
+        await WaitForLikedLayoutAsync(() => !menu.IsOpen && !menu.IsVisible);
     }
 
     private void VerifyDialogScrim()

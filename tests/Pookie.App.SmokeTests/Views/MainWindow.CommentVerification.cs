@@ -185,10 +185,14 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => commentMenu.IsOpen && commentMenu.Reveal == 1);
             if (commentMenu.Parent != Window.Content || commentMenu.Buttons.Count < 2)
                 throw new InvalidOperationException("Track comment menu did not use the chat overlay or lost its commands.");
+            VerifyContextMenuIcons(commentMenu);
             CaptureUiPreview("comments-menu-open");
+            await VerifyMoreClosesMenuAsync(commentMore, commentMenu);
+            RouteWaveformClick(commentMore.Bounds.Center);
+            await WaitForLikedLayoutAsync(() => commentMenu.IsOpen && commentMenu.Reveal == 1);
             RouteSettingsKey(Key.Escape);
             await WaitForLikedLayoutAsync(() => !commentMenu.IsVisible && commentMenu.Parent == null);
-            Console.WriteLine("COMMENTS_MENU_OVERLAY_OK: actual comment More button opens in main-window chat layer and fades out on Escape");
+            Console.WriteLine("COMMENTS_MENU_OVERLAY_OK: icon rows, actual comment More button toggles in-window menu, Escape fades it out");
             await DeleteTrackCommentAsync(track, other);
             if (browser.Deletes != 0) throw new InvalidOperationException("Another user's comment was deleted.");
             var deleting = DeleteTrackCommentAsync(track, own);

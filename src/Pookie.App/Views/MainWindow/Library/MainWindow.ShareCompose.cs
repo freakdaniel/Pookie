@@ -28,9 +28,9 @@ internal sealed partial class MainWindow
             .Height(28).Padding(0).Background(Color.Transparent).Foreground(TrackButtons.OnSurface).BorderThickness(0);
         var placeholder = new TextBlock().Text("Имя или профиль SoundCloud").FontSize(13).Foreground(Muted)
             .IsHitTestVisible(false).CenterVertical().Left();
-        shareSearchClear = TrackButtons.Icon(Icons.View("x", 16, Muted), () => { shareRecipientSearch.Text = ""; shareRecipientSearch.Focus(); }, TrackButtons.Text, 28)
+        shareSearchClear = TrackButtons.Icon(Icons.View("x", 16, MutedIcon), () => { shareRecipientSearch.Text = ""; shareRecipientSearch.Focus(); }, TrackButtons.Text, 28)
             .Hint("Очистить поиск").IsVisible(false);
-        shareSearchIcon = Icons.View("magnifying-glass", 20, Muted).Center();
+        shareSearchIcon = Icons.View("magnifying-glass", 20, MutedIcon).Center();
         shareSearchBusy = new LoadingSpinner().Width(18).Height(18).IsActive(false).IsVisible(false).Center();
         var search = new Border().Height(48).CornerRadius(24).Padding(16, 0).BorderThickness(0).Background(TrackButtons.TonalSurface).Child(
             new Grid().Columns("20,*,Auto").Rows("*").Spacing(10).Children(
@@ -122,7 +122,7 @@ internal sealed partial class MainWindow
                     new StackPanel().Vertical().Spacing(4).CenterVertical().Column(1).Children(
                         new TextBlock().Text(user.Username).FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Left(),
                         new TextBlock().Text(subtitle).FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis).Left()),
-                    Icons.View("arrow-right", 16, Muted).CenterVertical().Column(2));
+                    Icons.View("arrow-right", 16, MutedIcon).CenterVertical().Column(2));
                 var button = TrackButtons.Action(row, () => SetShareRecipient(user), TrackButtons.Text, 64).Padding(10, 4).CornerRadius(16);
                 row.HorizontalAlignment = HorizontalAlignment.Stretch;
                 shareRecipientChoices.Add(button); LoadShareAvatar(avatar, user);
@@ -169,14 +169,14 @@ internal sealed partial class MainWindow
         foreach (var child in previous.OfType<IDisposable>()) child.Dispose();
     }
 
-    private Image ShareAvatar() => new Image().Width(40).Height(40).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", Muted));
+    private Image ShareAvatar() => new Image().Width(40).Height(40).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", MutedIcon));
     private static Border ShareAvatarFrame(Image avatar) => new Border().Width(40).Height(40).CornerRadius(20)
         .Background(TrackButtons.TonalSurface).ClipToBounds().Child(avatar).CenterVertical();
 
     private void LoadShareAvatar(Image image, SoundCloudUser user)
     {
         var generation = shareGeneration; var session = api.Session;
-        image.Source = Icons.Source("user", Muted);
+        image.Source = Icons.Source("user", MutedIcon);
         if (string.IsNullOrWhiteSpace(user.AvatarUrl)) return;
         Run(async () =>
         {

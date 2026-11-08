@@ -6,7 +6,8 @@ namespace Pookie.App;
 
 // Sample the fullscreen artwork, or the card's composited background layers.
 // Moving either retained surface only changes sampling coordinates.
-internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null, FrameworkElement? background = null) : IDisposable
+internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null, FrameworkElement? background = null,
+    double centeredSampleSize = 0) : IDisposable
 {
     private const double BlurRadius = 12;
     private IRenderSurface? raster;
@@ -14,39 +15,53 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private BackdropBlur? blurred;
     private IGraphicsFactory? factory;
     private IImageSource? source;
-    private Size size;
+    private Size size, sampledArtworkSize;
     private double sampledOpacity;
     private bool dirty, preparing;
     private long revision;
     private IImageSource? observedSource;
     private double observedOpacity = double.NaN;
     private readonly byte[] brightness = new byte[32 * 32];
+    internal bool HasArtwork => artwork.Source != null;
+    internal bool HasBitmapArtwork => artwork.Source is ImageSource;
     internal bool HasBlurredArtwork => blurred is { Ready: true };
     internal bool IsCurrent => HasBlurredArtwork && !preparing && !dirty && source == artwork.Source &&
-        sampledOpacity == artwork.Opacity && size == BackgroundBounds.Size;
+        sampledOpacity == artwork.Opacity && sampledArtworkSize == ArtworkBounds.Size;
     internal bool IsCard => card != null || background != null;
-    private Rect BackgroundBounds => card?.Bounds ?? background?.Bounds ?? artwork.Bounds;
+    private Rect ArtworkBounds => card?.Bounds ?? background?.Bounds ?? artwork.Bounds;
+    private Rect BackgroundBounds
+    {
+        get
+        {
+            var bounds = ArtworkBounds;
+            if (centeredSampleSize <= 0) return bounds;
+            var width = Math.Min(bounds.Width, centeredSampleSize);
+            var height = Math.Min(bounds.Height, centeredSampleSize);
+            return new Rect(bounds.Center.X - width / 2, bounds.Center.Y - height / 2, width, height);
+        }
+    }
     internal event Action? Changed;
     // Keep the last prepared image until the next frame snapshot is ready.
     internal void Invalidate() => dirty = true;
-    internal void RefreshArtwork()
+    internal void RefreshArtwork(bool keepCurrent = false)
     {
         if (observedSource == artwork.Source && observedOpacity == artwork.Opacity) return;
         var changed = observedSource != artwork.Source;
         observedSource = artwork.Source; observedOpacity = artwork.Opacity;
-        if (changed) Reset(); else dirty = true;
+        if (changed && !keepCurrent) { Clear(); Changed?.Invoke(); }
+        else dirty = true;
     }
 
     // Prepare after the window has presented. Starting another render target and
     // reading GPU pixels inside a button's opacity layer disrupts the live frame.
-    internal void Prepare()
+    internal bool Prepare()
     {
         var bounds = BackgroundBounds;
-        if (preparing) return;
-        if ((card == null && background == null && artwork.Source == null) || bounds.Width <= 0 || bounds.Height <= 0) return;
+        if (preparing || (card == null && background == null && artwork.Source == null) ||
+            bounds.Width <= 0 || bounds.Height <= 0) return false;
         var graphics = Application.Current.GraphicsFactory;
         if (dirty || blurred == null || source != artwork.Source || sampledOpacity != artwork.Opacity ||
-            size.Width != bounds.Width || size.Height != bounds.Height || factory != graphics)
+            sampledArtworkSize != ArtworkBounds.Size || factory != graphics)
         {
             var rendering = graphics.AcquireBackgroundRenderScope();
             try
@@ -59,9 +74,9 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
                     Math.Max(1, (int)Math.Ceiling(bounds.Width * scale)), Math.Max(1, (int)Math.Ceiling(bounds.Height * scale)),
                     scale, debugName: "ArtworkControlGlass"));
                 renderer = graphics.CreateContext(raster);
-                blurred = new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight);
+                blurred = new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight, preserveSharp: true);
             }
-            source = artwork.Source; sampledOpacity = artwork.Opacity;
+            source = artwork.Source; sampledOpacity = artwork.Opacity; sampledArtworkSize = ArtworkBounds.Size;
             observedSource = source; observedOpacity = sampledOpacity;
             renderer!.BeginFrame(raster); renderer.Save();
             using var captureViewport = WindowPresentation.CaptureViewport(raster);
@@ -99,13 +114,27 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
                     Changed?.Invoke();
                 });
             });
+            return true;
         }
+        return false;
     }
 
-    internal void Draw(IGraphicsContext context, Rect region, CornerRadius corners, PathGeometry? shape = null)
+    internal void Draw(IGraphicsContext context, Rect region, CornerRadius corners, PathGeometry? shape = null,
+        LiquidGlassLens? lens = null, double minimumScale = 1)
     {
-        if (blurred is not { Ready: true } || factory != Application.Current.GraphicsFactory) return;
+        if (blurred is not { Ready: true } || factory == null || factory != Application.Current.GraphicsFactory)
+        {
+            if (card != null && lens != null)
+                lens.Draw(context, Application.Current.GraphicsFactory, null, BackgroundBounds, region, corners, shape, minimumScale);
+            else lens?.Dispose();
+            return;
+        }
         var bounds = BackgroundBounds;
+        if (lens != null)
+        {
+            lens.Draw(context, factory, blurred, bounds, region, corners, shape, minimumScale);
+            return;
+        }
         context.Save();
         try
         {
@@ -130,7 +159,13 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
         return total / 9;
     }
 
-    internal void Reset() { Clear(); Changed?.Invoke(); }
+    internal void Reset()
+    {
+        observedSource = null;
+        observedOpacity = double.NaN;
+        Clear();
+        Changed?.Invoke();
+    }
 
     private void Clear()
     {

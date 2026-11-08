@@ -13,7 +13,7 @@ internal sealed class LibraryItemMotion : ContentControl
     private readonly AnimationClock clock = new(TimeSpan.FromMilliseconds(320), Easing.CubicBezier(.2, 0, 0, 1));
     private Point offset, from;
     private Point? previous;
-    private bool entering, exiting;
+    private bool entering, exiting, waitForArrange;
     private TaskCompletionSource? exitCompletion;
     internal long? TrackId { get; set; }
     internal long Edit { get; set; }
@@ -37,9 +37,11 @@ internal sealed class LibraryItemMotion : ContentControl
         };
     }
 
-    internal void Retarget(Point? painted, bool appear = false)
+    internal void Retarget(Point? painted, bool appear = false, bool afterArrange = false)
     {
         ResetMotion(); previous = painted; entering = painted == null && appear;
+        waitForArrange = afterArrange && painted != null;
+        if (waitForArrange) InvalidateArrange();
         if (entering) { Opacity = 0; clock.Start(); }
     }
 
@@ -55,20 +57,35 @@ internal sealed class LibraryItemMotion : ContentControl
     internal void ResetMotion()
     {
         clock.Stop(); exitCompletion?.TrySetResult(); exitCompletion = null;
-        previous = null; offset = from = default; entering = exiting = false;
+        previous = null; offset = from = default; entering = exiting = waitForArrange = false;
         Opacity = 1; IsHitTestVisible = true; clock.Duration = TimeSpan.FromMilliseconds(320);
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        if (waitForArrange)
+        {
+            waitForArrange = false;
+            StartMove();
+            InvalidateVisual();
+        }
+        return base.ArrangeOverride(finalSize);
+    }
+
+    private void StartMove()
+    {
+        if (previous is not { } old) return;
+        previous = null;
+        from = new Point(old.X - Bounds.X, old.Y - Bounds.Y);
+        if (Math.Abs(from.X) + Math.Abs(from.Y) is > .5 and < 1500)
+        {
+            offset = from; clock.Start();
+        }
     }
 
     protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
-        if (previous is { } old)
-        {
-            previous = null;
-            from = new Point(old.X - Bounds.X, old.Y - Bounds.Y);
-            if (Math.Abs(from.X) + Math.Abs(from.Y) is > .5 and < 1500)
-            { offset = from; clock.Start(); }
-        }
-
+        if (!waitForArrange) StartMove();
         transform = Matrix3x2.CreateTranslation((float)offset.X, (float)offset.Y);
         return !transform.IsIdentity;
     }

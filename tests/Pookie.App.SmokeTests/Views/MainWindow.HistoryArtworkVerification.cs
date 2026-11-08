@@ -6,6 +6,66 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private async Task VerifyCompactArtworkBudgetAsync()
+    {
+        const string fullUrl = "https://i1.sndcdn.com/compact-budget-t500x500.jpg";
+        const string smallUrl = "https://i1.sndcdn.com/compact-budget-large.jpg";
+        var smallBytes = ArtworkFixtureBitmap(100);
+        await imageDiskCache.WriteAsync(smallUrl, smallBytes, lifetime.Token);
+        await imageDiskCache.WriteAsync(fullUrl, ArtworkFixtureBitmap(500), lifetime.Token);
+        var track = new SoundCloudTrack { Id = 78003, Title = "Compact artwork", ArtworkUrl = fullUrl };
+        var rows = new[] { CreateCompactTrackRow(), CreateCompactTrackRow(dense: true), CreateCompactTrackRow(miniature: true) };
+        try
+        {
+            foreach (var row in rows) BindCompactTrackRow(row, track);
+            var full = await GetLibraryArtworkAsync(track);
+            var sides = rows.Select(row => CompactArtworkSide(row.Cover.Width)).ToArray();
+            await WaitForLikedLayoutAsync(() => rows.All(row => row.Cover.Source is ImageSource));
+            for (var i = 0; i < rows.Length; i++)
+            {
+                var source = (ImageSource)rows[i].Cover.Source!;
+                var side = sides[i];
+                if (source.PixelWidth != side || source.PixelHeight != side ||
+                    !ReferenceEquals(source, await CompactArtworkAsync(fullUrl, side)))
+                    throw new InvalidOperationException("Compact row used an oversized cover or failed to share a same-size request.");
+            }
+            var expected = Storage.ArtworkImage.Prepare(smallBytes, sides[0]);
+            var actualPixels = new byte[sides[0] * sides[0] * 4];
+            var expectedPixels = new byte[actualPixels.Length];
+            ((ImageSource)rows[0].Cover.Source!).CopyPixels(actualPixels, sides[0] * 4);
+            expected.CopyPixels(expectedPixels, sides[0] * 4);
+            if (full is not { PixelWidth: 500, PixelHeight: 500 } || !actualPixels.AsSpan().SequenceEqual(expectedPixels) ||
+                await CompactArtworkAsync(fullUrl, 132) is not { PixelWidth: 132, PixelHeight: 132 })
+                throw new InvalidOperationException("Compact artwork selected the wrong CDN size or altered the full cover.");
+
+            const string cachedFullUrl = "https://i1.sndcdn.com/compact-offline-t500x500.jpg";
+            await imageDiskCache.WriteAsync(cachedFullUrl, ArtworkFixtureBitmap(500), lifetime.Token);
+            if (await CompactArtworkAsync("https://i1.sndcdn.com/compact-offline-large.jpg", 44) is not { PixelWidth: 44, PixelHeight: 44 })
+                throw new InvalidOperationException("Compact artwork missed an existing full-size disk cache entry.");
+
+            const string pendingUrl = "https://i1.sndcdn.com/compact-pending-large.jpg";
+            var pending = new TaskCompletionSource<ImageSource?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            compactArtworkRequests[(pendingUrl, sides[0])] = pending.Task;
+            var reused = rows[0];
+            BindCompactTrackRow(reused, track with { Id = 78004, ArtworkUrl = pendingUrl });
+            BindCompactTrackRow(reused, null);
+            pending.SetResult(expected);
+            await WaitForLoginFrameAsync();
+            if (reused.Cover.Source != null)
+                throw new InvalidOperationException("A recycled compact row published a late thumbnail.");
+            Console.WriteLine($"COMPACT_ARTWORK_BUDGET_OK: full=500, list/dense/miniature={string.Join('/', sides)}, high-DPI=132, shared per-size cache and smaller CDN variant");
+        }
+        finally
+        {
+            foreach (var row in rows)
+            {
+                BindCompactTrackRow(row, null);
+                compactTrackRows.Remove(row);
+                row.Root.Dispose();
+            }
+        }
+    }
+
     private async Task VerifyHistoryArtworkAsync(SoundCloudTrack[] fixtures)
     {
         var track = fixtures[1];

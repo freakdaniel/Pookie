@@ -14,8 +14,8 @@ internal sealed partial class MainWindow
         grid.ItemTemplate = new DelegateTemplate<CollectionTrackEntry>(context =>
         {
             LikedTrackTile tile = null!;
-            tile = new(track => Run(() => PlayCollectionTrackAsync(track, collectionTrackTiles[tile.Root].Position)),
-                track => Run(() => OpenTrackPageAsync(track)), ArtworkLayer, "music-notes");
+            tile = new(this, track => Run(() => PlayCollectionTrackAsync(track, collectionTrackTiles[tile.Root].Position)),
+                track => Run(() => OpenTrackPageAsync(track)), "music-notes");
             tile.SetSize(collectionTrackArtworkSize);
             collectionTrackTiles.Add(tile.Root, (tile, -1));
             AttachTrackQueueMenu(tile.Root, () => tile.Track, extraActions: true);
@@ -29,14 +29,14 @@ internal sealed partial class MainWindow
             collectionTrackTiles[tile.Root] = (tile, entry.Position);
             tile.Title.Text = entry.Track.Title; tile.Author.Text = entry.Track.Author;
             tile.SetSize(collectionTrackArtworkSize);
-            likedArtworkTracks[tile.Cover] = entry.Track.Id;
+            likedArtworkTracks[tile.Cover] = (entry.Track.Id, entry.Track.ArtworkUrl ?? entry.Track.User?.AvatarUrl);
             SetCardArtwork(tile.Cover, libraryCoverCache.GetValueOrDefault(entry.Track.Id), entry.Track.ArtworkUrl ?? entry.Track.User?.AvatarUrl);
             Run(() => LoadLikedArtworkAsync(tile.Cover, entry.Track));
             RefreshCollectionTrackTile(tile, entry.Position, animate: false);
         }, (_, _, _, context) =>
         {
             var tile = collectionTrackTiles[context.Get<Button>("tile")].Tile;
-            tile.Track = null; tile.Reset(); StopCardArtwork(tile.Cover);
+            tile.Track = null; tile.Reset(); ClearCardArtwork(tile.Cover);
             likedArtworkTracks.Remove(tile.Cover);
             collectionTrackTiles[tile.Root] = (tile, -1);
         });

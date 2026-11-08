@@ -13,7 +13,8 @@ internal sealed partial class MainWindow
     private const int ChartRowSpacing = 4;
     private const string AllGenresSuffix = ":trending-by-genre:all-genres";
     private LibraryItem[] homeChartGenres = [];
-    private readonly Dictionary<string, CollectionDetail> homeChartCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (CollectionDetail Detail, long Revision)> homeChartCache = new(StringComparer.Ordinal);
+    private long homeChartRevision;
     private readonly List<CompactTrackRow> homeChartRows = [];
     private LibraryItem? homeChartGenre;
     private CollectionDetail? homeChartDetail;
@@ -68,27 +69,45 @@ internal sealed partial class MainWindow
         return homeChart = new StackPanel().Vertical().Spacing(16).Children(heading, body).IsVisible(false);
     }
 
-    private void RenderHomeChart(LibraryItem[] genres)
+    private static string HomeChartGenreName(LibraryItem item) =>
+        item.Playlist?.Urn.EndsWith(AllGenresSuffix, StringComparison.Ordinal) == true ? "Все жанры" : item.Title;
+
+    private void RenderHomeChart(LibraryItem[] genres, bool refresh)
     {
-        if (!homeChartGenres.SequenceEqual(genres))
+        if (refresh)
+        {
+            // Previously viewed genres stay available until their next response.
+            homeChartRevision++;
+            homeChartFailed = false;
+        }
+        var choicesChanged = !ReferenceEquals(homeChartGenres, genres) &&
+            !homeChartGenres.Select(item => (item.Key, Name: HomeChartGenreName(item)))
+                .SequenceEqual(genres.Select(item => (item.Key, Name: HomeChartGenreName(item))));
+        homeChartGenres = genres;
+        if (choicesChanged)
         {
             var previous = homeChartGenre?.Key;
-            homeChartGenres = genres;
             homeChartGenreSlot.Clear();
             var selected = Array.FindIndex(genres, item => item.Key == previous);
             if (selected < 0) selected = Array.FindIndex(genres, item => item.Playlist?.Urn.EndsWith(AllGenresSuffix, StringComparison.Ordinal) == true);
             if (selected < 0 && genres.Length > 0) selected = 0;
             if (selected >= 0)
             {
-                var picker = new MaterialSelect(genres.Select(item =>
-                    item.Playlist?.Urn.EndsWith(AllGenresSuffix, StringComparison.Ordinal) == true ? "Все жанры" : item.Title).ToArray())
+                var picker = new MaterialSelect(genres.Select(HomeChartGenreName).ToArray())
                     .Width(196).Height(40).FontSize(14);
                 picker.SelectedIndex = selected;
-                picker.SelectionChanged += index => { if (index >= 0) SelectHomeChart(genres[index]); };
+                picker.SelectionChanged += index =>
+                {
+                    if (index < 0 || index >= homeChartGenres.Length) return;
+                    SelectHomeChart(homeChartGenres[index]);
+                    LoadHomeChart();
+                };
                 homeChartGenreSlot.Add(picker);
             }
             SelectHomeChart(selected < 0 ? null : genres[selected]);
         }
+        else if (homeChartGenre is { } currentGenre)
+            homeChartGenre = genres.First(item => item.Key == currentGenre.Key);
         homeChart.IsVisible = genres.Length > 0 || homePending.Contains("trends");
         LoadHomeChart();
         RefreshHomeChartLoading();
@@ -96,22 +115,21 @@ internal sealed partial class MainWindow
 
     private void SelectHomeChart(LibraryItem? genre)
     {
-        if (Equals(homeChartGenre, genre)) return;
+        if (homeChartGenre?.Key == genre?.Key) { homeChartGenre = genre; return; }
         CancelHomeChartRequest();
         homeChartGenre = genre;
         homeChartFailed = false;
-        SetHomeChartDetail(null);
-        LoadHomeChart();
+        SetHomeChartDetail(genre == null ? null : homeChartCache.GetValueOrDefault(genre.Key).Detail);
     }
 
     private void LoadHomeChart()
     {
         if (disposed || page.Value != Page.Home || homeChartGenre is not { } genre || api.Session is not { } session ||
-            homeChartDetail != null || homeChartRequest != null || homeChartFailed) return;
-        if (homeChartCache.TryGetValue(genre.Key, out var cached)) { SetHomeChartDetail(cached); return; }
+            homeChartRequest != null || homeChartFailed) return;
+        if (homeChartCache.TryGetValue(genre.Key, out var cached) && cached.Revision == homeChartRevision) return;
         var request = homeChartRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = request.Token;
-        SetHomeChartStatus("");
+        if (homeChartDetail == null) SetHomeChartStatus("");
         RefreshHomeChartLoading();
         Run(async () =>
         {
@@ -120,7 +138,7 @@ internal sealed partial class MainWindow
                 var detail = await api.GetCollectionDetailAsync(genre, token);
                 if (token.IsCancellationRequested || disposed || api.Session != session ||
                     homeChartGenre?.Key != genre.Key || !ReferenceEquals(homeChartRequest, request)) return;
-                homeChartCache[genre.Key] = detail;
+                homeChartCache[genre.Key] = (detail, homeChartRevision);
                 SetHomeChartDetail(detail);
             }
             catch (Exception error) when (!token.IsCancellationRequested && api.Session == session &&
@@ -128,7 +146,7 @@ internal sealed partial class MainWindow
             {
                 homeChartFailed = true;
                 RefreshHomeChartLoading();
-                SetHomeChartStatus("Не удалось загрузить чарт.");
+                if (homeChartDetail == null) SetHomeChartStatus("Не удалось загрузить чарт.");
             }
             finally
             {
@@ -165,20 +183,50 @@ internal sealed partial class MainWindow
 
     private void SetHomeChartDetail(CollectionDetail? detail)
     {
+        var animate = page.Value == Page.Home && detail != null && homeChartDetail?.Item.Key == detail.Item.Key &&
+            homeChartRows.Count > 0 && homeChartColumns.Bounds.Bottom > homeScroll.Bounds.Y &&
+            homeChartColumns.Bounds.Y < homeScroll.Bounds.Bottom;
         homeChartDetail = detail;
-        foreach (var row in homeChartRows) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
+        var tracks = detail?.Tracks.Tracks.DistinctBy(track => track.Id).Take(ChartColumnSize * 2).ToArray() ?? [];
+        var wanted = tracks.Select(track => track.Id).ToHashSet();
+        var previous = homeChartRows.Select((row, rank) => (Row: row, Rank: rank)).ToDictionary(entry => entry.Row.Track!.Id);
+        var focused = Window.FocusManager.FocusedElement;
+        var keyboardFocus = focused is Control control && KeyboardFocusFeedback.IsVisible(control);
+        foreach (var row in homeChartRows)
+        {
+            if (wanted.Contains(row.Track!.Id)) continue;
+            var motion = (LibraryItemMotion)row.Root.LogicalParent!;
+            BindCompactTrackRow(row, null);
+            compactTrackRows.Remove(row);
+            ((StackPanel)motion.LogicalParent!).Remove(motion);
+            motion.Dispose();
+        }
         homeChartRows.Clear();
-        homeChartLeft.Clear();
-        homeChartRight.Clear();
-        var tracks = detail?.Tracks.Tracks.Take(ChartColumnSize * 2).ToArray() ?? [];
         SetHomeChartStatus(detail != null && tracks.Length == 0 ? "В этом чарте пока нет треков." : "");
         for (var index = 0; index < tracks.Length; index++)
         {
-            var row = CreateCompactTrackRow(track => Run(() => PlayHomeChartTrackAsync(track)));
-            BindCompactTrackRow(row, tracks[index]);
-            row.PlaybackButton.IsEnabled = HomeRecommendations.Playable(tracks[index]);
+            var track = tracks[index];
+            var retained = previous.TryGetValue(track.Id, out var old);
+            var row = retained ? old.Row : CreateCompactTrackRow(item => Run(() => PlayHomeChartTrackAsync(item)));
+            var motion = retained ? (LibraryItemMotion)row.Root.LogicalParent! : new LibraryItemMotion().Content(row.Root);
+            var column = index < ChartColumnSize ? homeChartLeft : homeChartRight;
+            var slot = index % ChartColumnSize;
+            if (animate && (!retained || old.Rank != index))
+                motion.Retarget(retained ? motion.PaintedPosition : null, appear: !retained, afterArrange: true);
+            if (slot >= column.Children.Count || !ReferenceEquals(column.Children[slot], motion))
+                column.Insert(slot, motion);
+            if (!Equals(row.Track, track))
+            {
+                BindCompactTrackRow(row, track);
+                row.PlaybackButton.IsEnabled = HomeRecommendations.Playable(track);
+            }
             homeChartRows.Add(row);
-            (index < ChartColumnSize ? homeChartLeft : homeChartRight).Add(row.Root);
+        }
+        if (focused?.FindVisualRoot() == Window && Window.FocusManager.FocusedElement == null)
+        {
+            var offset = shellScroll.VerticalOffset;
+            KeyboardFocusFeedback.Restore(focused, keyboardFocus);
+            if (shellScroll.VerticalOffset != offset) shellScroll.SetScrollOffsets(0, offset);
         }
         RefreshHomeChartLoading();
     }

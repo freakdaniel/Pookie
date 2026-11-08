@@ -100,7 +100,7 @@ internal sealed partial class MainWindow
         else ((MaterialTrackButton)shareCopy).Disconnect();
         ResetShareCompose(); ResetShareEmbed(); SelectShareTab(0);
         RefreshShareLink();
-        SetCardArtwork(shareCover, null, item.ArtworkUrl);
+        SetCardArtwork(shareCover, null, item.ArtworkUrl, item.Track != null ? Icons.MissingTrackArtwork : "music-notes");
         shareRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = shareRequest.Token;
         FitShareContent();
@@ -142,7 +142,7 @@ internal sealed partial class MainWindow
     {
         var image = await FetchImageAsync(item.ArtworkUrl, token, maximumSide: 256);
         if (disposed || generation != shareGeneration || !shareDialog.IsOpen) return;
-        SetCardArtwork(shareCover, image, item.ArtworkUrl, finished: true);
+        SetCardArtwork(shareCover, image, item.ArtworkUrl, item.Track != null ? Icons.MissingTrackArtwork : "music-notes", finished: true);
         if (image == null) return;
         var palette = await playerPalettes.GetValue(image, source => Task.Run(() => PlayerPalette.FromArtwork(source), lifetime.Token));
         if (!disposed && generation == shareGeneration && shareDialog.IsOpen) sharePreview.SetPalette(palette);

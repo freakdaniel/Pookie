@@ -8,7 +8,7 @@ internal sealed partial class MainWindow
 {
     private unsafe void VerifyGpuBlurState()
     {
-        if (!OperatingSystem.IsWindows() || !headerGlass.UsesGpuBlur) return;
+        if (!OperatingSystem.IsWindows()) return;
         if (Win32BackdropBlur.CurrentContextIdentity == 0)
         {
             VerifyNativeBlurState();

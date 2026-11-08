@@ -19,6 +19,21 @@ public sealed class BrowserRequestProtocolTests
         Assert.Null(BrowserRequestProtocol.Parse(raw, Origin, Origin, "other"));
     }
 
+    [Fact]
+    public void RecoveredCredentialsRequireASuccessfulMatchingProfileAndPairedOrigin()
+    {
+        var message = new BrowserRequestEvent("complete", Guid.NewGuid().ToString("N"), 200, User: new() { Id = 42 })
+        { Session = new WebSession("fixture", "refreshed-token", "Fixture") { VerifiedUserId = 42 } };
+        BrowserRequestEvent? Parse(BrowserRequestEvent value, string? pairing = "pair") => BrowserRequestProtocol.Parse(
+            Message(JsonSerializer.Serialize(value, SoundCloudJson.Default.BrowserRequestEvent)), Origin, Origin, pairing);
+        Assert.Equal("refreshed-token", Parse(message)?.Session?.AccessToken);
+        Assert.Null(Parse(message, null));
+        Assert.Null(Parse(message, "wrong"));
+        Assert.Null(Parse(message with { Status = 401 }));
+        Assert.Null(Parse(message with { User = new() { Id = 99 } }));
+        Assert.Null(Parse(message with { Kind = "session" }));
+    }
+
     [Theory]
     [InlineData("{\"kind\":\"execute\"}")]
     [InlineData("{\"kind\":\"complete\",\"request_id\":\"wrong\"}")]

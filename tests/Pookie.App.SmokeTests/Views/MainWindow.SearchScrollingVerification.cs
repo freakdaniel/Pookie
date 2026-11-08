@@ -10,6 +10,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifySearchScrollingAsync()
     {
+        await VerifyLyricSearchAsync();
         await NavigateAsync(Page.Library);
         await WaitForLikedLayoutAsync(() => overviewScroll.ActualHeight > 100 && SmoothScroll.Maximum(shellScroll) > 400 && smoothScrolls.ContainsKey(shellScroll));
         shellScroll.SetScrollOffsets(0, 0);
@@ -47,6 +48,32 @@ internal sealed partial class MainWindow
         SetCardArtwork(cover, await GetLibraryArtworkAsync(track), url, finished: true);
         if (!ReferenceEquals(cover.Source, art) || ArtworkSkeleton(cover).IsVisible)
             throw new InvalidOperationException("Artwork shimmer did not resolve directly to the cover");
+        const string missingUrl = "https://i1.sndcdn.com/search-missing-artwork-fixture.jpg";
+        var missing = new Image();
+        var missingLayer = ArtworkLayer(missing);
+        trackDetailPlaylists.Add(missingLayer);
+        try
+        {
+            SetCardArtwork(missing, null, missingUrl, finished: true);
+            ClearCardArtwork(missing);
+            SetCardArtwork(missing, null, missingUrl);
+            var fallback = Icons.Source(Icons.MissingTrackArtwork);
+            var skipped = FetchImageAsync(missingUrl, lifetime.Token);
+            if (!ReferenceEquals(missing.Source, fallback) || ArtworkSkeleton(missing).IsVisible ||
+                !skipped.IsCompletedSuccessfully || skipped.Result != null)
+                throw new InvalidOperationException("Rebinding missing artwork restarted the shimmer or image request.");
+            SetCardArtwork(missing, null, url);
+            if (!ReferenceEquals(missing.Source, fallback) || ArtworkSkeleton(missing).IsVisible)
+                throw new InvalidOperationException("A new artwork URL hid the existing placeholder before its image was ready.");
+            SetCardArtwork(missing, art, url, finished: true);
+            if (!ReferenceEquals(missing.Source, art) || missingLayer.Children[1] is not Image old || !ReferenceEquals(old.Source, fallback))
+                throw new InvalidOperationException("Recovered artwork did not replace the placeholder with a local fade.");
+        }
+        finally
+        {
+            ClearCardArtwork(missing);
+            trackDetailPlaylists.Remove(missingLayer);
+        }
 
         var user = new SoundCloudUser { Id = 70, Username = "Исполнитель", FollowersCount = 1234, AvatarUrl = url };
         var playlist = new SoundCloudPlaylist { Id = 80, Title = "Альбом", IsAlbum = true, ArtworkUrl = url, TrackCount = 8, User = user };
@@ -96,11 +123,11 @@ internal sealed partial class MainWindow
         {
             current = track; isPlaying.Value = true; likedIds.Add(track.Id); RefreshSearchPlayback();
             if (!ReferenceEquals(hero.Play.Source, Icons.Source("pause-solid", Surface)) ||
-                !ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("pause-solid", TrackButtons.OnPrimary)))
+                !hero.Tracks[0].Overlay.ShowsPause)
                 throw new InvalidOperationException("Search playback icons did not react immediately");
             await WaitForLikedLayoutAsync(() => ReferenceEquals(hero.Tracks[0].Heart.Source, Icons.Source("heart-filled", LikedHeart)));
             isPlaying.Value = false; RefreshSearchPlayback();
-            if (!ReferenceEquals(hero.Tracks[0].Play.Source, Icons.Source("play-solid", TrackButtons.OnPrimary)))
+            if (hero.Tracks[0].Overlay.ShowsPause)
                 throw new InvalidOperationException("Search pause did not restore its play icon");
         }
         finally { current = savedTrack; isPlaying.Value = savedPlaying; likedIds.Remove(track.Id); RefreshSearchPlayback(); timer.Start(); }

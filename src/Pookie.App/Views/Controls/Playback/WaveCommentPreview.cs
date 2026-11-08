@@ -12,7 +12,7 @@ internal sealed class WaveCommentPreview : Panel
 {
     private readonly TextBlock author = new TextBlock().FontSize(13).Bold().Foreground(Color.FromRgb(142, 198, 238))
         .TextTrimming(TextTrimming.CharacterEllipsis);
-    private readonly TextBlock time = new TextBlock().FontSize(11).Foreground(Color.FromRgb(165, 168, 175));
+    private readonly TextBlock time = new TextBlock().FontSize(11).Foreground(TextAppearance.Secondary);
     private readonly TextBlock body = new TextBlock().FontSize(13).Foreground(Color.FromRgb(235, 236, 239))
         .TextWrapping(TextWrapping.Wrap).TextTrimming(TextTrimming.CharacterEllipsis).MaxHeight(40);
     private readonly StackPanel content;

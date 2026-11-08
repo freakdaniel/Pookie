@@ -20,20 +20,23 @@ internal sealed partial class MainWindow
         internal Button PlaybackButton => overlay.PlaybackButton!;
         internal bool ShowsPause => overlay.ShowsPause;
 
-        public LikedTrackTile(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Func<Image, Grid> artworkLayer, string marker = "heart-filled")
+        public LikedTrackTile(MainWindow owner, Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, string marker = "heart-filled")
         {
-            overlay = new TrackArtworkOverlay(() => { if (Track is { } track) select(track); });
+            overlay = owner.CreateCoverPlayback(Cover, () => { if (Track is { } track) select(track); });
+            var zoom = new ArtworkHoverZoom(owner.ArtworkLayer(Cover).Children(overlay));
             artworkFrame = new Border().CornerRadius(6).ClipToBounds()
-                .Child(artworkLayer(Cover).Children(overlay));
+                .Child(zoom);
             Root = new Button().Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0).Padding(0).Top()
                 .Content(new StackPanel().Vertical().Spacing(1).Children(
                     artworkFrame,
                     new Grid().Columns("14,*").Rows("20").Spacing(4).Margin(0, 7, 0, 0).Children(
-                        Icons.View(marker, 13, Muted).CenterVertical().Column(0), Title.Column(1)),
+                        Icons.View(marker, 13, MutedIcon).CenterVertical().Column(0), Title.Column(1)),
                     Author))
-                .OnMouseEnter(() => overlay.SetHovered(true))
+                .OnMouseEnter(() => overlay.SetHovered(Track != null))
                 .OnMouseLeave(() => overlay.SetHovered(false))
                 .OnClick(() => { if (Track is { } track) open(track); });
+            zoom.Follow(Root);
+            owner.AttachUserLink(Author, () => Track?.User);
         }
 
         public void SetSize(double size)
@@ -44,7 +47,11 @@ internal sealed partial class MainWindow
             Author.Width = size;
         }
 
-        public void SetPlaying(bool selected, bool playing, bool animate = true) => overlay.SetPlaying(selected, playing, animate);
+        public void SetPlaying(bool selected, bool playing, bool animate = true)
+        {
+            overlay.SetHovered(Track != null && Root.IsMouseOver);
+            overlay.SetPlaying(selected, playing, animate);
+        }
         internal double OverlayOpacity => overlay.Opacity;
         public void Reset() => overlay.Reset();
     }

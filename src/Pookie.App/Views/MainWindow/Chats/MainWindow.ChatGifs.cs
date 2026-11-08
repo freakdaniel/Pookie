@@ -65,7 +65,7 @@ internal sealed partial class MainWindow
         chatEmojiCategories = new StackPanel().Horizontal().Spacing(0);
         void Category(string? group, string icon)
         {
-            var button = TrackButtons.Icon(Icons.View(icon, 19, Muted), () => SelectChatEmojiCategory(group), TrackButtons.Text, 34).Width(34).Padding(6, 0);
+            var button = TrackButtons.Icon(Icons.View(icon, 19, MutedIcon), () => SelectChatEmojiCategory(group), TrackButtons.Text, 34).Width(34).Padding(6, 0);
             chatEmojiCategoryButtons.Add((button, group)); chatEmojiCategories.Add(button);
         }
         Category(null, "clock");

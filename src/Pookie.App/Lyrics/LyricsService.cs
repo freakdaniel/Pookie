@@ -8,15 +8,21 @@ namespace Pookie.Lyrics;
 // Automatic resolution is independent of the audio player and UI dispatcher.
 public sealed class LyricsService : IDisposable
 {
-    private const int SelectionVersion = 1;
+    private const int SelectionVersion = 3;
     private readonly ILyricsProvider provider;
+    private readonly Func<LyricsIdentity, bool, CancellationToken, Task<LyricsDocument?>>? lyricsFallback;
     private readonly string cache;
     private readonly TimeProvider time;
     private readonly CancellationTokenSource lifetime = new();
     private readonly ConcurrentDictionary<string, (CancellationToken Token, Lazy<Task<LyricsResult>> Request)> pending = new();
     public LyricsService(ILyricsProvider provider, string cacheDirectory, TimeProvider? timeProvider = null)
+        : this(provider, cacheDirectory, null, timeProvider) { }
+
+    internal LyricsService(ILyricsProvider provider, string cacheDirectory,
+        Func<LyricsIdentity, bool, CancellationToken, Task<LyricsDocument?>>? lyricsFallback, TimeProvider? timeProvider = null)
     {
         this.provider = provider; cache = cacheDirectory; time = timeProvider ?? TimeProvider.System;
+        this.lyricsFallback = lyricsFallback;
         Directory.CreateDirectory(cache);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(cache, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         Prune();
@@ -24,7 +30,7 @@ public sealed class LyricsService : IDisposable
 
     public async Task<LyricsResult> ResolveAsync(LyricsIdentity identity, CancellationToken token, bool force = false)
     {
-        var key = identity.TrackId + ":" + identity.Fingerprint + (force ? ":force" : "");
+        var key = identity.TrackId + ":" + identity.Fingerprint + ":" + identity.Isrc + (force ? ":force" : "");
         var entry = pending.AddOrUpdate(key,
             _ => NewRequest(), (_, previous) => previous.Token.IsCancellationRequested ? NewRequest() : previous);
         _ = entry.Request.Value.ContinueWith(_ =>
@@ -46,7 +52,8 @@ public sealed class LyricsService : IDisposable
         var path = CachePath(identity);
         var cached = await ReadAsync(path, LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
         if (!force && cached is { Complete: true } found && found.Fingerprint == identity.Fingerprint &&
-            (found.SelectionVersion == SelectionVersion || found.Result.Status is LyricsStatus.Synced or LyricsStatus.Instrumental) &&
+            (found.Result.Status is LyricsStatus.Synced or LyricsStatus.Instrumental ||
+                found.SelectionVersion == SelectionVersion && (identity.Isrc == null || identity.Isrc == found.Isrc)) &&
             time.GetUtcNow() - found.At < (found.Result.Status == LyricsStatus.NotFound ? TimeSpan.FromHours(24) : TimeSpan.FromDays(30)))
             return Prepare(found.Result, identity);
 
@@ -129,16 +136,35 @@ public sealed class LyricsService : IDisposable
             }
             token.ThrowIfCancellationRequested();
             if (chosen == null) result = failed ? new(LyricsStatus.Unavailable) : new(LyricsStatus.NotFound);
-            if (failed && cached is { Result.Document: not null } && cached.Fingerprint == identity.Fingerprint &&
-                (chosen == null || result.Status == LyricsStatus.Plain && cached.Result.Status == LyricsStatus.Synced))
-            { result = cached.Result; chosen = null; }
-            // Keep usable plain text offline, but retry an incomplete timed lookup
-            // instead of treating a transient failure as a finished selection.
-            if (chosen != null || !failed && result.Status == LyricsStatus.NotFound)
+            var resolved = chosen != null;
+            var allowPlainFallback = result.Status is LyricsStatus.NotFound or LyricsStatus.Unavailable;
+            if (lyricsFallback != null && (allowPlainFallback || result.Status == LyricsStatus.Plain && identity.TimingAvailable))
             {
                 try
                 {
-                    await WriteAsync(path, new LyricsCacheRecord(identity.Fingerprint, time.GetUtcNow(), result, !failed, SelectionVersion), LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
+                    var fallback = await lyricsFallback(identity, allowPlainFallback, token).ConfigureAwait(false);
+                    if (fallback is { Status: LyricsStatus.Synced } ||
+                        allowPlainFallback && fallback is { Status: LyricsStatus.Plain } && !string.IsNullOrWhiteSpace(fallback.PlainText))
+                    {
+                        result = new(fallback.Status, fallback);
+                        resolved = true;
+                    }
+                }
+                catch (Exception error) when (IsProviderFailure(error, token)) { failed = true; }
+            }
+            token.ThrowIfCancellationRequested();
+            if (!resolved && failed) result = new(LyricsStatus.Unavailable);
+            if (failed && cached is { Result.Document: not null } && cached.Fingerprint == identity.Fingerprint &&
+                (!resolved || result.Status == LyricsStatus.Plain && cached.Result.Status == LyricsStatus.Synced))
+            { result = cached.Result; resolved = false; }
+            // Keep usable plain text offline, but retry an incomplete fallback lookup
+            // instead of treating a transient failure as a finished selection.
+            if (resolved || !failed && result.Status == LyricsStatus.NotFound)
+            {
+                try
+                {
+                    await WriteAsync(path, new LyricsCacheRecord(identity.Fingerprint, time.GetUtcNow(), result, !failed, SelectionVersion, identity.Isrc),
+                        LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
                     Prune();
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }

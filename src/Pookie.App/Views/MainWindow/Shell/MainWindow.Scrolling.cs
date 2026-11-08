@@ -88,7 +88,6 @@ internal sealed partial class MainWindow
         if (!workspace.IsVisible) { trackTimelineVisible = false; return; }
         shellPageScroll.Refresh();
         RefreshTrackTimelineViewport();
-        UpdateScrolledChrome();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
         var frameWidth = page.Value == Page.Chats ? Window.ClientSize.Width : Math.Min(1440, Window.ClientSize.Width);
         if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
@@ -128,8 +127,6 @@ internal sealed partial class MainWindow
         likedEditPositions.Clear();
         CheckPageEnd(); CheckTrackSectionEnd(); CheckUserProfileEnd();
     }
-
-    private void UpdateScrolledChrome() => headerGlass.Update(page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset);
 
     private static void DisablePreviewGridScrolling(ItemsControl grid)
     {
@@ -223,8 +220,6 @@ internal sealed partial class MainWindow
     private void ResetPageScrolling()
     {
         shellScroll.SetScrollOffsets(0, 0);
-        headerGlass.Update(0);
-        headerGlass.RefreshBackdrop();
         trackDetailSectionSkeleton?.SetActive(false);
         likedEditPositions.Clear();
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
@@ -237,13 +232,12 @@ internal sealed partial class MainWindow
 
     private void DisposePageScrolling()
     {
-        shellScroll.ScrollChanged -= UpdateScrolledChrome;
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
         Window.FrameRendered -= ObservePageScrolling;
         foreach (var (viewer, motion) in smoothScrolls)
         { viewer.ScrollChanged -= CheckPageEnd; viewer.MouseWheel -= OnPageWheel; motion.Dispose(); }
         smoothScrolls.Clear();
         foreach (var (skeleton, _) in pageSkeletons) skeleton.SetActive(false);
-        foreach (var (_, skeleton) in artworkLoading) skeleton.SetActive(false);
+        foreach (var (cover, _) in artworkLoading) StopCardArtwork(cover);
     }
 }

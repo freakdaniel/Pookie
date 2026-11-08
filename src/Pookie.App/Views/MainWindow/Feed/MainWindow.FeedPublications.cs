@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
         var name = new TextBlock().Text(actor?.Username ?? entry.Item.Subtitle).FontSize(12).SemiBold().MaxWidth(280).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachUserLink(name, () => actor);
         var byline = new StackPanel().Horizontal().Spacing(7).CenterVertical().Children(name);
-        if (entry.IsRepost) byline.Add(Icons.View("repeat", 13, Muted).CenterVertical());
+        if (entry.IsRepost) byline.Add(Icons.View("repeat", 13, MutedIcon).CenterVertical());
         byline.Add(new TextBlock().Text(entry.IsRepost ? "сделал репост" : "опубликовал").FontSize(12).Foreground(Muted).CenterVertical());
         host.Add(new Grid().Columns("28,*,Auto").Rows("28").Spacing(10).Children(avatar.Column(0), byline.Column(1),
             new TextBlock().Text(FeedDate(entry.CreatedAt)).FontSize(11).Foreground(Muted).Column(2).CenterVertical()));
@@ -104,7 +104,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement FeedAvatar(SoundCloudUser? user, int size, Func<bool> currentView)
     {
-        var image = new Image().Width(size).Height(size).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user-circle", Muted));
+        var image = new Image().Width(size).Height(size).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user-circle", MutedIcon));
         if (user?.AvatarUrl != null) Run(async () =>
         {
             var source = await GetCollectionArtworkAsync(UserItem(user));
