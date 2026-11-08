@@ -31,6 +31,31 @@ public sealed class LyricsTests : IDisposable
         Assert.Equal(LyricsStatus.Plain, document.Status);
     }
 
+    [Fact] public void EnhancedLrcHidesWordMarkersAndKeepsLineTiming()
+    {
+        var document = LrcParser.Parse("""
+            [offset:+500]
+            [00:02.00][00:09.00]<00:02.00>Первая <00:02.55>строка <3<00:03.00>
+            [00:04.00]<00:04.00>
+            [00:05.00]<00:05.00>По<00:05.2>слогам<00:06.00>
+            """, null, LrcRedSearch.Name, null, "", "");
+        Assert.Equal(new[] { 1.5, 3.5, 4.5, 8.5 }, document.Lines.Select(line => line.Start));
+        Assert.Equal(new[] { "Первая строка <3", "", "Послогам", "Первая строка <3" },
+            document.Lines.Select(line => line.Text));
+        Assert.Equal("Первая строка <3\n\nПослогам\nПервая строка <3", document.PlainText);
+        Assert.Equal(2, document.ActiveLine(4.6));
+    }
+
+    [Theory]
+    [InlineData("[ti:Тест]\n<00:02>Строка<00:04.000>", null)]
+    [InlineData(null, "<00:02>Строка<00:04.000>")]
+    public void PlainLyricsAlsoHideWordMarkers(string? lrc, string? plain)
+    {
+        var document = LrcParser.Parse(lrc, plain, LrcRedSearch.Name, null, "", "");
+        Assert.Equal(LyricsStatus.Plain, document.Status);
+        Assert.Equal("Строка", document.PlainText);
+    }
+
     [Fact] public void MatchingAllowsSmallDurationDifferencesButRejectsOtherVersionsAndUnrelatedArtists()
     {
         Assert.True(LyricsMatcher.Matches(track with { Title = "Артист — Песня [prod. Person]", Artist = "Uploader" }, Candidate()));
@@ -267,6 +292,30 @@ public sealed class LyricsTests : IDisposable
             new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
         await File.WriteAllTextAsync(Path.Combine(root, "Cache", $"{track.TrackId}-{track.Fingerprint}.json"), old);
         Assert.Equal(LyricsStatus.Synced, (await service.ResolveAsync(track, default)).Status);
+        Assert.Equal(0, provider.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CachedEnhancedLrcIsCleanedWithoutDownloadingAgain(bool timingAvailable)
+    {
+        var identity = track with { TimingAvailable = timingAvailable };
+        const string marked = "<00:02.00>Старая <00:02.50>строка<00:03.00>";
+        var document = new LyricsDocument(LrcRedSearch.Name, null, track.Title, track.Artist, marked, [new(2, marked)]);
+        var clock = new Clock();
+        var provider = new Provider { Fail = true };
+        using var service = Service(provider, clock);
+        var record = new LyricsCacheRecord(identity.Fingerprint, clock.GetUtcNow(), new(LyricsStatus.Synced, document), SelectionVersion: 3);
+        await File.WriteAllTextAsync(Path.Combine(root, "Cache", $"{track.TrackId}-{identity.Fingerprint}.json"),
+            JsonSerializer.Serialize(record, LyricsJson.Default.LyricsCacheRecord));
+
+        var result = await service.ResolveAsync(identity, default);
+        Assert.Equal(timingAvailable ? LyricsStatus.Synced : LyricsStatus.Plain, result.Status);
+        Assert.Equal(LrcRedSearch.Name, result.Document!.Source);
+        Assert.Equal("Старая строка", result.Document.PlainText);
+        if (timingAvailable) Assert.Equal(new LyricsLine(2, "Старая строка"), Assert.Single(result.Document.Lines));
+        else Assert.Empty(result.Document.Lines);
         Assert.Equal(0, provider.Calls);
     }
 

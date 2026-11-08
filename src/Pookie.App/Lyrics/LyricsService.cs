@@ -51,6 +51,13 @@ public sealed class LyricsService : IDisposable
         token = linked.Token; token.ThrowIfCancellationRequested();
         var path = CachePath(identity);
         var cached = await ReadAsync(path, LyricsJson.Default.LyricsCacheRecord, token).ConfigureAwait(false);
+        if (cached is { Result.Document: { } cachedDocument })
+        {
+            var cleaned = LrcParser.CleanCachedWordTimestamps(cachedDocument);
+            if (!ReferenceEquals(cachedDocument, cleaned))
+                cached = cleaned.Status == LyricsStatus.Plain && cleaned.PlainText.Length == 0
+                    ? null : cached with { Result = new(cleaned.Status, cleaned) };
+        }
         if (!force && cached is { Complete: true } found && found.Fingerprint == identity.Fingerprint &&
             (found.Result.Status is LyricsStatus.Synced or LyricsStatus.Instrumental ||
                 found.SelectionVersion == SelectionVersion && (identity.Isrc == null || identity.Isrc == found.Isrc)) &&
