@@ -44,6 +44,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The resting chrome does not match the square content surface.");
             VerifyTopFadePixels();
             await VerifyHeaderCardsAsync();
+            await VerifyShellHistoryFirstPaintAsync();
             if (Environment.GetEnvironmentVariable("POOKIE_SEARCH_ONLY") == "1")
             {
                 await VerifySearchScrollingAsync();
@@ -163,6 +164,51 @@ internal sealed partial class MainWindow
             Console.Error.WriteLine($"UI_SHELL_CHROME_FAILED: offset={shellScroll.VerticalOffset}, max={SmoothScroll.Maximum(shellScroll)}, frame={contentFrame.Bounds}, inner={PageContentScroll()?.Bounds}, innerOffset={PageContentScroll()?.VerticalOffset}: " + error);
         }
         finally { Window.Close(); }
+    }
+
+    private async Task VerifyShellHistoryFirstPaintAsync()
+    {
+        var likes = PageContentScroll()!;
+        shellScroll.SetScrollOffsets(0, 320);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && likes.VerticalOffset > 0);
+        var savedLikes = (likes.VerticalOffset, likes.Bounds.Y);
+        var homeBody = homeScroll.Content;
+        try
+        {
+            homeScroll.Content = new HeaderSamplingProbe().Height(2400);
+            await NavigateAsync(Page.Home);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && SmoothScroll.Maximum(shellScroll) > 1000);
+            shellScroll.SetScrollOffsets(0, 500);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && homeScroll.VerticalOffset > 0);
+            var savedHome = (homeScroll.VerticalOffset, homeScroll.Bounds.Y);
+            Window.Activate();
+            await WaitForLikedLayoutAsync(() => Window.IsActive);
+            await VerifyHistoryFirstPaintAsync(backButton, Page.LibraryTracks, likes, savedLikes);
+            await VerifyHistoryFirstPaintAsync(forwardButton, Page.Home, homeScroll, savedHome);
+            await MoveNavigationAsync(-1);
+        }
+        finally { homeScroll.Content = homeBody; }
+        shellScroll.SetScrollOffsets(0, 0);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && likes.VerticalOffset < 1);
+        Console.WriteLine("UI_HISTORY_FIRST_PAINT_OK: back and forward paint the saved viewport on their first frame");
+    }
+
+    private async Task VerifyHistoryFirstPaintAsync(Button arrow, Page destination, ScrollViewer inner, (double Offset, double Top) saved)
+    {
+        var firstPaint = new TaskCompletionSource<(double Offset, double Top)>();
+        void Sample()
+        {
+            if (page.Value == destination) firstPaint.TrySetResult((inner.VerticalOffset, inner.Bounds.Y));
+        }
+        Window.FrameRendered += Sample;
+        try
+        {
+            RouteWaveformClick(arrow.Bounds.Center);
+            var painted = await firstPaint.Task.WaitAsync(TimeSpan.FromSeconds(4), lifetime.Token);
+            if (Math.Abs(painted.Offset - saved.Offset) > 1 || Math.Abs(painted.Top - saved.Top) > 1)
+                throw new InvalidOperationException($"History painted {destination} at {painted.Offset}/{painted.Top} before restoring {saved.Offset}/{saved.Top}.");
+        }
+        finally { Window.FrameRendered -= Sample; }
     }
 
     private void VerifyIconRenderTargets()

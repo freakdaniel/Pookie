@@ -84,6 +84,16 @@ internal sealed partial class MainWindow
             if (Math.Abs(followed.Bounds.Y + followed.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4) > 4)
                 throw new InvalidOperationException("Timed return did not smoothly center the current line.");
 
+            // Moving within the active line's viewport uses the shorter idle delay.
+            var centeredOffset = lyricsScroll.VerticalOffset;
+            RouteSearchTestWheel(wheelPoint, 2);
+            await Task.Delay(1800, lifetime.Token);
+            if (lyricsFollow || centeredOffset - lyricsScroll.VerticalOffset < 30 ||
+                !lyricsScroll.Bounds.Contains(followed.Bounds.Center))
+                throw new InvalidOperationException("Nearby lyric scrolling did not preserve the active line during the short pause.");
+            await WaitForLikedLayoutAsync(() => lyricsFollow, timeoutMs: 1600);
+            Console.WriteLine("LYRICS_FOLLOW_DELAY_OK: short return with the active line visible and seven-second return elsewhere");
+
             audio.State = audio.State with { Position = 9, Playing = true }; Poll();
             await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == 3 && view.Dots.IsVisible));
             await Task.Delay(80, lifetime.Token);
@@ -121,6 +131,7 @@ internal sealed partial class MainWindow
             CaptureExpandedPanelPreview("lyrics-credit");
             var lrclib = lyricsResult;
             ApplyLyrics(new(LyricsStatus.Plain, lrclib.Document! with { Source = LrcRedSearch.Name, Lines = [] }));
+            lyricsList.ScrollIntoView(lyricsItems.DataCount - 2);
             await WaitForLikedLayoutAsync(() => lyricsRows.Values.Any(view => view.Row?.Index == -3 &&
                 view.CreditProvider == LrcRedSearch.Name && view.Credit is { IsVisible: true, IsHitTestVisible: true, Focusable: true }));
             var fallbackCredit = lyricsRows.Values.Single(view => view.Row?.Index == -3).Credit!;
@@ -195,10 +206,62 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => provider.Calls == calls + 2); provider.Reply.SetResult(provider.Record);
             await WaitForLikedLayoutAsync(() => lyricsResult.Document?.Title == "Следующий трек");
             if (lyricsIdentity?.TrackId != 903) throw new InvalidOperationException("Late lyric reply replaced the selected track.");
+            await VerifyPlainLyricsTrackSwitchAsync(audio, provider, track with { Id = 904, Title = "Трек без таймкодов" });
             Console.WriteLine("LYRICS_UI_OK: direct panel reveal without queue slides, skeleton crossfade to text/missing, larger shaded wave dots with smooth aligned start/finish, 1000 virtualized lines, original/scaled click seeking and highlighting, seven-second return, end credit, responsive layout and stale replies");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("LYRICS_UI_FAILED: " + error); }
         finally { player = original; lyricsService = originalService; Window.Close(); }
+    }
+
+    private async Task VerifyPlainLyricsTrackSwitchAsync(BufferFixturePlayer audio, LyricsFixtureProvider provider, SoundCloudTrack track)
+    {
+        var motion = smoothScrolls[lyricsScroll];
+        audio.State = audio.State with { Position = 90 };
+        Poll();
+        await WaitForLikedLayoutAsync(() => lyricsScroll.VerticalOffset > 1500 && !motion.IsRunning);
+        motion.Scroll(300);
+
+        provider.Record = provider.Record with
+        {
+            TrackName = track.Title,
+            SyncedLyrics = null,
+            PlainLyrics = string.Join('\n', Enumerable.Range(0, 75).Select(index => index % 5 == 2
+                ? $"Длинная строка {index}, которая переносится при прокрутке текста"
+                : $"Строка {index}"))
+        };
+        provider.Reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        provider.Reply.SetResult(provider.Record);
+        var firstPaint = new TaskCompletionSource<(double Offset, bool FirstLine)>();
+        void Sample()
+        {
+            if (lyricsResult.Status == LyricsStatus.Plain && lyricsContent.Opacity > 0)
+                firstPaint.TrySetResult((lyricsScroll.VerticalOffset, lyricsRows.Any(pair =>
+                    pair.Value.Row?.Index == 0 && lyricsScroll.Bounds.Contains(pair.Key.Bounds.Center))));
+        }
+        Window.FrameRendered += Sample;
+        try
+        {
+            await PlayAsync(track);
+            var first = await firstPaint.Task.WaitAsync(TimeSpan.FromSeconds(4), lifetime.Token);
+            if (first.Offset > 1 || !first.FirstLine || motion.IsRunning)
+                throw new InvalidOperationException($"Plain lyrics opened at {first.Offset} with first line visible={first.FirstLine} and scrolling={motion.IsRunning}.");
+        }
+        finally { Window.FrameRendered -= Sample; }
+
+        await WaitForLikedLayoutAsync(() => !lyricsReveal.IsRunning);
+        lyricsScroll.SetScrollOffsets(0, SmoothScroll.Maximum(lyricsScroll));
+        await WaitForLoginFrameAsync();
+        var before = lyricsScroll.VerticalOffset;
+        var point = new Point(lyricsScroll.Bounds.X + 40, lyricsScroll.Bounds.Y + 80);
+        RouteSearchTestWheel(point, 3);
+        await WaitForLikedLayoutAsync(() => !motion.IsRunning);
+        var after = lyricsScroll.VerticalOffset;
+        audio.State = audio.State with { Position = 160 };
+        Poll();
+        await WaitForLoginFrameAsync();
+        if (after <= 1 || before - after < 80 || Math.Abs(after - lyricsScroll.VerticalOffset) > 1)
+            throw new InvalidOperationException($"Scrolling plain lyrics up did not settle independently of playback: {before} → {after} → {lyricsScroll.VerticalOffset}.");
+        Console.WriteLine("LYRICS_PLAIN_SCROLL_OK: first visible line after changing tracks and independent manual upward scrolling");
     }
 
     private void VerifyDirectLyricsReveal()

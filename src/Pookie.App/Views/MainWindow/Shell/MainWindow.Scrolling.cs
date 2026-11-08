@@ -96,16 +96,7 @@ internal sealed partial class MainWindow
             contentFrame.InvalidateMeasure();
         }
         if (playlistCollectionVisible.Value && collectionDescriptionExpanded) RefreshCollectionDescriptionGeometry();
-        if (page.Value == Page.Search && searchLayoutPending)
-        {
-            searchLayoutPending = false;
-            if (renderedSearchColumns != libraryColumns) RefreshSearchViews();
-            UpdateSearchHeroGeometry(searchList.ActualWidth);
-            // Apply the new row geometry after the current arrange has finished.
-            // Invalidating during SizeChanged can be swallowed by that arrange pass.
-            foreach (var view in searchViews.Values) view.Hero.Root.InvalidateMeasure();
-            searchList.InvalidateMeasure();
-        }
+        RefreshSearchScrollLayout();
         foreach (var (skeleton, source) in pageSkeletons)
             skeleton.ConfigureLoadingRow(likedArtworkSize, libraryColumns, source.Style);
         if (page.Value is Page.Home or Page.Library or Page.Search)
@@ -126,6 +117,18 @@ internal sealed partial class MainWindow
         // later by scrolling or pagination.
         likedEditPositions.Clear();
         CheckPageEnd(); CheckTrackSectionEnd(); CheckUserProfileEnd();
+    }
+
+    private void RefreshSearchScrollLayout()
+    {
+        if (page.Value != Page.Search || !searchLayoutPending) return;
+        searchLayoutPending = false;
+        if (renderedSearchColumns != libraryColumns) RefreshSearchViews();
+        UpdateSearchHeroGeometry(searchList.ActualWidth);
+        // Apply the new row geometry after the current arrange has finished.
+        // Invalidating during SizeChanged can be swallowed by that arrange pass.
+        foreach (var view in searchViews.Values) view.Hero.Root.InvalidateMeasure();
+        searchList.InvalidateMeasure();
     }
 
     private static void DisablePreviewGridScrolling(ItemsControl grid)

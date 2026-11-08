@@ -149,7 +149,6 @@ internal sealed partial class MainWindow : IDisposable
             var deferral=args.GetDeferral();
             Run(async()=>{try{await FinishChatVoiceBeforeCloseAsync(); RememberChatThread(); await FlushChatPersistenceAsync();}finally{deferral.Complete();}});
         };
-        Window.FrameRendered += RestoreNavigationScroll;
         Window.FrameRendered += ArrangeChatScroll;
         Window.FrameRendered += QueueChatLibraryPreviews;
         Window.FrameRendered += ObservePageScrolling;
@@ -787,7 +786,6 @@ internal sealed partial class MainWindow : IDisposable
         queueLoader.Dispose();
         CloseShare(true); shareTimePopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
-        Window.FrameRendered -= RestoreNavigationScroll;
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;
         Window.FrameRendered -= RefreshCardGlass;

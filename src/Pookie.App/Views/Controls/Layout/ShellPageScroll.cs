@@ -33,7 +33,7 @@ internal sealed class ShellPageScroll : Panel
 
     private void OnViewportChanged(SizeChangedEventArgs _) => InvalidateMeasure();
 
-    internal void Refresh()
+    internal void Refresh(bool scheduleFrame = true)
     {
         var layoutChanged = false;
         var selected = current();
@@ -79,9 +79,9 @@ internal sealed class ShellPageScroll : Panel
         if (layoutChanged) InvalidateMeasure();
         else if (IsMeasureDirty) owner.InvalidateMeasure();
         else owner.InvalidateArrange();
-        // Refresh runs after rendering. Commit the updated extent on a new
-        // dispatcher turn even if playback/other animations are currently idle.
-        if (layoutFrameQueued) return;
+        // When called after rendering, commit the updated extent on a new
+        // dispatcher turn even if playback and other animations are idle.
+        if (!scheduleFrame || layoutFrameQueued) return;
         layoutFrameQueued = true;
         Application.Current.Dispatcher!.BeginInvoke(() =>
         {

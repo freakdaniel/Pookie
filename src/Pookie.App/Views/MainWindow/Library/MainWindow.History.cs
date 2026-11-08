@@ -24,7 +24,7 @@ internal sealed partial class MainWindow
     private readonly List<NavigationEntry> navigationHistory = [new(new(Page.Home))];
     private int navigationIndex;
     private long navigationGeneration;
-    private (long Generation, double Offset)? pendingNavigationScroll;
+    private double? pendingNavigationScroll;
     private readonly ObservableValue<bool> canGoBack = new(false), canGoForward = new(false);
     private Button backButton = null!, forwardButton = null!;
     private ScrollViewer overviewScroll = null!;
@@ -116,7 +116,7 @@ internal sealed partial class MainWindow
         ResetPageScrolling(); ResetHomeLoading(); searchLoading.Value = false;
         feedLoading = false; feedSkeleton.SetActive(false); ResetUserLoading();
         SetLikesLoading(false); collectionLoadingView.SetLoading(false); homeLoadingView.SetLoading(false);
-        var generation = ++navigationGeneration;
+        ++navigationGeneration;
         navigationIndex = index;
         var entry = navigationHistory[index];
         profileOpen.Value = false;
@@ -165,18 +165,32 @@ internal sealed partial class MainWindow
             librarySectionStatus.Value = state.CollectionStatus;
             librarySectionRetry.Value = state.CollectionRetry;
         }
-        // Restore against arranged virtualized extents, rather than a guessed delay.
-        pendingNavigationScroll = (generation, state.Scroll);
+        RestoreNavigationScroll(state.Scroll);
         Window.InvalidateVisual();
     }
 
-    private void RestoreNavigationScroll()
+    private void RestoreNavigationScroll(double offset)
     {
-        if (pendingNavigationScroll is not { } pending) return;
-        if (pending.Generation == navigationGeneration && !disposed && !shellPageScroll.IsReady) return;
-        pendingNavigationScroll = null;
-        if (pending.Generation == navigationGeneration && !disposed)
-            NavigationScroll()?.SetScrollOffsets(0, pending.Offset);
+        if (page.Value == Page.Chats) return;
+        pendingNavigationScroll = offset;
+        try
+        {
+            // The shell can only clamp against the new page after its virtualized
+            // list has been arranged. Settle both scroll viewers before painting.
+            for (var pass = 0; pass < 8; pass++)
+            {
+                Window.PerformLayout();
+                RefreshSearchScrollLayout();
+                shellPageScroll.Refresh(scheduleFrame: false);
+                if (!shellPageScroll.IsReady) continue;
+                var target = Math.Min(offset, SmoothScroll.Maximum(shellScroll));
+                if (Math.Abs(shellScroll.VerticalOffset - target) < .5) return;
+                shellScroll.SetScrollOffsets(0, target);
+                shellPageScroll.Refresh(scheduleFrame: false);
+            }
+            Window.PerformLayout();
+        }
+        finally { pendingNavigationScroll = null; }
     }
 
     private void ResetNavigationHistory()

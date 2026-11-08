@@ -22,6 +22,7 @@ internal sealed partial class MainWindow
     private double? lyricsFollowTarget;
     private DispatcherTimer lyricsFollowTimer = null!;
     private static readonly TimeSpan LyricsFollowDelay = TimeSpan.FromSeconds(7);
+    private static readonly TimeSpan NearbyLyricsFollowDelay = TimeSpan.FromSeconds(2.5);
     private readonly PaginationItems lyricsItems = new(LoadingRowStyle.Compact, item => ((LyricsDisplayRow)item).Index);
     private sealed record LyricsDisplayRow(int Index, string Text, double Spacer = 0);
     private sealed class LyricsRowVisual(Grid root, TextBlock text, LyricsWaveDots dots)
@@ -48,8 +49,8 @@ internal sealed partial class MainWindow
     {
         lyricsHttp = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(10) };
         lyricsService = new(new LrclibClient(lyricsHttp), Path.Combine(dataPaths.Cache, "Lyrics"), lyricSearch.FindLyricsAsync);
-        lyricsFollowTimer = new(LyricsFollowDelay);
-        lyricsFollowTimer.Tick += ResumeLyricsFollowing;
+        lyricsFollowTimer = new(NearbyLyricsFollowDelay);
+        lyricsFollowTimer.Tick += CheckLyricsFollowDelay;
     }
 
     private static LyricsIdentity IdentifyLyrics(SoundCloudTrack track)
@@ -122,6 +123,9 @@ internal sealed partial class MainWindow
         {
             RestoringAnchor = () =>
             {
+                // During manual scrolling of plain lyrics, a measured row can
+                // shift the offset without moving the text on screen.
+                if (lyricsResult.Status == LyricsStatus.Plain) return true;
                 if (!lyricsFollow || !preferences.LyricsAutoScroll || lyricsResult.Status != LyricsStatus.Synced) return false;
                 // Measuring a wrapped line can shift the virtualized viewport mid-scroll.
                 // Preserve momentum and recheck the active row against the corrected layout.
@@ -131,7 +135,11 @@ internal sealed partial class MainWindow
         };
         lyricsScroll.MouseWheel += args => { if (args.Delta.Y != 0) PauseLyricsFollowing(); };
         lyricsScroll.KeyDown += args =>
-        { if (args.Key is Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End) PauseLyricsFollowing(); };
+        {
+            if (args.Key is not (Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End)) return;
+            smoothScrolls[lyricsScroll].Stop();
+            PauseLyricsFollowing();
+        };
         lyricsFade = new(expandedBackdrop) { IsHitTestVisible = false };
         lyricsSkeleton = new LyricsSkeleton();
         lyricsMessage = new TextBlock().Text("Для текущего трека\nотсутствует текст").FontSize(40).Bold()
@@ -225,10 +233,10 @@ internal sealed partial class MainWindow
     private void ApplyLyrics(LyricsResult result)
     {
         lyricsResult = result; lyricsActiveLine = result.Document?.ActiveLine(lyricsPosition) ?? -1;
-        RenderLyrics();
+        RenderLyrics(resetScroll: true);
     }
 
-    private void RenderLyrics()
+    private void RenderLyrics(bool resetScroll = false)
     {
         if (lyricsList == null) return;
         lyricsFollowTarget = null;
@@ -236,6 +244,8 @@ internal sealed partial class MainWindow
         lyricsMessage.Text = preferences.LyricsEnabled ? "Для текущего трека\nотсутствует текст" : "Тексты песен отключены\nв настройках";
         var hasText = lyricsResult.Status is LyricsStatus.Synced or LyricsStatus.Plain;
         var loading = lyricsResult.Status == LyricsStatus.Loading;
+        resetScroll |= !hasText;
+        if (resetScroll) smoothScrolls[lyricsScroll].Stop();
         lyricsList.IsVisible = lyricsFade.IsVisible = hasText;
         lyricsMessage.IsVisible = !hasText && !loading;
         if (hasText && document != null)
@@ -248,6 +258,13 @@ internal sealed partial class MainWindow
                 .Append(new LyricsDisplayRow(-2, "", Math.Max(120, lyricsScroll.ActualHeight * .55))).Cast<object>());
         }
         else lyricsItems.SetData([]);
+        if (resetScroll)
+        {
+            // Inserting into an empty virtual list can shift its anchor to the
+            // end. Reset after publishing the new rows and replace any old seek.
+            lyricsScroll.SetScrollOffsets(0, 0);
+            if (hasText) lyricsList.ScrollIntoView(0);
+        }
         foreach (var view in lyricsRows.Values) RefreshLyricsRow(view);
         if (loading)
         {
@@ -317,8 +334,38 @@ internal sealed partial class MainWindow
         if (!preferences.LyricsAutoScroll || lyricsResult.Status != LyricsStatus.Synced) return;
         lyricsFollow = false;
         lyricsFollowTarget = null;
-        lyricsFollowTimer.Stop(); lyricsFollowTimer.Start();
+        lyricsFollowTimer.Stop();
+        lyricsFollowTimer.Interval = NearbyLyricsFollowDelay;
+        lyricsFollowTimer.Start();
     }
+
+    private void CheckLyricsFollowDelay()
+    {
+        // Check the arranged viewport after the wheel motion has had time to settle.
+        if (lyricsFollowTimer.Interval == NearbyLyricsFollowDelay && !IsActiveLyricVisible())
+        {
+            lyricsFollowTimer.Interval = LyricsFollowDelay - NearbyLyricsFollowDelay;
+            return;
+        }
+        ResumeLyricsFollowing();
+    }
+
+    private bool IsActiveLyricVisible()
+    {
+        if (lyricsActiveLine < 0) return false;
+        foreach (var (button, view) in lyricsRows)
+        {
+            if (view.Row?.Index != lyricsActiveLine) continue;
+            var ink = view.Dots.IsVisible ? view.Dots.Bounds : view.Text.Bounds;
+            var visible = lyricsScroll.Bounds.Intersect(ink);
+            // A recycled viewport can retain the focused row at its old bounds.
+            // Hit testing excludes such rows, even if their bounds still overlap.
+            if (!visible.IsEmpty && lyricsScroll.HitTest(visible.Center) is { } hit &&
+                (ReferenceEquals(hit, button) || button.IsAncestorOf(hit))) return true;
+        }
+        return false;
+    }
+
     private void ResumeLyricsFollowing()
     {
         lyricsFollowTimer.Stop(); lyricsFollow = preferences.LyricsEnabled && preferences.LyricsAutoScroll;
