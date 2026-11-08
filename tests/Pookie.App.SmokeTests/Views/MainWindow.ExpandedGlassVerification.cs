@@ -33,6 +33,7 @@ internal sealed partial class MainWindow
         {
             if (blur)
             {
+                await WaitForLikedLayoutAsync(() => queuedExpandedArtwork == null && expandedArtworkFade.ContentOpacity == 0);
                 expandedGlassBackdrop.Prepare();
                 // CPU blur now completes on a worker. Wait before acquiring
                 // a GL scope; pixel assertions below still check the real ink.

@@ -5,7 +5,7 @@ using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
-internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool paintSurface = true) : Button
+internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool paintSurface = true, PlayerBackdrop? playerBackdrop = null) : Button
 {
     private readonly GlassSheenRaster sheen = new();
     private readonly LiquidGlassLens lens = new();
@@ -32,6 +32,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
         Background = BorderBrush = Color.Transparent; BorderThickness = 0; Padding = new Thickness(0);
         Content = content.Center(); KeyboardFocusFeedback.Attach(this);
         if (backdrop != null) backdrop.Changed += InvalidateVisual;
+        if (playerBackdrop != null) playerBackdrop.PaletteChanged += InvalidateVisual;
         motion.TickCallback = value =>
         {
             layer = fromLayer + (targetLayer - fromLayer) * value;
@@ -71,8 +72,10 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
         var shape = paintSurface || layer > 0 ? geometry.Get(Bounds, corners) : null;
         if (paintSurface)
         {
-            backdrop?.Draw(context, Bounds, corners, shape, lens, GetDpi() / 96d);
+            if (playerBackdrop != null) lens.DrawPlayerGradient(context, playerBackdrop, Bounds, corners, shape!, GetDpi() / 96d);
+            else backdrop?.Draw(context, Bounds, corners, shape, lens, GetDpi() / 96d);
             var neutral = GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
+            if (playerBackdrop != null) neutral = GlassSheen.LightControlTint(neutral);
             var tint = neutral.Lerp(Color.FromArgb((byte)Math.Min(230, neutral.A + 28),
                 SelectionTint.R, SelectionTint.G, SelectionTint.B), selection);
             context.FillPath(shape!, tint);
@@ -92,6 +95,7 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
     protected override void OnDispose()
     {
         if (backdrop != null) backdrop.Changed -= InvalidateVisual;
+        if (playerBackdrop != null) playerBackdrop.PaletteChanged -= InvalidateVisual;
         lens.Dispose(); sheen.Dispose(); motion.Stop(); base.OnDispose();
     }
 }

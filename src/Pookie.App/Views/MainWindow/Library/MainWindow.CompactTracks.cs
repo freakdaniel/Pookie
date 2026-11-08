@@ -40,7 +40,7 @@ internal sealed partial class MainWindow
         var overlay = CreateCoverPlayback(cover, () => { if (row.Track is { } track) (select ?? SelectLibraryTrack)(track); },
             miniature ? 18 : 30, miniature ? 10 : 18, Color.FromArgb(170, 0, 0, 0)).Width(coverSize).Height(coverSize);
         var frame = new Border().Width(coverSize).Height(coverSize).CornerRadius(5).ClipToBounds()
-            .Child(ArtworkLayer(cover).Children(overlay));
+            .Child(ArtworkLayer(cover, fadeLoading: queueRow).Children(overlay));
         var title = new TextBlock().FontSize(dense ? 12 : 14).SemiBold().Left().Height(dense ? 18 : 21).TextTrimming(TextTrimming.CharacterEllipsis);
         var author = new TextBlock().FontSize(dense ? 11 : 12).Foreground(secondary ?? Muted).Height(dense ? 16 : 19).TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(!miniature);
         var duration = new TextBlock { TextAlignment = TextAlignment.Right }.Width(CompactTrackTail.StatisticsWidth).FontSize(12).Foreground(secondary ?? Muted).Right();

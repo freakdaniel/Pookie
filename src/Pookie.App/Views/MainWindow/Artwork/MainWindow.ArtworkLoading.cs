@@ -19,22 +19,33 @@ internal sealed partial class MainWindow
 
     private const int CompactCoverSize = 44;
 
-    private sealed class ArtworkPresentation(Grid root, LibrarySkeleton skeleton)
+    private sealed class ArtworkPresentation(Grid root, LibrarySkeleton skeleton, bool fadeLoading)
     {
         internal LibrarySkeleton Skeleton { get; } = skeleton;
+        internal bool CanFadeLoading => fadeLoading && Skeleton.IsVisible;
+        internal bool FadingSkeleton { get; private set; }
         private Image? placeholder;
         private AnimationClock? fade;
 
-        internal void Reveal(Image cover, string fallback)
+        internal void Reveal(Image cover, string fallback, bool fromSkeleton)
         {
             StopReveal();
-            var overlay = new Image { IsHitTestVisible = false, VectorCacheMode = ImageVectorCacheMode.Direct }
-                .Source(Icons.Source(fallback)).StretchMode(cover.StretchMode);
-            placeholder = overlay;
-            root.Insert(1, overlay);
+            UIElement outgoing;
+            if (fromSkeleton)
+            {
+                FadingSkeleton = true;
+                outgoing = Skeleton;
+            }
+            else
+            {
+                placeholder = new Image { IsHitTestVisible = false, VectorCacheMode = ImageVectorCacheMode.Direct }
+                    .Source(Icons.Source(fallback)).StretchMode(cover.StretchMode);
+                root.Insert(1, placeholder);
+                outgoing = placeholder;
+            }
             fade = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1))
             {
-                TickCallback = progress => overlay.Opacity = 1 - progress,
+                TickCallback = progress => outgoing.Opacity = 1 - progress,
                 CompletedCallback = StopReveal
             };
             fade.Start();
@@ -44,6 +55,12 @@ internal sealed partial class MainWindow
         {
             fade?.Stop();
             fade = null;
+            if (FadingSkeleton)
+            {
+                FadingSkeleton = false;
+                Skeleton.IsVisible = false;
+                Skeleton.Opacity = 1;
+            }
             if (placeholder is not { } overlay) return;
             placeholder = null;
             root.Remove(overlay);
@@ -102,12 +119,14 @@ internal sealed partial class MainWindow
         finally { coverGate.Release(); }
     }
 
-    private Grid ArtworkLayer(Image cover)
+    private Grid ArtworkLayer(Image cover) => ArtworkLayer(cover, fadeLoading: false);
+
+    private Grid ArtworkLayer(Image cover, bool fadeLoading)
     {
         cover.VectorCacheMode = ImageVectorCacheMode.Direct;
         var skeleton = new LibrarySkeleton { ArtworkOnly = true, IsVisible = false };
         var root = new Grid().Columns("*").Rows("*").Children(cover, skeleton);
-        artworkLoading.Add(cover, new(root, skeleton));
+        artworkLoading.Add(cover, new(root, skeleton, fadeLoading));
         return root;
     }
 
@@ -133,14 +152,16 @@ internal sealed partial class MainWindow
         artworkLoading.TryGetValue(cover, out var presentation);
         if (!ReferenceEquals(cover.Source, next))
         {
-            if (source != null && wasPlaceholder && cover.FindVisualRoot() is Window) presentation?.Reveal(cover, fallback);
+            var fromSkeleton = !pending && cover.Source == null && presentation?.CanFadeLoading == true;
+            if ((fromSkeleton || source != null && wasPlaceholder) && cover.FindVisualRoot() is Window)
+                presentation?.Reveal(cover, fallback, fromSkeleton);
             else presentation?.StopReveal();
             cover.Source = next;
             if (artworkPlayback.TryGetValue(cover, out var overlay)) overlay.ArtworkChanged();
         }
         if (presentation?.Skeleton is { } skeleton)
         {
-            skeleton.IsVisible = pending;
+            skeleton.IsVisible = pending || presentation.FadingSkeleton;
             skeleton.SetActive(pending);
         }
     }

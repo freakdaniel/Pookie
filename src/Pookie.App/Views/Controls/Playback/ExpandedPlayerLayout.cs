@@ -4,7 +4,7 @@ using Aprillz.MewUI.Controls;
 namespace Pookie.App;
 
 // The cover and its details remain one retained subtree throughout the transition.
-internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionLayer panel, Border cover) : Panel
+internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionLayer panel, Border cover, Thickness coverShadowPadding) : Panel
 {
     private double sideAmount, revealAmount, sideTarget, panelReveal;
     private double coverSize, panelWidth, gap;
@@ -69,7 +69,8 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         var bounceMargin = Math.Max(24, Math.Abs(center - split) * .1);
         card.ArrangeWithin(
             new Rect(Bounds.X + Math.Min(center, split), Bounds.Y + y,
-                coverSize + Math.Abs(center - split), cardHeight + 40).Inflate(bounceMargin, 2),
+                coverSize + Math.Abs(center - split), cardHeight + 40).Inflate(bounceMargin, 2)
+                .Inflate(new Thickness(coverShadowPadding.Left, coverShadowPadding.Top, coverShadowPadding.Right, 0)),
             new Rect(Bounds.X + x, Bounds.Y + y, coverSize, cardHeight));
         var panelX = Bounds.X + split + coverSize + gap;
         var panelHeight = Math.Max(0, finalSize.Height - 32);

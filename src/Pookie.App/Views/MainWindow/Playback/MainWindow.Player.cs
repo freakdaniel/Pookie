@@ -25,6 +25,7 @@ internal sealed partial class MainWindow
     private readonly PlayerBackdrop playerBackdrop = new();
     private Border playerArtworkOverlay = null!;
     private Button playerArtworkButton = null!;
+    private Button playerPlayButton = null!;
 
     private FrameworkElement PlayerBar()
     {
@@ -109,6 +110,11 @@ internal sealed partial class MainWindow
             { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));
         volumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
             .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
+        playerPlayButton = new ExpandedGlassButton(null, playerBackdrop: playerBackdrop)
+            .Initialize(new Grid().Columns("*").Rows("*").Children(
+                Icons.View("play-solid", 19, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying, value => !value),
+                Icons.View("pause-solid", 19, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying)))
+            .Width(34).Height(34).CornerRadius(17).OnClick(() => Run(ToggleAsync));
         playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
             .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
@@ -118,11 +124,7 @@ internal sealed partial class MainWindow
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
                     PlayerButton(Icons.View("skip-back-solid", 18, Color.White), () => Run(() => SkipAsync(-1))).CenterVertical(),
-                    new Button().Content(new Grid().Columns("*").Rows("*").Children(
-                        Icons.PlaybackDisc(false, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying, value => !value),
-                        Icons.PlaybackDisc(true, 34, 19, Color.FromRgb(232, 232, 232)).CenterHorizontal().CenterVertical().BindIsVisible(isPlaying)))
-                        .Padding(0).Width(34).Height(34).CornerRadius(17).Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0)
-                        .OnClick(() => Run(ToggleAsync)),
+                    playerPlayButton,
                     PlayerButton(Icons.View("skip-forward-solid", 18, Color.White), () => Run(() => SkipAsync(1))).CenterVertical()),
                 playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(

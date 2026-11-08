@@ -50,10 +50,18 @@ internal sealed class LiquidGlassLens : IDisposable
     private IGraphicsFactory? factory;
     private bool hasAlpha;
     private BackdropBlur? paintedSource;
+    private PlayerGradient? paintedGradient;
     private int paintedVersion;
     private Rect paintedRegion;
     private Size paintedSourceSize;
     private CornerRadius paintedCorners;
+    private LiquidGlassLens? outgoing;
+    internal LiquidGlassLens Outgoing => outgoing ??= new();
+
+    internal void ClearOutgoing()
+    {
+        outgoing?.Dispose(); outgoing = null;
+    }
 
     internal void Draw(IGraphicsContext context, IGraphicsFactory graphics, BackdropBlur? source, Rect sourceBounds,
         Rect bounds, CornerRadius corners, PathGeometry? shape = null, double minimumScale = 1)
@@ -63,7 +71,7 @@ internal sealed class LiquidGlassLens : IDisposable
         EnsureBitmap(graphics, width, height, needsAlpha: source == null);
         var region = new Rect(bounds.X - sourceBounds.X, bounds.Y - sourceBounds.Y, bounds.Width, bounds.Height);
         var version = source?.Version ?? -1;
-        if (paintedSource != source || paintedVersion != version || paintedRegion != region ||
+        if (paintedGradient != null || paintedSource != source || paintedVersion != version || paintedRegion != region ||
             paintedSourceSize != sourceBounds.Size || paintedCorners != corners)
         {
             using var write = bitmap!.LockForWrite();
@@ -77,9 +85,48 @@ internal sealed class LiquidGlassLens : IDisposable
                 version = pixels.Version;
             }
             paintedSource = source;
+            paintedGradient = null;
             paintedVersion = version;
             paintedRegion = region;
             paintedSourceSize = sourceBounds.Size;
+            paintedCorners = corners;
+        }
+        DrawPrepared(context, bounds, corners, shape);
+    }
+
+    internal void DrawPlayerGradient(IGraphicsContext context, PlayerBackdrop backdrop, Rect bounds,
+        CornerRadius corners, PathGeometry shape, double minimumScale)
+    {
+        var surface = backdrop.Bounds;
+        if (surface.Width <= 0 || bounds.IsEmpty) return;
+        var scale = Math.Max(context.DpiScale, minimumScale);
+        var (width, height) = PixelSize(bounds.Size, scale);
+        EnsureBitmap(Application.Current.GraphicsFactory, width, height);
+        var region = new Rect(bounds.X - surface.X, 0, bounds.Width, bounds.Height);
+        var gradient = backdrop.CurrentGradient;
+        if (paintedGradient != gradient || paintedRegion != region || paintedSourceSize.Width != surface.Width || paintedCorners != corners)
+        {
+            // The player gradient is constant along Y and already soft on this
+            // scale. Sample one row with a halo for the lens's displaced rays.
+            const double halo = 16;
+            var sampleSize = new Size(bounds.Width + 2 * halo, bounds.Height);
+            var (sampleWidth, _) = PixelSize(sampleSize, scale);
+            Span<byte> pixels = stackalloc byte[sampleWidth * 4];
+            for (var x = 0; x < sampleWidth; x++)
+            {
+                var sample = gradient.Sample((region.X - halo + (x + .5) / sampleWidth * sampleSize.Width) / surface.Width);
+                var i = x * 4;
+                pixels[i] = (byte)Math.Round(sample.Z);
+                pixels[i + 1] = (byte)Math.Round(sample.Y);
+                pixels[i + 2] = (byte)Math.Round(sample.X);
+                pixels[i + 3] = 255;
+            }
+            using var write = bitmap!.LockForWrite();
+            Render(write.PixelsBgra32, width, height, pixels, pixels, sampleWidth, 1,
+                new Rect(halo, 0, bounds.Width, bounds.Height), sampleSize, corners);
+            paintedGradient = gradient;
+            paintedRegion = region;
+            paintedSourceSize = new Size(surface.Width, 1);
             paintedCorners = corners;
         }
         DrawPrepared(context, bounds, corners, shape);
@@ -107,7 +154,7 @@ internal sealed class LiquidGlassLens : IDisposable
     {
         if (bitmap != null && factory == graphics && bitmap.PixelWidth == width && bitmap.PixelHeight == height &&
             (!needsAlpha || hasAlpha)) return;
-        Dispose();
+        ClearBitmap();
         hasAlpha = needsAlpha;
         bitmap = new WriteableBitmap(width, height, clear: false, hasAlpha: hasAlpha);
         image = hasAlpha ? BitmapImage.CreatePremultipliedView(graphics, bitmap) : ((IImageSource)bitmap).CreateImage(graphics);
@@ -231,10 +278,17 @@ internal sealed class LiquidGlassLens : IDisposable
 
     public void Dispose()
     {
+        ClearOutgoing();
+        ClearBitmap();
+    }
+
+    private void ClearBitmap()
+    {
         brush = null;
         image?.Dispose(); image = null;
         bitmap?.Dispose(); bitmap = null;
         factory = null; paintedSource = null;
+        paintedGradient = null;
         paintedVersion = int.MinValue;
     }
 }

@@ -11,6 +11,14 @@ internal sealed class DecorationRaster : IDisposable
     internal IImage Image { get; }
     internal long PixelBytes { get; }
 
+    internal DecorationRaster(IGraphicsFactory factory, WriteableBitmap source)
+    {
+        bitmap = source;
+        PixelBytes = (long)source.PixelWidth * source.PixelHeight * 4;
+        try { Image = BitmapImage.Create(factory, bitmap); }
+        catch { bitmap.Dispose(); throw; }
+    }
+
     internal DecorationRaster(IGraphicsFactory factory, Size size, double scale, Action<IGraphicsContext, Rect> draw)
     {
         var width = Math.Max(1, (int)Math.Ceiling(size.Width * scale));

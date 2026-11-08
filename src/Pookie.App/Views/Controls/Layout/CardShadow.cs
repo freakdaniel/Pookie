@@ -13,11 +13,12 @@ internal sealed class CardShadow : Panel
     private readonly FrameworkElement child;
     private readonly BoxShadowRaster shadow;
 
-    internal CardShadow(FrameworkElement child, double blur = 12, double offset = 4, double radius = 20, Color? color = null)
+    internal CardShadow(FrameworkElement child, double blur = 12, double offset = 4, double radius = 20, Color? color = null,
+        bool softFalloff = false)
     {
         this.child = child; this.radius = radius;
         shadowPadding = new Thickness(blur, Math.Max(0, blur - offset), blur, Math.Max(0, blur + offset));
-        shadow = new BoxShadowRaster(blur, offset, color ?? Color.FromArgb(60, 0, 0, 0));
+        shadow = new BoxShadowRaster(blur, offset, color ?? Color.FromArgb(60, 0, 0, 0), softFalloff);
         Add(child);
     }
 

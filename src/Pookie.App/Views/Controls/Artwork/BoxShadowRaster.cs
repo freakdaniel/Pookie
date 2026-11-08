@@ -6,7 +6,7 @@ namespace Pookie.App;
 // Rounded shadow corners are fixed-size; only the flat edge/centre stretch.
 // Keep a small nine-slice raster instead of generating many radial/linear
 // gradient brushes on every scrolling frame or caching a full card-sized image.
-internal sealed class BoxShadowRaster(double blur, double offset, Color color) : IDisposable
+internal sealed class BoxShadowRaster(double blur, double offset, Color color, bool softFalloff = false) : IDisposable
 {
     private DecorationRaster? raster;
     private IGraphicsFactory? factory;
@@ -19,7 +19,7 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color) :
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         var nextRadius = Math.Max(0, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2));
-        if (!OperatingSystem.IsWindows())
+        if (!softFalloff && !OperatingSystem.IsWindows())
         {
             context.DrawBoxShadow(bounds, nextRadius, blur,
                 Color.FromArgb((byte)Math.Round(color.A * opacity), color.R, color.G, color.B), offsetY: offset);
@@ -34,8 +34,10 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color) :
         {
             Dispose(); factory = graphics; radius = nextRadius; scale = nextScale; patchSize = patch;
             var size = new Size(patch.Width + blur * 2, patch.Height + blur * 2);
-            raster = new DecorationRaster(graphics, size, scale, (renderer, _) =>
-                renderer.DrawBoxShadow(new Rect(blur, blur - offset, patch.Width, patch.Height), radius, blur, color, offsetY: offset));
+            raster = softFalloff
+                ? new DecorationRaster(graphics, CreateSoftMask(patch, size))
+                : new DecorationRaster(graphics, size, scale, (renderer, _) =>
+                    renderer.DrawBoxShadow(new Rect(blur, blur - offset, patch.Width, patch.Height), radius, blur, color, offsetY: offset));
             left = Math.Min((raster.Image.PixelWidth - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
             top = Math.Min((raster.Image.PixelHeight - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
             right = raster.Image.PixelWidth - left - 1;
@@ -67,6 +69,40 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color) :
                         new Rect(sx[x], sy[y], sx[x + 1] - sx[x], sy[y + 1] - sy[y]));
         }
         finally { context.GlobalAlpha = alpha; }
+    }
+
+    private WriteableBitmap CreateSoftMask(Size patch, Size size)
+    {
+        var width = (int)Math.Ceiling(size.Width * scale);
+        var height = (int)Math.Ceiling(size.Height * scale);
+        var bitmap = new WriteableBitmap(width, height, clear: false);
+        using var write = bitmap.LockForWrite();
+        var pixels = write.PixelsBgra32;
+        var centerX = size.Width / 2;
+        var centerY = size.Height / 2;
+        var innerWidth = patch.Width / 2 - radius;
+        var innerHeight = patch.Height / 2 - radius;
+        var inset = blur / 4;
+        for (var y = 0; y < height; y++)
+        {
+            var dy = Math.Abs((y + .5) / scale - centerY) - innerHeight;
+            for (var x = 0; x < width; x++)
+            {
+                var dx = Math.Abs((x + .5) / scale - centerX) - innerWidth;
+                var outsideX = Math.Max(0, dx);
+                var outsideY = Math.Max(0, dy);
+                var distance = Math.Sqrt(outsideX * outsideX + outsideY * outsideY) +
+                    Math.Min(0, Math.Max(dx, dy)) - radius;
+                var progress = Math.Clamp((distance + inset) / (blur + inset), 0, 1);
+                var remaining = 1 - progress;
+                // The tail reaches zero with zero slope, including around corners.
+                var alpha = color.A * remaining * remaining * remaining * (1 + 3 * progress);
+                var i = (y * width + x) * 4;
+                pixels[i] = color.B; pixels[i + 1] = color.G; pixels[i + 2] = color.R;
+                pixels[i + 3] = (byte)Math.Round(alpha);
+            }
+        }
+        return bitmap;
     }
 
     public void Dispose() { raster?.Dispose(); raster = null; factory = null; }

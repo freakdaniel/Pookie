@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
     private void RefreshCardGlass()
     {
         if (disposed || Window.WindowState == WindowState.Minimized) return;
-        if (expandedHost.IsVisible) expandedGlassBackdrop.Prepare();
+        if (expandedHost.IsVisible) RefreshExpandedArtworkGlass();
         if (!workspace.IsVisible) return;
         if (page.Value == Page.Home) homeMixCarousel.PrepareGlass();
         foreach (var row in likedRows.Values) row.PrepareTrackArtGlass(contentFrame.Bounds);
@@ -43,9 +43,11 @@ internal sealed partial class MainWindow
 
     private void SetPlayerArtwork(ImageSource? source, long generation, bool pending = false)
     {
-        artwork.Source = source != null ? source : Icons.Source(Icons.MissingTrackArtwork);
-        expandedArtwork.Source = artwork.Source;
-        expandedGlassBackdrop?.RefreshArtwork();
+        if (generation != playGeneration) return;
+        var display = source != null ? (IImageSource)source : Icons.Source(Icons.MissingTrackArtwork);
+        artwork.Source = display;
+        if (source != null || !pending || expandedArtwork.Source == null)
+            SetExpandedArtwork(display, generation);
         if (source == null)
         {
             // Keep the previous hue until the new cover is available. Fading to
@@ -63,12 +65,87 @@ internal sealed partial class MainWindow
                 catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException)
                 { return PlayerPalette.Neutral; }
             }, lifetime.Token));
-            if (!disposed && generation == playGeneration)
+            if (!disposed && generation == playGeneration && ReferenceEquals(artwork.Source, source))
             {
                 playerBackdrop.SetPalette(palette);
                 expandedBackdrop.SetPalette(palette);
             }
         });
+    }
+
+    private void SetExpandedArtwork(IImageSource source, long generation)
+    {
+        if (expandedArtworkFade.ContentOpacity > 0 || expandedOpen && expandedArtwork.Source is not null)
+        {
+            queuedExpandedArtwork = (source, generation);
+            Window.InvalidateVisual();
+            return;
+        }
+        queuedExpandedArtwork = null;
+        if (ReferenceEquals(expandedArtwork.Source, source)) return;
+        expandedArtwork.Source = source;
+        expandedGlassBackdrop.RefreshArtwork(keepCurrent: true);
+    }
+
+    private void RefreshExpandedArtworkGlass()
+    {
+        if (expandedArtworkFade.ContentOpacity > 0)
+        {
+            // Both refraction textures are ready. Redraw the glass with the same
+            // eased alpha as the outgoing cover without capturing another frame.
+            expandedGlassBackdrop.RefreshBlend();
+            return;
+        }
+        expandedGlassBackdrop.Prepare();
+        if (queuedExpandedArtwork is not { } next) return;
+        if (!expandedOpen || next.Generation != playGeneration || ReferenceEquals(expandedArtwork.Source, next.Source))
+        {
+            queuedExpandedArtwork = null;
+            return;
+        }
+        var bounds = expandedArtwork.Bounds;
+        if (bounds.IsEmpty) return;
+        stagedExpandedArtwork.Source = next.Source;
+        stagedExpandedArtwork.Measure(bounds.Size);
+        stagedExpandedArtwork.Arrange(bounds);
+        stagedExpandedGlass.RefreshArtwork(keepCurrent: true);
+        stagedExpandedGlass.Prepare();
+        if (!stagedExpandedGlass.IsCurrent || !expandedGlassBackdrop.IsCurrent) return;
+
+        queuedExpandedArtwork = null;
+        var previous = expandedArtwork.Source;
+        outgoingExpandedArtwork.Source = previous;
+        outgoingExpandedCover.Background = previous is ImageSource { HasAlpha: true } ? Raised : Color.Transparent;
+        expandedArtworkFade.Transition = ContentTransition.CreateNone();
+        expandedArtworkFade.Content = outgoingExpandedCover;
+        expandedArtworkFade.Transition = ExpandedArtworkFade;
+        // Keep the new image opaque beneath the fading outgoing image.
+        expandedArtworkFade.Content = null;
+        expandedArtwork.Source = next.Source;
+        expandedGlassBackdrop.BeginBlend(stagedExpandedGlass, () => expandedArtworkFade.ContentOpacity);
+        stagedExpandedArtwork.Source = null;
+    }
+
+    private void CompleteExpandedArtworkFade()
+    {
+        outgoingExpandedArtwork.Source = null;
+        expandedGlassBackdrop.EndBlend(stagedExpandedGlass);
+        if (!expandedOpen && queuedExpandedArtwork is { } next && next.Generation == playGeneration)
+            SetExpandedArtwork(next.Source, next.Generation);
+    }
+
+    private void ResetExpandedArtwork()
+    {
+        queuedExpandedArtwork = null;
+        if (expandedArtworkFade.ContentOpacity > 0)
+        {
+            expandedArtworkFade.Transition = ContentTransition.CreateNone();
+            expandedArtworkFade.Content = outgoingExpandedCover;
+            expandedArtworkFade.Content = null;
+        }
+        stagedExpandedArtwork.Source = outgoingExpandedArtwork.Source = expandedArtwork.Source = null;
+        stagedExpandedGlass.Reset();
+        expandedGlassBackdrop.Reset();
     }
 
     private void ResetProfileAvatar()

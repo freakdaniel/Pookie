@@ -13,6 +13,9 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private IRenderSurface? raster;
     private IGraphicsContext? renderer;
     private BackdropBlur? blurred;
+    private BackdropBlur? outgoing;
+    private byte[]? outgoingBrightness;
+    private Func<double>? outgoingOpacity;
     private IGraphicsFactory? factory;
     private IImageSource? source;
     private Size size, sampledArtworkSize;
@@ -21,10 +24,11 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private long revision;
     private IImageSource? observedSource;
     private double observedOpacity = double.NaN;
-    private readonly byte[] brightness = new byte[32 * 32];
+    private byte[] brightness = new byte[32 * 32];
     internal bool HasArtwork => artwork.Source != null;
     internal bool HasBitmapArtwork => artwork.Source is ImageSource;
     internal bool HasBlurredArtwork => blurred is { Ready: true };
+    internal bool IsBlending => outgoing != null;
     internal bool IsCurrent => HasBlurredArtwork && !preparing && !dirty && source == artwork.Source &&
         sampledOpacity == artwork.Opacity && sampledArtworkSize == ArtworkBounds.Size;
     internal bool IsCard => card != null || background != null;
@@ -74,8 +78,8 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
                     Math.Max(1, (int)Math.Ceiling(bounds.Width * scale)), Math.Max(1, (int)Math.Ceiling(bounds.Height * scale)),
                     scale, debugName: "ArtworkControlGlass"));
                 renderer = graphics.CreateContext(raster);
-                blurred = new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight, preserveSharp: true);
             }
+            blurred ??= new BackdropBlur(graphics, raster.PixelWidth, raster.PixelHeight, preserveSharp: true);
             source = artwork.Source; sampledOpacity = artwork.Opacity; sampledArtworkSize = ArtworkBounds.Size;
             observedSource = source; observedOpacity = sampledOpacity;
             renderer!.BeginFrame(raster); renderer.Save();
@@ -119,6 +123,51 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
         return false;
     }
 
+    internal void BeginBlend(CoverGlassBackdrop staged, Func<double> previousOpacity)
+    {
+        ReleaseOutgoing();
+        outgoing = blurred;
+        outgoingBrightness = brightness;
+        outgoingOpacity = previousOpacity;
+        (blurred, staged.blurred) = (staged.blurred, null);
+        (raster, staged.raster) = (staged.raster, raster);
+        (renderer, staged.renderer) = (staged.renderer, renderer);
+        (factory, staged.factory) = (staged.factory, factory);
+        (size, staged.size) = (staged.size, size);
+        brightness = staged.brightness;
+        staged.brightness = new byte[32 * 32];
+        staged.source = null;
+        staged.dirty = true;
+        source = observedSource = artwork.Source;
+        sampledOpacity = observedOpacity = artwork.Opacity;
+        sampledArtworkSize = ArtworkBounds.Size;
+        dirty = false;
+        Changed?.Invoke();
+    }
+
+    internal void RefreshBlend() => Changed?.Invoke();
+
+    internal void EndBlend(CoverGlassBackdrop staged)
+    {
+        if (outgoing == null) return;
+        // The other slot is idle during the blend. Reuse its full-cover pixel
+        // buffers on the next switch when the cover geometry still matches.
+        if (staged.blurred == null && staged.size == size && staged.factory == factory)
+        {
+            staged.blurred = outgoing;
+            staged.brightness = outgoingBrightness!;
+            outgoing = null;
+        }
+        ReleaseOutgoing();
+        Changed?.Invoke();
+    }
+
+    private void ReleaseOutgoing()
+    {
+        outgoing?.Dispose(); outgoing = null;
+        outgoingBrightness = null; outgoingOpacity = null;
+    }
+
     internal void Draw(IGraphicsContext context, Rect region, CornerRadius corners, PathGeometry? shape = null,
         LiquidGlassLens? lens = null, double minimumScale = 1)
     {
@@ -130,31 +179,56 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
             return;
         }
         var bounds = BackgroundBounds;
-        if (lens != null)
+        if (outgoing is { } previous && outgoingOpacity is { } opacity)
         {
-            lens.Draw(context, factory, blurred, bounds, region, corners, shape, minimumScale);
+            var previousAmount = opacity();
+            if (previousAmount > 0) DrawSample(previous, lens?.Outgoing);
+            if (previousAmount < 1)
+            {
+                var alpha = context.GlobalAlpha;
+                try
+                {
+                    context.GlobalAlpha = alpha * (float)(1 - previousAmount);
+                    DrawSample(blurred, lens);
+                }
+                finally { context.GlobalAlpha = alpha; }
+            }
             return;
         }
-        context.Save();
-        try
+        lens?.ClearOutgoing();
+        DrawSample(blurred, lens);
+
+        void DrawSample(BackdropBlur sample, LiquidGlassLens? sampleLens)
         {
-            context.SetClipPath(shape ?? GlassSheen.Shape(region, corners));
-            context.DrawImage(blurred.Image, bounds);
+            if (sampleLens != null)
+            {
+                sampleLens.Draw(context, factory!, sample, bounds, region, corners, shape, minimumScale);
+                return;
+            }
+            context.Save();
+            try
+            {
+                context.SetClipPath(shape ?? GlassSheen.Shape(region, corners));
+                context.DrawImage(sample.Image, bounds);
+            }
+            finally { context.Restore(); }
         }
-        finally { context.Restore(); }
     }
 
     internal double Brightness(Rect region)
     {
         if (blurred is not { Ready: true }) return 0;
         var bounds = BackgroundBounds;
+        var previousAmount = outgoingOpacity?.Invoke() ?? 0;
         var total = 0d;
         for (var y = 0; y < 3; y++)
         for (var x = 0; x < 3; x++)
         {
             var column = (int)((region.X + region.Width * (x + .5) / 3 - bounds.X) / bounds.Width * 32);
             var row = (int)((region.Y + region.Height * (y + .5) / 3 - bounds.Y) / bounds.Height * 32);
-            total += brightness[Math.Clamp(row, 0, 31) * 32 + Math.Clamp(column, 0, 31)];
+            var index = Math.Clamp(row, 0, 31) * 32 + Math.Clamp(column, 0, 31);
+            var value = brightness[index];
+            total += outgoingBrightness is { } previous ? value + (previous[index] - value) * previousAmount : value;
         }
         return total / 9;
     }
@@ -170,6 +244,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private void Clear()
     {
         revision++;
+        ReleaseOutgoing();
         blurred?.Dispose(); blurred = null;
         renderer?.Dispose(); renderer = null; raster?.Dispose(); raster = null;
         source = null; factory = null;

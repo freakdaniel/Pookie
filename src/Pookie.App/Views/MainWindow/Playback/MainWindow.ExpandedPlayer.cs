@@ -19,7 +19,14 @@ internal sealed partial class MainWindow
     private ExpandedPlayerLayout expandedLayout = null!;
     private Border expandedCover = null!;
     private Image expandedArtwork = null!;
+    private Image outgoingExpandedArtwork = null!;
+    private Image stagedExpandedArtwork = null!;
+    private Border outgoingExpandedCover = null!;
+    private TransitionContentControl expandedArtworkFade = null!;
+    private (IImageSource Source, long Generation)? queuedExpandedArtwork;
+    private static readonly ContentTransition ExpandedArtworkFade = ContentTransition.CreateFade(240);
     private CoverGlassBackdrop expandedGlassBackdrop = null!;
+    private CoverGlassBackdrop stagedExpandedGlass = null!;
     private Slider expandedProgress = null!;
     private TextBlock expandedPositionLabel = null!, expandedDurationLabel = null!;
     private ExpandedGlassSurface expandedVolume = null!;
@@ -45,8 +52,16 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ExpandedPlayer()
     {
-        expandedArtwork = new Image().Source(artwork.Source).StretchMode(Stretch.UniformToFill);
+        expandedArtwork = new Image().StretchMode(Stretch.UniformToFill);
+        outgoingExpandedArtwork = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
+        stagedExpandedArtwork = new Image().StretchMode(Stretch.UniformToFill);
+        outgoingExpandedCover = new Border().Child(outgoingExpandedArtwork);
+        expandedArtworkFade = new TransitionContentControl { IsHitTestVisible = false };
+        expandedArtworkFade.TransitionCompleted += CompleteExpandedArtworkFade;
+        var coverArt = new Grid().Columns("*").Rows("*").Children(expandedArtwork, expandedArtworkFade);
         expandedGlassBackdrop = new CoverGlassBackdrop(expandedArtwork);
+        stagedExpandedGlass = new CoverGlassBackdrop(stagedExpandedArtwork);
+        stagedExpandedGlass.Changed += () => { if (!disposed && expandedOpen) Window.InvalidateVisual(); };
         var transport = new Grid().Columns("*").Rows("*");
         transport.Opacity = 0;
         transport.IsHitTestVisible = false;
@@ -88,8 +103,9 @@ internal sealed partial class MainWindow
                 new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
                 ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
                 new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost)));
-        expandedCover = new Border().Background(Raised).CornerRadius(10).ClipToBounds()
-            .Child(new Grid().Columns("*").Rows("*").Children(expandedArtwork, transport));
+        const double coverRadius = 10, shadowBlur = 44, shadowOffset = 8;
+        expandedCover = new Border().Background(Raised).CornerRadius(coverRadius).ClipToBounds()
+            .Child(new Grid().Columns("*").Rows("*").Children(coverArt, transport));
         expandedCover.SizeChanged += args => FitExpandedVolume(args.NewSize.Width);
         hoverReveals.Add(new HoverReveal(expandedCover, visible =>
             { transport.IsHitTestVisible = visible; transport.Opacity = visible ? 1 : 0; },
@@ -102,8 +118,11 @@ internal sealed partial class MainWindow
             {
                 if (!syncingExpandedProgress) progress.Value = value;
             });
+        var shadowPadding = new Thickness(shadowBlur, shadowBlur - shadowOffset, shadowBlur, shadowBlur + shadowOffset);
+        var coverShadow = new CardShadow(expandedCover, shadowBlur, shadowOffset, coverRadius, Color.FromArgb(90, 0, 0, 0), softFalloff: true)
+            .Margin(shadowPadding * -1);
         var card = new StackPanel().Vertical().Spacing(0).Children(
-            expandedCover,
+            coverShadow,
             new StackPanel().Vertical().Spacing(5).Margin(0, 22, 0, 20).Children(
                 new TextBlock().BindText(title).Foreground(Color.White).FontSize(20).Bold().CenterHorizontal()
                     .TextTrimming(TextTrimming.CharacterEllipsis),
@@ -133,7 +152,7 @@ internal sealed partial class MainWindow
         var panelViewport = new Border().ClipToBounds().Child(expandedPanel);
         var cardLayer = new PlayerMotionLayer(card);
         var panelLayer = new PlayerMotionLayer(panelViewport);
-        expandedLayout = new ExpandedPlayerLayout(cardLayer, panelLayer, expandedCover);
+        expandedLayout = new ExpandedPlayerLayout(cardLayer, panelLayer, expandedCover, shadowPadding);
         expandedLayout.Add(cardLayer); expandedLayout.Add(panelLayer);
         expandedHost = new Grid().Columns("*").Rows("84,*").ClipToBounds().Children(
             expandedBackdrop.Row(0).RowSpan(2),
@@ -244,7 +263,11 @@ internal sealed partial class MainWindow
             playerArtworkOverlay.Opacity = 0;
             SyncExpandedTimeline(); RefreshExpandedQueue();
         }
-        else { workspace.IsVisible = true; CancelSeek(); SetExpandedVolumeOpen(false); }
+        else
+        {
+            workspace.IsVisible = true; CancelSeek(); SetExpandedVolumeOpen(false);
+            if (expandedArtworkFade.ContentOpacity == 0) CompleteExpandedArtworkFade();
+        }
         expandedFrom = expandedReveal;
         expandedTo = open ? 1 : 0;
         expandedAnimation.Start();
@@ -315,7 +338,7 @@ internal sealed partial class MainWindow
         expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
         if (!disposed && overviewRefreshPending) RefreshOverviewSections();
         expandedLoading.SetLoading(false); expandedBuffer.Reset(); expandedBackdrop.Reset();
-        expandedGlassBackdrop?.Reset();
+        ResetExpandedArtwork();
         workspace.IsHitTestVisible = workspace.IsEnabled;
     }
 }
