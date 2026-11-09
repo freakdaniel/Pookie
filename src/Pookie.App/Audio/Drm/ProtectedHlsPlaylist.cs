@@ -5,7 +5,8 @@ namespace Pookie.Audio;
 internal sealed record ProtectedHlsPlaylist(Uri Initialization, byte[] InitData, HlsSegment[] Segments, double Duration)
 {
     private const string Widevine = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
-    public static ProtectedHlsPlaylist Parse(string text, Uri origin, Func<Uri, bool> allowed)
+    private const string PlayReady = "urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95";
+    public static ProtectedHlsPlaylist Parse(string text, Uri origin, Func<Uri, bool> allowed, bool playReady = false)
     {
         if (!text.TrimStart('\uFEFF').StartsWith("#EXTM3U", StringComparison.Ordinal)) throw Invalid();
         Uri? initialization = null;
@@ -28,8 +29,7 @@ internal sealed record ProtectedHlsPlaylist(Uri Initialization, byte[] InitData,
             {
                 var attributes = Attributes(line[11..]);
                 if (!attributes.TryGetValue("KEYFORMAT", out var format)) throw Invalid();
-                // A playlist may declare PlayReady alongside Widevine. Only the Widevine declaration is used.
-                if (format != Widevine) continue;
+                if (playReady ? format is not (PlayReady or "com.microsoft.playready") : format != Widevine) continue;
                 if (!attributes.TryGetValue("METHOD", out var method) || method is not ("SAMPLE-AES" or "SAMPLE-AES-CTR") ||
                     !attributes.TryGetValue("URI", out var data) || !data.StartsWith("data:", StringComparison.Ordinal) ||
                     data.Length > 90000) throw Invalid();
@@ -62,5 +62,5 @@ internal sealed record ProtectedHlsPlaylist(Uri Initialization, byte[] InitData,
         try { return HlsAttributes.Parse(line); }
         catch (InvalidOperationException) { throw Invalid(); }
     }
-    private static DrmPlaybackException Invalid() => new("SoundCloud вернул неподдерживаемый или некорректный Widevine HLS-плейлист.");
+    private static DrmPlaybackException Invalid() => new("SoundCloud вернул неподдерживаемый или некорректный защищённый HLS-плейлист.");
 }

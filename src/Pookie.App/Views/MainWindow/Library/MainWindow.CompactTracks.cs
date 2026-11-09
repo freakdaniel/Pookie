@@ -48,6 +48,7 @@ internal sealed partial class MainWindow
         var statistics = new StackPanel().Vertical().Spacing(2).Right().CenterVertical().Children(duration, plays);
         var heart = Icons.View("heart", 17, MutedIcon).CenterHorizontal().CenterVertical();
         var like = TrackButtons.Icon(heart, () => { }, TrackButtons.Text, 32).CenterVertical().IsVisible(!miniature);
+        if (collectionRow && OperatingSystem.IsWindows() && like is MaterialTrackButton material) material.BakeGlyphOpacity = true;
         // These are opacity layers, not rounded surfaces: avoid a mask per row.
         var summary = new InkBorder().CornerRadius(0).Background(Color.Transparent).Content(statistics);
         var actions = new InkBorder().CornerRadius(0).Background(Color.Transparent);
@@ -111,7 +112,7 @@ internal sealed partial class MainWindow
         if (!sameTrack)
         {
             row.Overlay.Reset();
-            SetCompactActionReveal(row, row.Hovered && track != null, animate: false);
+            SetCompactActionReveal(row, row.Hovered && !(row.CollectionRow && playlistHoverSuspended) && track != null, animate: false);
         }
         if (track == null)
         {
@@ -164,18 +165,20 @@ internal sealed partial class MainWindow
     private void RefreshCompactTrackRow(CompactTrackRow row)
     {
         if (row.Track is not { } track) return;
-        var showActions = row.Hovered || row.Root.IsFocusWithin && Window.FocusManager.FocusedElement is Control focused && KeyboardFocusFeedback.IsVisible(focused);
+        var scrolling = row.CollectionRow && playlistHoverSuspended;
+        var hovered = row.Hovered && !scrolling;
+        var showActions = hovered || row.Root.IsFocusWithin && Window.FocusManager.FocusedElement is Control focused && KeyboardFocusFeedback.IsVisible(focused);
         if (!showActions && row.Actions.IsFocusWithin) Window.FocusManager.ClearFocus();
         if (showActions && !row.Miniature && track.Id > 0) EnsureCompactTrackActions(row);
         if (row.RepostMenu != null) row.RepostMenu.Text = repostedIds.Contains(track.Id) ? "Убрать репост" : "Сделать репост";
         var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId :
             row.CollectionRow && playbackQueue.Context?.Key == displayedCollection?.Key
                 ? current?.Id == track.Id && playbackQueue.Current?.SourceIndex == row.SourceIndex : current?.Id == track.Id;
-        row.HoverFill.Strength = selected || row.Hovered ? 1 : 0;
-        row.Overlay.SetHovered(row.Hovered);
-        row.Overlay.SetPlaying(selected, isPlaying.Value);
+        row.HoverFill.Strength = selected || hovered ? 1 : 0;
+        row.Overlay.SetHovered(hovered, animate: !scrolling);
+        row.Overlay.SetPlaying(selected, isPlaying.Value, animate: !scrolling);
         var liked = IsTrackLiked(track);
-        TrackButtons.SetGlyph(row.Heart, liked ? "heart-filled" : "heart", liked ? LikedHeart : row.Hovered ? Color.White : MutedIcon);
+        TrackButtons.SetGlyph(row.Heart, liked ? "heart-filled" : "heart", liked ? LikedHeart : hovered ? Color.White : MutedIcon);
         TrackButtons.SetAvailability(row.Like, CanLikeTrack(track), IsLikePending(track));
         row.Like.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
         if (row.Repost is { } repost && row.RepostIcon is { } repostIcon)
@@ -185,7 +188,7 @@ internal sealed partial class MainWindow
             TrackButtons.SetAvailability(repost, CanRepostTrack(track), IsRepostPending(track));
             repost.Hint(reposted ? "Убрать репост" : "Сделать репост");
         }
-        SetCompactActionReveal(row, showActions);
+        SetCompactActionReveal(row, showActions, animate: !scrolling);
     }
 
     private static void SetCompactActionReveal(CompactTrackRow row, bool show, bool animate = true)

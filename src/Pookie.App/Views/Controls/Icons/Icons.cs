@@ -20,21 +20,21 @@ internal static class Icons
     internal static IVectorImageSource Source(string name, bool dark = false) =>
         Source(name, dark ? Color.FromRgb(32, 32, 32) : Color.FromRgb(222, 222, 222));
 
-    internal static IVectorImageSource Source(string name, Color color)
+    internal static IVectorImageSource Source(string name, Color color, bool dimmed = false)
     {
-        var key = (name, color.ToArgb(), 1);
+        var key = (name, color.ToArgb(), dimmed ? -1 : 1);
         if (sources.TryGetValue(key, out var cached)) return cached;
-        var svg = CreateTintedSource(name, color, cacheRaster: true);
+        var svg = CreateTintedSource(name, color, cacheRaster: true, dimmed: dimmed);
         sources.Add(key, svg);
         return svg;
     }
 
     // Intermediate hover/selection colours belong to one animation frame. A
     // process-wide entry for each shade retained its SVG and GPU rasters forever.
-    internal static IVectorImageSource TransitionSource(string name, Color color) =>
-        CreateTintedSource(name, color, cacheRaster: false);
+    internal static IVectorImageSource TransitionSource(string name, Color color, bool dimmed = false) =>
+        CreateTintedSource(name, color, cacheRaster: false, dimmed: dimmed);
 
-    private static IVectorImageSource CreateTintedSource(string name, Color color, bool cacheRaster, int rasterBucket = 1)
+    private static IVectorImageSource CreateTintedSource(string name, Color color, bool cacheRaster, int rasterBucket = 1, bool dimmed = false)
     {
         if (!templates.TryGetValue(name, out var template))
         {
@@ -45,7 +45,17 @@ internal static class Icons
             templates[name] = template = reader.ReadToEnd();
         }
         var tint = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-        return new ImmutableIconSource(SimpleSvgSource.FromString(template.Replace("currentColor", tint)), cacheRaster, rasterBucket);
+        var markup = template.Replace("currentColor", tint);
+        if (dimmed)
+        {
+            // Blend the SVG once into its shared raster, including the
+            // overlapping paths, instead of blending a layer on every row.
+            var root = XElement.Parse(markup);
+            var ink = new XElement(root.Name.Namespace + "g", new XAttribute("opacity", "0.38"), root.Nodes());
+            root.ReplaceNodes(ink);
+            markup = root.ToString(SaveOptions.DisableFormatting);
+        }
+        return new ImmutableIconSource(SimpleSvgSource.FromString(markup), cacheRaster, rasterBucket);
     }
 
     internal static IVectorImageSource? CountryFlag(string? code)
@@ -135,6 +145,15 @@ internal static class Icons
             {
                 width = Math.Min(2048, (width + rasterBucket - 1) / rasterBucket * rasterBucket);
                 height = Math.Min(2048, (height + rasterBucket - 1) / rasterBucket * rasterBucket);
+            }
+            // SVG drawing replaces the current transform. Record the shared
+            // bitmap instead so a moving row can replay the icon at its new
+            // position, including inside the action strip's opacity layer.
+            if (OperatingSystem.IsWindows() && rasterBucket == 1 && Math.Max(width, height) <= 64 &&
+                !WindowPresentation.IsRecording(context))
+            {
+                source.Render(context, destRect);
+                return;
             }
             var graphics = Application.Current.GraphicsFactory;
             lock (rasters)

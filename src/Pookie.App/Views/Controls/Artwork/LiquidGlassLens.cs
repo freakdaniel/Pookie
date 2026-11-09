@@ -56,6 +56,11 @@ internal sealed class LiquidGlassLens : IDisposable
     private Size paintedSourceSize;
     private CornerRadius paintedCorners;
     private LiquidGlassLens? outgoing;
+    private readonly record struct LensFrame(BackdropBlur.LensPixels? Source, Rect Region, Size SourceSize,
+        CornerRadius Corners, int Width, int Height);
+    private LensFrame? requestedFrame, renderedFrame;
+    private bool renderingFrame;
+    private int revision;
     internal LiquidGlassLens Outgoing => outgoing ??= new();
 
     internal void ClearOutgoing()
@@ -63,35 +68,83 @@ internal sealed class LiquidGlassLens : IDisposable
         outgoing?.Dispose(); outgoing = null;
     }
 
-    internal void Draw(IGraphicsContext context, IGraphicsFactory graphics, BackdropBlur? source, Rect sourceBounds,
-        Rect bounds, CornerRadius corners, PathGeometry? shape = null, double minimumScale = 1)
+    internal bool Draw(IGraphicsContext context, IGraphicsFactory graphics, BackdropBlur? source, Rect sourceBounds,
+        Rect bounds, CornerRadius corners, PathGeometry? shape = null, double minimumScale = 1, Action? invalidate = null)
     {
-        if (bounds.Width <= 0 || bounds.Height <= 0 || sourceBounds.Width <= 0 || sourceBounds.Height <= 0) return;
-        var (width, height) = PixelSize(bounds.Size, Math.Max(context.DpiScale, minimumScale));
+        if (bounds.Width <= 0 || bounds.Height <= 0 || sourceBounds.Width <= 0 || sourceBounds.Height <= 0) return false;
+        var scale = Math.Max(context.DpiScale, minimumScale);
+        // Absolute coordinates move with the page. Normalize their relative
+        // coordinates at subpixel precision so rounding noise cannot repaint
+        // a stationary lens on its artwork on every scroll frame.
+        var precision = scale * 64;
+        double Local(double value) => LayoutRounding.RoundToPixel(value, precision);
+        var region = new Rect(source == null ? 0 : Local(bounds.X - sourceBounds.X),
+            source == null ? 0 : Local(bounds.Y - sourceBounds.Y),
+            Local(bounds.Width), Local(bounds.Height));
+        var sourceSize = source == null ? region.Size : new Size(Local(sourceBounds.Width), Local(sourceBounds.Height));
+        var (width, height) = PixelSize(region.Size, scale);
+        if (invalidate != null)
+        {
+            // Share one immutable backdrop snapshot across lenses. Only the
+            // finished pixels and the image upload return to the UI thread.
+            var frame = new LensFrame(source?.SnapshotForLenses(), region, sourceSize, corners, width, height);
+            requestedFrame = frame;
+            if (renderedFrame == frame && factory == graphics) return DrawPrepared(context, bounds, corners, shape);
+            if (!renderingFrame) RenderOnWorker(graphics, frame, invalidate);
+            return factory == graphics && DrawPrepared(context, bounds, corners, shape);
+        }
+        if (requestedFrame != null) CancelWorkerFrame();
         EnsureBitmap(graphics, width, height, needsAlpha: source == null);
-        var region = new Rect(bounds.X - sourceBounds.X, bounds.Y - sourceBounds.Y, bounds.Width, bounds.Height);
         var version = source?.Version ?? -1;
         if (paintedGradient != null || paintedSource != source || paintedVersion != version || paintedRegion != region ||
-            paintedSourceSize != sourceBounds.Size || paintedCorners != corners)
+            paintedSourceSize != sourceSize || paintedCorners != corners)
         {
             using var write = bitmap!.LockForWrite();
             if (source == null)
-                Render(write.PixelsBgra32, width, height, [], [], 0, 0, region, sourceBounds.Size, corners);
+                Render(write.PixelsBgra32, width, height, [], [], 0, 0, region, sourceSize, corners);
             else
             {
                 using var pixels = source.LockPublishedPixels();
                 Render(write.PixelsBgra32, width, height, source.SharpPixels, pixels.Buffer, pixels.PixelWidth, pixels.PixelHeight,
-                    region, sourceBounds.Size, corners);
+                    region, sourceSize, corners);
                 version = pixels.Version;
             }
             paintedSource = source;
             paintedGradient = null;
             paintedVersion = version;
             paintedRegion = region;
-            paintedSourceSize = sourceBounds.Size;
+            paintedSourceSize = sourceSize;
             paintedCorners = corners;
         }
-        DrawPrepared(context, bounds, corners, shape);
+        return DrawPrepared(context, bounds, corners, shape);
+    }
+
+    private void RenderOnWorker(IGraphicsFactory graphics, LensFrame frame, Action invalidate)
+    {
+        renderingFrame = true;
+        var capturedRevision = revision;
+        var dispatcher = Application.Current.Dispatcher!;
+        _ = Task.Run(() =>
+        {
+            var pixels = GC.AllocateUninitializedArray<byte>(frame.Width * frame.Height * 4);
+            var source = frame.Source;
+            Render(pixels, frame.Width, frame.Height, source?.Sharp ?? [], source?.Blurred ?? [],
+                source?.Width ?? 0, source?.Height ?? 0, frame.Region, frame.SourceSize, frame.Corners);
+            dispatcher.BeginInvoke(() =>
+            {
+                if (capturedRevision != revision) return;
+                renderingFrame = false;
+                if (requestedFrame == frame)
+                {
+                    EnsureBitmap(graphics, frame.Width, frame.Height, needsAlpha: source == null);
+                    using var write = bitmap!.LockForWrite();
+                    pixels.CopyTo(write.PixelsBgra32);
+                    paintedVersion = int.MinValue;
+                    renderedFrame = frame;
+                }
+                invalidate();
+            });
+        });
     }
 
     internal void DrawPlayerGradient(IGraphicsContext context, PlayerBackdrop backdrop, Rect bounds,
@@ -278,8 +331,16 @@ internal sealed class LiquidGlassLens : IDisposable
 
     public void Dispose()
     {
+        CancelWorkerFrame();
         ClearOutgoing();
         ClearBitmap();
+    }
+
+    private void CancelWorkerFrame()
+    {
+        revision++;
+        requestedFrame = renderedFrame = null;
+        renderingFrame = false;
     }
 
     private void ClearBitmap()

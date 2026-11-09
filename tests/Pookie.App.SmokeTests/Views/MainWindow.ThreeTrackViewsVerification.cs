@@ -49,10 +49,93 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Replacing the trends cover hid the focused play button.");
         SetCardArtwork(row.Cover, cover, refreshed[0].ArtworkUrl, finished: true);
         VerifyCompactCoverDimming(row);
+        if (OperatingSystem.IsWindows()) await VerifyTrendingActionPixelsAsync(row);
         CaptureUiPreview("home-trending-actions");
         SetHomeChartDetail(chart);
         MoveActionPointer(new Point(1, 1));
         Window.FocusManager.ClearFocus();
         await WaitForLikedLayoutAsync(() => row.Trailing.Reveal < .001 && row.Overlay.Opacity < .001);
+    }
+
+    private async Task VerifyTrendingActionPixelsAsync(CompactTrackRow row)
+    {
+        MoveActionPointer(new Point(1, 1));
+        Window.FocusManager.ClearFocus();
+        await WaitForLikedLayoutAsync(() => !row.Trailing.Animating && row.Trailing.Reveal == 0);
+        var movingFrames = 0;
+        var blankFrames = 0;
+        void SampleMotion()
+        {
+            if (row.Trailing.Reveal is <= .12 or >= .88) return;
+            movingFrames++;
+            if (!ReadTrendingGlyph(row.Heart)) blankFrames++;
+        }
+
+        WindowPresentation.FramePresented(Window) += SampleMotion;
+        try
+        {
+            MoveActionPointer(row.Cover.Bounds.Center);
+            await WaitForLikedLayoutAsync(() => !row.Trailing.Animating && row.Trailing.Reveal == 1);
+        }
+        finally { WindowPresentation.FramePresented(Window) -= SampleMotion; }
+        if (movingFrames == 0 || blankFrames != 0)
+            throw new InvalidOperationException($"Trending heart was missing during action motion in {blankFrames} of {movingFrames} presented frames.");
+
+        var offset = shellScroll.VerticalOffset;
+        try
+        {
+            // Keep the pointer over the row and exercise partial paints at
+            // different physical pixel alignments of the same moving strip.
+            foreach (var step in new[] { 0, 6, 19, 12, 0 })
+            {
+                shellScroll.SetScrollOffsets(0, offset + step);
+                await WaitForLoginFrameAsync();
+                if (!row.Root.IsMouseOver || row.Actions.Strength < .99)
+                    throw new InvalidOperationException("Scrolling inside a hovered trends row interrupted its actions.");
+                if (!ReadTrendingGlyph(row.Heart) || row.Repost is { IsVisible: true } && row.ExtraActions!.IsVisible && !ReadTrendingGlyph(row.RepostIcon!))
+                    throw new InvalidOperationException($"A trends action disappeared from the presented frame at scroll step {step}.");
+            }
+        }
+        finally { shellScroll.SetScrollOffsets(0, offset); }
+        Console.WriteLine("TRENDING_ACTION_PIXELS_OK: native frames keep glyphs through hover animation and partial scroll paints");
+    }
+
+    private async Task VerifyLiveTrendingActionPixelsAsync(CancellationToken token)
+    {
+        if (!OperatingSystem.IsWindows() || !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+            throw new InvalidOperationException("Could not expose the native trends window.");
+        Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
+        await NavigateHomeAsync().WaitAsync(token);
+        await WaitForTrackPageLiveAsync(() => homeChartRows.Count == 10 && !homeChartLeftLoading.Loading);
+        await ShowTrendsInViewportAsync();
+        MoveActionPointer(new Point(1, 1));
+        await WaitForLoginFrameAsync();
+        var blank = homeChartRows.Select((row, index) => (row, index))
+            .Where(entry => !ReadTrendingGlyph(entry.row.Heart)).Select(entry => entry.index).ToArray();
+        if (blank.Length != 0)
+            throw new InvalidOperationException($"Live trends did not paint idle hearts on rows {string.Join(", ", blank)}.");
+        foreach (var row in new[] { homeChartRows[0], homeChartRows[5] })
+            await VerifyTrendingActionPixelsAsync(row);
+        Console.WriteLine("LIVE_TRENDS_ACTION_PIXELS_OK");
+    }
+
+    private bool ReadTrendingGlyph(Image glyph)
+    {
+        if (ProbeDwmFlush() < 0) throw new InvalidOperationException("Could not sample presented trends actions.");
+        var dc = ProbeGetDC(0);
+        try
+        {
+            var center = glyph.TranslatePoint(new Point(glyph.ActualWidth / 2, glyph.ActualHeight / 2), Window);
+            var screen = Window.ClientToScreen(center);
+            for (var y = -6; y <= 6; y++)
+            for (var x = -7; x <= 7; x++)
+            {
+                var pixel = ProbeGetPixel(dc, (int)Math.Round(screen.X) + x, (int)Math.Round(screen.Y) + y);
+                if (pixel != uint.MaxValue && Math.Max(pixel & 255, Math.Max((pixel >> 8) & 255, (pixel >> 16) & 255)) > 80)
+                    return true;
+            }
+            return false;
+        }
+        finally { _ = ProbeReleaseDC(0, dc); }
     }
 }

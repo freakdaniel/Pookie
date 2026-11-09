@@ -1,3 +1,4 @@
+using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -14,11 +15,15 @@ internal sealed class HeaderSearchField : ContentControl
     internal string? LinkLabel => ShowsLink ? linkPreview.Label : null;
     internal bool LinkTransitioning => linkPreview.Transitioning;
     private readonly BoxShadowRaster? shadow;
-    private readonly GlassGeometry stateGeometry = new();
+    private readonly Button? shellTrigger;
+    private readonly Image? triggerGlyph;
+    private readonly TransformDecorator? shellGlyph, shellEditor;
+    internal double Reveal { get; private set; }
+    private double expansion;
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
 
-    internal HeaderSearchField(TextBox input, bool compact = false, bool liveGlass = false)
+    internal HeaderSearchField(TextBox input, bool compact = false, bool liveGlass = false, Button? shellTrigger = null)
     {
         this.input = input;
         Height = compact ? 40 : ShellHeader.NavigationButtonHeight;
@@ -26,9 +31,18 @@ internal sealed class HeaderSearchField : ContentControl
         input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(compact ? 13 : 14).Foreground(TrackButtons.OnSurface);
         linkPreview = new LinkPreviewControl().Left().CenterVertical().IsVisible(false);
         linkPreview.FallbackCompleted = () => { linkPreview.IsVisible = false; input.Opacity = 1; };
-        var content = new Grid().Columns(compact ? "20,*" : "24,*").Rows("*").Spacing(compact ? 10 : 12).Children(
-            Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center().Column(0),
-            new Grid().Columns("*").Rows("*").Column(1).Children(input.CenterVertical(), linkPreview));
+        var glyph = Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center();
+        var editor = new Grid().Columns("*").Rows("*").Children(input.CenterVertical(), linkPreview);
+        var content = new Grid().Columns(compact ? "20,*" : "24,*").Rows("*").Spacing(compact ? 10 : 12);
+        if (shellTrigger != null)
+        {
+            this.shellTrigger = shellTrigger;
+            triggerGlyph = (Image)shellTrigger.FindVisualChild<Image>()!;
+            shellGlyph = new TransformDecorator { Child = glyph, IsHitTestVisible = false, Opacity = 0 };
+            shellEditor = new TransformDecorator { Child = editor, Opacity = 0 };
+            content.Children(shellGlyph.Column(0), shellEditor.Column(1));
+        }
+        else content.Children(glyph.Column(0), editor.Column(1));
         if (liveGlass)
         {
             var surface = new GlassToolGroup(content, new Thickness(16, 0));
@@ -56,6 +70,28 @@ internal sealed class HeaderSearchField : ContentControl
         MouseDown += args => { if (args.Button == MouseButton.Left) { input.Focus(); if (ShowsLink) input.SelectAll(); } };
         input.KeyDown += PrepareLinkKey;
         input.TextInput += PrepareLinkText;
+    }
+
+    internal void SetReveal(double reveal, bool active)
+    {
+        if (shellGlyph == null || shellEditor == null || triggerGlyph == null) return;
+        Reveal = reveal;
+        expansion = SearchPhase(reveal, .07, .89);
+        var editor = SearchPhase(reveal, .46, 1);
+        triggerGlyph.Opacity = active ? 0 : 1;
+        shellGlyph.Opacity = active ? 1 : 0;
+        var dx = (triggerGlyph.Bounds.Center.X - shellGlyph.Bounds.Center.X) * (1 - expansion);
+        var scale = (float)(1 - .18 * (1 - expansion));
+        shellGlyph.Transform = Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation((float)dx, 0);
+        shellEditor.Opacity = editor;
+        shellEditor.Transform = Matrix3x2.CreateTranslation((float)(dx + 12 * (1 - editor)), 0);
+        InvalidateVisual();
+    }
+
+    internal static double SearchPhase(double progress, double start, double end)
+    {
+        var t = Math.Clamp((progress - start) / (end - start), 0, 1);
+        return t * t * (3 - 2 * t);
     }
 
     internal void ShowLink(LinkPreviewData? data)
@@ -94,11 +130,16 @@ internal sealed class HeaderSearchField : ContentControl
         {
             shadow?.Draw(context, surface.Bounds, 20, (byte)(65 + emphasis * 25) / 90d);
         }
-        else if (Content is Border && Bounds.Width > 0)
+        else if (shellTrigger != null && Reveal > 0 && Bounds.Width > 0)
         {
-            var bounds = ShellHeader.StateLayerBounds(this, context.DpiScale);
-            var fill = TrackButtons.StateColor(Color.Transparent, TrackButtons.OnSurface, HeaderButton.HoverOpacity);
-            context.FillPath(stateGeometry.Get(bounds, new CornerRadius(bounds.Height / 2)), fill);
+            var full = ShellHeader.StateLayerBounds(this, context.DpiScale);
+            var start = Math.Clamp(shellTrigger.Bounds.X, full.X, full.Right - full.Height);
+            var left = start + (full.X - start) * expansion;
+            var fill = TrackButtons.StateColor(Color.Transparent, TrackButtons.OnSurface, HeaderButton.HoverOpacity * SearchPhase(Reveal, .20, .56));
+            // Paint the expanding pill once at its current bounds, outside the
+            // opacity groups used for the moving navigation and editor.
+            if (fill.A > 0) context.FillRoundedRectangle(new Rect(left, full.Y, full.Right - left, full.Height),
+                full.Height / 2, full.Height / 2, fill);
         }
     }
 

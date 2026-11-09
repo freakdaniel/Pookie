@@ -2,6 +2,7 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 using Pookie.SoundCloud;
+using System.Runtime.CompilerServices;
 
 namespace Pookie.App;
 
@@ -44,6 +45,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The resting chrome does not match the square content surface.");
             VerifyTopFadePixels();
             await VerifyHeaderCardsAsync();
+            if (OperatingSystem.IsWindows()) await VerifyHeaderFirstScrollPixelsAsync();
             await VerifyShellHistoryFirstPaintAsync();
             if (Environment.GetEnvironmentVariable("POOKIE_SEARCH_ONLY") == "1")
             {
@@ -100,7 +102,13 @@ internal sealed partial class MainWindow
                 CaptureUiPreview($"shell-chrome-{width}x{height}");
                 CheckShellScrollBarBounds();
                 VerifyHeaderCardLayout();
-                await VerifyHeaderSearchLayoutAsync(width);
+                var pageOpacity = shellScroll.Opacity;
+                try
+                {
+                    shellScroll.Opacity = 0;
+                    await VerifyHeaderSearchLayoutAsync(width);
+                }
+                finally { shellScroll.Opacity = pageOpacity; }
             }
             shellScroll.SetScrollOffsets(0, 320);
             await WaitForLikedLayoutAsync(() => shellScroll.VerticalOffset == 320 && !shellPageScroll.IsArrangeDirty);
@@ -241,6 +249,123 @@ internal sealed partial class MainWindow
         protected override void OnRender(IGraphicsContext context) => context.FillRectangle(Bounds, Ink);
     }
 
+    private async Task VerifyHeaderFirstScrollPixelsAsync()
+    {
+        var body = homeScroll.Content;
+        var scene = (Grid)contentSurface.Child!;
+        using var swatch = new HeaderSamplingProbe { Ink = Color.FromRgb(235, 32, 25), IsHitTestVisible = false };
+        try
+        {
+            var fixture = new HeaderSamplingProbe { Ink = Surface }.Height(2400);
+            homeScroll.Content = fixture;
+            await NavigateAsync(Page.Home);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && shellScroll.VerticalOffset == 0 &&
+                SmoothScroll.Maximum(shellScroll) > 1000);
+            var card = startupHeader.HistoryCard;
+            await WaitForLoginFrameAsync();
+            var layer = (ShellHeader.BackdropLayer)startupHeader.Parent!;
+            var backdrop = HeaderBackdrop(startupHeader);
+            var dpi = Window.DpiScale;
+            using var target = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(4, 4, dpi));
+            using var context = Window.GraphicsFactory.CreateContext(target);
+            using var headerPixels = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
+                (int)Math.Ceiling(Window.ClientSize.Width * dpi), (int)Math.Ceiling(ShellHeader.HeaderHeight * dpi), dpi));
+            using var headerContext = Window.GraphicsFactory.CreateContext(headerPixels);
+            var atTop = ReadHistoryCard();
+            var uniformChanges = 0;
+            var replayChanges = 0;
+            foreach (var offset in new[] { 1, 3, 6, 12, 24, 48, 96, 48, 12, 0 })
+            {
+                await ScrollFrameAsync(offset);
+                var pixels = ReadHistoryCard();
+                uniformChanges = Math.Max(uniformChanges, ChangedPixels(atTop, pixels));
+                replayChanges = Math.Max(replayChanges, ChangedPixels(pixels, ReplayCard()));
+            }
+            scene.Insert(1, swatch.Height(100).Top().Row(0));
+            await WaitForLoginFrameAsync();
+            var colored = ReadHistoryCard();
+            if (ChangedPixels(atTop, colored) == 0)
+                throw new InvalidOperationException("The header glass did not pick up the colored layer behind it.");
+            replayChanges = Math.Max(replayChanges, ChangedPixels(colored, ReplayCard()));
+            if (uniformChanges != 0 || replayChanges != 0)
+                throw new InvalidOperationException($"Header glass changed over a flat page or diverged from the page-only replay: uniform={uniformChanges}, replay={replayChanges}.");
+            Console.WriteLine("HEADER_FIRST_SCROLL_PIXELS_OK: flat page stable through partial scroll paints, live color matches the page-only replay");
+
+            async Task ScrollFrameAsync(double offset)
+            {
+                var before = shellScroll.VerticalOffset;
+                var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void Frame() => rendered.TrySetResult();
+                Window.FrameRendered += Frame;
+                try
+                {
+                    // Keep the scroll's own damage so this also exercises the
+                    // partial paints where the old glass can leak into a copy.
+                    shellScroll.SetScrollOffsets(0, offset);
+                    if (shellScroll.VerticalOffset != before)
+                        await rendered.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
+                }
+                finally { Window.FrameRendered -= Frame; }
+            }
+
+            byte[] ReplayCard()
+            {
+                var version = backdrop.Version;
+                context.BeginFrame(target);
+                try
+                {
+                    // A translated context forces a replay of the page without
+                    // using any pixels from the existing window framebuffer.
+                    context.Translate(1, 0);
+                    layer.CaptureLiveGlass(context);
+                }
+                finally { context.EndFrame(); }
+                if (backdrop.Version == version) throw new InvalidOperationException("The page-only reference did not capture.");
+                return ReadHistoryCard();
+            }
+
+            byte[] ReadHistoryCard()
+            {
+                headerContext.BeginFrame(headerPixels);
+                try
+                {
+                    headerContext.Clear(Surface);
+                    Window.Content!.Render(headerContext);
+                }
+                finally { headerContext.EndFrame(); }
+                var cpu = (ICpuPixelSurface)headerPixels;
+                var pixels = cpu.GetReadOnlyPixelSpan();
+                var left = (int)Math.Ceiling(card.Bounds.X * dpi);
+                var top = (int)Math.Ceiling(card.Bounds.Y * dpi);
+                var width = (int)Math.Floor(card.ActualWidth * dpi) - 1;
+                var height = (int)Math.Floor(card.ActualHeight * dpi) - 1;
+                var copy = new byte[width * height * 4];
+                for (var y = 0; y < height; y++)
+                    pixels.Slice((y + top) * cpu.StrideBytes + left * 4, width * 4).CopyTo(copy.AsSpan(y * width * 4));
+                return copy;
+            }
+
+            static int ChangedPixels(byte[] expected, byte[] actual)
+            {
+                var changed = 0;
+                for (var i = 0; i < actual.Length; i += 4)
+                    if (Math.Abs(expected[i] - actual[i]) > 2 || Math.Abs(expected[i + 1] - actual[i + 1]) > 2 ||
+                        Math.Abs(expected[i + 2] - actual[i + 2]) > 2) changed++;
+                return changed;
+            }
+        }
+        finally
+        {
+            scene.Remove(swatch);
+            homeScroll.Content = body;
+            ShowLibraryTracks();
+        }
+        await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryTracks && shellPageScroll.IsReady);
+    }
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "glass")]
+    private static extern ref LiveGlassBackdrop HeaderBackdrop(ShellHeader header);
+
     private void VerifyHeaderCardLayout()
     {
         var history = startupHeader.HistoryCard.Bounds;
@@ -328,10 +453,49 @@ internal sealed partial class MainWindow
 
     private async Task VerifyHeaderSearchLayoutAsync(int width)
     {
+        var native = OperatingSystem.IsWindows();
+        if (native && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+            throw new InvalidOperationException("Could not expose the native search field.");
         Window.Activate();
         await WaitForLikedLayoutAsync(() => Window.IsActive);
-        OpenTopSearch();
-        await WaitForLikedLayoutAsync(() => Math.Abs(topSearchBar.ActualWidth - ShellHeader.NavigationWidth) < 1 / Window.DpiScale && topSearchBar.Opacity == 1 && topSearchInput.IsFocused);
+        var navigationFrames = 0;
+        var glyphPositions = new List<double>();
+        var editorCrossedGlyph = false;
+        var glyph = (Image)topSearchBar.FindVisualChild<Image>()!;
+        var searchPixels = new List<(int Center, int Edge)>();
+        void SamplePixels()
+        {
+            if (topSearchBar.Reveal > 0 && topNavigation.Opacity == 0) searchPixels.Add(ReadSearchFill());
+        }
+        void Sample()
+        {
+            if (topNavigation.Opacity is > 0 and < 1 && topNavigationMotion.Transform.M32 < -1)
+                navigationFrames++;
+            if (topSearchBar.Reveal <= 0) return;
+            var glyphCenter = glyph.TranslatePoint(new Point(glyph.ActualWidth / 2, glyph.ActualHeight / 2), Window);
+            glyphPositions.Add(glyphCenter.X);
+            if (topSearchInput.TranslatePoint(new Point(0, 0), Window).X < glyphCenter.X + glyph.ActualWidth / 2)
+                editorCrossedGlyph = true;
+        }
+        Window.FrameRendered += Sample;
+        if (native) WindowPresentation.FramePresented(Window) += SamplePixels;
+        try
+        {
+            var search = (Button)topNavigation.Children[^1];
+            PressActionPointer(search.Bounds.Center, true);
+            PressActionPointer(search.Bounds.Center, false);
+            await WaitForLikedLayoutAsync(() => !topSearchMotion.IsRunning && topSearchBar.Reveal == 1 && topSearchInput.IsFocused);
+            await WaitForLoginFrameAsync();
+        }
+        finally
+        {
+            Window.FrameRendered -= Sample;
+            if (native) WindowPresentation.FramePresented(Window) -= SamplePixels;
+        }
+        VerifyTravel(opening: true);
+        if (topNavigation.IsHitTestVisible || topNavigation.Opacity != 0 || !topSearchBar.IsHitTestVisible)
+            throw new InvalidOperationException("The opened search did not take over input from navigation.");
+        var openFill = native ? ReadSearchFill().Center : 0;
         query.Value = "Музыка для твоего вечера";
         await WaitForLikedLayoutAsync(() => topSearchInput.Text == query.Value);
         var navigation = startupHeader.NavigationCard.Bounds;
@@ -343,10 +507,56 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("The glass search field overlaps the header actions or lost native input alignment/binding.");
         CaptureUiPreview($"shell-header-search-{width}");
         // A real outside click must still dismiss the field and restore navigation.
-        RouteWaveformClick(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => !searching.Value && topSearchBar.Opacity == 0 && Math.Abs(topNavigation.ActualWidth - ShellHeader.NavigationWidth) < 1 / Window.DpiScale);
-        if (query.Value.Length != 0 || topSearchBar.IsHitTestVisible)
+        navigationFrames = 0;
+        glyphPositions.Clear();
+        Window.FrameRendered += Sample;
+        if (native) WindowPresentation.FramePresented(Window) += SamplePixels;
+        try
+        {
+            RouteWaveformClick(new Point(2, 2));
+            await WaitForLikedLayoutAsync(() => !topSearchMotion.IsRunning && topSearchBar.Reveal == 0 && topNavigation.IsHitTestVisible);
+        }
+        finally
+        {
+            Window.FrameRendered -= Sample;
+            if (native) WindowPresentation.FramePresented(Window) -= SamplePixels;
+        }
+        VerifyTravel(opening: false);
+        if (searching.Value || topNavigation.Opacity != 1 || topSearchBar.IsHitTestVisible || query.Value.Length != 0 || topSearchInput.IsFocused)
             throw new InvalidOperationException("Dismissing glass search left stale text or an invisible input target.");
+        if (native && (searchPixels.Count < 4 || searchPixels.Any(pixel =>
+            pixel.Center > pixel.Edge + 3 || Math.Max(pixel.Center, pixel.Edge) > openFill + 3) ||
+            !searchPixels.Any(pixel => pixel.Edge > pixel.Center + 5)))
+            throw new InvalidOperationException($"Search presented a second fill at {width} DIPs. Pixels: " +
+                string.Join(", ", searchPixels.Select(pixel => $"{pixel.Center}/{pixel.Edge}")) + $", open={openFill}.");
+        if (native) Console.WriteLine($"HEADER_SEARCH_FILL_OK: {searchPixels.Count} presented frames at {width} DIPs");
+
+        void VerifyTravel(bool opening)
+        {
+            if (editorCrossedGlyph || navigationFrames < 2 || glyphPositions.Distinct().Count() < 4 ||
+                (glyphPositions[0] - glyphPositions[^1]) * (opening ? 1 : -1) < 240)
+                throw new InvalidOperationException($"Search did not travel across the header while {(opening ? "opening" : "closing")}.");
+        }
+
+        (int Center, int Edge) ReadSearchFill()
+        {
+            if (ProbeDwmFlush() < 0) throw new InvalidOperationException("Could not sample the presented search fill.");
+            var card = startupHeader.NavigationCard.Bounds;
+            var dc = ProbeGetDC(0);
+            try
+            {
+                return (Read(card.Center.X - 65), Read(card.Right - 11));
+            }
+            finally { _ = ProbeReleaseDC(0, dc); }
+
+            int Read(double x)
+            {
+                var point = Window.ClientToScreen(new Point(x, card.Center.Y - 12));
+                var pixel = ProbeGetPixel(dc, (int)Math.Round(point.X), (int)Math.Round(point.Y));
+                if (pixel == uint.MaxValue) throw new InvalidOperationException("The search fill is outside the visible window.");
+                return (int)(pixel & 255);
+            }
+        }
     }
 
     private ScrollBar ShellVerticalBar()

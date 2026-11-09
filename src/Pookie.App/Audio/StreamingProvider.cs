@@ -93,7 +93,8 @@ internal sealed class StreamingProvider : ISoundDataProvider
                 else if (source.Transport == AudioTransport.Hls)
                 {
                     var uri = MediaUri(source.Location, allowed);
-                    var bytes = await AudioHttp.ReadAsync(http, uri, 1024 * 1024, stop);
+                    var bytes = cache == null ? await AudioHttp.ReadAsync(http, uri, 1024 * 1024, stop)
+                        : await cache.ReadAsync(new(uri, 1024 * 1024), stop);
                     var playlist = HlsPlaylist.Parse(Encoding.UTF8.GetString(bytes), uri, allowed);
                     Duration = playlist.Duration;
                     HlsInitialization? loadedInitialization = null;

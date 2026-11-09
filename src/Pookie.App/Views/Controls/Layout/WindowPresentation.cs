@@ -8,6 +8,21 @@ namespace Pookie.App;
 // Typed build-time extension of our pinned MewUI assembly; no runtime patching.
 internal static class WindowPresentation
 {
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "PookieHoldWindowFrame")]
+    internal static extern ref Func<bool>? HoldFrame(Window owner);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "PookieWindowFramePresented")]
+    internal static extern ref Action? FramePresented(Window owner);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_drawingReferenceFrame")]
+    internal static extern ref bool DrawDirectly(Window owner);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "PookieFrameSlack")]
+    internal static extern ref int RetainedFrameSlack(Window owner);
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = "PookieYieldDispatcher")]
+    internal static extern ref Func<bool>? YieldDispatcher(Window? declaringType);
+
     internal static void EnableLiveGlass(bool enabled)
     {
         BeforeReplay(null) = enabled ? static (element, context) =>

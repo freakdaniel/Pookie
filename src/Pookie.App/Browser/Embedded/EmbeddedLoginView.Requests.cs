@@ -16,11 +16,14 @@ internal sealed partial class EmbeddedLoginView
 
     internal async Task PrepareWorkerAsync(Window window, CancellationToken token)
     {
-        preparing = true; preparationBounds = new(0, 0, 900, 700);
+        // WebView2 can load the API worker while hidden. Keep presentation for
+        // explicit login or interactive verification.
+        var prepareOffscreen = !OperatingSystem.IsWindows();
+        if (prepareOffscreen) { preparing = true; preparationBounds = new(0, 0, 900, 700); }
         initialization = InitializeAsync(window);
         await initialization.WaitAsync(token);
         await workerReady.Task.WaitAsync(token);
-        preparing = false; browser?.SetVisible(false);
+        if (prepareOffscreen) { preparing = false; browser?.SetVisible(false); }
     }
 
     internal async Task PrepareExistingAsync(Window window, Rect bounds, CancellationToken token)

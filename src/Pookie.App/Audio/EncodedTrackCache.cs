@@ -19,6 +19,7 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
     private FileStream? directoryLease;
     private static readonly Lazy<Task> orphanCleanup = new(() => Task.Run(() => PruneOrphans(CacheRoot,DateTime.UtcNow.AddDays(-7))));
     private Task prefetch = Task.CompletedTask;
+    private Task seekPrefetch = Task.CompletedTask;
     private bool disposed;
     private readonly HashSet<string> progressivePrefetch = [];
     internal string DirectoryPath => directory;
@@ -40,6 +41,16 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
         using var output = new MemoryStream();
         await input.CopyToAsync(output, token);
         return output.ToArray();
+    }
+
+    internal async Task ReadRangeAsync(Request request, long offset, Memory<byte> destination, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var path = await GetFile(request).WaitAsync(token).ConfigureAwait(false);
+        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            bufferSize: 1, FileOptions.Asynchronous | FileOptions.RandomAccess);
+        input.Position = offset;
+        await input.ReadExactlyAsync(destination, token).ConfigureAwait(false);
     }
 
     private Task<string> GetFile(Request request)
@@ -142,20 +153,23 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
         Prefetch(requests, token);
     }
 
-    public void Prefetch(IReadOnlyList<Request> requests, CancellationToken token)
+    public void Prefetch(IReadOnlyList<Request> requests, CancellationToken token, bool seeking = false, int concurrency = 1)
     {
         lock (gate)
         {
-            if (disposed || !prefetch.IsCompleted || requests.All(Contains)) return;
-            prefetch = Task.Run(async () =>
+            ref var pending = ref (seeking ? ref seekPrefetch : ref prefetch);
+            if (disposed || !pending.IsCompleted || requests.All(Contains)) return;
+            pending = Task.Run(async () =>
             {
                 try
                 {
-                    foreach (var request in requests)
-                    {
-                        lifetime.Token.ThrowIfCancellationRequested();
-                        if (!Contains(request)) await GetFile(request);
-                    }
+                    if (concurrency > 1)
+                        await Parallel.ForEachAsync(requests, new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = concurrency, CancellationToken = lifetime.Token
+                        }, async (request, stop) => await WarmAsync(request, stop));
+                    else
+                        foreach (var request in requests) await WarmAsync(request, lifetime.Token);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested || lifetime.IsCancellationRequested)
                 { AppLog.For("Pookie.Audio").Debug("Опережающая загрузка отменена"); }
@@ -169,6 +183,12 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
         }
     }
 
+    private async ValueTask WarmAsync(Request request, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!Contains(request)) await GetFile(request);
+    }
+
     public void Dispose()
     {
         lock (gate)
@@ -176,7 +196,8 @@ internal sealed class EncodedTrackCache(HttpClient http) : IDisposable
             if (disposed) return;
             disposed = true;
             lifetime.Cancel();
-            var pendingCleanup = files.Values.Cast<Task>().Concat(sequential.Values.Select(download => download.Completion)).Append(prefetch).ToArray();
+            var pendingCleanup = files.Values.Cast<Task>().Concat(sequential.Values.Select(download => download.Completion))
+                .Append(prefetch).Append(seekPrefetch).ToArray();
             Completion = Task.Run(() => CleanupAsync(pendingCleanup));
         }
     }

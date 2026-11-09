@@ -39,6 +39,11 @@ internal sealed partial class MainWindow
     private double renderedCommentsDuration;
     private long renderedCommentsViewer;
     private SoundCloudComment[] renderedComments = [];
+    private int renderedCommentCount;
+    private SoundCloudComment[]? stagedCommentRows;
+    private TaskCompletionSource? stagedCommentsReady;
+    private bool trackPageWorkQueued;
+    private long trackResizeCoalescingStarted;
     private bool trackTimelineVisible;
 
     private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview, bool reload = false)
@@ -69,12 +74,119 @@ internal sealed partial class MainWindow
     private bool IsTrackDetailCurrent(long id, long generation) => !disposed && page.Value == Page.Track &&
         generation == navigationGeneration && trackDetailState?.Track.Id == id;
 
+    private void BeginTrackResize()
+    {
+        firstTrackWheelAfterResize = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (!OperatingSystem.IsWindows() || Window.WindowState == WindowState.Minimized)
+        {
+            CompleteTrackResizePaint();
+            return;
+        }
+        trackResizePaintPending = true;
+        if (trackResizeCoalescer.IsEnabled) return;
+        // WM_PAINT can arrive before the first wheel message. Give input one
+        // native message-loop turn to join the resized frame. With no wheel,
+        // the low-priority Win32 timer releases the paint on its own.
+        trackResizeCoalescingStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        trackResizeCoalescer.Start();
+    }
+
+    private bool HoldTrackResizeFrame() => trackResizeCoalescer.IsEnabled && page.Value == Page.Track &&
+        System.Diagnostics.Stopwatch.GetElapsedTime(trackResizeCoalescingStarted).TotalMilliseconds < 32;
+
+    private void EndTrackResizeCoalescing() => ReleaseTrackResizeCoalescing(invalidate: true);
+
+    private bool ReleaseTrackResizeCoalescing(bool invalidate)
+    {
+        if (!trackResizeCoalescer.IsEnabled) return false;
+        trackResizeCoalescer.Stop();
+        if (invalidate) Window.InvalidateVisual();
+        // Repost the native wake for work that remained queued during resize.
+        Application.Current.Dispatcher!.BeginInvoke(DispatcherPriority.Background, static () => { });
+        return true;
+    }
+
+    private void PaintResizedTrackWindow()
+    {
+        // The wheel has updated the offset. Present it before another native
+        // message can spend the same frame on layout or loading work.
+        Window.PerformLayout();
+        const uint invalidate = 0x0001, noErase = 0x0020, noChildren = 0x0040, updateNow = 0x0100;
+        var header = startupHeader as ShellHeader;
+        var reuse = !expandedHost.IsVisible && !InAppPopup.IsPresenting(Window) &&
+            !shellMenus.Any(menu => menu.Layer.Reveal > 0) &&
+            header?.ReuseBlurForResizedFrame() == true;
+        var previousPlayerRasterReuse = playerBackdrop.ReuseRasterForResize;
+        var renderLoop = Application.Current.RenderLoopSettings;
+        var vsync = renderLoop.VSyncEnabled;
+        playerBackdrop.ReuseRasterForResize |= reuse;
+        // This synchronous input frame goes through the composited swap chain.
+        // Let the compositor pick it up without making the UI wait for vblank.
+        if (reuse) renderLoop.VSyncEnabled = false;
+        try { _ = RedrawTrackWindow(Window.Handle, 0, 0, invalidate | noErase | noChildren | updateNow); }
+        finally
+        {
+            renderLoop.VSyncEnabled = vsync;
+            playerBackdrop.ReuseRasterForResize = previousPlayerRasterReuse;
+            if (reuse) header!.ResumeBlurCapture();
+        }
+        if (reuse)
+        {
+            header!.InvalidateVisual();
+            playerBackdrop.InvalidateVisual();
+            playerPlayButton.InvalidateVisual();
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "RedrawWindow", ExactSpelling = true)]
+    private static extern int RedrawTrackWindow(nint window, nint updateRect, nint updateRegion, uint flags);
+
+    private void CompleteTrackResizePaint()
+    {
+        trackResizePaintPending = false;
+        trackResizePaint?.TrySetResult();
+        trackResizePaint = null;
+    }
+
+    private void TrackWindowFramePresented()
+    {
+        CompleteTrackResizePaint();
+        if (!OperatingSystem.IsWindows() || disposed || page.Value != Page.Track || trackPageWorkQueued ||
+            Window.WindowState == WindowState.Minimized || !workspace.IsVisible) return;
+        var glass = expandedHost.IsVisible ? null : trackDetailGlass;
+        glass?.RefreshArtwork(keepCurrent: TrackScrollInMotion());
+        if (stagedCommentRows == null && !CanPrepareTrackGlass(glass)) return;
+        trackPageWorkQueued = true;
+        Application.Current.Dispatcher!.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            trackPageWorkQueued = false;
+            if (disposed || page.Value != Page.Track || trackResizePaintPending) return;
+            // One potentially expensive update per presented frame. The
+            // current blur stays visible while the next sample is pending.
+            if (!expandedHost.IsVisible && CanPrepareTrackGlass(glass) && glass!.Prepare()) return;
+            if (stagedCommentRows != null) AppendTrackCommentBatch();
+        });
+    }
+
+    private bool CanPrepareTrackGlass(CoverGlassBackdrop? glass) => glass is { NeedsPrepare: true } &&
+        !(glass.CanReuseWhileScrolling && TrackScrollInMotion());
+
+    private bool TrackScrollInMotion() => smoothScrolls.TryGetValue(shellScroll, out var motion) && motion.IsRunning;
+
+    // Network results can arrive between WM_SIZE and the new frame. Keep
+    // creating comment rows and sidebar controls off that first paint's path.
+    private Task WaitForTrackResizePaintAsync(CancellationToken token) =>
+        trackResizePaintPending && Window.WindowState != WindowState.Minimized
+            ? (trackResizePaint ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task.WaitAsync(token)
+            : Task.CompletedTask;
+
     private async Task LoadTrackDetailMetadataAsync(long id, long generation, CancellationToken token)
     {
         var commentsRevision = trackCommentCountRevision;
         try
         {
             var track = await api.GetTrackAsync(id, token);
+            await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation)) return;
             if (commentsRevision != trackCommentCountRevision) track = track with { CommentCount = trackDetailState!.Track.CommentCount };
             trackDetailState = trackDetailState! with { Track = track, MetadataLoading = false };
@@ -98,10 +210,20 @@ internal sealed partial class MainWindow
         try
         {
             var result = cursor == null ? await api.GetTrackCommentsAsync(id, token, sort) : await api.GetTrackCommentsNextAsync(id, cursor, token, sort);
+            await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation) || revision != trackCommentsRevision || trackDetailState!.CommentSort != sort) return;
             var comments = cursor == null ? result.Comments : trackDetailState!.Comments.Comments.Concat(result.Comments).DistinctBy(comment => comment.Id).ToArray();
             trackDetailState = trackDetailState! with { Comments = new(comments, result.NextHref == cursor ? null : result.NextHref), CommentsLoading = false, CommentsError = "" };
+            if (!OperatingSystem.IsWindows())
+            {
+                RenderTrackDetailComments();
+                return;
+            }
+            FinishStagedComments();
+            stagedCommentRows = comments;
+            var rowsReady = stagedCommentsReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             RenderTrackDetailComments();
+            await rowsReady.Task.WaitAsync(token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
@@ -117,6 +239,7 @@ internal sealed partial class MainWindow
         try
         {
             var result = await api.GetRelatedTracksAsync(id, token);
+            await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation)) return;
             trackDetailState = trackDetailState! with { Related = result, RelatedLoading = false };
             RenderTrackDetailRelated();
@@ -228,7 +351,9 @@ internal sealed partial class MainWindow
         var selected = state.Track.Id == current?.Id;
         trackDetailWaveform.Progress = selected && state.Track.DurationSeconds > 0 ? likedPlaybackPosition / state.Track.DurationSeconds : 0;
         trackDetailPosition.Text = FormatTime(selected ? likedPlaybackPosition : 0);
-        AdvanceTrackCommentPreview(selected ? likedPlaybackPosition : 0, selected && isPlaying.Value && !expandedOpen && Window.IsActive && Window.WindowState != WindowState.Minimized);
+        var playing = selected && isPlaying.Value && !expandedOpen && Window.IsActive && Window.WindowState != WindowState.Minimized;
+        var previewingSeek = seekDragging || pendingSeek != null || seeking;
+        AdvanceTrackCommentPreview(selected ? likedPlaybackPosition : 0, playing && !previewingSeek);
     }
 
     private bool TrackTimelineInViewport() => page.Value == Page.Track && workspace.IsVisible &&
@@ -266,20 +391,61 @@ internal sealed partial class MainWindow
         trackDetailCommentsStatus.IsVisible = trackDetailCommentsStatus.Text.Length > 0;
         var comments = state.Comments.Comments;
         var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || !comments.SequenceEqual(renderedComments);
+        if (stagedCommentRows != null && !ReferenceEquals(stagedCommentRows, comments)) FinishStagedComments();
         if (renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || renderedCommentsViewer != (me?.Id ?? 0) ||
-            !comments.Take(renderedComments.Length).SequenceEqual(renderedComments))
+            !comments.Take(renderedCommentCount).SequenceEqual(renderedComments.Take(renderedCommentCount)))
         {
-            trackDetailComments.Clear(); renderedComments = []; renderedCommentsTrack = state.Track.Id;
+            trackDetailComments.Clear(); renderedCommentCount = 0; renderedCommentsTrack = state.Track.Id;
             renderedCommentsDuration = state.Track.Duration;
             renderedCommentsViewer = me?.Id ?? 0;
         }
         // Keep existing rows and their decoded avatars when another page arrives.
-        foreach (var comment in comments.Skip(renderedComments.Length)) trackDetailComments.Add(TrackCommentView(comment, state.Track));
         renderedComments = comments;
-        trackCommentsLoadingView.SetLoading(state.CommentsLoading && comments.Length == 0);
+        if (stagedCommentRows == null)
+            while (renderedCommentCount < comments.Length) AddTrackCommentRow(state.Track);
+        else if (renderedCommentCount == comments.Length) FinishStagedComments();
+        else trackDetailComments.InvalidateVisual();
+        UpdateTrackCommentLoading(state);
         if (changed) RenderTrackCommentMarkers();
-        trackDetailMoreComments.IsVisible = !state.CommentsLoading && (state.Comments.NextHref != null || state.CommentsError.Length > 0);
         ((TextBlock)trackDetailMoreComments.Content!).Text = state.CommentsError.Length > 0 ? "Повторить загрузку" : "Ещё комментарии";
+    }
+
+    private void AppendTrackCommentBatch()
+    {
+        if (trackDetailState is not { } state || !ReferenceEquals(state.Comments.Comments, stagedCommentRows))
+        {
+            FinishStagedComments();
+            return;
+        }
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        var limit = Math.Min(renderedCommentCount + 4, renderedComments.Length);
+        while (renderedCommentCount < limit)
+        {
+            AddTrackCommentRow(state.Track);
+            if (System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds >= 3) break;
+        }
+        if (renderedCommentCount == renderedComments.Length) FinishStagedComments();
+        UpdateTrackCommentLoading(state);
+    }
+
+    private void AddTrackCommentRow(SoundCloudTrack track)
+    {
+        trackDetailComments.Add(TrackCommentView(renderedComments[renderedCommentCount], track));
+        renderedCommentCount++;
+    }
+
+    private void FinishStagedComments()
+    {
+        stagedCommentRows = null;
+        stagedCommentsReady?.TrySetResult();
+        stagedCommentsReady = null;
+    }
+
+    private void UpdateTrackCommentLoading(TrackDetailState state)
+    {
+        trackCommentsLoadingView.SetLoading(renderedCommentCount == 0 && (state.CommentsLoading || stagedCommentRows != null));
+        trackDetailMoreComments.IsVisible = !state.CommentsLoading && stagedCommentRows == null &&
+            (state.Comments.NextHref != null || state.CommentsError.Length > 0);
     }
 
     private static string CommentHeading(long count) => DetailCount(count) + " " +

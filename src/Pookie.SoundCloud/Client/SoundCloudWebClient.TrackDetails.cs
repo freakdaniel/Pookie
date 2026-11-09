@@ -10,12 +10,12 @@ public sealed partial class SoundCloudWebClient
         if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException("Неверная сортировка комментариев.");
         try
         {
-            using var graph = await ReadTrackDocumentAsync(new("comments", trackId, Sort: sort), token);
+            using var graph = await ReadTrackDocumentAsync(new("comments", trackId, Sort: sort), token).ConfigureAwait(false);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
         catch (NotSupportedException) { /* Compatibility with REST-only transports. */ }
         if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
-        using var document = await GetJsonAsync(Api($"tracks/{trackId}/comments?limit=30&linked_partitioning=1&threaded=0&filter_replies=1"), token);
+        using var document = await GetJsonAsync(Api($"tracks/{trackId}/comments?limit=30&linked_partitioning=1&threaded=0&filter_replies=1"), token).ConfigureAwait(false);
         return ParseComments(document.RootElement);
     }
 
@@ -32,14 +32,14 @@ public sealed partial class SoundCloudWebClient
             catch (FormatException) { throw new SoundCloudException("Неверный курсор комментариев."); }
             var request = new TrackReadRequest("comments", trackId, Cursor: after, Sort: sort);
             if (!request.IsValid()) throw new SoundCloudException("Неверный курсор комментариев.");
-            using var graph = await ReadTrackDocumentAsync(request, token);
+            using var graph = await ReadTrackDocumentAsync(request, token).ConfigureAwait(false);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
         if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
         if (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out var uri) ||
             uri.AbsolutePath != $"/tracks/{trackId}/comments")
             throw new SoundCloudException("Неверный адрес страницы комментариев.");
-        using var document = await GetJsonAsync(uri, token);
+        using var document = await GetJsonAsync(uri, token).ConfigureAwait(false);
         return ParseComments(document.RootElement);
     }
 
@@ -47,7 +47,7 @@ public sealed partial class SoundCloudWebClient
     {
         var request = new TrackReadRequest("replies", trackId, commentId, cursor);
         if (!request.IsValid()) throw new ArgumentException("Invalid track replies request.");
-        using var graph = await ReadTrackDocumentAsync(request, token);
+        using var graph = await ReadTrackDocumentAsync(request, token).ConfigureAwait(false);
         var root = GraphObject(GraphData(graph), "trackCommentReplies");
         return new(ParseGraphCommentArray(root.GetProperty("comments")), (int)GraphNumber(root, "total"), GraphCursor(root, replies: true));
     }
@@ -55,7 +55,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<TrackSidebar> GetTrackSidebarAsync(long trackId, CancellationToken token = default)
     {
         ValidateDetailTrackId(trackId);
-        using var graph = await ReadTrackDocumentAsync(new("sidebar", trackId), token);
+        using var graph = await ReadTrackDocumentAsync(new("sidebar", trackId), token).ConfigureAwait(false);
         var data = GraphData(graph);
         var fans = new List<TrackFan>();
         var hidden = false;
@@ -70,8 +70,8 @@ public sealed partial class SoundCloudWebClient
         }
         // The featured GraphQL preview is capped at three. Read the collection
         // itself to fill the overview's two-by-two playlist grid.
-        using var preview = await GetJsonAsync(Api($"tracks/{trackId}/playlists_without_albums?limit=4&linked_partitioning=1"), token);
-        var playlists = await ParseLibraryAsync(preview.RootElement, token);
+        using var preview = await GetJsonAsync(Api($"tracks/{trackId}/playlists_without_albums?limit=4&linked_partitioning=1"), token).ConfigureAwait(false);
+        var playlists = await ParseLibraryAsync(preview.RootElement, token).ConfigureAwait(false);
         var items = playlists.Items.DistinctBy(item => item.Key).ToList();
         var cursor = playlists.NextHref;
         var visited = new HashSet<string>(StringComparer.Ordinal);
@@ -180,7 +180,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<TrackPage> GetRelatedTracksAsync(long trackId, CancellationToken token = default)
     {
         ValidateDetailTrackId(trackId);
-        using var document = await GetJsonAsync(Api($"tracks/{trackId}/related?limit=6&linked_partitioning=1"), token);
+        using var document = await GetJsonAsync(Api($"tracks/{trackId}/related?limit=6&linked_partitioning=1"), token).ConfigureAwait(false);
         return ParsePage(document.RootElement);
     }
 
@@ -197,8 +197,8 @@ public sealed partial class SoundCloudWebClient
         if (cursor == null) uri = Api(path.TrimStart('/') + "?limit=30&linked_partitioning=1");
         else if (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri!) || uri.AbsolutePath != path)
             throw new SoundCloudException("Неверный адрес раздела трека.");
-        using var document = await GetJsonAsync(uri, token);
-        if (section != "related") return await ParseLibraryAsync(document.RootElement, token);
+        using var document = await GetJsonAsync(uri, token).ConfigureAwait(false);
+        if (section != "related") return await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         var tracks = ParsePage(document.RootElement);
         return new(tracks.Tracks.Select(LibraryItem.FromTrack).ToArray(), tracks.NextHref);
     }

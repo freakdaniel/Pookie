@@ -27,13 +27,13 @@ internal static class GlassSheen
     internal static PathGeometry Shape(Rect bounds, CornerRadius corners) => PathGeometry.FromRoundedRect(bounds,
         corners.TopLeft, corners.TopRight, corners.BottomRight, corners.BottomLeft);
 
-    internal static void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1)
+    internal static void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, GlassGeometry geometry, double emphasis)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         var edge = new Rect(bounds.X + .5, bounds.Y + .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1));
         var inset = new CornerRadius(Math.Max(0, corners.TopLeft - .5), Math.Max(0, corners.TopRight - .5),
             Math.Max(0, corners.BottomRight - .5), Math.Max(0, corners.BottomLeft - .5));
-        context.DrawPath(Shape(edge, inset), new Pen(new LinearGradientBrush(
+        context.DrawPath(geometry.Get(edge, inset), new Pen(new LinearGradientBrush(
             new Point(bounds.X, bounds.Y), new Point(bounds.X, bounds.Bottom),
             [new(0, Color.FromArgb((byte)(28 + emphasis * 16), 255, 255, 255)),
              new(.55, Color.FromArgb(9, 255, 255, 255)), new(1, Color.FromArgb(4, 255, 255, 255))]), 1));
@@ -49,7 +49,12 @@ internal sealed class GlassGeometry
     internal PathGeometry Get(Rect nextBounds, CornerRadius nextCorners)
     {
         if (shape == null || bounds != nextBounds || corners != nextCorners)
-        { bounds = nextBounds; corners = nextCorners; shape = GlassSheen.Shape(bounds, corners); }
+        {
+            bounds = nextBounds;
+            corners = nextCorners;
+            shape = GlassSheen.Shape(bounds, corners);
+            shape.Freeze();
+        }
         return shape;
     }
 }
@@ -58,9 +63,16 @@ internal sealed class GlassGeometry
 internal sealed class ArtworkGlassSheen : Control
 {
     private readonly double radius;
+    private readonly Action? invalidateAfterResize;
     private readonly GlassSheenRaster sheen = new();
-    internal ArtworkGlassSheen(double radius = 20) { this.radius = radius; IsHitTestVisible = false; }
-    protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius), minimumScale: GetDpi() / 96d);
+    internal ArtworkGlassSheen(double radius = 20, bool deferResize = false)
+    {
+        this.radius = radius;
+        invalidateAfterResize = deferResize ? InvalidateVisual : null;
+        IsHitTestVisible = false;
+    }
+    protected override void OnRender(IGraphicsContext context) => sheen.Draw(context, Bounds, new CornerRadius(radius),
+        minimumScale: GetDpi() / 96d, invalidateAfterResize: invalidateAfterResize);
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);

@@ -28,6 +28,7 @@ internal sealed class MaterialTrackButton : Button
     private bool connected, groupStart;
     private bool glassFinish;
     private bool lightGlass, listStateLayer;
+    internal bool BakeGlyphOpacity { get; set; }
     private readonly GlassSheenRaster sheen = new();
     private LiquidGlassLens? lens;
     private CoverGlassBackdrop? glassBackdrop;
@@ -136,7 +137,12 @@ internal sealed class MaterialTrackButton : Button
 
     private void RefreshSurface(bool snap = false)
     {
-        if (Content is UIElement ink) ink.Opacity = IsEffectivelyEnabled || pending ? 1 : .38;
+        if (Content is UIElement ink)
+        {
+            var dimmed = !IsEffectivelyEnabled && !pending;
+            ink.Opacity = BakeGlyphOpacity && ink is Image glyph && TrackButtons.TrySetBakedGlyphOpacity(glyph, dimmed)
+                ? 1 : dimmed ? .38 : 1;
+        }
         var variant = StyleName;
         if (variant == null) return;
         var surface = palette?.Surface ?? TrackButtons.Surface(variant);
@@ -196,7 +202,7 @@ internal sealed class MaterialTrackButton : Button
             var bounds = GetSnappedBorderBounds(Bounds);
             var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
             var shape = geometry.Get(bounds,corners);
-            glassBackdrop.Draw(context, bounds, corners, shape, lens ??= new(), GetDpi() / 96d);
+            glassBackdrop.Draw(context, bounds, corners, shape, lens ??= new(), GetDpi() / 96d, InvalidateVisual);
             context.FillPath(shape, glassTint);
         }
         else if (connected)

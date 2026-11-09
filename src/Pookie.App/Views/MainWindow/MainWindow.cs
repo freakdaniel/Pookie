@@ -57,6 +57,7 @@ internal sealed partial class MainWindow : IDisposable
     private PresenceService? presence;
     private ISessionVault? vault;
     private NativeBrowserSession? browser;
+    private SoundCloudHttpTransport? nativeSoundCloud;
     private (NativeBrowserSession Session, Action<BrowserRequestEvent> Handler)? browserNotifications;
     private readonly List<NativeBrowserSession> browserSessions = [];
     private Task browserClosing = Task.CompletedTask;
@@ -111,8 +112,9 @@ internal sealed partial class MainWindow : IDisposable
             try
             {
                 var native = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsPlaybackUri);
-                player = OperatingSystem.IsWindows() ? new WindowsAudioPlayer(native, () => browser) : native;
-                audioStatus.Value = "Аудио: SoundFlow";
+                player = OperatingSystem.IsWindows() ? new WindowsPlayReadyAudioPlayer(native, http, SoundCloudWebClient.IsMediaUri,
+                    Path.Combine(new AppDataPaths().Cache, "PlayReady")) : native;
+                audioStatus.Value = OperatingSystem.IsWindows() ? "Аудио: SoundFlow / PlayReady" : "Аудио: SoundFlow";
             }
             catch (Exception error) { AppLog.Failure("Pookie.Audio", "Не удалось запустить аудио", error); audioStatus.Value = error.Message; }
         }
@@ -155,11 +157,22 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered += UpdateLyricsFrame;
         Window.FrameRendered += DismissUnfocusedShellMenus;
         Window.FrameRendered += ObserveChatPopups;
-        Window.FrameRendered += RefreshCardGlass;
+        Window.FrameRendered += ScheduleCardGlass;
+        trackResizeCoalescer.Tick += EndTrackResizeCoalescing;
+        WindowPresentation.HoldFrame(Window) = HoldTrackResizeFrame;
+        WindowPresentation.FramePresented(Window) += TrackWindowFramePresented;
+        if (OperatingSystem.IsWindows())
+        {
+            WindowPresentation.YieldDispatcher(null) = HoldTrackResizeFrame;
+            WindowPresentation.RetainedFrameSlack(Window) = 384;
+        }
         Window.DpiChanged += (_, _) => RefreshCompactArtworkDpi();
         Window.ClientSizeChanged += size =>
         {
-            UpdateContentFrameWidth(size.Width);
+            if (page.Value == Page.Track)
+            {
+                BeginTrackResize();
+            }
             UpdateLibraryCardSize(size.Width);
         };
         Window.PreviewKeyDown += e =>
@@ -211,7 +224,6 @@ internal sealed partial class MainWindow : IDisposable
         StartupLog.Event("app.window-loaded");
         if (enableSystemMedia && player != null) Run(InitializeSystemMediaAsync);
         var size = Window!.ClientSize;
-        UpdateContentFrameWidth(size.Width);
         UpdateLibraryCardSize(size.Width);
         OnWindowReady();
         startupMinimumDisplay = HoldStartupSplashAsync();
@@ -232,23 +244,6 @@ internal sealed partial class MainWindow : IDisposable
             OnInitialized();
             if (signInImmediately && !signedIn.Value) await LoginAsync();
         });
-    }
-
-    private void UpdateContentFrameWidth(double availableWidth)
-    {
-        // An arrange pass can still report the previous, wider desired size
-        // during a native resize. The client viewport is the source of truth.
-        if (Window?.ClientSize.Width is > 0 and var clientWidth) availableWidth = Math.Min(availableWidth, clientWidth);
-        if (availableWidth > 0)
-        {
-            var chats = page.Value == Page.Chats;
-            contentFrame.MaxWidth = chats ? double.PositiveInfinity : 1440;
-            contentFrame.Width = chats ? availableWidth : Math.Min(1440, availableWidth);
-            contentFrame.Padding = new Thickness(chats ? 16 : 36, ShellHeader.HeaderHeight + 30, chats ? 16 : 36, 0);
-            playerContentFrame.Width = Math.Min(1440, availableWidth);
-            var sideWidth = (playerContentFrame.Width - 72 - PlayerControlsWidth - 24) / 2;
-            playerTrackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 28 - 24 - 4, 60, 180);
-        }
     }
 
     private async Task InitializeAsync()
@@ -282,7 +277,7 @@ internal sealed partial class MainWindow : IDisposable
                 try
                 {
                     AttachBrowser(connected);
-                    var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => connected.GetMeAsync(lifetime.Token));
+                    var restoredProfile = await StartupLog.RunAsync("session.profile-verify", () => RestoreSoundCloudProfileAsync(connected, lifetime.Token));
                     lifetime.Token.ThrowIfCancellationRequested();
                     me = restoredProfile;
                     api.Session = connected.Account;
@@ -300,7 +295,7 @@ internal sealed partial class MainWindow : IDisposable
                     status.Value = error.StatusCode switch
                     {
                         401 => "Не удалось восстановить сохранённую сессию SoundCloud. Подтверди вход в Pookie.",
-                        403 or 429 => "SoundCloud ограничил доступ к браузеру Pookie. Попробуй подключиться позже.",
+                        403 or 429 => "SoundCloud ограничил доступ Pookie. Попробуй подключиться позже.",
                         _ => "Не удалось проверить сессию SoundCloud. Попробуй подключиться ещё раз."
                     };
                     loginError.Text = status.Value; loginError.IsVisible = true;
@@ -457,22 +452,13 @@ internal sealed partial class MainWindow : IDisposable
             if (demo) source = new(DemoSource(track.Id), AudioTransport.File, track.DurationSeconds);
             else
             {
-                var resolver = new WaveformGainResolver(http, dataPaths);
-                var waveformUrl = track.WaveformUrl;
-                var gainTask = preferences.NormalizeVolume ? resolver.ResolveAsync(waveformUrl, token) : Task.FromResult(0d);
-                var streamTask = playbackResolver.ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
-                await Task.WhenAll(gainTask, streamTask);
-                var resolved = await streamTask;
-                if (resolved.UsedRegionalSource) AppLog.For("Pookie.Playback").Information("Трек {TrackId}: полный поток получен через региональный источник", track.Id);
-                track = resolved.Track;
-                var stream = resolved.Stream;
-                source = new(stream.Uri.AbsoluteUri, stream.Protected ? AudioTransport.WidevineHls : stream.Protocol == "hls" ? AudioTransport.Hls : AudioTransport.Progressive, stream.Duration)
-                    { LicenseAuthToken = stream.LicenseAuthToken,
-                      NormalizationGainDb = !preferences.NormalizeVolume ? 0 : track.WaveformUrl == waveformUrl ? await gainTask : await resolver.ResolveAsync(track.WaveformUrl, token) };
+                var normalize = preferences.NormalizeVolume;
+                (track, source) = await Task.Run(() => ResolveTrackAudioAsync(track, normalize, token), token);
+                if (!preferences.NormalizeVolume && source.NormalizationGainDb != 0)
+                    source = source with { NormalizationGainDb = 0 };
             }
             if (generation != playGeneration || disposed) return;
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
-            source = source with { BrowserPage = track.PermalinkUrl };
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
             if (generation != playGeneration || disposed) return;
@@ -523,6 +509,28 @@ internal sealed partial class MainWindow : IDisposable
                 UpdateSystemMedia();
             }
         }
+    }
+
+    private async Task<(SoundCloudTrack Track, AudioSource Source)> ResolveTrackAudioAsync(
+        SoundCloudTrack track, bool normalize, CancellationToken token)
+    {
+        // These requests can complete synchronously from cache. Keep parsing
+        // track metadata and waveform normalization away from input dispatch.
+        var resolver = new WaveformGainResolver(http, dataPaths);
+        var waveformUrl = track.WaveformUrl;
+        var gainTask = normalize ? resolver.ResolveAsync(waveformUrl, token) : Task.FromResult(0d);
+        var streamTask = playbackResolver.ResolveAsync(track.Id, token, ["progressive", "hls", "ctr-encrypted-hls"]);
+        await Task.WhenAll(gainTask, streamTask);
+        var resolved = await streamTask;
+        if (resolved.UsedRegionalSource)
+            AppLog.For("Pookie.Playback").Information("Трек {TrackId}: полный поток получен через региональный источник", track.Id);
+        track = resolved.Track;
+        var stream = resolved.Stream;
+        var transport = stream.Protected ? AudioTransport.WidevineHls :
+            stream.Protocol == "hls" ? AudioTransport.Hls : AudioTransport.Progressive;
+        var gain = !normalize ? 0 : track.WaveformUrl == waveformUrl ? await gainTask : await resolver.ResolveAsync(track.WaveformUrl, token);
+        return (track, new AudioSource(stream.Uri.AbsoluteUri, transport, stream.Duration)
+            { LicenseAuthToken = stream.LicenseAuthToken, NormalizationGainDb = gain });
     }
 
     private string DemoSource(long id)
@@ -772,6 +780,7 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        topSearchMotion.Stop();
         embeddedLogin?.Stop();
         tooltipLayer.Dispose();
         ResetExpandedPlayer();
@@ -788,7 +797,11 @@ internal sealed partial class MainWindow : IDisposable
         DetachBrowserNotifications();
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;
-        Window.FrameRendered -= RefreshCardGlass;
+        Window.FrameRendered -= ScheduleCardGlass;
+        WindowPresentation.HoldFrame(Window) = null;
+        WindowPresentation.FramePresented(Window) -= TrackWindowFramePresented;
+        if (OperatingSystem.IsWindows()) WindowPresentation.YieldDispatcher(null) = null;
+        trackResizeCoalescer.Dispose();
         Window.FrameRendered -= CompleteChatMediaLayout;
         Window.FrameRendered -= CompleteExpandedQueueLayout;
         chatMediaLayoutPending.Clear();
@@ -841,7 +854,24 @@ internal sealed partial class MainWindow : IDisposable
             { AppLog.Failure("Pookie.Storage", "Не удалось удалить временные данные", error, LogEventLevel.Debug); }
     }
 
-    private void AttachBrowser(NativeBrowserSession connected)
+    private async Task<SoundCloudUser> RestoreSoundCloudProfileAsync(NativeBrowserSession connected, CancellationToken token)
+    {
+        if (nativeSoundCloud == null) return await connected.GetMeAsync(token);
+        SoundCloudUser user;
+        try { user = await api.GetMeAsync(token); }
+        catch (SoundCloudException error) when (error.StatusCode == 401)
+        {
+            // The signed-in website can refresh an expired access token.
+            return await connected.GetMeAsync(token);
+        }
+        var account = connected.Account;
+        if (user.Id is not (> 0 and <= 9007199254740991) || account.VerifiedUserId is { } expected && expected != user.Id)
+            throw new SoundCloudException("SoundCloud не подтвердил восстановление сохранённого аккаунта.", 401);
+        if (account.VerifiedUserId == null) connected.UpdateAccount(account with { VerifiedUserId = user.Id });
+        return user;
+    }
+
+    private void AttachBrowser(NativeBrowserSession connected, bool useNativeHttp = true)
     {
         DetachBrowserNotifications();
         if (browser is { } previous)
@@ -851,9 +881,19 @@ internal sealed partial class MainWindow : IDisposable
         }
         browser = connected;
         api.Session = connected.Account;
-        api.Transport = connected;
         browserSessions.Add(connected);
         var dispatcher = Application.Current.Dispatcher;
+        if (useNativeHttp && OperatingSystem.IsWindows())
+        {
+            var transport = new SoundCloudHttpTransport(http, () => connected.Account, connected);
+            nativeSoundCloud = transport;
+            api.Transport = transport;
+            transport.SessionChanged += () => dispatcher?.BeginInvoke(() =>
+            {
+                if (!disposed && browser == connected) Run(() => PersistBrowserSessionAsync(connected));
+            });
+        }
+        else api.Transport = connected;
         void Changed(BrowserRequestEvent message)
         {
             if (disposed || browser != connected || message.Kind is not
@@ -887,6 +927,8 @@ internal sealed partial class MainWindow : IDisposable
 
     private void DetachBrowserNotifications()
     {
+        nativeSoundCloud?.Dispose();
+        nativeSoundCloud = null;
         if (browserNotifications is not { } subscription) return;
         subscription.Session.Changed -= subscription.Handler;
         browserNotifications = null;

@@ -84,17 +84,17 @@ internal sealed partial class MainWindow
             .OnLostFocus(() => playerArtworkOverlay.Opacity = 0)
             .OnClick(() => SetExpandedPlayer(true));
 
-        playerTrackTitle = new TextBlock().BindText(title).FontSize(13).Bold().Foreground(TrackButtons.OnSurface)
+        playerTrackTitle = new CommentTextBlock().BindText(title).FontSize(13).Bold().Foreground(TrackButtons.OnSurface)
             .Height(18).TextTrimming(TextTrimming.CharacterEllipsis);
-        playerTrackArtist = new TextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText)
+        playerTrackArtist = new CommentTextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText)
             .Height(16).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachTrackTitle(playerTrackTitle, () => current);
         AttachUserLink(playerTrackArtist, () => current?.User);
         playerTrackInfo = new StackPanel().Vertical().Spacing(4).MaxWidth(180).Margin(4, 0, 0, 0).CenterVertical()
             .Children(playerTrackTitle, playerTrackArtist);
-        positionLabel = new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
+        positionLabel = new CommentTextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(0, 0, 4, 2).CenterVertical().Right().Column(0);
-        durationLabel = new TextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)
+        durationLabel = new CommentTextBlock().BindText(totalTime).FontSize(11).Foreground(PlayerSecondaryText)
             .Margin(4, 0, 0, 2).CenterVertical().Left().Column(2);
         foreach (var label in new[] { positionLabel, durationLabel })
         {
@@ -110,13 +110,17 @@ internal sealed partial class MainWindow
             { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));
         volumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
             .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
+        const double playButtonSize = 34, playGlyphSize = 19;
+        // The play path spans x=64..240 in a 256-unit viewBox.
+        const double playInkOffset = playGlyphSize * (152 - 128) / 256;
         playerPlayButton = new ExpandedGlassButton(null, playerBackdrop: playerBackdrop)
-            .Initialize(new Grid().Columns("*").Rows("*").Children(
-                Icons.View("play-solid", 19, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying, value => !value),
-                Icons.View("pause-solid", 19, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying)))
-            .Width(34).Height(34).CornerRadius(17).OnClick(() => Run(ToggleAsync));
-        playerContentFrame = new Border().Width(DefaultWindowWidth).MaxWidth(1440).Height(PlayerBarHeight)
-            .Padding(36, 8).CenterHorizontal().Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
+            .Initialize(new Grid().Width(playButtonSize).Height(playButtonSize).Columns("*").Rows("*").Children(
+                Icons.View("play-solid", playGlyphSize, TrackButtons.OnSurface).Center().Margin(0, 0, playInkOffset * 2, 0)
+                    .BindIsVisible(isPlaying, value => !value),
+                Icons.View("pause-solid", playGlyphSize, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying)))
+            .Width(playButtonSize).Height(playButtonSize).CornerRadius(playButtonSize / 2).OnClick(() => Run(ToggleAsync));
+        playerContentFrame = new Border().Height(PlayerBarHeight)
+            .Padding(36, 8).Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
                 playerArtworkButton.Column(0),
                 playerTrackInfo.Column(1),
@@ -142,7 +146,8 @@ internal sealed partial class MainWindow
         playerBackdrop.Opacity = 0;
         playerBackdrop.Transitions = [Transition.Create(UIElement.OpacityProperty, 250, Easing.CubicBezier(0.2, 0, 0, 1))];
         playerBackdrop.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? 1d : 0d);
-        playerChrome = new Border().Background(Color.Transparent).BorderThickness(0).ClipToBounds().Child(playerContentFrame);
+        playerChrome = new Border().Background(Color.Transparent).BorderThickness(0).ClipToBounds()
+            .Child(new PlayerBarViewport(playerContentFrame, playerTrackInfo));
         playerChrome.Opacity = 0;
         playerChrome.Height = 0;
         playerChrome.Transitions = [
@@ -152,6 +157,35 @@ internal sealed partial class MainWindow
         playerChrome.Bind(UIElement.OpacityProperty, playerVisible, visible => visible ? 1d : 0d);
         playerChrome.Bind(FrameworkElement.HeightProperty, playerVisible, visible => visible ? PlayerBarHeight : 0d);
         return playerChrome;
+    }
+
+    private sealed class PlayerBarViewport : Panel
+    {
+        private readonly Border frame;
+        private readonly FrameworkElement trackInfo;
+
+        internal PlayerBarViewport(Border frame, FrameworkElement trackInfo)
+        {
+            this.frame = frame;
+            this.trackInfo = trackInfo;
+            Add(frame);
+        }
+
+        protected override Size MeasureContent(Size availableSize)
+        {
+            var width = Math.Min(1440, availableSize.Width);
+            var sideWidth = (width - 72 - PlayerControlsWidth - 24) / 2;
+            trackInfo.MaxWidth = Math.Clamp(sideWidth - 48 - 30 - 28 - 28 - 24 - 4, 60, 180);
+            frame.Measure(new Size(width, availableSize.Height));
+            return new Size(width, frame.DesiredSize.Height);
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            var width = Math.Min(1440, finalSize.Width);
+            frame.Arrange(new Rect(Bounds.X + (finalSize.Width - width) / 2, Bounds.Y, width, finalSize.Height));
+            return finalSize;
+        }
     }
 
     private static Button PlayerButton(FrameworkElement content, Action action, ObservableValue<bool>? active = null)

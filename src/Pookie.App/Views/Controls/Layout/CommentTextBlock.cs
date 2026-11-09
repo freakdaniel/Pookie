@@ -12,10 +12,11 @@ namespace Pookie.App;
 internal sealed class CommentTextBlock : TextBlock
 {
     private ITextLayout? layout;
+    private ITextLayout? naturalLine;
     private IGraphicsFactory? factory;
     private readonly record struct ParagraphKey(double Width, uint Dpi, TextRunStyle Style, TextWrapping Wrapping,
         TextTrimming Trimming, TextAlignment Alignment, double Spacing, LineBoxTrim Trim, string Culture, string Text);
-    private ParagraphKey key;
+    private ParagraphKey key, naturalKey;
     private long revision;
     private bool clipInk;
     protected override void OnTextChanged() { clipInk = CombiningText.ContainsMark(Text.AsSpan()); base.OnTextChanged(); }
@@ -25,33 +26,50 @@ internal sealed class CommentTextBlock : TextBlock
 
     private ITextLayout Paragraph(double width, bool measuring = false)
     {
-        width = (measuring && Wrapping == TextWrapping.NoWrap) ||
-            (Wrapping == TextWrapping.NoWrap && TextTrimming == TextTrimming.None && TextAlignment == TextAlignment.Left)
-            ? double.PositiveInfinity : double.IsFinite(width) && width > 0 ? width : 1_000_000;
         var next = new ParagraphKey(width, GetDpi(), new TextRunStyle(FontFamily, FontSize, FontWeight, FontStyle == FontStyle.Italic),
             Wrapping, TextTrimming, TextAlignment, LineSpacing, LineBoxTrim, CultureInfo.CurrentUICulture.Name, Text);
         var graphics = GetGraphicsFactory();
-        if (layout != null && key == next && factory == graphics) return layout;
+        if (factory != graphics) { layout = naturalLine = null; factory = graphics; }
+        if (Wrapping == TextWrapping.NoWrap && TextAlignment == TextAlignment.Left)
+        {
+            var unbounded = next with { Width = double.PositiveInfinity, Trimming = TextTrimming.None };
+            if (naturalLine == null || naturalKey != unbounded)
+            {
+                naturalKey = unbounded;
+                naturalLine = CreateParagraph(graphics, unbounded);
+            }
+            // A wider slot cannot change an already fitting left-aligned
+            // line. Keep the shaped run while the window width changes.
+            if (measuring || TextTrimming == TextTrimming.None || naturalLine.MeasuredSize.Width <= width)
+                return naturalLine;
+        }
+        width = measuring && Wrapping == TextWrapping.NoWrap ? double.PositiveInfinity :
+            double.IsFinite(width) && width > 0 ? width : 1_000_000;
+        next = next with { Width = width };
+        if (layout != null && key == next) return layout;
         // A short single line measured in a larger slot needs no reshaping
         // when its parent then gives it just its natural width.
-        if (TextTrimming == TextTrimming.None && layout != null && factory == graphics && key with { Width = width } == next && layout.Lines.Count == 1 &&
+        if (TextTrimming == TextTrimming.None && layout != null && key with { Width = width } == next && layout.Lines.Count == 1 &&
             layout.MeasuredSize.Width <= width && layout.MeasuredSize.Width < key.Width - .5) return layout;
-        key = next; factory = graphics;
-        return layout = graphics.TextEngine.GetOrCreateLayout(new TextLayoutRequest
+        key = next;
+        return layout = CreateParagraph(graphics, next);
+    }
+
+    private ITextLayout CreateParagraph(IGraphicsFactory graphics, ParagraphKey next) =>
+        graphics.TextEngine.GetOrCreateLayout(new TextLayoutRequest
         {
             Text = Text.AsMemory(), Dpi = next.Dpi, DefaultStyle = next.Style, Revision = ++revision,
             Paragraph = new TextParagraphStyle
             {
-                MaxWidth = width, MaxHeight = double.PositiveInfinity, Wrapping = Wrapping,
-                Trimming = TextTrimming, Alignment = TextAlignment,
+                MaxWidth = next.Width, MaxHeight = double.PositiveInfinity, Wrapping = next.Wrapping,
+                Trimming = next.Trimming, Alignment = next.Alignment,
                 LineSpacing = LineSpacing, LineBoxTrim = LineBoxTrim, Culture = CultureInfo.CurrentUICulture
             }
         }, TextLayoutCachePolicy.Owner, this);
-    }
 
     protected override Size MeasureContent(Size availableSize)
     {
-        if (TextTrimming != TextTrimming.None) return base.MeasureContent(availableSize);
+        if (TextTrimming != TextTrimming.None && Wrapping != TextWrapping.NoWrap) return base.MeasureContent(availableSize);
         if (Text.Length == 0) return Size.Empty;
         var size = Paragraph(availableSize.Width, measuring: true).MeasuredSize;
         var scale = GetDpi() / 96d;
@@ -84,6 +102,6 @@ internal sealed class CommentTextBlock : TextBlock
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);
-        if (newRoot == null) { layout = null; factory = null; }
+        if (newRoot == null) { layout = naturalLine = null; factory = null; }
     }
 }

@@ -12,6 +12,7 @@ internal sealed class ShellPageScroll : Panel
     private readonly Func<ScrollViewer?> current;
     private readonly Func<MouseWheelEventArgs, bool> scroll;
     private readonly Func<double> trailingSpace;
+    private readonly Func<double> maximumContentWidth;
     private readonly Dictionary<ScrollViewer, (Action Changed, Action<MouseWheelEventArgs> Wheel)> handlers = [];
     private ScrollViewer? inner;
     private double prefix, tail, extent, collapse;
@@ -21,9 +22,10 @@ internal sealed class ShellPageScroll : Panel
         Math.Abs(extent - ContentExtent()) < .5;
 
     internal ShellPageScroll(FrameworkElement content, ScrollViewer owner, Func<ScrollViewer?> current,
-        Func<MouseWheelEventArgs, bool> scroll, Func<double> trailingSpace)
+        Func<MouseWheelEventArgs, bool> scroll, Func<double> trailingSpace, Func<double> maximumContentWidth)
     {
         this.content = content; this.owner = owner; this.current = current; this.scroll = scroll; this.trailingSpace = trailingSpace;
+        this.maximumContentWidth = maximumContentWidth;
         // Keep the native thumb, track and hit testing below the glass header.
         // The content viewport still spans the header for the scroll-under effect.
         if (VerticalBar(owner) is { } bar) bar.Margin = new Thickness(0, ShellHeader.HeaderHeight, 0, 0);
@@ -117,7 +119,7 @@ internal sealed class ShellPageScroll : Panel
     protected override Size MeasureContent(Size availableSize)
     {
         var height = owner.ActualHeight > 0 ? owner.ActualHeight : 840;
-        content.Measure(new Size(availableSize.Width, height + collapse));
+        content.Measure(new Size(Math.Min(availableSize.Width, maximumContentWidth()), height + collapse));
         return new Size(availableSize.Width, Math.Max(height, extent));
     }
 
@@ -142,7 +144,11 @@ internal sealed class ShellPageScroll : Panel
         // Measure only in MeasureContent. At fractional DPI the final rounded
         // width can differ from the constraint and remeasurement here oscillates.
         // Refresh reconciles the heading/viewport changes at the frame boundary.
-        content.Arrange(new Rect(Bounds.X, Bounds.Y + offset - collapse - endShift, finalSize.Width, owner.ActualHeight + collapse));
+        // Arrange to the same width used for measurement. Updating Width
+        // after the native resize laid out the old slot and dirtied the tree again.
+        var width = Math.Min(finalSize.Width, maximumContentWidth());
+        content.Arrange(new Rect(Bounds.X + (finalSize.Width - width) / 2, Bounds.Y + offset - collapse - endShift,
+            width, owner.ActualHeight + collapse));
         return finalSize;
     }
 

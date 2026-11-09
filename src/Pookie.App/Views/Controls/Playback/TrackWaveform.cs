@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -236,51 +237,62 @@ internal sealed class TrackWaveform : Control
 
     private void DrawBars(Span<byte> pixels, int width, int pixelHeight, double scale)
     {
+        var words = MemoryMarshal.Cast<byte, uint>(pixels);
         var upper = Bounds.Height * .7;
+        var lower = Bounds.Height - upper - 1;
         var pitch = Bounds.Width / bars.Length;
         var barWidth = Math.Max(1, pitch - 1);
         var baseline = upper * scale;
         var count = bars.Length;
+        var premultiplied = OperatingSystem.IsWindows();
         for (var index = 0; index < count; index++)
         {
             var color = BarColor(index);
             if (!rasterDirty && renderedColors[index] == color.R) continue;
             renderedColors[index] = color.R;
             var height = Math.Max(1, Math.Floor(bars[index] * upper));
-            var reflection = Math.Max(1, Math.Floor(bars[index] * (Bounds.Height - upper - 1)));
+            var reflection = Math.Max(1, Math.Floor(bars[index] * lower));
             var x = index * pitch * scale;
-            FillBar(pixels, width, pixelHeight, x, baseline - height * scale, x + barWidth * scale, baseline, color);
-            FillBar(pixels, width, pixelHeight, x, baseline + scale, x + barWidth * scale, baseline + (1 + reflection) * scale,
-                Color.FromArgb(80, color.R, color.G, color.B));
+            var right = x + barWidth * scale;
+            FillBar(words, width, pixelHeight, x, baseline - height * scale, right, baseline, color, premultiplied);
+            FillBar(words, width, pixelHeight, x, baseline + scale, right, baseline + (1 + reflection) * scale,
+                Color.FromArgb(80, color.R, color.G, color.B), premultiplied);
         }
     }
 
     private Color BarColor(int index) => (onArtwork ? Color.FromRgb(188, 188, 188) : IdleColor).Lerp(PlayedColor, emphasis[index]);
 
-    private static void FillBar(Span<byte> pixels, int width, int height, double left, double top, double right, double bottom, Color color)
+    private static void FillBar(Span<uint> pixels, int width, int height, double left, double top, double right,
+        double bottom, Color color, bool premultiplied)
     {
-        for (var x = Math.Max(0, (int)Math.Floor(left)); x < Math.Min(width, (int)Math.Ceiling(right)); x++)
+        var firstY = Math.Max(0, (int)Math.Floor(top));
+        var lastY = Math.Min(height, (int)Math.Ceiling(bottom)) - 1;
+        if (firstY > lastY) return;
+        var lastX = Math.Min(width, (int)Math.Ceiling(right));
+        for (var x = Math.Max(0, (int)Math.Floor(left)); x < lastX; x++)
         {
-            var coverage = Math.Min(x + 1, right) - Math.Max(x, left);
-            for (var y = Math.Max(0, (int)Math.Floor(top)); y < Math.Min(height, (int)Math.Ceiling(bottom)); y++)
-            {
-                var alpha = (byte)Math.Round(color.A * coverage * (Math.Min(y + 1, bottom) - Math.Max(y, top)));
-                var offset = (y * width + x) * 4;
-                // Windows uploads premultiplied pixels. Convert only the bars
-                // being painted instead of scanning the entire waveform again.
-                if (OperatingSystem.IsWindows())
-                {
-                    pixels[offset] = (byte)((color.B * alpha + 127) / 255);
-                    pixels[offset + 1] = (byte)((color.G * alpha + 127) / 255);
-                    pixels[offset + 2] = (byte)((color.R * alpha + 127) / 255);
-                }
-                else
-                {
-                    pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R;
-                }
-                pixels[offset + 3] = alpha;
-            }
+            var columnAlpha = color.A * (Math.Min(x + 1, right) - Math.Max(x, left));
+            var firstCoverage = Math.Min(firstY + 1, bottom) - Math.Max(firstY, top);
+            pixels[firstY * width + x] = BarPixel(color, columnAlpha * firstCoverage, premultiplied);
+            if (firstY == lastY) continue;
+
+            // Only the two end pixels have partial vertical coverage. Reuse
+            // one packed BGRA value for the solid part of this column.
+            var solid = BarPixel(color, columnAlpha, premultiplied);
+            for (var offset = (firstY + 1) * width + x; offset < lastY * width + x; offset += width)
+                pixels[offset] = solid;
+            var lastCoverage = Math.Min(lastY + 1, bottom) - Math.Max(lastY, top);
+            pixels[lastY * width + x] = BarPixel(color, columnAlpha * lastCoverage, premultiplied);
         }
+    }
+
+    private static uint BarPixel(Color color, double coverage, bool premultiplied)
+    {
+        var alpha = (uint)Math.Round(coverage);
+        var red = premultiplied ? (color.R * alpha + 127) / 255 : color.R;
+        var green = premultiplied ? (color.G * alpha + 127) / 255 : color.G;
+        var blue = premultiplied ? (color.B * alpha + 127) / 255 : color.B;
+        return alpha << 24 | red << 16 | green << 8 | blue;
     }
 
     private void ReleaseRaster()

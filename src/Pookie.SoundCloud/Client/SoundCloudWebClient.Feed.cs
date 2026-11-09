@@ -10,8 +10,8 @@ public sealed partial class SoundCloudWebClient
         var uri = Api("stream?limit=30&linked_partitioning=1");
         if (cursor != null && (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri) || uri.AbsolutePath != "/stream"))
             throw new SoundCloudException("Неверная страница ленты");
-        using var document = await GetJsonAsync(uri!, token);
-        var enriched = await ParseLibraryAsync(document.RootElement, token);
+        using var document = await GetJsonAsync(uri!, token).ConfigureAwait(false);
+        var enriched = await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         var items = enriched.Items.ToDictionary(item => item.Key);
         var entries = new List<FeedEntry>();
         foreach (var entry in document.RootElement.GetProperty("collection").EnumerateArray())

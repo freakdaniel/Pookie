@@ -130,14 +130,14 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
     {
-        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken);
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken).ConfigureAwait(false);
         try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }
 
     public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
-        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken);
+        var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken).ConfigureAwait(false);
         try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал страницу трека.")); }
         catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
     }

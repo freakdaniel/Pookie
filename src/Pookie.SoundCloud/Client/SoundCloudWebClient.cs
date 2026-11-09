@@ -65,7 +65,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         var session = Session;
         if (session != null && !session.IsValid()) throw new SoundCloudException("Некорректная сессия SoundCloud. Войди ещё раз.");
         if (session != null && BrowserTransport is { } browser && (method == null || method == HttpMethod.Get))
-            return await browser.GetJsonAsync(uri, cancellationToken);
+            return await browser.GetJsonAsync(uri, cancellationToken).ConfigureAwait(false);
         if (session != null && RequireBrowserTransport)
             throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
         var clientId = session?.ClientId ?? await GetClientIdAsync(cancellationToken);
@@ -89,7 +89,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             if (session.DataDomeClientId is { } protectionSession)
                 request.Headers.Add("x-datadome-clientid", protectionSession);
         }
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (session != null && response.Headers.TryGetValues("x-set-cookie", out var cookies))
             foreach (var cookie in cookies)
                 if (cookie.StartsWith("datadome=", StringComparison.OrdinalIgnoreCase))
@@ -109,8 +109,8 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             throw new SoundCloudException(message, (int)response.StatusCode);
         }
         if (method == HttpMethod.Put || method == HttpMethod.Delete) return JsonDocument.Parse("{}");
-        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken);
+        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await JsonDocument.ParseAsync(body, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> IsBrowserChallengeAsync(HttpContent content, CancellationToken cancellationToken)
@@ -140,13 +140,13 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<SoundCloudUser> GetMeAsync(CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Сначала войди в SoundCloud.");
-        using var document = await GetJsonAsync(Api("me"), cancellationToken);
+        using var document = await GetJsonAsync(Api("me"), cancellationToken).ConfigureAwait(false);
         return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser) ?? throw new SoundCloudException("Не удалось прочитать профиль.");
     }
 
     public async Task<TrackPage> SearchAsync(string query, CancellationToken cancellationToken = default)
     {
-        using var document = await GetJsonAsync(Api("search/tracks?q=" + Uri.EscapeDataString(query.Trim()) + "&limit=30&linked_partitioning=1"), cancellationToken);
+        using var document = await GetJsonAsync(Api("search/tracks?q=" + Uri.EscapeDataString(query.Trim()) + "&limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return ParsePage(document.RootElement);
     }
 
@@ -154,7 +154,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     {
         if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
 
-        using var document = await GetJsonAsync(Api($"users/{userId}/likes?limit=30&linked_partitioning=1"), cancellationToken);
+        using var document = await GetJsonAsync(Api($"users/{userId}/likes?limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return ParsePage(document.RootElement);
     }
 
@@ -167,15 +167,15 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             "recent" => "me/play-history/contexts", "history" => "me/play-history/tracks",
             "following" when userId > 0 => $"users/{userId}/followings",
             _ => throw new ArgumentOutOfRangeException(nameof(section)) };
-        using var document = await GetJsonAsync(Api(path + (section == "recent" ? "?limit=6&linked_partitioning=1" : "?limit=30&linked_partitioning=1")), cancellationToken);
-        return await ParseLibraryAsync(document.RootElement, cancellationToken);
+        using var document = await GetJsonAsync(Api(path + (section == "recent" ? "?limit=6&linked_partitioning=1" : "?limit=30&linked_partitioning=1")), cancellationToken).ConfigureAwait(false);
+        return await ParseLibraryAsync(document.RootElement, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<LibraryPage> GetLibraryNextAsync(string url, CancellationToken cancellationToken = default)
     {
         if (!BrowserRequestCommand.IsReadUrl(url)) throw new SoundCloudException("Неверный адрес страницы библиотеки.");
-        using var document = await GetJsonAsync(new Uri(url), cancellationToken);
-        return await ParseLibraryAsync(document.RootElement, cancellationToken);
+        using var document = await GetJsonAsync(new Uri(url), cancellationToken).ConfigureAwait(false);
+        return await ParseLibraryAsync(document.RootElement, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<LibraryPage> ParseLibraryAsync(JsonElement root, CancellationToken cancellationToken)
@@ -189,7 +189,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         var fetched = new Dictionary<long, SoundCloudTrack>();
         foreach (var batch in ids.Chunk(50))
         {
-            using var metadata = await GetJsonAsync(Api("tracks?ids=" + string.Join(',', batch)), cancellationToken);
+            using var metadata = await GetJsonAsync(Api("tracks?ids=" + string.Join(',', batch)), cancellationToken).ConfigureAwait(false);
             foreach (var track in ParsePage(metadata.RootElement).Tracks) fetched[track.Id] = track;
         }
         var ordered = new List<LibraryItem>();
@@ -215,23 +215,17 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
                 ? "system-playlists/" + Uri.EscapeDataString(playlist.Urn!)
                 : playlist.Id > 0 ? $"playlists/{playlist.Id}" : throw new SoundCloudException("Подборка недоступна.");
         else throw new SoundCloudException("Нет треков для этой карточки.");
-        using var document = await GetJsonAsync(Api(path), cancellationToken);
+        using var document = await GetJsonAsync(Api(path), cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out var tracks)) return new(item, ParsePage(root));
-        item = LibraryData.FromPlaylist(LibraryData.ParsePlaylist(root)) with { Key = item.Key };
-        // Some playlists contain ID-only placeholders. Resolve those in bounded batches.
-        var complete = new List<SoundCloudTrack>();
-        foreach (var value in tracks.EnumerateArray())
-        {
-            var track = value.Deserialize(SoundCloudJson.Default.SoundCloudTrack);
-            if (track is not { Id: > 0 }) continue;
-            complete.Add(track);
-        }
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out _)) return new(item, ParsePage(root));
+        var detail = LibraryData.ParsePlaylist(root);
+        item = LibraryData.FromPlaylist(detail) with { Key = item.Key };
+        var complete = detail.Tracks.Where(track => track is { Id: > 0 }).ToArray();
         var missing = complete.Where(t => string.IsNullOrEmpty(t.Title)).Select(t => t.Id).Distinct().ToArray();
-        var resolved = new Dictionary<long, SoundCloudTrack>();
+        var resolved = new Dictionary<long, SoundCloudTrack>(missing.Length);
         foreach (var batch in missing.Chunk(50))
         {
-            using var json = await GetJsonAsync(Api("tracks?ids=" + string.Join(',', batch)), cancellationToken);
+            using var json = await GetJsonAsync(Api("tracks?ids=" + string.Join(',', batch)), cancellationToken).ConfigureAwait(false);
             foreach (var track in ParsePage(json.RootElement).Tracks) resolved[track.Id] = track;
         }
         return new(item, new(complete.Select(t => resolved.GetValueOrDefault(t.Id) ?? t).Where(t => !string.IsNullOrEmpty(t.Title)).ToArray(), null));
@@ -240,7 +234,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<TrackPage> GetFeedAsync(CancellationToken cancellationToken = default)
     {
         if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы открыть ленту подписок.");
-        using var document = await GetJsonAsync(Api("stream?limit=30&linked_partitioning=1"), cancellationToken);
+        using var document = await GetJsonAsync(Api("stream?limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return ParsePage(document.RootElement);
     }
 
@@ -252,7 +246,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         var seen = new HashSet<string>();
         while (target != null && seen.Add(target.AbsoluteUri))
         {
-            using var document = await GetJsonAsync(target, cancellationToken);
+            using var document = await GetJsonAsync(target, cancellationToken).ConfigureAwait(false);
             var root = document.RootElement;
             var collection = root.ValueKind == JsonValueKind.Array ? root : root.GetProperty("collection");
             foreach (var item in collection.EnumerateArray())
@@ -277,7 +271,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         }
         if (RequireBrowserTransport) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
         // Compatibility for standalone HTTP consumers; Pookie always attaches its browser.
-        using var document = await GetJsonAsync(Api($"users/{userId}/track_likes/{trackId}"), cancellationToken, liked ? HttpMethod.Put : HttpMethod.Delete);
+        using var document = await GetJsonAsync(Api($"users/{userId}/track_likes/{trackId}"), cancellationToken, liked ? HttpMethod.Put : HttpMethod.Delete).ConfigureAwait(false);
     }
 
     public async Task<TrackPage> GetNextPageAsync(string nextHref, CancellationToken cancellationToken = default)
@@ -307,7 +301,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default)
     {
-        using var document = await GetJsonAsync(Api($"tracks/{id}"), cancellationToken);
+        using var document = await GetJsonAsync(Api($"tracks/{id}"), cancellationToken).ConfigureAwait(false);
         var track = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
         return track;
     }
@@ -315,7 +309,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<SoundCloudTrack> ResolveAsync(string url, CancellationToken cancellationToken = default)
     {
         var uri = await ExpandSoundCloudUrlAsync(url, cancellationToken);
-        using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), cancellationToken);
+        using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), cancellationToken).ConfigureAwait(false);
         if (!document.RootElement.TryGetProperty("kind", out var kind) || kind.GetString() != "track") throw new SoundCloudException("Открой ссылку на отдельный трек.");
         return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
     }
@@ -335,7 +329,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         if (!string.IsNullOrEmpty(track.TrackAuthorization))
             query = query.Append("track_authorization=" + Uri.EscapeDataString(track.TrackAuthorization));
         target = new UriBuilder(target) { Query = string.Join('&', query) }.Uri;
-        using var document = await GetJsonAsync(target, cancellationToken);
+        using var document = await GetJsonAsync(target, cancellationToken).ConfigureAwait(false);
         if (document.RootElement.TryGetProperty("snipped", out var snipped) && snipped.ValueKind != JsonValueKind.False) return null;
         if (!document.RootElement.TryGetProperty("url", out var value) || value.ValueKind != JsonValueKind.String ||
             !Uri.TryCreate(value.GetString(), UriKind.Absolute, out var media) || !IsMediaUri(media) ||

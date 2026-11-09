@@ -253,12 +253,13 @@ internal sealed partial class MainWindow
             });
         }
 
-        public void PrepareTrackArtGlass(Rect viewport)
+        public bool PrepareTrackArtGlass(Rect viewport)
         {
-            if (TrackArt.Source == null || !Root.Bounds.IntersectsWith(viewport) || Root.FindVisualRoot() is not Aprillz.MewUI.Window) return;
+            if (TrackArt.Source == null || !Root.Bounds.IntersectsWith(viewport) || Root.FindVisualRoot() is not Aprillz.MewUI.Window) return false;
             for (Element? element = Root; element != null; element = element.Parent)
-                if (element is UIElement { IsVisible: false }) return;
-            TrackArtGlass.RefreshArtwork(); TrackArtGlass.Prepare();
+                if (element is UIElement { IsVisible: false }) return false;
+            TrackArtGlass.RefreshArtwork();
+            return TrackArtGlass.Prepare();
         }
 
         public void Reset() { ClearActionFocus(); Track = null; SetTrackArt(null); Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }

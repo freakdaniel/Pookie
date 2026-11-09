@@ -65,6 +65,7 @@ internal sealed partial class MainWindow
         try
         {
             var result = await api.GetTrackSidebarAsync(id, token);
+            await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation)) return;
             trackDetailState = trackDetailState! with { Sidebar = result, SidebarLoading = false };
             RenderTrackDetailSidebar();

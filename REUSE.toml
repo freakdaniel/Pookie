@@ -160,6 +160,20 @@ Interop targets 64-bit x64/ARM64 instance-call conventions. Full terms:
 licenses/BSD-3-Clause.txt; original Chromium attribution remains in this metadata.
 """
 
+[[annotations]]
+path = "src/Pookie.App/Audio/Drm/PlayReadyPmpHost.cs"
+precedence = "override"
+SPDX-FileCopyrightText = ["2025 The Chromium Authors", "2026 Daniel Freak"]
+SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-FileComment = "The desktop PMP host adapter follows Chromium media/cdm/win/pmp_host_app_impl.cc. Full license terms: licenses/BSD-3-Clause.txt."
+
+[[annotations]]
+path = ["src/Pookie.App/Audio/Drm/PlayReadyMediaCallbacks.cs", "src/Pookie.App/Audio/Drm/PlayReadyMediaEngine.cs"]
+precedence = "override"
+SPDX-FileCopyrightText = ["Microsoft Corporation", "2026 Daniel Freak"]
+SPDX-License-Identifier = "BSD-3-Clause AND MIT"
+SPDX-FileComment = "The protected source and media engine wrappers are based on Microsoft's MediaEngineEMEUWPSample. Full license terms: licenses/MIT.txt and licenses/BSD-3-Clause.txt."
+
 # Restored NuGet assemblies in distributions; dependency source is not vendored.
 [[annotations]]
 path = "Serilog.dll"

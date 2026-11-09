@@ -39,7 +39,6 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         // after arrange. Fractional-DPI constraints otherwise keep rebuilding
         // layouts at two widths as comments move through the viewport.
         var mainWidth = Math.Max(0, Math.Round((innerWidth - sideWidth - 32) * scale) / scale);
-        if (hero) side.Width = side.Height = sideWidth;
         side.Measure(new Size(sideWidth, hero ? sideWidth : availableSize.Height));
         main.Measure(new Size(mainWidth, hero ? sideWidth : availableSize.Height));
         measuredMainWidth = mainWidth;

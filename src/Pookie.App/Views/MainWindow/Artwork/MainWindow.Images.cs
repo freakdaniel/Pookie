@@ -18,9 +18,9 @@ internal sealed partial class MainWindow
     private CoverGlassBackdrop? trackDetailGlass, collectionGlass, userHeaderGlass;
     private Storage.FaviconLoader? descriptionFavicons;
 
-    private static CoverGlassBackdrop AttachCardGlass(TrackPageColumns card)
+    private static CoverGlassBackdrop AttachCardGlass(TrackPageColumns card, bool deferRefraction = false)
     {
-        var backdrop = new CoverGlassBackdrop(card.BackgroundArtwork, card);
+        var backdrop = new CoverGlassBackdrop(card.BackgroundArtwork, card, deferRefraction: deferRefraction);
         VisualTree.Visit(card, element =>
         {
             if (element is MaterialTrackButton button) button.AttachGlassBackdrop(backdrop);
@@ -29,16 +29,39 @@ internal sealed partial class MainWindow
         return backdrop;
     }
 
+    private void ScheduleCardGlass()
+    {
+        if (OperatingSystem.IsWindows() && page.Value == Page.Track && !expandedHost.IsVisible) return;
+        RefreshCardGlass();
+    }
+
     private void RefreshCardGlass()
     {
         if (disposed || Window.WindowState == WindowState.Minimized) return;
-        if (expandedHost.IsVisible) RefreshExpandedArtworkGlass();
+        if (expandedHost.IsVisible)
+        {
+            RefreshExpandedArtworkGlass();
+            return;
+        }
         if (!workspace.IsVisible) return;
-        if (page.Value == Page.Home) homeMixCarousel.PrepareGlass();
-        foreach (var row in likedRows.Values) row.PrepareTrackArtGlass(contentFrame.Bounds);
-        if (page.Value == Page.Track) { trackDetailGlass?.RefreshArtwork(); trackDetailGlass?.Prepare(); }
-        if (page.Value == Page.UserProfile) userHeaderGlass?.Prepare();
-        if (page.Value == Page.LibraryCollection) { collectionGlass?.RefreshArtwork(); collectionGlass?.Prepare(); }
+
+        // Preparing glass renders into a separate surface on the UI thread.
+        // Spread captures across frames when a batch of covers arrives.
+        if (page.Value == Page.Home && homeMixCarousel.PrepareGlass()) return;
+        var hero = page.Value switch
+        {
+            Page.Track => trackDetailGlass,
+            Page.UserProfile => userHeaderGlass,
+            Page.LibraryCollection => collectionGlass,
+            _ => null
+        };
+        if (hero != null)
+        {
+            if (page.Value != Page.UserProfile) hero.RefreshArtwork();
+            if (hero.Prepare()) return;
+        }
+        foreach (var row in likedRows.Values)
+            if (row.PrepareTrackArtGlass(contentFrame.Bounds)) return;
     }
 
     private void SetPlayerArtwork(ImageSource? source, long generation, bool pending = false)
@@ -96,9 +119,11 @@ internal sealed partial class MainWindow
             expandedGlassBackdrop.RefreshBlend();
             return;
         }
+        // Capture once the opening motion settles, using the arranged cover.
+        if (!expandedOpen || expandedAnimation.IsRunning) return;
         expandedGlassBackdrop.Prepare();
         if (queuedExpandedArtwork is not { } next) return;
-        if (!expandedOpen || next.Generation != playGeneration || ReferenceEquals(expandedArtwork.Source, next.Source))
+        if (next.Generation != playGeneration || ReferenceEquals(expandedArtwork.Source, next.Source))
         {
             queuedExpandedArtwork = null;
             return;

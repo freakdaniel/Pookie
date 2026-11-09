@@ -33,7 +33,8 @@ internal sealed class CardShadow : Panel
     protected override void OnRender(IGraphicsContext context)
     {
         if (child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;
-        shadow.Draw(context, child.Bounds, radius);
+        // The window and the half-resolution header capture share one raster.
+        shadow.Draw(context, child.Bounds, radius, rasterScale: GetDpi() / 96d);
     }
 
     protected override UIElement? OnHitTest(Point point) =>

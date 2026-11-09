@@ -103,6 +103,13 @@ internal static class TrackButtons
     internal static void SetGlyph(Image image, string name, Color color, bool animate = true) =>
         glyphColors.GetValue(image, static icon => new GlyphColor(icon)).Set(name, color, animate);
 
+    internal static bool TrySetBakedGlyphOpacity(Image image, bool dimmed)
+    {
+        if (!glyphColors.TryGetValue(image, out var glyph)) return false;
+        glyph.SetDimmed(dimmed);
+        return true;
+    }
+
     internal static void SetTextColor(TextBlock text, Color color, bool animate = true)
     {
         text.Transitions = animate ? [Transition.Create(Control.ForegroundProperty, 240, Easing.CubicBezier(.2, 0, 0, 1))] : [];
@@ -115,13 +122,14 @@ internal static class TrackButtons
         private readonly AnimationClock clock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
         private Color current, from, target;
         private string? name;
+        private bool dimmed;
         internal GlyphColor(Image image)
         {
             this.image = image;
             clock.TickCallback = amount =>
             {
                 current = from.Lerp(target, amount);
-                image.Source = amount >= 1 ? Icons.Source(name!, target) : Icons.TransitionSource(name!, current);
+                Publish(amount >= 1);
             };
         }
         internal void Set(string glyph, Color color, bool animate)
@@ -129,9 +137,19 @@ internal static class TrackButtons
             if (name == glyph && target == color && animate) return;
             var first = name == null; name = glyph; target = color; clock.Stop();
             if (first || !animate || image.FindVisualRoot() is not Window)
-            { current = color; image.Source = Icons.Source(glyph, color); return; }
-            from = current; image.Source = Icons.TransitionSource(glyph, current); clock.Start();
+            { current = color; Publish(stable: true); return; }
+            from = current; Publish(stable: false); clock.Start();
         }
+
+        internal void SetDimmed(bool value)
+        {
+            if (dimmed == value) return;
+            dimmed = value;
+            Publish(stable: !clock.IsRunning);
+        }
+
+        private void Publish(bool stable) =>
+            image.Source = stable ? Icons.Source(name!, current, dimmed) : Icons.TransitionSource(name!, current, dimmed);
     }
 
     internal static Color StateColor(Color surface, Color foreground, double opacity)

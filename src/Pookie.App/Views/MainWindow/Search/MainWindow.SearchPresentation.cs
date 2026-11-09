@@ -18,16 +18,19 @@ internal sealed partial class MainWindow
         public long ArtworkGeneration { get; set; }
         public long BindingGeneration { get; set; }
     }
-    private sealed record SearchResultView(StackPanel Root, SearchHero Hero, StackPanel Cards, TextBlock CardsTitle,
+    private sealed record SearchResultView(StackPanel Root, StackPanel HeroHost, StackPanel Cards, TextBlock CardsTitle,
         ItemsControl CardGrid, CompactTrackRow Track, TextBlock Heading, StackPanel LibraryTrackHost)
     {
         public SearchBlock? Block { get; set; }
+        public SearchHero? Hero { get; set; }
         public LikedTrackRow? LibraryTrack { get; set; }
     }
 
     private IDataTemplate SearchResultTemplate() => new DelegateTemplate<SearchBlock>(context =>
     {
-        var hero = CreateSearchHero();
+        // A recycled slot usually holds a card grid or a single track. The
+        // one overview hero owns four more track rows, so build it on demand.
+        var heroHost = new StackPanel().Vertical().IsVisible(false);
         var track = CreateCompactTrackRow();
         track.Root.Margin = new Thickness(-8, 0, -8, 0);
         var cardsTitle = new TextBlock().FontSize(22).Bold();
@@ -35,15 +38,15 @@ internal sealed partial class MainWindow
         var cards = new StackPanel().Vertical().Spacing(16).Margin(0, 0, 0, 24).Children(cardsTitle, cardGrid);
         var heading = new TextBlock().FontSize(22).Bold().Margin(0, 8, 0, 14);
         var libraryTrackHost = new StackPanel().Vertical().Margin(0, 0, 0, TrackRowLayout.Gap);
-        var root = new StackPanel().Vertical().Children(hero.Root, cards, track.Root, heading, libraryTrackHost);
-        var view = new SearchResultView(root, hero, cards, cardsTitle, cardGrid, track, heading, libraryTrackHost);
+        var root = new StackPanel().Vertical().Children(heroHost, cards, track.Root, heading, libraryTrackHost);
+        var view = new SearchResultView(root, heroHost, cards, cardsTitle, cardGrid, track, heading, libraryTrackHost);
         searchViews[root] = view;
         context.Register("root", root);
         return root;
     }, (_, block, _, context) =>
     {
         var view = searchViews[context.Get<StackPanel>("root")]; view.Block = block;
-        view.Hero.Root.IsVisible = block.Kind == SearchBlockKind.Hero;
+        view.HeroHost.IsVisible = block.Kind == SearchBlockKind.Hero;
         view.Cards.IsVisible = block.Kind == SearchBlockKind.Cards;
         view.Track.Root.IsVisible = block.Kind == SearchBlockKind.Track;
         view.Heading.IsVisible = block.Kind == SearchBlockKind.Heading;
@@ -59,17 +62,26 @@ internal sealed partial class MainWindow
         }
         else if (view.LibraryTrack != null) ClearLibraryTrackRow(view.LibraryTrack);
         BindCompactTrackRow(view.Track, block.Kind == SearchBlockKind.Track ? block.Item?.Track : null);
-        if (block.Kind == SearchBlockKind.Hero) BindSearchHero(view.Hero, block);
-        else ClearSearchHero(view.Hero);
+        if (block.Kind == SearchBlockKind.Hero)
+        {
+            if (view.Hero == null)
+            {
+                view.Hero = CreateSearchHero();
+                view.HeroHost.Add(view.Hero.Root);
+            }
+            BindSearchHero(view.Hero, block);
+            SetSearchHeroGeometry(view.Hero, searchList.ActualWidth - SearchShadowGutter * 2);
+        }
+        else if (view.Hero != null) ClearSearchHero(view.Hero);
         view.CardsTitle.Text = block.Title; view.CardsTitle.IsVisible = block.Title.Length > 0;
         view.Heading.Text = block.Title;
         view.CardGrid.Items(block.Kind == SearchBlockKind.Cards ? block.Items ?? [] : [], item => item.Title);
         view.CardGrid.Height = likedArtworkSize + 90;
-        SetSearchHeroGeometry(view.Hero, searchList.ActualWidth - SearchShadowGutter * 2);
     }, (_, _, _, context) =>
     {
         var view = searchViews[context.Get<StackPanel>("root")]; view.Block = null;
-        BindCompactTrackRow(view.Track, null); ClearSearchHero(view.Hero);
+        BindCompactTrackRow(view.Track, null);
+        if (view.Hero != null) ClearSearchHero(view.Hero);
         if (view.LibraryTrack != null) ClearLibraryTrackRow(view.LibraryTrack);
         view.CardGrid.Items(Array.Empty<LibraryItem>(), item => item.Title);
     });
@@ -195,12 +207,12 @@ internal sealed partial class MainWindow
     private void RefreshSearchPlayback()
     {
         foreach (var row in compactTrackRows) RefreshCompactTrackRow(row);
-        foreach (var view in searchViews.Values) if (view.Hero.Item != null) RefreshSearchHeroPlayback(view.Hero);
+        foreach (var view in searchViews.Values) if (view.Hero is { Item: not null } hero) RefreshSearchHeroPlayback(hero);
     }
 
     private void UpdateSearchHeroGeometry(double width)
     {
-        foreach (var view in searchViews.Values) SetSearchHeroGeometry(view.Hero, width - SearchShadowGutter * 2);
+        foreach (var view in searchViews.Values) if (view.Hero is { } hero) SetSearchHeroGeometry(hero, width - SearchShadowGutter * 2);
     }
 
     private static void SetSearchHeroGeometry(SearchHero hero, double width)

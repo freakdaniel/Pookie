@@ -58,7 +58,7 @@ internal sealed class SmoothScroll : IDisposable
         return ScrollTo((running ? target : viewer.VerticalOffset) + delta);
     }
 
-    internal bool ScrollWheel(double wheelDelta)
+    internal bool ScrollWheel(double wheelDelta, bool startImmediately = false)
     {
         var delta = -wheelDelta * ThemeManager.DefaultMetrics.ScrollWheelStep;
         if (running && Stopwatch.GetElapsedTime(timestamp).TotalMilliseconds > 250) Stop();
@@ -76,10 +76,10 @@ internal sealed class SmoothScroll : IDisposable
         precision = continuous;
         if (continuous) precisionTimestamp = now;
         UserScrolling?.Invoke();
-        return Scroll(delta);
+        return ScrollTo((running ? target : viewer.VerticalOffset) + delta, startImmediately);
     }
 
-    internal bool ScrollTo(double position)
+    internal bool ScrollTo(double position, bool startImmediately = false)
     {
         // Do not retarget a spring which stopped receiving frames while the
         // window was inactive. Resume from the visible position and zero speed.
@@ -92,6 +92,9 @@ internal sealed class SmoothScroll : IDisposable
         {
             last = viewer.VerticalOffset; velocity = 0;
             timestamp = Stopwatch.GetTimestamp(); running = true; motion.Start();
+            // A resize may already have a frame queued. Give that frame a
+            // small spring step as soon as the first wheel packet is routed.
+            if (startImmediately) AdvancePosition(.012);
         }
         return true;
     }
@@ -104,6 +107,11 @@ internal sealed class SmoothScroll : IDisposable
         var dt = Math.Min(.05, elapsed);
         timestamp = now;
         if (dt <= 0) return;
+        AdvancePosition(dt);
+    }
+
+    private void AdvancePosition(double dt)
+    {
         target = Math.Clamp(target, 0, Maximum(viewer));
         // Exact critically damped spring. Retargeting preserves velocity; repeated wheel
         // events no longer restart a steep easing curve and jerk the first few frames.

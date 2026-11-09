@@ -12,13 +12,13 @@ using Windows.Media.Protection.PlayReady;
 
 namespace Pookie.App.Diagnostics;
 
-// Acquisition-only experiment. No decoder changes, extracted keys or saved
-// license/challenge payloads. A successful license does not prove playback.
+// This WinRT check tests license acquisition independently of Media Foundation.
 internal static class NativeDrmProbe
 {
     public static async Task RunAsync(string url)
     {
 #if WINDOWS
+        if (!SoundCloudWebClient.IsSoundCloudUrl(url)) throw new ArgumentException("Expected a SoundCloud track URL.", nameof(url));
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         using var vault = SessionVault.Open(new AppDataPaths());
         var account = vault.Load() ?? throw new InvalidOperationException("A saved Pookie session is required.");

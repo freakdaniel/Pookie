@@ -128,7 +128,9 @@ internal sealed partial class MainWindow
 
     private async Task VerifyMainPlaybackGlassAsync()
     {
-        await WaitForLikedLayoutAsync(() => playerPlayButton.ActualWidth == 34 && playerChrome.Opacity == 1 && !playerBackdrop.Running);
+        var scale = Window.DpiScale;
+        await WaitForLikedLayoutAsync(() => Math.Abs(playerPlayButton.ActualWidth - 34) < 1 / scale &&
+            playerChrome.Opacity == 1 && !playerBackdrop.Running);
         var bounds = playerPlayButton.Bounds;
         var palette = playerBackdrop.Target;
         var red = await SampleAsync(Color.FromRgb(73, 22, 28));
@@ -141,17 +143,44 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => Window.IsActive && isPlaying.Value);
         RouteWaveformClick(bounds.Center);
         await WaitForLikedLayoutAsync(() => !isPlaying.Value);
+        await VerifyGlyphCenterAsync("play");
         RouteWaveformClick(bounds.Center);
         await WaitForLikedLayoutAsync(() => isPlaying.Value);
+        await VerifyGlyphCenterAsync("pause");
         CaptureUiPreview("player-play-glass");
         Console.WriteLine("PLAYER_PLAY_GLASS_OK: gradient follows the player palette; play/pause still works in place");
+
+        async Task VerifyGlyphCenterAsync(string name)
+        {
+            await WaitForLoginFrameAsync();
+            var pixels = CaptureSectionButton(playerPlayButton);
+            var width = (int)Math.Ceiling(bounds.Width * scale);
+            var height = (int)Math.Ceiling(bounds.Height * scale);
+            var left = width;
+            var right = -1;
+            var top = height;
+            var bottom = -1;
+            // Exclude the circular glass rim and measure the light glyph ink.
+            for (var y = height / 4; y < height * 3 / 4; y++)
+            for (var x = width / 4; x < width * 3 / 4; x++)
+            {
+                var offset = (y * width + x) * 4;
+                if (pixels[offset] < 200 || pixels[offset + 1] < 200 || pixels[offset + 2] < 200) continue;
+                left = Math.Min(left, x); right = Math.Max(right, x);
+                top = Math.Min(top, y); bottom = Math.Max(bottom, y);
+            }
+            var centerX = (left + right + 1) / 2d;
+            var centerY = (top + bottom + 1) / 2d;
+            if (right < left || Math.Abs(centerX - bounds.Width * scale / 2) > 1 ||
+                Math.Abs(centerY - bounds.Height * scale / 2) > 1)
+                throw new InvalidOperationException($"Player {name} ink is off center: {centerX}, {centerY} in {width}x{height} pixels.");
+        }
 
         async Task<Color> SampleAsync(Color color)
         {
             playerBackdrop.SetPalette(new(color, color, color));
             await WaitForLikedLayoutAsync(() => !playerBackdrop.Running);
             var pixels = CaptureSectionButton(playerPlayButton);
-            var scale = Window.DpiScale;
             var width = (int)Math.Ceiling(bounds.Width * scale);
             // Read the glass to the left of the centered play/pause glyph.
             var i = ((int)(17 * scale) * width + (int)(6 * scale)) * 4;

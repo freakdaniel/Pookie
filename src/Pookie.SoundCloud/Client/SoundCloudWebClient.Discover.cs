@@ -7,7 +7,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<SoundCloudDiscoverShelves> GetDiscoverShelvesAsync(long userId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId);
-        using var document = await GetJsonAsync(Api("mixed-selections"), token);
+        using var document = await GetJsonAsync(Api("mixed-selections"), token).ConfigureAwait(false);
         return DiscoverData.Shelves(document.RootElement, userId);
     }
 
@@ -21,7 +21,7 @@ public sealed partial class SoundCloudWebClient
 
     private async Task<LibraryItem[]> GetRestMixesAsync(long userId, CancellationToken token)
     {
-        using var document = await GetJsonAsync(Api("mixed-selections"), token);
+        using var document = await GetJsonAsync(Api("mixed-selections"), token).ConfigureAwait(false);
         return DiscoverData.PersonalMixes(document.RootElement, userId);
     }
 }

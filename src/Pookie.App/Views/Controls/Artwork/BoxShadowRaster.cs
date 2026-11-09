@@ -15,9 +15,9 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
     private int left, top, right, bottom;
     internal long PixelBytes => raster?.PixelBytes ?? 0;
 
-    internal void Draw(IGraphicsContext context, Rect bounds, double cornerRadius, double opacity = 1)
+    internal void Draw(IGraphicsContext context, Rect bounds, double cornerRadius, double opacity = 1, double rasterScale = 0)
     {
-        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        if (bounds.Width <= 0 || bounds.Height <= 0 || blur <= 0 || color.A == 0) return;
         var nextRadius = Math.Max(0, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2));
         if (!softFalloff && !OperatingSystem.IsWindows())
         {
@@ -26,7 +26,8 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
             return;
         }
         var graphics = Application.Current.GraphicsFactory;
-        var nextScale = context.DpiScale;
+        var targetScale = context.DpiScale;
+        var nextScale = rasterScale > 0 ? rasterScale : targetScale;
         var corner = nextRadius + blur;
         var side = corner * 2 + 1;
         var patch = new Size(Math.Min(side, bounds.Width), Math.Min(side, bounds.Height));
@@ -34,10 +35,7 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
         {
             Dispose(); factory = graphics; radius = nextRadius; scale = nextScale; patchSize = patch;
             var size = new Size(patch.Width + blur * 2, patch.Height + blur * 2);
-            raster = softFalloff
-                ? new DecorationRaster(graphics, CreateSoftMask(patch, size))
-                : new DecorationRaster(graphics, size, scale, (renderer, _) =>
-                    renderer.DrawBoxShadow(new Rect(blur, blur - offset, patch.Width, patch.Height), radius, blur, color, offsetY: offset));
+            raster = new DecorationRaster(graphics, CreateMask(patch, size));
             left = Math.Min((raster.Image.PixelWidth - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
             top = Math.Min((raster.Image.PixelHeight - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
             right = raster.Image.PixelWidth - left - 1;
@@ -45,10 +43,10 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
         }
         var image = raster.Image;
         var transform = context.GetTransform();
-        var x1 = Math.Round((bounds.X - blur + transform.M31) * scale) / scale - transform.M31;
-        var y1 = Math.Round((bounds.Y - blur + offset + transform.M32) * scale) / scale - transform.M32;
-        var x2 = Math.Ceiling((bounds.Right + blur + transform.M31) * scale) / scale - transform.M31;
-        var y2 = Math.Ceiling((bounds.Bottom + blur + offset + transform.M32) * scale) / scale - transform.M32;
+        var x1 = Math.Round((bounds.X - blur + transform.M31) * targetScale) / targetScale - transform.M31;
+        var y1 = Math.Round((bounds.Y - blur + offset + transform.M32) * targetScale) / targetScale - transform.M32;
+        var x2 = Math.Ceiling((bounds.Right + blur + transform.M31) * targetScale) / targetScale - transform.M31;
+        var y2 = Math.Ceiling((bounds.Bottom + blur + offset + transform.M32) * targetScale) / targetScale - transform.M32;
         var target = new Rect(x1, y1, x2 - x1, y2 - y1);
         // Small controls can be narrower than both full shadow corners. Scaling
         // the outer slices together retains their shape without negative spans.
@@ -71,7 +69,7 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
         finally { context.GlobalAlpha = alpha; }
     }
 
-    private WriteableBitmap CreateSoftMask(Size patch, Size size)
+    private WriteableBitmap CreateMask(Size patch, Size size)
     {
         var width = (int)Math.Ceiling(size.Width * scale);
         var height = (int)Math.Ceiling(size.Height * scale);
@@ -83,6 +81,8 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
         var innerWidth = patch.Width / 2 - radius;
         var innerHeight = patch.Height / 2 - radius;
         var inset = blur / 4;
+        var feather = blur / 2;
+        var edgeAlpha = color.A / 2;
         for (var y = 0; y < height; y++)
         {
             var dy = Math.Abs((y + .5) / scale - centerY) - innerHeight;
@@ -91,12 +91,22 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
                 var dx = Math.Abs((x + .5) / scale - centerX) - innerWidth;
                 var outsideX = Math.Max(0, dx);
                 var outsideY = Math.Max(0, dy);
-                var distance = Math.Sqrt(outsideX * outsideX + outsideY * outsideY) +
-                    Math.Min(0, Math.Max(dx, dy)) - radius;
-                var progress = Math.Clamp((distance + inset) / (blur + inset), 0, 1);
-                var remaining = 1 - progress;
-                // The tail reaches zero with zero slope, including around corners.
-                var alpha = color.A * remaining * remaining * remaining * (1 + 3 * progress);
+                var corner = dx > 0 && dy > 0;
+                var distance = (corner ? Math.Sqrt(outsideX * outsideX + outsideY * outsideY) : Math.Max(dx, dy)) - radius;
+                double alpha;
+                if (softFalloff)
+                {
+                    var progress = Math.Clamp((distance + inset) / (blur + inset), 0, 1);
+                    var remaining = 1 - progress;
+                    // The tail reaches zero with zero slope, including around corners.
+                    alpha = color.A * remaining * remaining * remaining * (1 + 3 * progress);
+                }
+                else if (distance >= 0)
+                    alpha = edgeAlpha * Math.Max(0, 1 - distance / feather);
+                else if (corner)
+                    alpha = edgeAlpha + (color.A - edgeAlpha) * -distance / radius;
+                else
+                    alpha = color.A;
                 var i = (y * width + x) * 4;
                 pixels[i] = color.B; pixels[i + 1] = color.G; pixels[i + 2] = color.R;
                 pixels[i + 3] = (byte)Math.Round(alpha);

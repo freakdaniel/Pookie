@@ -25,11 +25,54 @@ internal sealed partial class MainWindow
     private TextBlock collectionEmpty = null!;
     private string collectionFilterText = "";
     private bool collectionDescriptionExpanded;
+    private DispatcherTimer? playlistHoverTimer;
+    private double playlistHoverOffset;
+    private long lastPlaylistMovement;
+    private bool playlistHoverSuspended;
     private sealed record CollectionTrackEntry(SoundCloudTrack Track, int Position);
     private LibraryItem? displayedCollection;
     private SoundCloudUser? CollectionAuthor => displayedCollection?.Playlist?.User;
     private ItemsControl CollectionTrackView => collectionMode.Value switch { TrackViewMode.Waveform => collectionTrackWaves, TrackViewMode.List => collectionTrackList, _ => collectionTrackCards };
     private ScrollViewer? CollectionScroll => (playlistCollectionVisible.Value ? CollectionTrackView : collectionGrid).FindVisualChild<ScrollViewer>() as ScrollViewer;
+    private bool CompactPlaylistVisible => page.Value == Page.LibraryCollection &&
+        playlistCollectionVisible.Value && collectionMode.Value == TrackViewMode.List && workspace.IsVisible;
+
+    private void ObservePlaylistPointerMotion()
+    {
+        if (disposed) return;
+        var offset = shellScroll.VerticalOffset;
+        if (offset == playlistHoverOffset) return;
+        playlistHoverOffset = offset;
+        if (!CompactPlaylistVisible) return;
+        lastPlaylistMovement = Environment.TickCount64;
+        if (playlistHoverSuspended) return;
+
+        // Scrolling can put several rows per second under a stationary
+        // pointer. Their hover animations and glass captures can wait for
+        // the row the pointer actually comes to rest on.
+        playlistHoverSuspended = true;
+        if (playlistHoverTimer == null)
+        {
+            playlistHoverTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(80));
+            playlistHoverTimer.Tick += ResumePlaylistPointer;
+        }
+        playlistHoverTimer.Start();
+        RefreshPlaylistPointerRows();
+    }
+
+    private void ResumePlaylistPointer()
+    {
+        if (CompactPlaylistVisible && Environment.TickCount64 - lastPlaylistMovement < 90) return;
+        playlistHoverTimer?.Stop();
+        playlistHoverSuspended = false;
+        if (CompactPlaylistVisible) RefreshPlaylistPointerRows();
+    }
+
+    private void RefreshPlaylistPointerRows()
+    {
+        foreach (var row in compactTrackRows)
+            if (row.CollectionRow && (row.Hovered || row.Trailing.Animating)) RefreshCompactTrackRow(row);
+    }
 
     private FrameworkElement PlaylistCollectionPage()
     {

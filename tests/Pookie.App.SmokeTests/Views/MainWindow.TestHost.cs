@@ -28,6 +28,7 @@ internal sealed partial class MainWindow
     private bool scrollingUiSmoke;
     private bool trackPageUiSmoke, trackDescriptionUiSmoke, trackPlaybackUiSmoke, waveformUiSmoke;
     private bool trackPageLiveUi;
+    private string? livePlaylistUrl;
     private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
     private bool webPlaylistEditingOnly;
     private bool memoryUiSmoke, playbackMemoryUiSmoke;
@@ -68,6 +69,7 @@ internal sealed partial class MainWindow
         waveformUiSmoke = args.Contains("--waveform-ui-smoke-test");
         trackPageUiSmoke = trackDescriptionUiSmoke || trackPlaybackUiSmoke || waveformUiSmoke || args.Contains("--track-page-ui-smoke-test");
         trackPageLiveUi = args.Contains("--track-page-live-ui-probe");
+        if (args is ["--playlist-page-live-ui-probe", var playlistUrl]) livePlaylistUrl = playlistUrl;
         collectionsUiSmoke = args.Contains("--collections-ui-smoke-test");
         webPlaylistEditingOnly = args.Contains("--web-playlist-editing-only");
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
@@ -122,6 +124,7 @@ internal sealed partial class MainWindow
         if (scrollingUiSmoke) Run(VerifyScrollingUiAsync);
         if (trackPageUiSmoke) Run(VerifyTrackPageUiAsync);
         if (trackPageLiveUi) Run(VerifyTrackPageLiveUiAsync);
+        if (livePlaylistUrl is { } playlistUrl) Run(() => VerifyPlaylistLiveUiAsync(playlistUrl));
         if (collectionsUiSmoke) Run(VerifyCollectionsUiAsync);
         if (likesEditsUiSmoke) Run(VerifyLikesEditsUiAsync);
         if (likesFilterUiSmoke) Run(VerifyLikesFilterUiAsync);

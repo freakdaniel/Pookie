@@ -163,7 +163,7 @@ internal sealed partial class MainWindow
         }
 
         MoveActionPointer(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => topNavigation.Opacity == 1 && HasSelectionFill(currentButton) &&
+        await WaitForLikedLayoutAsync(() => topNavigation.IsHitTestVisible && HasSelectionFill(currentButton) &&
             (previous == null || !HasSelectionFill(previous)));
     }
 
@@ -213,8 +213,9 @@ internal sealed partial class MainWindow
         PressActionPointer(point, true);
         await WaitForLikedLayoutAsync(() => search.IsPressed && Ink(search) > hovered + 10000);
         PressActionPointer(point, false);
-        await WaitForLikedLayoutAsync(() => searching.Value && topSearchBar.Opacity == 1 && topSearchInput.IsFocused &&
-            Math.Abs(topSearchBar.ActualWidth - ShellHeader.NavigationWidth) < .1);
+        await WaitForLikedLayoutAsync(() => !topSearchMotion.IsRunning && topSearchBar.Reveal == 1 && topSearchInput.IsFocused);
+        if (Math.Abs(topSearchBar.ActualWidth - ShellHeader.NavigationWidth) >= 1 / Window.DpiScale)
+            throw new InvalidOperationException($"Search field settled at {topSearchBar.ActualWidth} DIPs instead of {ShellHeader.NavigationWidth}.");
         var expectedAlpha = TrackButtons.StateColor(Color.Transparent, TrackButtons.OnSurface, HeaderButton.HoverOpacity).A;
         var searchPixels = CaptureSectionButton(topSearchBar);
         var flatPixels = 0;

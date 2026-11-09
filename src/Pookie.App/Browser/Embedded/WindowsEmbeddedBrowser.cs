@@ -15,6 +15,7 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
     private bool disposed;
     private string script = "";
     private System.Diagnostics.Process? browserProcess;
+    internal bool HasBeenShown { get; private set; }
 
     public async Task InitializeAsync(nint parent, string profile, string script, bool isolated)
     {
@@ -102,7 +103,12 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
             Math.Max(1, (int)Math.Round(area.Width * scale)), Math.Max(1, (int)Math.Round(area.Height * scale)));
         if (active != null) { active.Bounds = bounds; active.NotifyParentWindowPositionChanged(); }
     }
-    public void SetVisible(bool value) { visible = value; if (active != null) active.IsVisible = value; }
+    public void SetVisible(bool value)
+    {
+        visible = value;
+        HasBeenShown |= value;
+        if (active != null) active.IsVisible = value;
+    }
     public async Task<byte[]> CaptureAsync()
     {
         using var buffer = new MemoryStream();

@@ -18,6 +18,7 @@ internal class InAppPopup : Panel
     private bool observing, presented;
     private bool ownerKeyboard;
     internal bool IsOpen => layer?.IsOpen == true;
+    internal static bool IsPresenting(Window owner) => open.TryGetValue(owner, out var entries) && entries.Count != 0;
     internal UIElement? FocusReturnTarget => owner;
     internal double Reveal => layer?.Reveal ?? 0;
     internal Action? Dismissing;

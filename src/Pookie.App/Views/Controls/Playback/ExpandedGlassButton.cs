@@ -72,7 +72,11 @@ internal sealed class ExpandedGlassButton(CoverGlassBackdrop? backdrop, bool pai
         var shape = paintSurface || layer > 0 ? geometry.Get(Bounds, corners) : null;
         if (paintSurface)
         {
-            if (playerBackdrop != null) lens.DrawPlayerGradient(context, playerBackdrop, Bounds, corners, shape!, GetDpi() / 96d);
+            if (playerBackdrop != null)
+            {
+                if (!playerBackdrop.ReuseRasterForResize || !lens.DrawPrepared(context, Bounds, corners, shape))
+                    lens.DrawPlayerGradient(context, playerBackdrop, Bounds, corners, shape!, GetDpi() / 96d);
+            }
             else backdrop?.Draw(context, Bounds, corners, shape, lens, GetDpi() / 96d);
             var neutral = GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);
             if (playerBackdrop != null) neutral = GlassSheen.LightControlTint(neutral);
@@ -119,7 +123,7 @@ internal sealed class ExpandedGlassSurface : ContentControl
     protected override void OnRender(IGraphicsContext context)
     {
         var corners = new CornerRadius(CornerRadius);
-        backdrop?.Draw(context, Bounds, corners, geometry.Get(Bounds, corners), lens, GetDpi() / 96d);
+        backdrop?.Draw(context, Bounds, corners, geometry.Get(Bounds, corners), lens, GetDpi() / 96d, InvalidateVisual);
         var tint = backdrop?.IsCard == true ? GlassSheen.LightControlTint(Background) :
             Background.A > 0 ? GlassSheen.AdaptTint(Background, backdrop?.Brightness(Bounds) ?? 0) :
             GlassSheen.ControlTint(backdrop?.Brightness(Bounds) ?? 0);

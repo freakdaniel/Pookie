@@ -12,7 +12,7 @@ public sealed partial class SoundCloudWebClient
             SearchSection.Playlists => "search/playlists_without_albums", _ => throw new ArgumentOutOfRangeException(nameof(section))
         };
         using var document = await GetJsonAsync(Api(path + "?q=" + Uri.EscapeDataString(query.Trim()) +
-            "&limit=30&linked_partitioning=1"), cancellationToken);
+            "&limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return LibraryData.Parse(document.RootElement);
     }
 
@@ -21,7 +21,7 @@ public sealed partial class SoundCloudWebClient
         if (!BrowserRequestCommand.IsReadUrl(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             uri.AbsolutePath is not ("/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums"))
             throw new SoundCloudException("Неверный адрес следующей страницы поиска.");
-        using var document = await GetJsonAsync(uri, cancellationToken);
+        using var document = await GetJsonAsync(uri, cancellationToken).ConfigureAwait(false);
         return LibraryData.Parse(document.RootElement);
     }
 }

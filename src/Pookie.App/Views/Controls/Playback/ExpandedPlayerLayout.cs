@@ -24,7 +24,8 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         revealAmount = reveal;
         sideAmount = side;
         panelReveal = panelAmount;
-        panel.InkStrength = Math.Clamp(panelAmount, 0, 1);
+        card.InkStrength = reveal;
+        panel.InkStrength = panelAmount * reveal;
         ApplyMotion();
     }
 

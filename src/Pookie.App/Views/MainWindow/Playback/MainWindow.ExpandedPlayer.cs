@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> expandedQueueActive = new(false), expandedLyricsActive = new(false);
     private readonly BufferedTrack expandedBuffer = new();
     private readonly LoadingTrack expandedLoading = new();
-    private Grid expandedHost = null!;
+    private Grid expandedHost = null!, expandedHeader = null!;
     private ExpandedPlayerLayout expandedLayout = null!;
     private Border expandedCover = null!;
     private Image expandedArtwork = null!;
@@ -154,26 +154,19 @@ internal sealed partial class MainWindow
         var panelLayer = new PlayerMotionLayer(panelViewport);
         expandedLayout = new ExpandedPlayerLayout(cardLayer, panelLayer, expandedCover, shadowPadding);
         expandedLayout.Add(cardLayer); expandedLayout.Add(panelLayer);
+        expandedHeader = new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
+            Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
+            ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false).Right().Column(1));
         expandedHost = new Grid().Columns("*").Rows("84,*").ClipToBounds().Children(
-            expandedBackdrop.Row(0).RowSpan(2),
-            new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
-                Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
-                ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false).Right().Column(1)),
+            expandedBackdrop.Row(0).RowSpan(2), expandedHeader,
             expandedLayout.Row(1).Margin(24, 0, 24, 32));
-        expandedHost.Opacity = 0;
+        ApplyExpandedReveal(0);
         expandedHost.IsVisible = false;
         expandedHost.IsHitTestVisible = false;
-        expandedAnimation.TickCallback = amount =>
-        {
-            expandedReveal = expandedFrom + (expandedTo - expandedFrom) * amount;
-            expandedHost.Opacity = expandedReveal;
-            expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, panelReveal);
-        };
+        expandedAnimation.TickCallback = amount => ApplyExpandedReveal(expandedFrom + (expandedTo - expandedFrom) * amount);
         expandedAnimation.CompletedCallback = () =>
         {
-            expandedReveal = expandedTo;
-            expandedHost.Opacity = expandedReveal;
-            expandedLayout.SetMotion(expandedReveal, expandedLayout.SideAmount, panelReveal);
+            ApplyExpandedReveal(expandedTo);
             if (expandedOpen) { workspace.IsVisible = false; return; }
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
             if (overviewRefreshPending) RefreshOverviewSections();
@@ -195,6 +188,14 @@ internal sealed partial class MainWindow
         progress.OnValueChanged(_ => SyncExpandedTimeline());
         playerVisible.Changed += () => { if (!playerVisible.Value) ResetExpandedPlayer(); };
         return expandedHost;
+    }
+
+    private void ApplyExpandedReveal(double reveal)
+    {
+        // Blend the background brush directly. Grouping it with the foreground
+        // allocates and composites a window-sized opacity layer on every tick.
+        expandedReveal = expandedBackdrop.Reveal = expandedHeader.Opacity = reveal;
+        expandedLayout.SetMotion(reveal, expandedLayout.SideAmount, panelReveal);
     }
 
     private ExpandedGlassSurface ExpandedVolumeControl()
@@ -261,7 +262,8 @@ internal sealed partial class MainWindow
             workspace.IsHitTestVisible = false;
             queueOpen.Value = profileOpen.Value = false;
             playerArtworkOverlay.Opacity = 0;
-            SyncExpandedTimeline(); RefreshExpandedQueue();
+            SyncExpandedTimeline();
+            if (expandedPanelMode == PlayerPanel.Queue) RefreshExpandedQueue();
         }
         else
         {
@@ -334,7 +336,7 @@ internal sealed partial class MainWindow
         panelReveal = panelRevealFrom = 0;
         expandedLayout.SetSideTarget(0);
         expandedLayout.SetMotion(0, 0, 0);
-        expandedHost.Opacity = 0;
+        ApplyExpandedReveal(0);
         expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
         if (!disposed && overviewRefreshPending) RefreshOverviewSections();
         expandedLoading.SetLoading(false); expandedBuffer.Reset(); expandedBackdrop.Reset();

@@ -45,7 +45,12 @@ internal sealed partial class MainWindow
             Transitions = [Transition.Create(UIElement.OpacityProperty, 180, Easing.CubicBezier(.2, 0, 0, 1))];
         }
 
-        public void SetHovered(bool value) { hovered = value; Refresh(); }
+        public void SetHovered(bool value, bool animate = true)
+        {
+            hovered = value;
+            if (animate) Refresh();
+            else { SetImmediately(TargetOpacity); QueueGlass(); }
+        }
         public void SetPlaying(bool selected, bool playing, bool animate = true)
         {
             active = selected;

@@ -17,6 +17,10 @@ internal sealed partial class MainWindow
     private Border contentSurface = null!;
     private Border startupBackdrop = null!;
     private Border contentFrame = null!;
+    private long firstTrackWheelAfterResize;
+    private bool trackResizePaintPending;
+    private TaskCompletionSource? trackResizePaint;
+    private readonly DispatcherTimer trackResizeCoalescer = new(TimeSpan.FromMilliseconds(1));
     private ShellHeader startupHeader = null!;
     private FrameworkElement startupContent = null!;
     private ScrollViewer shellScroll = null!;
@@ -24,8 +28,11 @@ internal sealed partial class MainWindow
     private ContentEdgeFade contentTopFade = null!;
     private ContentEdgeFade contentBottomFade = null!;
     private Grid topNavigation = null!;
+    private const string TopSearchPlaceholder = "Трек, исполнитель или строка песни";
     private HeaderSearchField topSearchBar = null!;
     private TextBox topSearchInput = null!;
+    private TransformDecorator topNavigationMotion = null!;
+    private readonly AnimationClock topSearchMotion = new(TimeSpan.FromMilliseconds(320), Easing.Linear);
     private Grid startupSplash = null!;
     private Border startupCurtain = null!;
     private Grid startupBrandLayer = null!;
@@ -65,20 +72,20 @@ internal sealed partial class MainWindow
         });
         startupContent.Opacity = 0;
         startupContent.IsHitTestVisible = false;
-        contentFrame = new Border().MaxWidth(1440).Width(DefaultWindowWidth).CenterHorizontal()
+        contentFrame = new Border()
             .Padding(36, ShellHeader.HeaderHeight + 30, 36, 0).Child(startupContent);
         shellScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0);
-        shellPageScroll = new ShellPageScroll(contentFrame, shellScroll, PageContentScroll, args =>
-        {
-            if (smoothScrolls.TryGetValue(shellScroll, out var motion)) return motion.ScrollWheel(args.Delta.Y);
-            var before = shellScroll.VerticalOffset;
-            shellScroll.SetScrollOffsets(0, before - args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep);
-            return Math.Abs(shellScroll.VerticalOffset - before) > .01;
-        }, () => page.Value != Page.Chats ? ContentEdgeFade.BottomHeight : 0);
+        if (OperatingSystem.IsWindows()) shellScroll.ScrollChanged += ObservePlaylistPointerMotion;
+        shellPageScroll = new ShellPageScroll(contentFrame, shellScroll, PageContentScroll, ScrollShellWheel,
+            () => page.Value != Page.Chats ? ContentEdgeFade.BottomHeight : 0,
+            () => page.Value == Page.Chats ? double.PositiveInfinity : 1440);
         shellScroll.Content = shellPageScroll;
         page.Changed += () =>
         {
-            UpdateContentFrameWidth(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
+            EndTrackResizeCoalescing();
+            var inset = page.Value == Page.Chats ? 16 : 36;
+            contentFrame.Padding = new Thickness(inset, ShellHeader.HeaderHeight + 30, inset, 0);
+            UpdateLibraryCardSize(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
         };
         contentTopFade = new ContentEdgeFade(Surface, fromTop: true) { Strength = .85 };
         contentTopFade.Height(ShellHeader.HeaderHeight + 32).Top().IsHitTestVisible(false);
@@ -92,7 +99,6 @@ internal sealed partial class MainWindow
         // apply programmatic window sizes without delivering ClientSizeChanged first.
         contentSurface.SizeChanged += e =>
         {
-            UpdateContentFrameWidth(e.NewSize.Width);
             UpdateLibraryCardSize(e.NewSize.Width);
         };
 
@@ -124,6 +130,26 @@ internal sealed partial class MainWindow
             startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), PlaylistEditorView().Row(0), ShareView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0), EmbeddedLoginPanel().Row(0));
     }
 
+    private bool ScrollShellWheel(MouseWheelEventArgs args)
+    {
+        var immediate = page.Value == Page.Track && firstTrackWheelAfterResize != 0 &&
+            System.Diagnostics.Stopwatch.GetElapsedTime(firstTrackWheelAfterResize).TotalMilliseconds < 120;
+        firstTrackWheelAfterResize = 0;
+        var released = ReleaseTrackResizeCoalescing(invalidate: false);
+        bool moved;
+        if (smoothScrolls.TryGetValue(shellScroll, out var motion))
+            moved = motion.ScrollWheel(args.Delta.Y, startImmediately: immediate);
+        else
+        {
+            var before = shellScroll.VerticalOffset;
+            shellScroll.SetScrollOffsets(0, before - args.Delta.Y * ThemeManager.DefaultMetrics.ScrollWheelStep);
+            moved = Math.Abs(shellScroll.VerticalOffset - before) > .01;
+        }
+        if (moved && immediate && trackResizePaintPending) PaintResizedTrackWindow();
+        else if (released) Window.InvalidateVisual();
+        return moved;
+    }
+
     private FrameworkElement StartupSplash()
     {
         startupLogo = Icons.LogoMark(0, 0);
@@ -147,25 +173,21 @@ internal sealed partial class MainWindow
 
     private ShellHeader Header()
     {
+        var searchTrigger = Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch);
         topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto,*,Auto").Rows("*")
             .Width(ShellHeader.NavigationWidth).Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
                 Nav("house-simple", "Главная", Page.Home).Column(0), Nav("broadcast", "Лента", Page.Feed).Column(2),
                 Nav("books", "Библиотека", Page.Library).Column(4), Nav("chat-circle", "Чаты", Page.Chats).Column(6),
-                Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch).Column(8));
-        topSearchInput = new TextBox().BindText(query).Placeholder("Трек, исполнитель или строка песни")
-            .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(true)
+                searchTrigger.Column(8));
+        topNavigationMotion = new TransformDecorator { Child = topNavigation };
+        topSearchInput = new TextBox().BindText(query).Placeholder(TopSearchPlaceholder)
+            .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(false)
             .OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(SearchAsync); CloseTopSearch(clear: false); } })
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
-        topSearchBar = new HeaderSearchField(topSearchInput).Width(0);
+        topSearchInput.IsTabStop = false;
+        topSearchBar = new HeaderSearchField(topSearchInput, shellTrigger: searchTrigger)
+            .Width(ShellHeader.NavigationWidth).IsHitTestVisible(false);
         query.Changed += RefreshSearchLinkPreview;
-        topNavigation.Transitions = [
-            Transition.Create(FrameworkElement.WidthProperty, 190, Easing.CubicBezier(0.2, 0, 0, 1)),
-            Transition.Create(UIElement.OpacityProperty, 150, Easing.CubicBezier(0.2, 0, 0, 1))];
-        topSearchBar.Transitions = [
-            Transition.Create(FrameworkElement.WidthProperty, 220, Easing.CubicBezier(0.2, 0, 0, 1)),
-            Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(0.2, 0, 0, 1))];
-        topSearchBar.IsHitTestVisible = false;
-        topSearchBar.Opacity = 0;
 
         profileButton = new Button().StyleName("flat-button").Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
                 new Border().Background(Color.FromRgb(65, 65, 65)).CornerRadius(15).ClipToBounds().BindIsVisible(signedIn)
@@ -189,8 +211,10 @@ internal sealed partial class MainWindow
                 Icons.LogoView(26, 25).CenterVertical(),
                 NavigationPill()),
             new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Children(
-                topNavigation.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
-            new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(settingsButton, profileButton));
+                topNavigationMotion.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
+            new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(settingsButton, profileButton),
+            () => OperatingSystem.IsWindows() && page.Value == Page.Track,
+            () => OperatingSystem.IsWindows() && page.Value == Page.Track && TrackScrollInMotion());
     }
 
     private Button Nav(string icon, string label, Page target, Action? action = null)
@@ -234,18 +258,59 @@ internal sealed partial class MainWindow
         if (searching.Value) return;
         query.Value = "";
         searching.Value = true;
-        topNavigation.Width = 0; topNavigation.Opacity = 0; topNavigation.IsHitTestVisible = false;
-        topSearchBar.Width = ShellHeader.NavigationWidth; topSearchBar.Opacity = 1; topSearchBar.IsHitTestVisible = true;
+        SetTopNavigationInput(false);
+        topSearchBar.IsHitTestVisible = true;
+        topSearchInput.Placeholder = TopSearchPlaceholder;
+        topSearchInput.Focusable = true;
+        topSearchInput.IsTabStop = true;
         topSearchInput.Focus();
+        AnimateTopSearch(1);
     }
 
     private void CloseTopSearch(bool clear)
     {
         if (!searching.Value) return;
         searching.Value = false;
-        topSearchBar.Width = 0; topSearchBar.Opacity = 0; topSearchBar.IsHitTestVisible = false;
-        topNavigation.Width = ShellHeader.NavigationWidth; topNavigation.Opacity = 1; topNavigation.IsHitTestVisible = true;
+        topSearchBar.IsHitTestVisible = false;
+        topSearchInput.Placeholder = "";
+        topSearchInput.IsTabStop = false;
+        if (topSearchInput.IsFocused) Window.FocusManager.ClearFocus();
+        topSearchInput.Focusable = false;
         if (clear) query.Value = "";
+        AnimateTopSearch(0);
+    }
+
+    private void AnimateTopSearch(double target)
+    {
+        topSearchMotion.Stop();
+        var from = topSearchBar.Reveal;
+        topSearchMotion.Duration = TimeSpan.FromMilliseconds(Math.Max(1, Math.Abs(target - from) * (target == 1 ? 320 : 250)));
+        topSearchMotion.TickCallback = progress => PaintTopSearch(from + (target - from) * progress);
+        topSearchMotion.CompletedCallback = Finish;
+        PaintTopSearch(from);
+        if (from != target) topSearchMotion.Start();
+        else Finish();
+
+        void Finish()
+        {
+            PaintTopSearch(target);
+            if (target == 0) SetTopNavigationInput(true);
+        }
+    }
+
+    private void PaintTopSearch(double reveal)
+    {
+        var exit = HeaderSearchField.SearchPhase(reveal, 0, .46);
+        topNavigationMotion.Transform = Matrix3x2.CreateTranslation(0, (float)(-24 * exit));
+        topNavigation.Opacity = 1 - exit;
+        topSearchBar.SetReveal(reveal, reveal > 0 || searching.Value);
+    }
+
+    private void SetTopNavigationInput(bool enabled)
+    {
+        topNavigation.IsHitTestVisible = enabled;
+        foreach (var button in topNavigation.Children.OfType<Button>())
+            button.IsTabStop = button.Focusable = enabled;
     }
 
     private FrameworkElement Library()
@@ -317,7 +382,12 @@ internal sealed partial class MainWindow
         return source;
     }
 
-    private void UpdateLibraryCardSize(double clientWidth) => UpdateLikedGridSize(Math.Min(clientWidth, 1440) - 72);
+    private void UpdateLibraryCardSize(double clientWidth)
+    {
+        // The track page has its own responsive layout. Reflow the hidden
+        // library grids at the current width when their page is shown again.
+        if (page.Value != Page.Track) UpdateLikedGridSize(Math.Min(clientWidth, 1440) - 72);
+    }
 
     private void SelectLibraryTrack(SoundCloudTrack track)
     {

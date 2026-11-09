@@ -7,12 +7,13 @@ namespace Pookie.App;
 // Sample the fullscreen artwork, or the card's composited background layers.
 // Moving either retained surface only changes sampling coordinates.
 internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null, FrameworkElement? background = null,
-    double centeredSampleSize = 0) : IDisposable
+    double centeredSampleSize = 0, bool deferRefraction = false) : IDisposable
 {
     private const double BlurRadius = 12;
     private IRenderSurface? raster;
     private IGraphicsContext? renderer;
     private BackdropBlur? blurred;
+    private BackdropBlur? resizeSample;
     private BackdropBlur? outgoing;
     private byte[]? outgoingBrightness;
     private Func<double>? outgoingOpacity;
@@ -31,6 +32,8 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     internal bool IsBlending => outgoing != null;
     internal bool IsCurrent => HasBlurredArtwork && !preparing && !dirty && source == artwork.Source &&
         sampledOpacity == artwork.Opacity && sampledArtworkSize == ArtworkBounds.Size;
+    internal bool NeedsPrepare => !preparing && !IsCurrent;
+    internal bool CanReuseWhileScrolling => deferRefraction && (HasBlurredArtwork || resizeSample != null);
     internal bool IsCard => card != null || background != null;
     private Rect ArtworkBounds => card?.Bounds ?? background?.Bounds ?? artwork.Bounds;
     private Rect BackgroundBounds
@@ -72,7 +75,12 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
             {
             if (raster == null || size != bounds.Size || factory != graphics)
             {
+                var previous = deferRefraction && factory == graphics && source == artwork.Source
+                    ? blurred is { Ready: true } ? blurred : resizeSample : null;
+                if (ReferenceEquals(previous, blurred)) blurred = null;
+                if (ReferenceEquals(previous, resizeSample)) resizeSample = null;
                 Clear(); factory = graphics; size = bounds.Size;
+                resizeSample = previous;
                 var scale = Math.Min(1, 512 / Math.Max(bounds.Width, bounds.Height));
                 raster = graphics.CreateSurface(RenderSurfaceDescriptor.CpuPixels(
                     Math.Max(1, (int)Math.Ceiling(bounds.Width * scale)), Math.Max(1, (int)Math.Ceiling(bounds.Height * scale)),
@@ -109,6 +117,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
                     preparing = false;
                     if (captured != revision || !ReferenceEquals(blurred,target)) { Changed?.Invoke(); return; }
                     target.Upload();
+                    resizeSample?.Dispose(); resizeSample = null;
                     var pixels = target.Pixels; var stride = width*4;
                     for(var y=0;y<32;y++)for(var x=0;x<32;x++)
                     {
@@ -169,16 +178,22 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     }
 
     internal void Draw(IGraphicsContext context, Rect region, CornerRadius corners, PathGeometry? shape = null,
-        LiquidGlassLens? lens = null, double minimumScale = 1)
+        LiquidGlassLens? lens = null, double minimumScale = 1, Action? invalidate = null)
     {
+        var redrawLens = deferRefraction ? invalidate : null;
+        var bounds = BackgroundBounds;
+        var staleSize = deferRefraction && sampledArtworkSize != ArtworkBounds.Size;
         if (blurred is not { Ready: true } || factory == null || factory != Application.Current.GraphicsFactory)
         {
-            if (card != null && lens != null)
-                lens.Draw(context, Application.Current.GraphicsFactory, null, BackgroundBounds, region, corners, shape, minimumScale);
+            if (resizeSample is { } previousSample && factory == Application.Current.GraphicsFactory)
+            {
+                if (lens?.DrawPrepared(context, region, corners, shape) != true) DrawSample(previousSample, null);
+            }
+            else if (card != null && lens != null)
+                lens.Draw(context, Application.Current.GraphicsFactory, null, bounds, region, corners, shape, minimumScale);
             else lens?.Dispose();
             return;
         }
-        var bounds = BackgroundBounds;
         if (outgoing is { } previous && outgoingOpacity is { } opacity)
         {
             var previousAmount = opacity();
@@ -200,11 +215,11 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
 
         void DrawSample(BackdropBlur sample, LiquidGlassLens? sampleLens)
         {
-            if (sampleLens != null)
-            {
-                sampleLens.Draw(context, factory!, sample, bounds, region, corners, shape, minimumScale);
+            // Until the resized sample is ready, reuse the old lens. A job
+            // against the old sample and new bounds would be discarded.
+            if ((staleSize ? sampleLens?.DrawPrepared(context, region, corners, shape)
+                : sampleLens?.Draw(context, factory!, sample, bounds, region, corners, shape, minimumScale, redrawLens)) == true)
                 return;
-            }
             context.Save();
             try
             {
@@ -245,6 +260,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     {
         revision++;
         ReleaseOutgoing();
+        resizeSample?.Dispose(); resizeSample = null;
         blurred?.Dispose(); blurred = null;
         renderer?.Dispose(); renderer = null; raster?.Dispose(); raster = null;
         source = null; factory = null;

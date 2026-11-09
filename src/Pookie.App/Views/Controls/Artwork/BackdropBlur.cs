@@ -15,6 +15,7 @@ internal sealed class BackdropBlur : IDisposable
     // Cover blur is prepared on a worker. Until Upload, the lens must see the
     // previous sharp pixels together with the previous blurred bitmap.
     private byte[]? capturedSharp, publishedSharp;
+    private LensPixels? lensPixels;
     private readonly int width, height;
     private BackdropDownsample? downsample;
     internal IImage Image { get; }
@@ -23,6 +24,14 @@ internal sealed class BackdropBlur : IDisposable
     internal int Version => bitmap.Version;
     internal ReadOnlySpan<byte> SharpPixels => publishedSharp;
     internal PixelBufferLock LockPublishedPixels() => ((IPixelBufferSource)bitmap).Lock();
+    internal sealed record LensPixels(byte[] Sharp, byte[] Blurred, int Width, int Height);
+
+    internal LensPixels SnapshotForLenses()
+    {
+        if (lensPixels != null) return lensPixels;
+        using var pixels = LockPublishedPixels();
+        return lensPixels = new(SharpPixels.ToArray(), pixels.Buffer.ToArray(), width, height);
+    }
 
     internal BackdropBlur(IGraphicsFactory factory, int width, int height, bool preserveSharp = false)
     {
@@ -74,6 +83,7 @@ internal sealed class BackdropBlur : IDisposable
         using var write = bitmap.LockForWrite();
         first.CopyTo(write.PixelsBgra32);
         (publishedSharp, capturedSharp) = (capturedSharp, publishedSharp);
+        lensPixels = null;
         Ready = true;
     }
 

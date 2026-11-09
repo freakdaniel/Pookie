@@ -26,6 +26,11 @@ internal static class DiagnosticsRunner
         if (args.Length is 2 or 3 && args[0] == "--chat-media-hosting-live-probe")
         { await ChatMediaHostingLiveProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }
+        if (args is ["--native-playready-audio-probe", var trackUrl])
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This diagnostic uses Windows Media Foundation.");
+            args = ["--protected-audio-smoke-test", trackUrl, "--system-audio", "--isolated-browser-profile"];
+        }
         if (args.Length is 2 or 3 && args[0] == "--playback-history-network-probe") { await PlaybackHistoryNetworkProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }
         if (args.Length == 2 && args[0] == "--track-page-network-probe") { await TrackPageNetworkProbe.RunAsync(args[1]); return true; }
@@ -55,6 +60,8 @@ internal static class DiagnosticsRunner
         if (args.Contains("--login-handoff-smoke-test")) { await LoginHandoffSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-worker-smoke-test")) { await BrowserWorkerSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-audio-state-smoke-test")) { await BrowserAudioStateSmokeTest.RunAsync(); return true; }
+        if (args is ["--direct-protected-audio-smoke-test" or "--embedded-protected-audio-smoke-test", _, ..])
+        { await MainWindow.VerifyProtectedAudioAsync(args[1..], direct: args[0] == "--direct-protected-audio-smoke-test"); return true; }
         if (args.Contains("--browser-drm-capability-probe")) { await BrowserDrmCapabilityProbe.RunAsync(); return true; }
         if (args.Contains("--native-widevine-reference-probe")) { await NativeWidevineReferenceProbe.RunAsync(); return true; }
         if (args.Contains("--native-widevine-vmp-probe")) { await NativeWidevineVmpProbe.RunAsync(args.Contains("--vmp-production")); return true; }
@@ -162,7 +169,8 @@ internal static class DiagnosticsRunner
             }
             IAudioPlayer protectedPlayer = new SoundFlowPlayer(silent: true, SoundCloudWebClient.IsMediaUri);
             if (OperatingSystem.IsWindows() && !args.Contains("--drm-native-cdm"))
-                protectedPlayer = new WindowsAudioPlayer(protectedPlayer, () => protectedBrowser);
+                protectedPlayer = args.Contains("--drm-browser-audio") ? new WindowsAudioPlayer(protectedPlayer, () => protectedBrowser)
+                    : new WindowsPlayReadyAudioPlayer(protectedPlayer, protectedHttp, SoundCloudWebClient.IsMediaUri, Path.Combine(new AppDataPaths().Cache, "PlayReady"));
             await using var player = protectedPlayer;
             player.Volume(args.Contains("--system-audio") ? 15 : 0);
             var protectedSource = new AudioSource(resolved.Stream.Uri.AbsoluteUri, AudioTransport.WidevineHls, resolved.Stream.Duration)
@@ -201,7 +209,7 @@ internal static class DiagnosticsRunner
                 Console.WriteLine("REGIONAL_AUTHENTICATED_HISTORY_OK: one real play submitted directly with the account; track is first in remote SoundCloud history");
             }
             if (Math.Abs(player.Poll().Duration - resolved.Stream.Duration) > 2) throw new InvalidOperationException("DRM duration mismatch.");
-            if (player is WindowsAudioPlayer)
+            if (player is WindowsAudioPlayer or WindowsPlayReadyAudioPlayer)
             {
                 using var cancelledSeek = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
                 var superseded = player.SeekAsync(Math.Min(5, resolved.Stream.Duration / 3), cancelledSeek.Token);

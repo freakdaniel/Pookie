@@ -7,7 +7,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<SoundCloudUser> GetUserAsync(long userId, CancellationToken token = default)
     {
         if (userId <= 0) throw new ArgumentOutOfRangeException(nameof(userId));
-        using var document = await GetJsonAsync(Api($"users/{userId}"), token);
+        using var document = await GetJsonAsync(Api($"users/{userId}"), token).ConfigureAwait(false);
         return document.RootElement.Deserialize<SoundCloudUser>(SoundCloudJson.Default.Options)
             is { Id: > 0 } user && user.Id == userId ? user : throw new SoundCloudException("Профиль недоступен");
     }
@@ -15,7 +15,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<UserWebProfile[]> GetUserLinksAsync(long userId, CancellationToken token = default)
     {
         if (userId <= 0) throw new ArgumentOutOfRangeException(nameof(userId));
-        using var document = await GetJsonAsync(Api($"users/soundcloud:users:{userId}/web-profiles"), token);
+        using var document = await GetJsonAsync(Api($"users/soundcloud:users:{userId}/web-profiles"), token).ConfigureAwait(false);
         var rows = document.RootElement.ValueKind == JsonValueKind.Array ? document.RootElement : document.RootElement.GetProperty("collection");
         return rows.EnumerateArray().Where(row => row.ValueKind == JsonValueKind.Object && row.TryGetProperty("url", out var value) &&
             value.ValueKind == JsonValueKind.String && Uri.TryCreate(value.GetString(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && uri.UserInfo == "")
@@ -42,8 +42,8 @@ public sealed partial class SoundCloudWebClient
         var uri = Api(path + "?limit=30&linked_partitioning=1");
         if (cursor != null && (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri) || uri.AbsolutePath != "/" + path))
             throw new SoundCloudException("Неверная страница профиля");
-        using var document = await GetJsonAsync(uri!, token);
-        var page = await ParseLibraryAsync(document.RootElement, token);
+        using var document = await GetJsonAsync(uri!, token).ConfigureAwait(false);
+        var page = await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         if (section is not ("activity" or "reposts")) return page;
         var events = document.RootElement.GetProperty("collection").EnumerateArray()
             .Select(entry => (Item: LibraryData.ParseItem(entry), Entry: entry)).Where(pair => pair.Item != null)

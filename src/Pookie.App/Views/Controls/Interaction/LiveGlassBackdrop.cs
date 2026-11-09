@@ -1,13 +1,16 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
+using System.Diagnostics;
 
 namespace Pookie.App;
 
 // Capture in the window's paint order, before the glass and its foreground.
 // Repainting any part of the sample must clear and paint its entire footprint.
 internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphicsContext, Element> renderBehind,
-    ChatPopupLayer? popup = null, Color? tint = null, Func<Rect>? captureArea = null, double maximumSampleSide = 512) : IDisposable
+    ChatPopupLayer? popup = null, Color? tint = null, Func<Rect>? captureArea = null, double maximumSampleSide = 512,
+    double sampleDensity = .5, bool reuseStrip = false, Func<bool>? deferResizeCapture = null,
+    Func<bool>? paceCapture = null) : IDisposable
 {
     private static readonly HashSet<LiveGlassBackdrop> active = [];
     private static readonly HashSet<Window> warming = [];
@@ -17,9 +20,15 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
     private Window? window;
     private DialogSnapshot? sample;
     private Rect capturedBounds;
+    private Rect resizeBounds;
+    private Size captureViewport;
+    private double captureDpi;
     private bool capturing;
+    private bool holdResizeCapture;
+    private DispatcherTimer? captureRetry;
+    private long lastCapture;
     internal long Version { get; private set; }
-    internal bool Ready => sample != null && capturedBounds == SampleBounds;
+    internal bool Ready => sample != null && (capturedBounds == SampleBounds || resizeBounds == SampleBounds);
     internal bool HasGpuOptics => Ready && cards.Values.Any(ink => ink.Version == Version && ink.Output?.Image != null);
     internal Rect CaptureBounds => Ready ? capturedBounds : Rect.Empty;
     private Rect SurfaceBounds => popup?.SurfaceBounds ?? captureArea?.Invoke() ?? surface.Bounds;
@@ -99,7 +108,35 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         if (active.Count == 0 && warming.Count == 0) WindowPresentation.EnableLiveGlass(false);
     }
 
-    internal void Reset() => capturedBounds = Rect.Empty;
+    internal void Reset() => capturedBounds = resizeBounds = Rect.Empty;
+
+    internal bool ReuseForResizedFrame()
+    {
+        if (window == null || sample == null || capturedBounds.IsEmpty || Math.Abs(captureDpi - window.DpiScale) > .0001 ||
+            SurfaceBounds.IsEmpty) return false;
+        resizeBounds = SampleBounds;
+        captureViewport = window.ClientSize;
+        holdResizeCapture = true;
+        return true;
+    }
+
+    internal void ResumeCapture()
+    {
+        if (holdResizeCapture) lastCapture = Stopwatch.GetTimestamp();
+        holdResizeCapture = false;
+    }
+
+    private static Rect SamplePixels(Rect bounds, Size client, double dpi)
+    {
+        var left = Math.Max(0, Math.Floor(bounds.X * dpi));
+        var top = Math.Max(0, Math.Floor(bounds.Y * dpi));
+        var right = Math.Min(Math.Round(client.Width * dpi), Math.Ceiling(bounds.Right * dpi));
+        var bottom = Math.Min(Math.Round(client.Height * dpi), Math.Ceiling(bounds.Bottom * dpi));
+        return right > left && bottom > top ? new Rect(left, top, right - left, bottom - top) : Rect.Empty;
+    }
+
+    private static Rect SampleDips(Rect pixels, double dpi) =>
+        new(pixels.X / dpi, pixels.Y / dpi, pixels.Width / dpi, pixels.Height / dpi);
 
     internal void Attach(Window? source)
     {
@@ -120,7 +157,9 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
             foreach (var backdrop in active)
             {
                 if (backdrop.window != owner || !backdrop.Visible) continue;
-                var bounds = backdrop.SampleBounds.Intersect(new Rect(Point.Zero, owner.ClientSize));
+                // Include the fractional edge pixels that a framebuffer copy
+                // reads. Otherwise its source can still contain the old glass.
+                var bounds = SampleDips(SamplePixels(backdrop.SampleBounds, owner.ClientSize, owner.DpiScale), owner.DpiScale);
                 if (bounds.IsEmpty || !damage.Any(bounds.IntersectsWith) ||
                     damage.Any(area => area.Contains(bounds))) continue;
                 addDamage(bounds);
@@ -131,31 +170,62 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
 
     internal void CaptureLive(IGraphicsContext context)
     {
-        if (capturing || !Visible || popup is { Reveal: <= 0 } || SurfaceBounds.IsEmpty ||
+        if (capturing || holdResizeCapture || !Visible || popup is { Reveal: <= 0 } || SurfaceBounds.IsEmpty ||
             cards.Count == 0 || window?.Content is not { } root ||
             context.GetClipBoundsLocal() is { } clip && !clip.IntersectsWith(SampleBounds)) return;
 
         var owner = window;
         var requested = SampleBounds;
         var dpi = context.DpiScale;
-        var left = Math.Max(0, Math.Floor(requested.X * dpi));
-        var top = Math.Max(0, Math.Floor(requested.Y * dpi));
-        var right = Math.Min(Math.Round(owner.ClientSize.Width * dpi), Math.Ceiling(requested.Right * dpi));
-        var bottom = Math.Min(Math.Round(owner.ClientSize.Height * dpi), Math.Ceiling(requested.Bottom * dpi));
-        if (right <= left || bottom <= top) return;
-        var pixels = new Rect(left, top, right - left, bottom - top);
-        var bounds = new Rect(left / dpi, top / dpi, pixels.Width / dpi, pixels.Height / dpi);
-        var scale = Math.Min(dpi * .5, maximumSampleSide / Math.Max(bounds.Width, bounds.Height));
+        // Scroll can trigger several paints in one display interval. Keep the
+        // blurred strip visible and rebuild it once the newest offset settles
+        // for that interval, even when there is no next input packet.
+        if (Ready && captureDpi == dpi && lastCapture != 0 && paceCapture?.Invoke() == true &&
+            Stopwatch.GetElapsedTime(lastCapture).TotalMilliseconds < 16)
+        {
+            if (captureRetry == null)
+            {
+                captureRetry = new(TimeSpan.FromMilliseconds(16));
+                captureRetry.Tick += RetryCapture;
+            }
+            if (!captureRetry.IsEnabled) captureRetry.Start();
+            return;
+        }
+        captureRetry?.Stop();
+        var resized = captureViewport != owner.ClientSize && captureDpi == dpi;
+        captureViewport = owner.ClientSize;
+        captureDpi = dpi;
+        if (resized && resizeBounds.IsEmpty && sample != null && !capturedBounds.IsEmpty &&
+            requested != capturedBounds && deferResizeCapture?.Invoke() == true)
+        {
+            // Present the new layout with the existing blurred image. Its
+            // replacement needs a separate page replay and GPU filter pass.
+            resizeBounds = requested;
+            Application.Current.Dispatcher!.BeginInvoke(surface.InvalidateVisual);
+            return;
+        }
+        var pixels = SamplePixels(requested, owner.ClientSize, dpi);
+        if (pixels.IsEmpty) return;
+        var bounds = SampleDips(pixels, dpi);
+        var scale = Math.Min(dpi * sampleDensity, maximumSampleSide / Math.Max(bounds.Width, bounds.Height));
 
         capturing = true;
         try
         {
-            if (sample == null || sample.Bounds != bounds || sample.Scale != scale)
+            var existing = sample?.Bounds ?? Rect.Empty;
+            var reusable = reuseStrip && existing.X == bounds.X && existing.Y == bounds.Y &&
+                existing.Height == bounds.Height && existing.Width >= bounds.Width;
+            if (sample == null || (!reusable && existing != bounds) || sample.Scale != scale)
             {
                 sample?.Dispose();
-                sample = new(owner.GraphicsFactory, bounds, scale);
+                // The pinned header always starts at the client origin. Give
+                // its Windows repaint surface spare columns so a resize does
+                // not also recreate the renderer and blur filter surfaces.
+                var capacity = reuseStrip
+                    ? new Rect(bounds.X, bounds.Y, Math.Ceiling(bounds.Width / 256) * 256, bounds.Height) : bounds;
+                sample = new(owner.GraphicsFactory, capacity, scale);
             }
-            var copied = context.GetTransform().IsIdentity && sample.CopyBackdrop(context, pixels);
+            var copied = !reuseStrip && context.GetTransform().IsIdentity && sample.CopyBackdrop(context, pixels);
             if (!copied)
             {
                 sample.Capture(target =>
@@ -165,7 +235,9 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
                 }, PopupAppearance.AppBackground);
             }
             sample.Blur(20);
+            lastCapture = Stopwatch.GetTimestamp();
             capturedBounds = requested;
+            resizeBounds = Rect.Empty;
             Version++;
             if (copied && glLenses.TryGetValue(owner, out var lens))
             {
@@ -204,6 +276,12 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         }
         var image = sample!.Image;
         var imageBounds = sample.ImageBounds;
+        if (!resizeBounds.IsEmpty)
+        {
+            var horizontal = resizeBounds.Width / capturedBounds.Width;
+            imageBounds = new Rect(resizeBounds.X + (imageBounds.X - capturedBounds.X) * horizontal,
+                imageBounds.Y + resizeBounds.Y - capturedBounds.Y, imageBounds.Width * horizontal, imageBounds.Height);
+        }
         var visual = PresentedBounds(local);
         var scale = visual.Width / local.Width;
         // Convert window coordinates back to card coordinates before the
@@ -225,6 +303,12 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
 
     private Rect PresentedBounds(Rect bounds) => popup?.PresentedBounds(bounds) ?? bounds;
 
+    private void RetryCapture()
+    {
+        captureRetry?.Stop();
+        surface.InvalidateVisual();
+    }
+
     public void Dispose()
     {
         if (active.Remove(this)) ReleaseHooksIfIdle();
@@ -232,7 +316,13 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         sample?.Dispose();
         sample = null;
         foreach (var ink in cards.Values) { ink.Output?.Dispose(); ink.Output = null; }
-        capturedBounds = Rect.Empty;
+        Reset();
+        ResumeCapture();
+        captureRetry?.Dispose();
+        captureRetry = null;
+        lastCapture = 0;
+        captureViewport = Size.Empty;
+        captureDpi = 0;
     }
 
     private sealed class CardInk

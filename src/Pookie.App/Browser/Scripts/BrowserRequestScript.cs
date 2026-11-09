@@ -6,11 +6,11 @@ namespace Pookie.App.Browser;
 
 internal static class BrowserRequestScript
 {
-    public static string Read(WebSession? account, string origin)
+    public static string Read(WebSession? account, string origin, bool includeAudio = true)
     {
         using var input = Assembly.GetExecutingAssembly().GetManifestResourceStream("Pookie.App.Browser.Scripts.browser-requests.js")!;
         using var reader = new StreamReader(input);
-        return ReadAudio() + "\n" + reader.ReadToEnd().Replace("const siteOrigin = 'https://soundcloud.com';", "const siteOrigin = " + JsonSerializer.Serialize(origin) + ";")
+        return (includeAudio ? ReadAudio() + "\n" : "") + reader.ReadToEnd().Replace("const siteOrigin = 'https://soundcloud.com';", "const siteOrigin = " + JsonSerializer.Serialize(origin) + ";")
             .Replace("const apiOrigin = 'https://api-v2.soundcloud.com';", "const apiOrigin = " + JsonSerializer.Serialize(origin == "https://soundcloud.com" ? "https://api-v2.soundcloud.com" : origin) + ";")
             .Replace("__POOKIE_TRACK_COMMENTS__", JsonSerializer.Serialize(TrackReadQueries.Comments))
             .Replace("__POOKIE_TRACK_REPLIES__", JsonSerializer.Serialize(TrackReadQueries.Replies))

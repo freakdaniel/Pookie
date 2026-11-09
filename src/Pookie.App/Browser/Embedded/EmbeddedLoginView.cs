@@ -39,6 +39,9 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
     internal ReadOnlyMemory<byte> SnapshotPng { get; private set; }
     internal double SnapshotOpacity { get; set; } = 1;
     internal bool NativePresented => active && !preparing && !stopped;
+#if WINDOWS
+    internal bool WebViewWasShown => browser is WindowsEmbeddedBrowser { HasBeenShown: true };
+#endif
     internal bool Stopped => stopped;
     internal TimeSpan PreparationTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
@@ -69,7 +72,8 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
         {
             var host = EmbeddedBrowserFactory.Create(new(Navigate, Message, SourceChanged, DocumentReady, Fail));
             browser = host;
-            var body = workerAccount == null ? EmbeddedLoginPage.ReadyScript + "\n" + LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(workerAccount, origin);
+            var body = workerAccount == null ? EmbeddedLoginPage.ReadyScript + "\n" + LoginCaptureScript.Read(origin) :
+                BrowserRequestScript.Read(workerAccount, origin, includeAudio: !OperatingSystem.IsWindows());
             var script = "if(window===window.top && location.origin===" + JsonSerializer.Serialize(origin) + ") { (()=>{\n" +
                 "const pairing=" + JsonSerializer.Serialize(pairing) + ";\n" +
                 "window.__pookiePost=message=>{const raw=JSON.stringify({...message,pookie_pairing:pairing});" +
@@ -120,14 +124,14 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
 
     private void UpdateBounds()
     {
-        var window = FindVisualRoot() as Window ?? ownerWindow;
-        if (window == null) { browser?.SetVisible(false); return; }
-        if (preparing)
+        var window = FindVisualRoot() as Window;
+        if (preparing && (window ?? ownerWindow) is { } host)
         {
-            browser?.SetBounds(new(-32000, -32000, preparationBounds.Width, preparationBounds.Height), window.DpiScale);
+            browser?.SetBounds(new(-32000, -32000, preparationBounds.Width, preparationBounds.Height), host.DpiScale);
             browser?.SetVisible(!stopped);
             return;
         }
+        if (window == null) { browser?.SetVisible(false); return; }
         browser?.SetBounds(TranslateRect(new(0, 0, ActualWidth, ActualHeight), window), window.DpiScale);
         var visible = !stopped && active;
         for (Element? element = this; element != null; element = element.Parent)

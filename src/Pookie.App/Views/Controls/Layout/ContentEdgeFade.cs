@@ -21,7 +21,8 @@ internal sealed class ContentEdgeFade(Color surface, bool fromTop = false) : Con
 
     private double paintedStrength = double.NaN;
     private GradientStop[] paintedStops = [];
-    private DecorationRaster? raster;
+    private WriteableBitmap? raster;
+    private IImage? rasterImage;
     private IGraphicsFactory? rasterFactory;
     private double rasterHeight, rasterScale;
 
@@ -33,34 +34,54 @@ internal sealed class ContentEdgeFade(Color surface, bool fromTop = false) : Con
 
     protected override void OnRender(IGraphicsContext context)
     {
-        if (paintedStrength != Strength)
+        var strengthChanged = paintedStrength != Strength;
+        if (strengthChanged)
         {
             paintedStrength = Strength;
             paintedStops = stops.Select(stop => new GradientStop(stop.Offset,
                 Color.FromArgb((byte)Math.Round(stop.Color.A * Math.Clamp(Strength, 0, 1)), surface.R, surface.G, surface.B))).ToArray();
-            ClearRaster();
         }
         if (OperatingSystem.IsWindows() && Bounds.Width > 0 && Bounds.Height > 0)
         {
             var graphics = Application.Current.GraphicsFactory;
             var scale = Math.Max(context.DpiScale, GetDpi() / 96d);
-            if (raster == null || rasterFactory != graphics || rasterHeight != Bounds.Height || rasterScale != scale)
+            var resized = raster == null || rasterFactory != graphics || rasterHeight != Bounds.Height || rasterScale != scale;
+            if (resized)
             {
                 ClearRaster();
-                // A vertical gradient is identical in every column. Cache a
-                // narrow strip at native DPI instead of rebuilding a Direct2D
-                // gradient brush on every scrolling frame.
-                raster = new DecorationRaster(graphics, new Size(1 / scale, Bounds.Height), scale, (target, bounds) =>
-                    target.FillRectangle(bounds, new LinearGradientBrush(new Point(0, 0), new Point(0, bounds.Bottom), paintedStops)));
+                raster = new WriteableBitmap(1, (int)Math.Ceiling(Bounds.Height * scale), clear: false);
+                rasterImage = BitmapImage.CreatePremultipliedView(graphics, raster);
                 rasterFactory = graphics; rasterHeight = Bounds.Height; rasterScale = scale;
             }
-            context.DrawImage(raster.Image, Bounds);
+            if (resized || strengthChanged)
+            {
+                // Each row is one premultiplied pixel. Updating the strip
+                // directly avoids a new Direct2D target on each fade tick.
+                using var write = raster!.LockForWrite();
+                var pixels = write.PixelsBgra32;
+                for (var y = 0; y < raster.PixelHeight; y++)
+                {
+                    var stop = Math.Min(16, (y + .5) / (rasterHeight * rasterScale) * 16);
+                    var i = Math.Min(15, (int)stop);
+                    var first = paintedStops[i].Color.A;
+                    var alpha = (byte)Math.Round(first + (paintedStops[i + 1].Color.A - first) * (stop - i));
+                    pixels[4 * y] = (byte)((surface.B * alpha + 127) / 255);
+                    pixels[4 * y + 1] = (byte)((surface.G * alpha + 127) / 255);
+                    pixels[4 * y + 2] = (byte)((surface.R * alpha + 127) / 255);
+                    pixels[4 * y + 3] = alpha;
+                }
+            }
+            context.DrawImage(rasterImage!, Bounds);
             return;
         }
         context.FillRectangle(Bounds, new LinearGradientBrush(new Point(Bounds.X, Bounds.Y), new Point(Bounds.X, Bounds.Bottom), paintedStops));
     }
 
-    private void ClearRaster() { raster?.Dispose(); raster = null; rasterFactory = null; }
+    private void ClearRaster()
+    {
+        rasterImage?.Dispose(); rasterImage = null;
+        raster?.Dispose(); raster = null; rasterFactory = null;
+    }
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
     {
         base.OnVisualRootChanged(oldRoot, newRoot);

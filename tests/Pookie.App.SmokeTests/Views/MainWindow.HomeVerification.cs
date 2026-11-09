@@ -55,6 +55,12 @@ internal sealed partial class MainWindow
             MoveActionPointer(new Point(2, 2));
             await WaitForLikedLayoutAsync(() => homeMixCarousel.ActualHeight > 300 && !homeMixCarousel.MotionActive && homeChartRows.Count == 10 &&
                 !homeChartLeftLoading.Skeleton.IsVisible && !homeChartRightLoading.Skeleton.IsVisible);
+            if (Environment.GetEnvironmentVariable("POOKIE_TRENDS_PROBE") == "1")
+            {
+                await ShowTrendsInViewportAsync();
+                await VerifyTrendingActionsAsync(homeChartRows[0]);
+                return;
+            }
             if (homeMixCarousel.VisibleCoverCount != 5 || homeMixSection.Children.OfType<Button>().Any())
                 throw new InvalidOperationException("The hero must show five covers without a separate playback button.");
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-wide");
@@ -121,11 +127,7 @@ internal sealed partial class MainWindow
             if (playbackQueue.Context != null)
                 throw new InvalidOperationException("Dragging a mix launched playback.");
             CaptureUiPreview("home-mixes");
-            var chartTop = startupHeader.Bounds.Bottom + 20;
-            shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + homeChart.Bounds.Y - chartTop);
-            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !homeMixCarousel.MotionActive && Math.Abs(homeChart.Bounds.Y - chartTop) < 2 &&
-                homeChartOpen.Bounds.Y > startupHeader.Bounds.Bottom &&
-                homeChartOpen.Bounds.Bottom < homeScroll.Bounds.Bottom);
+            await ShowTrendsInViewportAsync();
             var picker = homeChartGenreSlot.Children.OfType<MaterialSelect>().Single();
             if (picker.SelectedText != "Все жанры" || !homeChartRows.Select(row => row.Track!.Id).SequenceEqual(transport.Chart.Take(10).Select(track => track.Id)) ||
                 homeChartLeft.Children.Count != 5 || homeChartRight.Children.Count != 5)
@@ -254,6 +256,14 @@ internal sealed partial class MainWindow
             if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
             player = originalPlayer; Window.Close();
         }
+    }
+
+    private async Task ShowTrendsInViewportAsync()
+    {
+        var chartTop = startupHeader.Bounds.Bottom + 20;
+        shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + homeChart.Bounds.Y - chartTop);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !homeMixCarousel.MotionActive && Math.Abs(homeChart.Bounds.Y - chartTop) < 2 &&
+            homeChartOpen.Bounds.Y > startupHeader.Bounds.Bottom && homeChartOpen.Bounds.Bottom < homeScroll.Bounds.Bottom);
     }
 
     private async Task VerifyHomeChartRefreshAsync(HomeFixtureTransport transport, MaterialSelect picker)

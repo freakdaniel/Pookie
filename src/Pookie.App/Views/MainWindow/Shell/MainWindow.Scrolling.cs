@@ -89,12 +89,6 @@ internal sealed partial class MainWindow
         shellPageScroll.Refresh();
         RefreshTrackTimelineViewport();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
-        var frameWidth = page.Value == Page.Chats ? Window.ClientSize.Width : Math.Min(1440, Window.ClientSize.Width);
-        if (frameWidth > 0 && contentFrame.ActualWidth > 0 && Math.Abs(contentFrame.ActualWidth - frameWidth) > .5)
-        {
-            UpdateContentFrameWidth(frameWidth);
-            contentFrame.InvalidateMeasure();
-        }
         if (playlistCollectionVisible.Value && collectionDescriptionExpanded) RefreshCollectionDescriptionGeometry();
         RefreshSearchScrollLayout();
         foreach (var (skeleton, source) in pageSkeletons)
@@ -127,7 +121,7 @@ internal sealed partial class MainWindow
         UpdateSearchHeroGeometry(searchList.ActualWidth);
         // Apply the new row geometry after the current arrange has finished.
         // Invalidating during SizeChanged can be swallowed by that arrange pass.
-        foreach (var view in searchViews.Values) view.Hero.Root.InvalidateMeasure();
+        foreach (var view in searchViews.Values) view.Hero?.Root.InvalidateMeasure();
         searchList.InvalidateMeasure();
     }
 
@@ -235,6 +229,8 @@ internal sealed partial class MainWindow
 
     private void DisposePageScrolling()
     {
+        shellScroll.ScrollChanged -= ObservePlaylistPointerMotion;
+        playlistHoverTimer?.Dispose();
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();
         Window.FrameRendered -= ObservePageScrolling;
         foreach (var (viewer, motion) in smoothScrolls)

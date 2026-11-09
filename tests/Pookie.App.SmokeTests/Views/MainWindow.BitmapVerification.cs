@@ -159,6 +159,15 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Bounded shadow raster changed the shadow shape or grew with the card.");
             }
         }
+        var windowRasterBytes = shadow.PixelBytes;
+        using var capture = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(64, 64, Window.DpiScale / 2));
+        using var captureContext = Window.GraphicsFactory.CreateContext(capture);
+        captureContext.BeginFrame(capture);
+        try { shadow.Draw(captureContext, new Rect(16, 16, 900, 620), 20, rasterScale: Window.DpiScale); }
+        finally { captureContext.EndFrame(); }
+        if (shadow.PixelBytes != windowRasterBytes)
+            throw new InvalidOperationException("The half-resolution header capture replaced the window's shadow raster.");
+        Console.WriteLine("SHADOW_MIXED_DPI_OK: window and header capture share one raster");
     }
 
     private static void VerifyBackdropPixelBuffers()

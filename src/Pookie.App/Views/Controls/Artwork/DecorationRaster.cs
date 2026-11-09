@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Rendering;
+using Aprillz.MewUI.Resources;
 
 namespace Pookie.App;
 
@@ -71,8 +72,12 @@ internal sealed class GlassSheenRaster : IDisposable
     private double edgeEmphasis = double.NaN;
     private Pen? edgePen;
     private ImageBrush? sheenBrush;
+    private (int Width, int Height)? requestedSize;
+    private bool rasterizing;
+    private int revision;
 
-    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1, double minimumScale = 0, bool resizing = false)
+    internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1,
+        double minimumScale = 0, bool resizing = false, Action? invalidateAfterResize = null)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
         var graphics = Application.Current.GraphicsFactory;
@@ -83,16 +88,24 @@ internal sealed class GlassSheenRaster : IDisposable
         var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
         // During a short width transition, compose the existing reflection.
         // Recreate it once at the final size, preserving static pixel dithering.
-        if (image == null || factory != graphics || image.PixelHeight != height || !resizing && image.PixelWidth != width)
+        var sameFactory = image != null && factory == graphics;
+        requestedSize = (width, height);
+        if (!sameFactory || image!.PixelHeight != height || !resizing && image.PixelWidth != width)
         {
-            Dispose(); factory = graphics;
-            bitmap = new WriteableBitmap(width, height, clear: false);
-            image = BitmapImage.CreatePremultipliedView(graphics, bitmap);
+            if (sameFactory && invalidateAfterResize != null)
+            {
+                if (!rasterizing) RenderResize(graphics, width, height, emphasis, invalidateAfterResize);
+            }
+            else
+            {
+                Dispose();
+                SetBitmap(graphics, new WriteableBitmap(width, height, clear: false));
+            }
         }
         if (paintedEmphasis != emphasis)
         {
             using var write = bitmap!.LockForWrite();
-            FillPixels(write.PixelsBgra32, image.PixelWidth, image.PixelHeight, emphasis, premultiplied: true);
+            FillPixels(write.PixelsBgra32, image!.PixelWidth, image.PixelHeight, emphasis, premultiplied: true);
             paintedEmphasis = emphasis;
         }
         // Quantize only at the final physical pixel size. Stretching a small
@@ -106,11 +119,42 @@ internal sealed class GlassSheenRaster : IDisposable
             context.Translate(bounds.X, bounds.Y);
             var local = new Rect(0, 0, bounds.Width, bounds.Height);
             if (sheenBrush == null || sheenBrush.DestinationRect != local)
-                sheenBrush = new(image, new Rect(0, 0, image.PixelWidth, image.PixelHeight), local, TileMode.None);
+                sheenBrush = new(image!, new Rect(0, 0, image!.PixelWidth, image.PixelHeight), local, TileMode.None);
             context.FillPath(clip.Get(local, corners), sheenBrush);
             DrawEdge(context, local, corners, emphasis);
         }
         finally { context.Restore(); }
+    }
+
+    private void SetBitmap(IGraphicsFactory graphics, WriteableBitmap next)
+    {
+        ClearBitmap();
+        factory = graphics;
+        bitmap = next;
+        image = BitmapImage.CreatePremultipliedView(graphics, bitmap);
+    }
+
+    private void RenderResize(IGraphicsFactory graphics, int width, int height, double emphasis, Action invalidate)
+    {
+        rasterizing = true;
+        var capturedRevision = revision;
+        var dispatcher = Application.Current.Dispatcher!;
+        _ = Task.Run(() =>
+        {
+            var pixels = GC.AllocateUninitializedArray<byte>(checked(width * height * 4));
+            FillPixels(pixels, width, height, emphasis, premultiplied: true);
+            dispatcher.BeginInvoke(() =>
+            {
+                if (capturedRevision != revision) return;
+                rasterizing = false;
+                if (requestedSize == (width, height))
+                {
+                    SetBitmap(graphics, new WriteableBitmap(new Bgra32PixelBuffer(width, height, pixels)));
+                    paintedEmphasis = emphasis;
+                }
+                invalidate();
+            });
+        });
     }
 
     private void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis)
@@ -156,6 +200,14 @@ internal sealed class GlassSheenRaster : IDisposable
     }
 
     public void Dispose()
+    {
+        revision++;
+        requestedSize = null;
+        rasterizing = false;
+        ClearBitmap();
+    }
+
+    private void ClearBitmap()
     {
         sheenBrush = null;
         image?.Dispose(); image = null; bitmap?.Dispose(); bitmap = null;

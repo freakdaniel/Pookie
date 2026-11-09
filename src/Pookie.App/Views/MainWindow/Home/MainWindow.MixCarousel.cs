@@ -120,9 +120,9 @@ internal sealed partial class MainWindow
             });
         }
 
-        internal void PrepareGlass()
+        internal bool PrepareGlass()
         {
-            if (!canAnimate || front < 0) return;
+            if (!canAnimate || front < 0) return false;
             // Warm one cover per presented frame, starting with the selected
             // cover and its closest neighbors in either direction.
             for (var offset = 0; offset < cards.Length; offset++)
@@ -130,8 +130,9 @@ internal sealed partial class MainWindow
                 var distance = (offset + 1) / 2;
                 var index = (front + (offset % 2 == 0 ? -distance : distance) + cards.Length) % cards.Length;
                 var glass = cards[index].Cover.Glass;
-                if (glass.HasBitmapArtwork && glass.Prepare()) break;
+                if (glass.HasBitmapArtwork && glass.Prepare()) return true;
             }
+            return false;
         }
 
         internal void UpdatePlayback(string? key, bool playing)

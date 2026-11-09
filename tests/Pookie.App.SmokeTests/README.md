@@ -145,6 +145,9 @@ moving the viewport, returning from the bottom to the hero, and a 1000-track
 playlist. Each page gets 540 continuous 12-DIP scroll steps across the hero,
 middle and bottom, plus large cold viewport jumps in both directions. These are
 separate results: `CONTINUOUS_SCROLL_RESULT` and `DETAIL_SCROLL_RESULT`.
+`POOKIE_SCROLL_PLAYLIST_ONLY=1` skips the synthetic comment workload. The
+1000-track fixture uses preview mode with disabled like buttons, while the
+authenticated playlist probe uses the regular account controls.
 `POOKIE_SCROLL_CONTINUOUS_ONLY=1` skips the large-jump paths. Samples measure
 input to `FrameRendered`, before native presentation; they are not display FPS.
 Add `POOKIE_SCROLL_PLAYING=1` and omit `--no-audio` to exercise the real playback
@@ -400,6 +403,19 @@ metadata, ordered track loading and playlist like/repost state reads through the
 Close the normal app first: this probe preserves and leases the saved browser profile.
 It makes no account writes.
 
+`--playlist-page-live-ui-probe <SoundCloud playlist URL>` opens a public playlist
+with at least 100 tracks in the real Windows UI, using the saved account with
+isolated browser and artwork caches. It measures cold opening, sends native
+fractional wheel messages on a separate timer while covers load, then runs the
+same continuous-scroll probe used by the 1000-track fixture. It checks movement
+with playback stopped and read-only account requests. The wheel result reports
+frame notification intervals. The continuous-scroll result reports elapsed
+time from an offset update to the frame notification.
+Set `POOKIE_PLAYLIST_COVER_PROFILE=1` to replay the same native wheel path with
+cold and prewarmed artwork, and split frame intervals by newly visible artwork
+sources. This mode also checks that pointer controls hide during movement and
+return under the stationary cursor when scrolling settles.
+
 `--track-page-network-probe <SoundCloud track URL>` verifies real metadata, timed
 comments/replies and pagination, sidebar fans/collections, all four subsection endpoints and their next pages, related tracks and waveform through the production browser
 transport. `--track-page-live-ui-probe` additionally opens the real "Этажи" track in
@@ -409,6 +425,30 @@ the saved account with an isolated browser profile, so the normal app can stay
 open. The network probe still leases the saved browser profile and needs the
 normal app closed.
 They do not change likes or write to the clipboard.
+
+`POOKIE_SCROLL_RESIZE=1` with `--track-page-live-ui-probe` sends alternating
+native wheel packets through the track hero immediately after a resize. Use
+`POOKIE_SCROLL_TRACK=<track ID>` to select the track and `POOKIE_SCROLL_NOTCH=1`
+to send full wheel notches. Add `POOKIE_SCROLL_LOADING=1` to start playback
+immediately before the resize and verify that the first wheel packet is
+handled while audio is preparing. `POOKIE_PERF_CAPTURE` enables the first
+resize frame's render timing and frame indices. `resize_to_movement` measures
+from the native resize request until the first frame with a changed scroll
+offset returns from the window's Present call. Slow frame intervals include
+timestamps and loading state for comparison with CPU traces.
+The total and the wheel/draw/present intervals also work with profiling disabled,
+which keeps the timing path the same as a regular Release build.
+
+`POOKIE_LIVE_SESSION=1` with `--track-page-live-ui-probe` visits Home, Feed,
+search and its playlist tab, a real playlist, Likes, a protected track, the
+expanded player, the artist profile and the Chats list. Use `POOKIE_PERF_CAPTURE`
+for individual render times. A worker posts one outstanding dispatcher sample
+at a time. The probe logs slow render frames and dispatcher waits separately,
+with stage and UTC timestamps for matching them to a runtime trace.
+
+`POOKIE_SEEK_LIVE=1` exercises the slider and waveform
+on `POOKIE_SEEK_TRACK=<track ID>` and measures when playback advances from the new
+position. Add `POOKIE_SEEK_IMMEDIATE=1` for a far waveform jump as playback starts.
 
 `POOKIE_SCROLL_LIVE=1` with `--track-page-live-ui-probe` loads up to 500 real
 comments, plays the real stream at zero volume, and measures 540 scroll frames
@@ -602,19 +642,29 @@ rejection in the `POOKIE_DRM_DIAGNOSTICS=1` log on Windows, or compare the same
 native host and CDM against the same SoundCloud track before and after approved
 VMP signing. A public test license can succeed with an unverified host.
 
-The default protected-audio scenario uses the production platform route: browser
-EME/MSE on Windows and native Widevine/SoundFlow on Linux. It checks decoded
+On Windows, a comparison for «Тяжело» and «Не ревнуй» sent both challenges from
+the same WebView2 page using the same token and request headers. SoundCloud
+returned `403` for the native host's challenge and `200` for WebView2's EME
+challenge. The rejection did not include a specific verification error.
+
+The default protected-audio scenario uses native PlayReady/Media Foundation on
+Windows and native Widevine/SoundFlow on Linux. It checks decoded
 playback progress, duration, seek, pause/resume, one-shot end, restart and stop.
 The Windows scenario is muted by default; `--system-audio` uses 15% volume to
-verify unmuted autoplay and system output. `--drm-native-cdm` retains the old
-native route for a controlled Windows comparison.
+verify unmuted playback. `--drm-native-cdm` selects the native Widevine route
+and `--drm-browser-audio` selects standalone WebView2 EME on Windows for comparison.
 
-The Windows browser-audio adapter uses the same embedded website as API
-calls, with background throttling and Chromium's system media integration disabled.
-The Windows system WebView2 runtime supplies EME/Widevine. CDM initialization
-and actual SoundCloud license acceptance are checked separately. No Castlabs
-runtime, external Chrome or application EVS signing is used by this backend.
-Ordinary audio and the Linux native Widevine/SoundFlow route remain unchanged.
+On Windows, `--direct-protected-audio-smoke-test TRACK_URL [TRACK_URL ...]`
+restores a copy of the saved session into an isolated app profile, resolves
+and plays each track through the main window, and checks that WebView2 never
+starts during startup or playback.
+
+`--embedded-protected-audio-smoke-test TRACK_URL [TRACK_URL ...]`
+uses the main window and its normal playback resolver. It verifies PlayReady
+playback at 15% volume, a forward seek while paused, buffered playback after
+resume, backward seek and switching tracks. Its isolated WebView2 profile is
+used for SoundCloud requests, and the test asserts it receives no audio events.
+The check skips playback history.
 
 `--browser-audio-state-smoke-test` uses local fake transports without a website
 or CDM. It verifies routing, volume, seek, pause, one-shot end, ignored stale-track
@@ -622,7 +672,7 @@ events, worker failure and cancellation when switching tracks.
 
 `--browser-drm-capability-probe` reports AAC/MSE and Widevine key-system support
 in an isolated local fixture without real credentials, media or license requests.
-Unavailable/disabled key systems are reported by production playback as
+Unavailable/disabled key systems are reported by the browser diagnostic as
 `unsupported` at the EME stage, rather than a generic decoding failure.
 
 `--native-drm-probe TRACK_URL` inspects the actual protected playlist and attempts
@@ -631,6 +681,14 @@ exit code on unsupported APIs or failed acquisition, without exposing credential
 or payloads. It does not claim to verify playback. The official SoundCloud player
 and VMP lab probes, observations and current limitations are documented in
 [`tools/drm-probe/README.md`](../../tools/drm-probe/README.md).
+
+`--native-playready-audio-probe TRACK_URL` runs the protected audio smoke test
+on Windows with system audio and an isolated browser profile. PlayReady and
+Media Foundation are called from C# in the smoke host process.
+
+```powershell
+dotnet run --project tests/Pookie.App.SmokeTests -- --native-playready-audio-probe https://soundcloud.com/billboards21/tyazhelo
+```
 
 Regional playback uses the authenticated primary connection first. Only fresh
 `SNIP`/`BLOCK` metadata activates the anonymous pool. It discovers ProxyScrape and
@@ -660,9 +718,8 @@ listened-time guard and respects the SendPlaybackHistory preference; history rea
 fresh account metadata/authorization independently of anonymous regional tokens.
 
 Use `history` instead of `TRACK_URL` to select an accessible protected track from
-the saved account's first 20 history entries. The probe stays muted, verifies a non-silent neural embedding from browser PCM,
-and then checks the normal seek/pause/end lifecycle. On Windows it uses the
-standalone InfiniFrame/WebView2 diagnostic worker and its Widevine CDM.
+the saved account's first 20 history entries. The probe stays muted and checks
+the normal seek/pause/end lifecycle.
 `--normalization-probe` additionally verifies the fixed waveform correction.
 `--default-stream-selection` uses the production resolver's normal protocol order;
 if it selects an ordinary stream, the probe reports it without attempting DRM.

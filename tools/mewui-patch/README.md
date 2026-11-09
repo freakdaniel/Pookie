@@ -12,7 +12,7 @@ The upstream X11 offscreen frame session now drains `TextCache.ReleasePendingDel
 The old X11 assembly patch has been removed; the upstream implementation is used unchanged.
 
 `MewUiPatch.targets` patches **only a private Core assembly copy under the consumer's
-obj directory** for two offscreen-rendering fixes and compatibility emoji
+obj directory** for offscreen rendering, window frame scheduling and compatibility emoji
 presentation in standard text controls. Compile, runtime
 copying and publishing use that copy. NuGet's cache is untouched. Mono.Cecil is a
 build dependency only; runtime and NativeAOT builds do not patch assemblies.
@@ -33,6 +33,20 @@ mark it culled in the actual window or dispose its live bitmap cache.
 The direct-render opacity group also uses that viewport in surface coordinates,
 without applying the current transform a second time. This keeps translated,
 cropped captures of partially transparent menus and tooltips inside their target.
+
+## Windows resize and wheel input
+
+The main window can coalesce the first paint after a track-page resize with
+pending wheel input. A native dispatcher timer releases the paint when no input
+arrives. During this interval the dispatcher keeps work queued and suppresses
+its own repost, so native input and the timer can run before another batch.
+Releasing the interval posts the wake again. The frame completion hook runs
+after the window's outer present, which
+allows Pookie to schedule comment and backdrop updates between presented frames
+and lets the live probe include presentation in its latency measurement.
+The Direct2D main window also keeps spare pixels in its intermediate frame
+surface so nearby resize dimensions can retain its renderer and text runs.
+Presentation copies the actual client rectangle at its original pixel scale.
 
 ## Application layout without framework extensions
 

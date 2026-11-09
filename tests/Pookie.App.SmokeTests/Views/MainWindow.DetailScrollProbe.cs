@@ -38,6 +38,13 @@ internal sealed partial class MainWindow
 
     private async Task ProbeDetailScrollingCoreAsync()
     {
+        if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PLAYLIST_ONLY") != "1")
+            await ProbeCommentFixtureAsync();
+        await ProbePlaylistFixtureAsync();
+    }
+
+    private async Task ProbeCommentFixtureAsync()
+    {
         var comments = Enumerable.Range(0, 500).Select(i => new SoundCloudComment
         {
             Id = 10000 + i, User = new() { Id = i + 10, Username = "Слушатель " + i },
@@ -60,19 +67,32 @@ internal sealed partial class MainWindow
         if (Math.Abs(shellScroll.VerticalOffset - offset) > 1) throw new InvalidOperationException("Appending comments moved the viewport.");
         if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_CONTINUOUS_ONLY") != "1") await ProbeScrollPathAsync("track-appended", 120);
 
+    }
+
+    private async Task ProbePlaylistFixtureAsync()
+    {
         var transport = new CollectionFixtureTransport();
+        var fixture = transport.Playlist.Tracks[0];
         api.BrowserTransport = transport; me = new() { Id = 42, Username = "Scroll fixture" }; signedIn.Value = true;
         await OpenLibraryItemAsync(LibraryData.FromPlaylist(transport.Playlist));
         await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && playlistCollectionVisible.Value);
-        var fixture = transport.Playlist.Tracks[0];
         var playlistTracks = Enumerable.Range(0, 1000).Select(i => fixture with { Id = 70000 + i, Title = "Трек " + i }).ToArray();
         activeCollection = new(playlistTracks.Select(LibraryItem.FromTrack).ToArray(), null);
         RefreshCollectionTracks();
         await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
+        if (OperatingSystem.IsWindows() && demo)
+        {
+            await WaitForLikedLayoutAsync(() => compactTrackRows.Any(row => row.CollectionRow && row.Track != null && row.Root.ActualWidth > 200));
+            var row = compactTrackRows.First(row => row.CollectionRow && row.Track != null && row.Root.ActualWidth > 200);
+            if (row.Like.IsEffectivelyEnabled || row.Heart.Opacity != 1 ||
+                !ReferenceEquals(row.Heart.Source, Icons.Source("heart", row.Hovered ? Color.White : MutedIcon, dimmed: true)))
+                throw new InvalidOperationException("The disabled playlist glyph should be dimmed in its shared raster.");
+            Console.WriteLine("PLAYLIST_DISABLED_GLYPH_OK: cached dimmed ink without a per-row opacity layer");
+        }
         if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_CONTINUOUS_ONLY") != "1") await ProbeScrollPathAsync("playlist-1000", 240);
         if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_TOUCHPAD") == "1") await ProbeNativeTouchpadScrollingAsync("playlist-1000");
         else await ProbeContinuousScrollAsync("playlist-1000");
-        Console.WriteLine("DETAIL_SCROLL_OK: comments, append, hero reentry and playlist");
+        Console.WriteLine("DETAIL_SCROLL_OK: playlist");
     }
 
     private async Task ProbeNativeTouchpadScrollingAsync(string name, bool wheelNotches = false)

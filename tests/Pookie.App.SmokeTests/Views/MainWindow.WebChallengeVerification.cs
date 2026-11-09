@@ -14,7 +14,7 @@ internal sealed partial class MainWindow
             var account = new WebSession("fixture", "fixture-expired", "Test") { VerifiedUserId = 42 };
             var connected = new NativeBrowserSession(account);
             var worker = new EmbeddedWebWorker(Window, account, root + "/", profile);
-            connected.UseEmbedded(worker); AttachBrowser(connected); api.Session = account;
+            connected.UseEmbedded(worker); AttachBrowser(connected, useNativeHttp: false); api.Session = account;
             me = await connected.GetMeAsync(timeout.Token); signedIn.Value = true;
             if (me.Id != 42 || connected.Account.AccessToken != "fixture-token")
                 throw new InvalidOperationException("The saved account was not renewed from the existing website profile.");

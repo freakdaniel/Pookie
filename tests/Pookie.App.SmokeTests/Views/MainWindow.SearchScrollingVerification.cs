@@ -89,8 +89,8 @@ internal sealed partial class MainWindow
             SetSearchResults(new(items, null));
         });
         await SearchFixture(SearchSection.All, results);
-        await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero && view.Hero.Card.ActualWidth > 100));
-        var hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero;
+        await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero && view.Hero!.Card.ActualWidth > 100));
+        var hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero!;
         await WaitForLikedLayoutAsync(() => hero.Backdrop.Source != null && hero.Backdrop.Opacity > .999);
         if (hero.Item?.Key != "track:70001" || hero.Tracks.Count(row => row.Track != null) != 4 || Math.Abs(hero.Tracks[0].Root.ActualHeight - 64) > 1 / Window.DpiScale ||
             !SearchBlocks().Any(block => block.Title == "Исполнители") || !SearchBlocks().Any(block => block.Title == "Альбомы") || !SearchBlocks().Any(block => block.Title == "Плейлисты"))
@@ -133,13 +133,13 @@ internal sealed partial class MainWindow
         finally { current = savedTrack; isPlaying.Value = savedPlaying; likedIds.Remove(track.Id); RefreshSearchPlayback(); timer.Start(); }
         Window.WindowSize = WindowSize.Resizable(720, 840, minWidth: 640, minHeight: 680);
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width < 760 && searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero &&
-            view.Hero.SongsSection.Bounds.Y > view.Hero.Card.Bounds.Bottom));
-        hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero;
+            view.Hero!.SongsSection.Bounds.Y > view.Hero!.Card.Bounds.Bottom));
+        hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero!;
         CheckCompactSearchClip(hero.Tracks[0]);
         CaptureUiPreview("search-narrow");
         Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
         await WaitForLikedLayoutAsync(() => Window.ClientSize.Width >= 999 && searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero &&
-            view.Hero.SongsSection.Bounds.X > view.Hero.Card.Bounds.Right));
+            view.Hero!.SongsSection.Bounds.X > view.Hero!.Card.Bounds.Right));
         await SearchFixture(SearchSection.People, [results[1]]);
         await MoveNavigationAsync(-1);
         if (page.Value != Page.Search || searchSection.Value != SearchSection.All || searchResults?.Items.Length != results.Length || query.Value != "Кис")
@@ -167,7 +167,8 @@ internal sealed partial class MainWindow
             searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Cards && view.Block.Items?.Length == 4));
         await SearchFixture(SearchSection.Tracks, Enumerable.Range(0, 100).Select(index => LibraryItem.FromTrack(track with { Id = 71000 + index })).ToArray());
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.LibraryTrack is { Track.Id: 71000 } row &&
-            Math.Abs(row.Root.ActualHeight - TrackRowLayout.Height) < 1 / Window.DpiScale && Math.Abs(row.Cover.ActualWidth - TrackRowLayout.CoverSize) < 1 / Window.DpiScale && Math.Abs(row.Waveform.ActualHeight - TrackRowLayout.WaveformHeight) < 1 / Window.DpiScale));
+            Math.Abs(row.Root.ActualHeight - TrackRowLayout.Height) < 1 / Window.DpiScale && Math.Abs(row.Cover.ActualWidth - TrackRowLayout.CoverSize) < 1 / Window.DpiScale && Math.Abs(row.Waveform.ActualHeight - TrackRowLayout.WaveformHeight) < 1 / Window.DpiScale) &&
+            searchViews.Values.Any(view => view.LibraryTrack is { Track.Id: 71001 } next && next.Root.ActualHeight > 0));
         var librarySearchRows = searchViews.Values.Where(view => view.Block?.Kind == SearchBlockKind.LibraryTrack &&
             view.LibraryTrack?.Track != null).Select(view => view.LibraryTrack!).OrderBy(row => row.Root.Bounds.Y).ToArray();
         var firstSearchRow = librarySearchRows.First(row => row.Track!.Id == 71000);
@@ -267,9 +268,11 @@ internal sealed partial class MainWindow
             if (pageItems[likedList].LoadingCount != 0 || pageItems[likedGrid].LoadingCount != libraryColumns)
                 throw new InvalidOperationException("Pagination skeletons did not follow a list/grid view change");
             likesMode.Value = TrackViewMode.Waveform;
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && likedList.IsVisible);
             // The user keeps scrolling while the network reply is pending. The arriving
-            // page must preserve this position, rather than the request-start offset.
-            viewer.SetScrollOffsets(0, viewer.VerticalOffset - 260);
+            // page must preserve this position in real rows. Scroll past all three
+            // temporary rows so their removal cannot legitimately clamp the offset.
+            viewer.SetScrollOffsets(0, viewer.VerticalOffset - 3 * TrackRowLayout.Stride);
             var offset = viewer.VerticalOffset;
             for (var i = 0; i < 10; i++) CheckPageEnd();
             if (browser.Calls != 1) throw new InvalidOperationException("Infinite scrolling issued overlapping page requests");

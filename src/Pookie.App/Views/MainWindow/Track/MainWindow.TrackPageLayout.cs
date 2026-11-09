@@ -11,17 +11,17 @@ internal sealed partial class MainWindow
         trackDetailBackdrop = new Image().StretchMode(Stretch.UniformToFill);
         trackDetailBackdrop.IsHitTestVisible = false;
         // One title line plus the metadata line always occupies the play button's 64px header.
-        trackDetailTitle = new TextBlock().FontSize(28).Bold().Height(36).TextWrapping(TextWrapping.NoWrap).TextTrimming(TextTrimming.CharacterEllipsis);
-        trackDetailAuthor = new TextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        trackDetailTitle = new CommentTextBlock().FontSize(28).Bold().Height(36).TextWrapping(TextWrapping.NoWrap).TextTrimming(TextTrimming.CharacterEllipsis);
+        trackDetailAuthor = new CommentTextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachUserLink(trackDetailAuthor, () => trackDetailState?.Track.User);
-        trackDetailMeta = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        trackDetailMeta = new CommentTextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         trackDetailPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnSurface).Center();
         trackDetailPlay = TrackButtons.Icon(trackDetailPlayIcon,
             () => { if (trackDetailState is { } state) SelectLibraryTrack(state.Track); }, TrackButtons.Glass, 64);
         trackDetailWaveform = new TrackWaveform().Height(146);
         trackDetailWaveform.SeekRequested += fraction => { if (trackDetailState is { } state) Run(() => SeekLikedTrackAsync(state.Track, fraction)); };
-        trackDetailPosition = new TextBlock().Text("0:00").FontSize(11).Bold().Right();
-        trackDetailDuration = new TextBlock().FontSize(11).Right();
+        trackDetailPosition = new CommentTextBlock().Text("0:00").FontSize(11).Bold().Right();
+        trackDetailDuration = new CommentTextBlock().FontSize(11).Right();
         trackDetailMarkerLayer = new CommentMarkerLayer();
         trackDetailMarkerLayer.Columns("*").Rows("*").Height(146);
         trackWaveCommentPreview = new WaveCommentPreview();
@@ -51,12 +51,13 @@ internal sealed partial class MainWindow
         var playlist = AddToPlaylistButton(() => trackDetailState?.Track, TrackButtons.Glass, 44);
         var actions = trackCommentActions = new TrackCommentActionRow(TrackButtons.Connected(trackDetailLike, trackDetailRepost), comment,
             new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(ShareTrackButton(() => trackDetailState?.Track), playlist, copy, queue));
-        var coverFrame = new Border().Width(320).Height(320).CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
+        var coverFrame = new Border().CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
         var heroColumns = new TrackPageColumns(
             new ViewportGrid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
-            coverFrame, true, trackDetailBackdrop, trackDetailScrim = new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen()).Initialize();
+            coverFrame, true, trackDetailBackdrop, trackDetailScrim = new Border().Background(ArtworkBackdrop.CardScrim),
+            new ArtworkGlassSheen(deferResize: true)).Initialize();
         var hero = new Border().CornerRadius(20).ClipToBounds().Background(Raised).Child(heroColumns);
-        trackDetailGlass = AttachCardGlass(heroColumns);
+        trackDetailGlass = AttachCardGlass(heroColumns, deferRefraction: true);
         var heroShadow = new CardShadow(hero).Margin(-12, -8, -12, -16);
         trackDetailError = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         trackDetailDescription = new DescriptionTextBlock { FontSize = 14, FontWeight = FontWeight.Normal, Foreground = Muted };
