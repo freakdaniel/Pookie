@@ -36,6 +36,34 @@ public sealed class SessionRecoveryTests
     }
 
     [Fact]
+    public async Task ConcurrentUnauthorizedRequestsShareTokenRotationAndRetryOnce()
+    {
+        var account = Session() with { VerifiedUserId = 7 };
+        var rejected = 0;
+        var accepted = 0;
+        var bothRejected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var browser = new Browser(_ => { account = account with { AccessToken = "rotated-token" }; return Task.CompletedTask; });
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            if (request.Headers.Authorization?.Parameter == "rotated-token")
+            {
+                Interlocked.Increment(ref accepted);
+                return Reply();
+            }
+            if (Interlocked.Increment(ref rejected) == 2) bothRejected.SetResult();
+            await bothRejected.Task.WaitAsync(token);
+            return Reply(401);
+        }));
+        using var native = new SoundCloudHttpTransport(http, () => account, browser);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(native.SetLikedAsync(7, 42, true, timeout.Token), native.SetLikedAsync(7, 43, true, timeout.Token));
+        Assert.Equal(2, rejected);
+        Assert.Equal(2, accepted);
+        Assert.Equal(1, browser.Preparations);
+        Assert.Equal(0, browser.Writes);
+    }
+
+    [Fact]
     public async Task BrowserFallbackNeverReplaysCompletedMutationAndPreparationIsNotRepeated()
     {
         var account = Session(); var attempts = 0;

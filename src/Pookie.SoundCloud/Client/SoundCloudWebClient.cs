@@ -100,7 +100,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
                 throw new SoundCloudException("SoundCloud запросил браузерную проверку. Повтори действие после проверки на сайте.", 403, requiresBrowserVerification: true);
             var message = response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => "Сессия SoundCloud истекла или web API отклонил запрос. Войди в SoundCloud ещё раз.",
+                HttpStatusCode.Unauthorized => "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.",
                 HttpStatusCode.Forbidden => "SoundCloud запретил доступ к этому ресурсу.",
                 HttpStatusCode.NotFound => "Трек или ресурс SoundCloud не найден.",
                 HttpStatusCode.TooManyRequests => "SoundCloud ограничил частоту запросов. Повтори позже.",

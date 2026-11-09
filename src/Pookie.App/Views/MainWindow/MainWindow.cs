@@ -231,7 +231,7 @@ internal sealed partial class MainWindow : IDisposable
         Run(async () =>
         {
             try { await StartupLog.RunAsync("startup.initialize", InitializeAsync); }
-            catch (SoundCloudException error) when (error.StatusCode == 401)
+            catch (SoundCloudException error) when (error.SessionRejected)
             {
                 await DisconnectSoundCloudAsync(forgetAccount: false);
             }
@@ -664,7 +664,7 @@ internal sealed partial class MainWindow : IDisposable
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
             ReplaceTracks(new TrackPage([], null));
             status.Value = forgetAccount ? "Ты вышел из SoundCloud. Войди снова, чтобы продолжить." :
-                "Сессия SoundCloud истекла. Подтверди вход в Pookie.";
+                "SoundCloud не подтвердил вход. Подключи аккаунт в Pookie.";
             loginError.Text = forgetAccount ? "" : status.Value;
             loginError.IsVisible = !forgetAccount;
             await ShowLoginScreenAsync();
@@ -746,13 +746,13 @@ internal sealed partial class MainWindow : IDisposable
         var startedBrowser = browser;
         try { await action(); }
         catch (OperationCanceledException) { AppLog.For("Pookie.UI").Debug("Операция отменена"); }
-        catch (SoundCloudException error) when (error.StatusCode == 401 && signedIn.Value)
+        catch (SoundCloudException error) when (error.SessionRejected && signedIn.Value)
         {
             if (browser != startedBrowser) return;
-            AppLog.For("Pookie.Session").Warning("Сессия SoundCloud истекла; требуется вход");
+            AppLog.For("Pookie.Session").Warning("SoundCloud не подтвердил восстановление входа");
             try { await DisconnectSoundCloudAsync(forgetAccount: false); }
             catch (Exception disconnectError) when (!disposed)
-            { AppLog.Failure("Pookie.Session", "Не удалось отключить истёкшую сессию", disconnectError); status.Value = FriendlyError(disconnectError); }
+            { AppLog.Failure("Pookie.Session", "Не удалось отключить сессию SoundCloud", disconnectError); status.Value = FriendlyError(disconnectError); }
         }
         catch (Exception error)
         {
@@ -859,7 +859,7 @@ internal sealed partial class MainWindow : IDisposable
         if (nativeSoundCloud == null) return await connected.GetMeAsync(token);
         SoundCloudUser user;
         try { user = await api.GetMeAsync(token); }
-        catch (SoundCloudException error) when (error.StatusCode == 401)
+        catch (SoundCloudException error) when (error.StatusCode == 401 && !error.SessionRejected)
         {
             // The signed-in website can refresh an expired access token.
             return await connected.GetMeAsync(token);

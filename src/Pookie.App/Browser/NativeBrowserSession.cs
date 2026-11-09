@@ -12,7 +12,8 @@ namespace Pookie.App.Browser;
 // One live website per account. Secrets travel through stdin, never through argv or logs.
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, ISoundCloudSessionVerifier, IBrowserAudioSession
 {
-    private WebSession account = account;
+    // A token rotation must preserve the identity used by in-flight UI operations.
+    private WebSession account = account.SessionId == null ? account with { SessionId = Guid.NewGuid().ToString("N") } : account;
     private readonly BrowserRequestLog requestLog = new();
     private readonly SemaphoreSlim requests = new(1);
     private readonly CancellationTokenSource lifetime = new();
@@ -23,7 +24,12 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private EmbeddedWebWorker? embedded;
     private Task embeddedClosing = Task.CompletedTask;
     internal EmbeddedWebWorker? Embedded => embedded;
-    internal void UseEmbedded(EmbeddedWebWorker value) { embedded = value; value.Changed += BrowserChanged; }
+    internal void UseEmbedded(EmbeddedWebWorker value)
+    {
+        value.UpdateAccount(Account);
+        embedded = value;
+        value.Changed += BrowserChanged;
+    }
     public event Action<BrowserRequestEvent>? Changed;
     public WebSession Account { get { lock (sync) return account; } }
 
@@ -60,17 +66,28 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         if (result.User is not { Id: > 0 and <= 9007199254740991 } user) throw new InvalidOperationException("SoundCloud не вернул профиль.");
         var current = Account;
         if (current.VerifiedUserId is { } expected && expected != user.Id)
-            throw new SoundCloudException("Аккаунт в браузере Pookie изменился. Подтверди вход в SoundCloud.", 401);
-        if (result.Session is { } refreshed)
-        {
-            if (current.VerifiedUserId != user.Id || refreshed.VerifiedUserId != user.Id ||
-                refreshed.ClientId != current.ClientId || refreshed.UserAgent != current.UserAgent || refreshed.SessionId != current.SessionId)
-                throw new SoundCloudException("SoundCloud не подтвердил восстановление сохранённого аккаунта.", 401);
-            UpdateAccount(current with { AccessToken = refreshed.AccessToken });
-        }
-        else if (current.VerifiedUserId == null) UpdateAccount(current with { VerifiedUserId = user.Id });
+            throw new SoundCloudException("Аккаунт в браузере Pookie изменился. Подтверди вход в SoundCloud.", 401) { SessionRejected = true };
         return user;
     }
+
+    private void ApplyVerifiedProfile(BrowserRequestCommand command, BrowserRequestEvent result)
+    {
+        if (result.Session == null && (command.Operation != "me" || result.User == null)) return;
+        var current = Account;
+        if (result.Session is { } updated)
+        {
+            if (current.VerifiedUserId is not { } expected || result.User?.Id != expected || updated.VerifiedUserId != expected ||
+                updated.ClientId != current.ClientId || updated.UserAgent != current.UserAgent || updated.SessionId != current.SessionId)
+                throw new SoundCloudException("SoundCloud не подтвердил обновление сохранённого аккаунта.", 401);
+            UpdateAccount(current with { AccessToken = updated.AccessToken });
+        }
+        else if (current.VerifiedUserId == null && result.User is { Id: > 0 and <= 9007199254740991 } user)
+            UpdateAccount(current with { VerifiedUserId = user.Id });
+    }
+
+    private static SoundCloudException RequestUnauthorized(BrowserRequestEvent result) => new(
+        result.SessionRejected ? "SoundCloud не подтвердил вход. Подключи аккаунт в Pookie." :
+            "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.", 401) { SessionRejected = result.SessionRejected };
 
     internal async Task ResetBlockedBrowserAsync(CancellationToken token)
     {
@@ -210,10 +227,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                     var result = await (ordered ? StartupLog.RunAsync(stage + ".response", () => response.Task.WaitAsync(timeout.Token))
                         : response.Task.WaitAsync(timeout.Token)).ConfigureAwait(false);
                     if (ordered) StartupLog.HttpStatus(stage, result.Status);
+                    ApplyVerifiedProfile(command, result);
                     if (result.Status is >= 200 and < 300) return result;
                     throw result.Status switch
                     {
-                        401 => new SoundCloudException("Сессия SoundCloud истекла. Войди в аккаунт ещё раз.", 401),
+                        401 => RequestUnauthorized(result),
                         403 when current.Blocked => BrowserBlocked(),
                         403 => new SoundCloudException("SoundCloud отклонил запрос в браузере. Проверка могла не завершиться или ресурс недоступен.", 403),
                         404 => new SoundCloudException("Трек или ресурс SoundCloud не найден.", 404),
@@ -249,10 +267,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                 if (write) _ = web.ResetAsync(); else _ = web.CancelReadAsync(command.Id);
             });
             var result = await web.RequestAsync(command, timeout.Token).ConfigureAwait(false);
+            ApplyVerifiedProfile(command, result);
             if (result.Status is >= 200 and < 300) return result;
+            if (result.Status == 401) throw RequestUnauthorized(result);
             throw new SoundCloudException(result.Status switch
             {
-                401 => "Сессия SoundCloud истекла. Войди в аккаунт ещё раз.",
                 403 => "SoundCloud отклонил действие в браузере.",
                 429 => "SoundCloud ограничил частоту запросов. Повтори позже.",
                 _ => "Браузер SoundCloud не подтвердил действие."

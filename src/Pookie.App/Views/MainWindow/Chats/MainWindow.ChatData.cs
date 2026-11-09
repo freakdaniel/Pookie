@@ -195,7 +195,7 @@ internal sealed partial class MainWindow
         {
             if (ChatCurrent(session, user.Id, revision)) chatsStatus.Value = FriendlyError(error);
             chatNextPoll = DateTimeOffset.UtcNow.AddSeconds(error is SoundCloudException { StatusCode: 429 } ? 60 : 15);
-            if (error is SoundCloudException { StatusCode: 401 } && api.Session == session) throw;
+            if (error is SoundCloudException { SessionRejected: true } && api.Session == session) throw;
         }
         finally { if (chatRevision == revision) { chatsBusy = false; RefreshChatLoading(); } }
         if (!token.IsCancellationRequested && AllowChatRefresh && ChatCurrent(session, user.Id, revision) && page.Value == Page.Chats && chatRecipient != null) await RefreshChatThreadAsync();
@@ -420,7 +420,7 @@ internal sealed partial class MainWindow
         catch (Exception error)
         {
             if (ChatCurrent(session, user.Id, revision)) chatThreadStatus.Value = FriendlyError(error);
-            if (error is SoundCloudException { StatusCode: 401 } && api.Session == session) throw;
+            if (error is SoundCloudException { SessionRejected: true } && api.Session == session) throw;
         }
         finally
         {

@@ -39,12 +39,14 @@ test('profile verification prefers the website token for the confirmed account',
     const verified = h.messages.at(-1);
     assert.equal(verified.status,accepted ? 200 : 401);
     assert.equal(verified.session?.access_token,accepted ? 'refreshed-token' : undefined);
+    assert.equal(Boolean(verified.session_rejected), Boolean(savedId && cookieUser !== savedId));
     assert.equal(h.calls.length,1);
     assert.equal(h.calls[0][1].headers.Authorization,savedId ? 'OAuth refreshed-token' : 'OAuth secret-token');
 
     h.window.__pookieRequest(command(2)); await tick();
-    assert.equal(h.calls.at(-1)[1].headers.Authorization,accepted ? 'OAuth refreshed-token' : 'OAuth secret-token');
-    assert.equal(h.calls.filter(([,options])=>options.method==='PUT').length,1);
+    const writes = h.calls.filter(([,options])=>options.method==='PUT');
+    assert.equal(writes.length,1);
+    assert.equal(writes[0][1].headers.Authorization,accepted ? 'OAuth refreshed-token' : 'OAuth secret-token');
     assert.equal(h.messages.at(-1).status,401);
   }
 });
@@ -78,6 +80,74 @@ test('profile verification refreshes the same-origin cookie once after 401', asy
     assert.equal(result.session?.access_token,expected === 200 ? replacement : undefined);
     assert.deepEqual(h.calls.map(([,options])=>options.method),replacement ? ['GET','POST','GET'] : ['GET','POST']);
     assert.equal(h.calls[0][1].headers.Authorization,'OAuth expired-website-token');
+  }
+});
+
+test('expired chat polling joins the website refresh and resumes queued requests under the same account', async () => {
+  const h = harness((url, options) => {
+    assert.equal(options.method,'GET');
+    const path = new URL(url).pathname;
+    if (path === '/me' && options.headers.Authorization === 'OAuth secret-token' && !expired)
+      return response(200, {id:42});
+    if (options.headers.Authorization !== 'OAuth rotated-token') return response(401);
+    return response(200, path === '/me' ? {id:42} : {collection:[]});
+  }, 'https://soundcloud.com', false, true, true, true, {verified_user_id:42});
+  let expired = false, refreshes = 0;
+  let finishRefresh;
+  const refreshing = new Promise(resolve => { finishRefresh = resolve; });
+  const modules = {
+    tokenRefreshProxyWebi: function tokenRefreshProxyWebi(module) {
+      module.exports = {getTokenExpiryManager:() => ({
+        async waitOrRefreshToken() {
+          refreshes++;
+          await refreshing;
+          h.document.cookie = 'oauth_token=rotated-token';
+          return true;
+        }
+      })};
+    }
+  };
+  const require = id => { const module = {exports:{}}; modules[id](module); return module.exports; };
+  require.m = modules;
+  h.window.webpackJsonp = {push:entry => Object.values(entry[1])[0]({}, {}, require)};
+  h.document.cookie = 'oauth_token=secret-token';
+  h.window.__pookieRequest(command(1400,'me')); await tick();
+  expired = true;
+  const poll = id => ({id:command(id).id,operation:'chat',chat:{kind:'list',user_id:42}});
+  h.window.__pookieRequest(poll(1401));
+  h.window.__pookieRequest(poll(1402));
+  await tick();
+  assert.equal(refreshes,1);
+  assert.equal(h.calls.length,3);
+  finishRefresh(); await tick();
+  assert.equal(refreshes,1);
+  assert.deepEqual(h.calls.slice(1).map(([url,options])=>[new URL(url).pathname,options.headers.Authorization]),[
+    ['/users/42/conversations','OAuth secret-token'], ['/me','OAuth secret-token'],
+    ['/me','OAuth rotated-token'], ['/users/42/conversations','OAuth rotated-token'], ['/users/42/conversations','OAuth rotated-token']
+  ]);
+  const completions = h.messages.filter(message=>message.kind==='complete').slice(1);
+  assert.deepEqual(completions.map(message=>message.status),[200,200]);
+  assert.equal(completions[0].session.access_token,'rotated-token');
+  assert.equal(completions[0].session.verified_user_id,42);
+  assert.equal(completions[1].session,undefined);
+});
+
+test('a chat 401 only rejects the session if the website also rejects account recovery', async () => {
+  for (const [profileStatus, refreshStatus, rejected] of [[200,0,false],[401,503,false],[401,401,true]]) {
+    let verified = false;
+    const h = harness(url => {
+      const path = new URL(url).pathname;
+      if (path === '/api/refresh-token') return response(refreshStatus);
+      if (path === '/me') return response(verified ? profileStatus : 200, {id:42});
+      return response(401);
+    }, 'https://soundcloud.com', false, true, true, true, {verified_user_id:42});
+    h.window.__pookieRequest(command(1403,'me')); await tick();
+    verified = true;
+    h.window.__pookieRequest({id:command(1404).id,operation:'chat',chat:{kind:'list',user_id:42}});
+    await tick();
+    assert.equal(h.calls.length,refreshStatus ? 4 : 3);
+    assert.equal(h.messages.at(-1).status,401);
+    assert.equal(Boolean(h.messages.at(-1).session_rejected),rejected);
   }
 });
 

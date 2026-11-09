@@ -118,6 +118,7 @@ public sealed record BrowserRequestEvent(string Kind, string RequestId = "", int
     public BrowserRequestTrace? Trace { get; init; }
     [JsonIgnore] public string? Json { get; init; }
     public WebSession? Session { get; init; }
+    public bool SessionRejected { get; init; }
     public override string ToString() => $"Browser event ({Kind}, HTTP {Status}; session redacted)";
 }
 
@@ -139,7 +140,8 @@ public static class BrowserRequestProtocol
             }
             var message = root.GetProperty("data").Deserialize(SoundCloudJson.Default.BrowserRequestEvent);
             if (message == null || message.Status is < 0 or > 599) return null;
-            if (message.Session is { } session && (string.IsNullOrEmpty(pairing) || message.Kind != "complete" || message.Status is < 200 or >= 300 ||
+            if (message.SessionRejected && (string.IsNullOrEmpty(pairing) || message.Kind != "complete" || message.Status != 401 || message.Session != null || message.Audio != null)) return null;
+            if (message.Session is { } session && (string.IsNullOrEmpty(pairing) || message.Kind != "complete" || message.Audio != null ||
                 message.User is not { Id: > 0 } user || session.VerifiedUserId != user.Id || session.DataDomeClientId != null || !session.IsValid())) return null;
             if (message.ChallengeType != null && message.ChallengeType is not ("device_check" or "device_check_invisible_mode" or "block" or "hard_block" or "unknown")) return null;
             if (message.Kind == "protection-session" && !WebSession.IsDataDomeClientId(message.DataDomeClientId)) return null;

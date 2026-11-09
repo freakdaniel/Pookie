@@ -23,7 +23,12 @@
   // revive a rejected session. Never write it back into cookie/localStorage.
   const post = window.__pookiePost;
   if (typeof post !== 'function') return;
-  const send = data => post({ id: 'pookie:web-api', version: 1, data });
+  const send = data => {
+    const context = data.kind === 'complete' ? active.get(data.request_id) : null;
+    if (context?.refreshed) Object.assign(data, context.refreshed);
+    if (context?.sessionRejected && data.status === 401) data.session_rejected = true;
+    post({ id: 'pookie:web-api', version: 1, data });
+  };
   let lastProtection = '';
   function persistProtection() {
     try {
@@ -150,8 +155,20 @@
         challenge_active: Boolean(challenge), has_protection: hasBrowserSession(), reason } });
   }
 
-  async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json', accessToken = account.access_token) {
-    const sessionRefresh = url.href === sessionRefreshUrl && method === 'POST' && context.operation === 'me';
+  async function fetchProtected(url, method, context, body, replay = true, contentType = 'application/json') {
+    const token = account.access_token;
+    const response = await fetchWithProtection(url, method, context, body, replay, contentType, token);
+    if (response.status !== 401 || !account.verified_user_id || context.authChecked) return response;
+    context.authChecked = true;
+    await verifyWebsiteProfile(context);
+    if (token === account.access_token) return response;
+    // Retry only the rejected HTTP request. Earlier steps in the command may
+    // already have succeeded, and a network error does not justify replay.
+    return fetchWithProtection(url, method, context, body, replay, contentType, account.access_token);
+  }
+
+  async function fetchWithProtection(url, method, context, body, replay, contentType, accessToken) {
+    const sessionRefresh = url.href === sessionRefreshUrl && method === 'POST';
     const fetchNumber = ++context.fetchNumber;
     checkCancelled(context);
     if (!readySent) trace(context, 'wait-ready', method, fetchNumber);
@@ -175,7 +192,8 @@
         // Use the live fetch intercepted by the website's DataDome tag, not .NET HTTP or a saved cookie.
         response = await wait(window.fetch(url.href, {
           method,
-          ...(method === 'GET' && context.operation === 'chat' ? { cache: 'no-store' } : {}),
+          ...(method === 'GET' && (context.operation === 'chat' || url.origin === apiOrigin && url.pathname === '/me') ?
+            { cache: 'no-store' } : {}),
           ...(url.origin === apiOrigin && url.pathname.startsWith('/me/play-history') ?
             { credentials: 'include', ...(method === 'GET' ? { cache: 'no-store' } : {}) } : {}),
           ...(sessionRefresh ? { credentials: 'include' } : { headers: {
@@ -219,41 +237,41 @@
     } catch { return null; }
   }
 
-  async function verifyProfile(url, command, context) {
+  async function verifyWebsiteProfile(context) {
     const expected = account.verified_user_id;
     const bound = Number.isSafeInteger(expected) && expected > 0;
-    const readProfile = token => fetchProtected(url, 'GET', context, undefined, true, undefined, token);
+    const readProfile = token => fetchWithProtection(new URL('/me', apiOrigin), 'GET', context, undefined, true, undefined, token);
     let token = (bound && websiteOAuthToken()) || account.access_token;
     let response = await readProfile(token);
     if (response.status === 401 && bound) {
       let updated = websiteOAuthToken();
       if (!updated || updated === token) {
-        // SoundCloud rotates its HttpOnly refresh cookie on the server. This
-        // request uses the live profile and is never replayed by the bridge.
-        const refresh = await fetchProtected(new URL(sessionRefreshUrl), 'POST', context, undefined, false);
-        if (refresh.ok) updated = websiteOAuthToken();
-        else if (refresh.status !== 400 && refresh.status !== 401) response = refresh;
+        const status = await refreshWebsiteCookie(context);
+        updated = websiteOAuthToken();
+        if (!updated || updated === token) {
+          if (status === 401 || status === 400 && !updated) context.sessionRejected = true;
+          else if (status && status !== 400 && (status < 200 || status >= 300)) response = { status, ok: false };
+        }
       }
       if (updated && updated !== token) {
         token = updated;
         response = await readProfile(token);
       }
     }
-    const result = { kind: 'complete', request_id: command.id, status: response.status };
-    if (response.ok) {
-      const { json: user } = await readJson(response, context);
-      if (!Number.isSafeInteger(user?.id) || user.id <= 0 || (expected != null && expected !== user.id)) {
-        send({ ...result, status: 401 });
-        return;
-      }
-      historyUserId = account.verified_user_id = user.id;
-      result.user = { id: user.id, username: user.username, avatar_url: user.avatar_url };
-      if (token !== account.access_token) {
-        account.access_token = token;
-        result.session = { ...account, data_dome_client_id: null };
-      }
+    if (!response.ok) return { status: response.status };
+    const { json: user } = await readJson(response, context);
+    if (!Number.isSafeInteger(user?.id) || user.id <= 0) return { status: 0 };
+    if (bound && expected !== user.id) {
+      context.sessionRejected = true;
+      return { status: 401 };
     }
-    send(result);
+    historyUserId = account.verified_user_id = user.id;
+    const profile = { id: user.id, username: user.username, avatar_url: user.avatar_url };
+    if (token !== account.access_token) {
+      account.access_token = token;
+      context.refreshed = { user: profile, session: { ...account, data_dome_client_id: null } };
+    }
+    return { status: response.status, user: profile };
   }
 
   function readUrl(value) {
@@ -295,21 +313,48 @@
     return { text, json: JSON.parse(text) };
   }
 
-  // Use SoundCloud's live signing helper for its own follow endpoint. No copied
-  // signature secret or stale browser identity is stored in the desktop app.
   let siteModules;
-  function followSignature(userId, artistId) {
+  function getSiteModules() {
     if (!siteModules && window.webpackJsonp?.push) {
-      const moduleId = 'pookie-follow-bridge';
+      const moduleId = 'pookie-site-bridge';
       window.webpackJsonp.push([[moduleId], { [moduleId]: (_module, _exports, require) => { siteModules = require; } }, [[moduleId]]]);
     }
-    if (!siteModules?.m) throw new Error('website-follow-helper-unavailable');
-    const modules = Object.entries(siteModules.m);
+    return siteModules?.m ? siteModules : null;
+  }
+
+  async function refreshWebsiteCookie(context) {
+    let manager;
+    if (websiteOAuthToken()) {
+      try {
+        const modules = getSiteModules();
+        const entry = modules && Object.entries(modules.m).find(([, factory]) => {
+          const source = factory.toString();
+          return source.includes('getTokenExpiryManager') && source.includes('tokenRefreshProxyWebi');
+        });
+        manager = entry && modules(entry[0]).getTokenExpiryManager();
+      } catch { /* The site's bundle layout can change. */ }
+    }
+    checkCancelled(context);
+    if (typeof manager?.waitOrRefreshToken === 'function') {
+      // Join the site's refresh lock so the browser never races its own cookie rotation.
+      return await wait(manager.waitOrRefreshToken(), context) ? 204 : 0;
+    }
+    // Same cookie-only request as the site. Never replay a refresh POST.
+    const refresh = await fetchWithProtection(new URL(sessionRefreshUrl), 'POST', context, undefined, false);
+    return refresh.status;
+  }
+
+  // Use SoundCloud's live signing helper for its own follow endpoint. No copied
+  // signature secret or stale browser identity is stored in the desktop app.
+  function followSignature(userId, artistId) {
+    const require = getSiteModules();
+    if (!require) throw new Error('website-follow-helper-unavailable');
+    const modules = Object.entries(require.m);
     const signer = modules.find(([, factory]) => factory.toString().includes('__FOLLOWS_SIGNATURE_VERSION__'));
     const secret = modules.find(([, factory]) => factory.toString().includes('__FOLLOWS_SIGNATURE_SECRET__') &&
       !factory.toString().includes('getCreateEndpointQueryParams'));
     if (!signer || !secret) throw new Error('website-follow-helper-unavailable');
-    return siteModules(signer[0]).sign(userId, artistId, account.client_id, siteModules(secret[0]).__FOLLOWS_SIGNATURE_SECRET__);
+    return require(signer[0]).sign(userId, artistId, account.client_id, require(secret[0]).__FOLLOWS_SIGNATURE_SECRET__);
   }
 
   async function addToPlaylist(command, context) {
@@ -513,7 +558,7 @@
     const url = new URL(command.operation === 'me' ? '/me' : command.operation === 'liked-ids' ?
       '/me/track_likes/ids?limit=200&linked_partitioning=1' : command.operation === 'repost' ? `/me/track_reposts/${command.track_id}` : `/users/${command.user_id}/track_likes/${command.track_id}`, apiOrigin);
     if (command.operation === 'me') {
-      await verifyProfile(url, command, context);
+      send({ kind: 'complete', request_id: command.id, ...await verifyWebsiteProfile(context) });
     } else if (command.operation === 'liked-ids') {
       let target = url, count = 0, pages = 0;
       const seen = new Set();

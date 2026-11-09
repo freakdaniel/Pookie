@@ -52,7 +52,7 @@ internal sealed partial class MainWindow
         {
             try { return await fetch(); }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch (SoundCloudException error) when (error.StatusCode == 401) { throw; }
+            catch (SoundCloudException error) when (error.SessionRejected) { throw; }
             catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or OperationCanceledException or NotSupportedException)
             {
                 if (Current()) homeErrors.Add(section);

@@ -6,6 +6,7 @@ public sealed class SoundCloudException(string message, int statusCode = 0, bool
     public DateTimeOffset? RetryAfterUtc { get; init; }
     public int StatusCode { get; } = statusCode;
     public bool RequiresBrowserVerification { get; } = requiresBrowserVerification;
+    public bool SessionRejected { get; init; }
     // Only fresh track metadata can establish this; a missing/expired CDN URL cannot.
     public bool TrackUnavailable { get; } = trackUnavailable;
 }

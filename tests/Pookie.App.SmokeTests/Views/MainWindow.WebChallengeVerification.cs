@@ -5,16 +5,18 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    internal void StartWebChallengeVerification(string root, string profile, Action<int> solve, Func<int, int> calls, Func<int> documents) => Run(async () =>
+    internal void StartWebChallengeVerification(string root, string profile, Action<int> solve, Func<int, int> calls, Func<int> documents,
+        Action expireDuringUse) => Run(async () =>
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         try
         {
             while (startupSplash.IsVisible) await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
+            preferences = preferences with { ChatBackgroundRefresh = false };
             var account = new WebSession("fixture", "fixture-expired", "Test") { VerifiedUserId = 42 };
             var connected = new NativeBrowserSession(account);
             var worker = new EmbeddedWebWorker(Window, account, root + "/", profile);
-            connected.UseEmbedded(worker); AttachBrowser(connected, useNativeHttp: false); api.Session = account;
+            connected.UseEmbedded(worker); AttachBrowser(connected, useNativeHttp: false);
             me = await connected.GetMeAsync(timeout.Token); signedIn.Value = true;
             if (me.Id != 42 || connected.Account.AccessToken != "fixture-token")
                 throw new InvalidOperationException("The saved account was not renewed from the existing website profile.");
@@ -77,6 +79,25 @@ internal sealed partial class MainWindow
                 !LibraryItems("history").Select(item => item.Track?.Id).SequenceEqual(new long?[] { 31, 32 }))
                 throw new InvalidOperationException("Retrying history did not restore the read without replaying the blocked write.");
             Console.WriteLine("WEB_SESSION_RECOVERY_OK: renewed saved credentials, kept local history through a hard block, retried the read only");
+
+            var checkedFailure = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Run(async () =>
+            {
+                try { using var response = await connected.RequestChatAsync(new("list", 42), timeout.Token); }
+                finally { checkedFailure.TrySetResult(); }
+            });
+            await checkedFailure.Task.WaitAsync(timeout.Token);
+            await WaitForLoginFrameAsync().WaitAsync(timeout.Token);
+            if (!signedIn.Value || !workspace.IsVisible || loginScreen.IsVisible || browser != connected)
+                throw new InvalidOperationException("An isolated chat rejection signed out the active account.");
+            var previousAccount = connected.Account;
+            var currentView = worker.View;
+            expireDuringUse();
+            using (await connected.RequestChatAsync(new("list", 42), timeout.Token)) { }
+            if (connected.Account.AccessToken != "fixture-token-renewed" || connected.Account != previousAccount ||
+                !signedIn.Value || loginScreen.IsVisible || worker.View != currentView || documents() != 3)
+                throw new InvalidOperationException("Runtime refresh did not preserve the verified account and its existing WebView.");
+            Console.WriteLine("WEB_RUNTIME_SESSION_OK: isolated chat 401 keeps the workspace; expired token rotates and resumes polling in the same WebView");
 
             async Task VisibleAsync(Task operation)
             {

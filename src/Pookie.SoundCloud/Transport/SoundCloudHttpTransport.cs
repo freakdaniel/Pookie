@@ -107,6 +107,31 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         var accessToken = account.AccessToken;
         var generation = Interlocked.Read(ref preparationGeneration);
         try { return await SendAuthorizedAsync(method, uri, body, contentType, expectJson, account, stop, validate).ConfigureAwait(false); }
+        catch (SoundCloudException error) when (error.StatusCode == 401 && !error.RequiresBrowserVerification &&
+            account.VerifiedUserId != null && verification is ISoundCloudSessionVerifier verifier)
+        {
+            await recovery.WaitAsync(stop).ConfigureAwait(false);
+            try
+            {
+                var current = Account();
+                EnsureSameAccount(current);
+                if (current.AccessToken == accessToken)
+                {
+                    await verifier.PrepareSessionAsync(stop).ConfigureAwait(false);
+                    current = Account();
+                    EnsureSameAccount(current);
+                    if (current.AccessToken == accessToken) throw;
+                }
+                return await SendAuthorizedAsync(method, uri, body, contentType, expectJson, current, stop, validate).ConfigureAwait(false);
+            }
+            finally { recovery.Release(); }
+
+            void EnsureSameAccount(WebSession current)
+            {
+                if (account.VerifiedUserId != current.VerifiedUserId || !(account with { AccessToken = current.AccessToken }).Equals(current))
+                    throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+            }
+        }
         catch (SoundCloudException error) when (error.RequiresBrowserVerification &&
             (verify != null || verification is ISoundCloudSessionVerifier))
         {
@@ -238,7 +263,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             if (!response.IsSuccessStatusCode)
                 throw new SoundCloudException(response.StatusCode switch
                 {
-                    HttpStatusCode.Unauthorized => "Сессия SoundCloud истекла. Войди ещё раз.",
+                    HttpStatusCode.Unauthorized => "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.",
                     HttpStatusCode.Forbidden => "SoundCloud запретил доступ к ресурсу.",
                     HttpStatusCode.NotFound => "Ресурс SoundCloud не найден.",
                     _ => "SoundCloud не выполнил запрос."

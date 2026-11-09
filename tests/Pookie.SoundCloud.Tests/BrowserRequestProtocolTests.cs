@@ -29,9 +29,14 @@ public sealed class BrowserRequestProtocolTests
         Assert.Equal("refreshed-token", Parse(message)?.Session?.AccessToken);
         Assert.Null(Parse(message, null));
         Assert.Null(Parse(message, "wrong"));
-        Assert.Null(Parse(message with { Status = 401 }));
+        Assert.Equal("refreshed-token", Parse(message with { Status = 401 })?.Session?.AccessToken);
+        Assert.Null(Parse(message with { Status = 401, SessionRejected = true }));
         Assert.Null(Parse(message with { User = new() { Id = 99 } }));
         Assert.Null(Parse(message with { Kind = "session" }));
+        var rejected = message with { Status = 401, Session = null, User = null, SessionRejected = true };
+        Assert.True(Parse(rejected)!.SessionRejected);
+        Assert.Null(Parse(rejected, null));
+        Assert.Null(Parse(rejected with { Status = 403 }));
     }
 
     [Theory]
