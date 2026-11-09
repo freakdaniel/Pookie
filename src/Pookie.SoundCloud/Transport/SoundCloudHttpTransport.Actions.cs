@@ -92,7 +92,7 @@ public sealed partial class SoundCloudHttpTransport
     {
         var account = Account();
 
-        using var current = await GetJsonAsync(Api($"/playlists/{playlistId}?representation=full"), cancellationToken).ConfigureAwait(false);
+        using var current = await ReadPlaylistSnapshotAsync(Api($"/playlists/{playlistId}?representation=full"), account, cancellationToken).ConfigureAwait(false);
         var playlist = current.RootElement;
         if (!MatchesResource(playlist, "playlists", playlistId) || !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", userId) ||
             playlist.TryGetProperty("is_album", out var album) && album.ValueKind == JsonValueKind.True)
@@ -103,6 +103,81 @@ public sealed partial class SoundCloudHttpTransport
             throw new SoundCloudException("Плейлист заполнен.");
         // SoundCloud's playlist model saves its complete numeric track order.
         // Do not replace the list unless the fresh full snapshot is intact.
+        var ids = ReadPlaylistOrder(playlist, tracks);
+        ids.Add(trackId);
+        await ActionAsync(HttpMethod.Put, $"/playlists/{playlistId}", PlaylistEditBody(null, ids),
+            verification == null ? null : ct => verification.AddToPlaylistAsync(userId, playlistId, trackId, ct), cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!request.IsValid()) throw new ArgumentException("Некорректное изменение плейлиста.");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+        var token = cancellation.Token;
+        await playlistEdits.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var account = Account();
+            var path = $"/playlists/{request.PlaylistId}";
+            var full = Api(path + "?representation=full");
+            using var current = await ReadPlaylistSnapshotAsync(full, account, token).ConfigureAwait(false);
+            var playlist = current.RootElement;
+            if (!MatchesResource(playlist, "playlists", request.PlaylistId) ||
+                !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", request.UserId) ||
+                playlist.TryGetProperty("is_album", out var album) && album.ValueKind == JsonValueKind.True ||
+                playlist.TryGetProperty("is_system_playlist", out var system) && system.ValueKind == JsonValueKind.True)
+                throw new SoundCloudException("Этот плейлист нельзя редактировать.");
+
+            var update = request.Update;
+            List<long>? order = null;
+            if (request.Kind == "remove" || update?.TrackIds != null || update?.ExpectedTrackIds != null)
+            {
+                playlist.TryGetProperty("tracks", out var tracks);
+                order = ReadPlaylistOrder(playlist, tracks);
+                if (update?.ExpectedTrackIds is { } expected && !order.SequenceEqual(expected))
+                    throw new SoundCloudException("Порядок треков изменился. Обнови плейлист и повтори действие.");
+            }
+
+            var delete = request.Kind == "delete";
+            var contentType = "application/json";
+            byte[]? body = null;
+            if (request.Artwork is { } artwork)
+            {
+                using var form = new MultipartFormDataContent();
+                var image = new ByteArrayContent(Convert.FromBase64String(artwork));
+                image.Headers.ContentType = new("image/jpeg");
+                form.Add(image, "playlist[artwork_data]", "artwork.jpg");
+                contentType = form.Headers.ContentType!.ToString();
+                body = await form.ReadAsByteArrayAsync(token).ConfigureAwait(false);
+            }
+            else if (!delete)
+            {
+                var ids = request.Kind == "remove" ? order!.Where(id => id != request.TrackId) : update?.TrackIds;
+                body = PlaylistEditBody(update, ids);
+            }
+
+            var confirmedInBrowser = false;
+            var result = await ExecuteAsync(delete ? HttpMethod.Delete : HttpMethod.Put, Api(path), body,
+                verification == null ? null : async ct =>
+                {
+                    var confirmed = await verification.EditPlaylistAsync(request, ct).ConfigureAwait(false);
+                    confirmedInBrowser = true;
+                    return confirmed;
+                }, token, contentType, expectJson: false, expectedAccount: account).ConfigureAwait(false);
+            if (delete || confirmedInBrowser) return result;
+            result.Dispose();
+            return await ReadPlaylistSnapshotAsync(full, account, token).ConfigureAwait(false);
+        }
+        finally { playlistEdits.Release(); }
+    }
+
+    // A write needs its own snapshot, even if the same URL is already being read by the UI.
+    private Task<JsonDocument> ReadPlaylistSnapshotAsync(Uri uri, WebSession account, CancellationToken token) =>
+        ExecuteAsync(HttpMethod.Get, uri, null, verification == null ? null : ct => verification.GetJsonAsync(uri, ct), token,
+            expectedAccount: account);
+
+    private static List<long> ReadPlaylistOrder(JsonElement playlist, JsonElement tracks)
+    {
         if (tracks.ValueKind != JsonValueKind.Array || !playlist.TryGetProperty("track_count", out var fullCount) ||
             fullCount.ValueKind != JsonValueKind.Number || !fullCount.TryGetInt32(out var expected) ||
             expected < 0 || tracks.GetArrayLength() != expected)
@@ -115,14 +190,26 @@ public sealed partial class SoundCloudHttpTransport
                 throw new SoundCloudException("SoundCloud не подтвердил полный список треков плейлиста.");
             ids.Add(id);
         }
-        ids.Add(trackId);
-        await ActionAsync(HttpMethod.Put, $"/playlists/{playlistId}", Json(writer =>
-        {
-            writer.WriteStartObject(); writer.WriteStartObject("playlist"); writer.WriteStartArray("tracks");
-            foreach (var id in ids) writer.WriteNumberValue(id);
-            writer.WriteEndArray(); writer.WriteEndObject(); writer.WriteEndObject();
-        }), verification == null ? null : ct => verification.AddToPlaylistAsync(userId, playlistId, trackId, ct), cancellationToken).ConfigureAwait(false);
+        return ids;
     }
+
+    private static byte[] PlaylistEditBody(PlaylistUpdateRequest? update, IEnumerable<long>? ids) => Json(writer =>
+    {
+        writer.WriteStartObject(); writer.WriteStartObject("playlist");
+        if (update != null)
+        {
+            writer.WriteString("title", update.Title);
+            writer.WriteString("description", update.Description);
+            writer.WriteString("sharing", update.Sharing);
+        }
+        if (ids != null)
+        {
+            writer.WriteStartArray("tracks");
+            foreach (var id in ids) writer.WriteNumberValue(id);
+            writer.WriteEndArray();
+        }
+        writer.WriteEndObject(); writer.WriteEndObject();
+    });
 
     private static bool MatchesResource(JsonElement value, string kind, long id)
     {

@@ -86,6 +86,92 @@ public sealed class PlaylistEditTests
         release.SetResult(); await Task.WhenAll(first, second);
         Assert.Equal(new long[] { 8, 90, 91 }, ids); Assert.Equal(2, reads);
     }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("remove")]
+    [InlineData("artwork")]
+    [InlineData("delete")]
+    public async Task PlaylistEditorUsesNativeHttpAndConfirmsSuccessfulWrites(string kind)
+    {
+        var jpeg = new byte[] { 255, 216, 0, 255, 217 };
+        var edit = kind switch
+        {
+            "update" => new PlaylistEditRequest(kind, 42, 11, new(42, 11, "New title", "Description", "private", [8, 8, 7], [8, 7, 8])),
+            "remove" => new PlaylistEditRequest(kind, 42, 11, TrackId: 7),
+            "artwork" => new PlaylistEditRequest(kind, 42, 11, Artwork: Convert.ToBase64String(jpeg)),
+            _ => new PlaylistEditRequest(kind, 42, 11)
+        };
+        var calls = new List<HttpMethod>();
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            calls.Add(request.Method);
+            Assert.Equal("/playlists/11", request.RequestUri!.AbsolutePath);
+            if (request.Method == HttpMethod.Get)
+            {
+                Assert.Contains("representation=full", request.RequestUri.Query);
+                return calls.Count == 1
+                    ? Json("""{"id":11,"user":{"id":42},"track_count":3,"tracks":[{"id":8},{"id":7},{"id":8}]}""")
+                    : Json("""{"id":11,"user":{"id":42},"confirmed":true}""");
+            }
+            if (kind == "delete")
+            {
+                Assert.Equal(HttpMethod.Delete, request.Method);
+                Assert.Null(request.Content);
+            }
+            else if (kind == "artwork")
+            {
+                Assert.Equal(HttpMethod.Put, request.Method);
+                Assert.Equal("multipart/form-data", request.Content!.Headers.ContentType!.MediaType);
+                var body = await request.Content.ReadAsByteArrayAsync();
+                var text = System.Text.Encoding.ASCII.GetString(body);
+                Assert.Contains("name=\"playlist[artwork_data]\"", text);
+                Assert.Contains("filename=artwork.jpg", text);
+                Assert.Contains("Content-Type: image/jpeg", text);
+                Assert.True(body.AsSpan().IndexOf(jpeg) >= 0);
+            }
+            else
+            {
+                Assert.Equal(HttpMethod.Put, request.Method);
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+                var playlist = body.RootElement.GetProperty("playlist");
+                Assert.Equal(kind == "update" ? new long[] { 8, 8, 7 } : [8, 8],
+                    playlist.GetProperty("tracks").EnumerateArray().Select(item => item.GetInt64()));
+                if (kind == "update")
+                {
+                    Assert.Equal("New title", playlist.GetProperty("title").GetString());
+                    Assert.Equal("Description", playlist.GetProperty("description").GetString());
+                    Assert.Equal("private", playlist.GetProperty("sharing").GetString());
+                }
+            }
+            return new(HttpStatusCode.NoContent);
+        }));
+        using var transport = new SoundCloudHttpTransport(http, Session);
+        using var result = await transport.EditPlaylistAsync(edit);
+        if (kind == "delete") Assert.Equal(new[] { HttpMethod.Get, HttpMethod.Delete }, calls);
+        else
+        {
+            Assert.Equal(new[] { HttpMethod.Get, HttpMethod.Put, HttpMethod.Get }, calls);
+            Assert.True(result.RootElement.GetProperty("confirmed").GetBoolean());
+        }
+    }
+
+    [Fact]
+    public async Task PlaylistEditorRejectsStaleReorderBeforeWriting()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            calls++;
+            Assert.Equal(HttpMethod.Get, request.Method);
+            return Task.FromResult(Json("""{"id":11,"user":{"id":42},"track_count":2,"tracks":[{"id":8},{"id":7}]}"""));
+        }));
+        using var transport = new SoundCloudHttpTransport(http, Session);
+        var edit = new PlaylistEditRequest("update", 42, 11, new(42, 11, "Title", "", "private", [8, 7], [7, 8]));
+        await Assert.ThrowsAsync<SoundCloudException>(() => transport.EditPlaylistAsync(edit));
+        Assert.Equal(1, calls);
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);

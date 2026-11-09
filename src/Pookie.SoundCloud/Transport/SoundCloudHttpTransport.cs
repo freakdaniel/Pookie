@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -234,7 +235,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             if (body != null)
             {
                 request.Content = new ByteArrayContent(body);
-                request.Content.Headers.ContentType = new(contentType);
+                request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
             }
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
             Observed?.Invoke(new(method.Method, uri.AbsolutePath, (int)response.StatusCode) { Host = uri.Host });

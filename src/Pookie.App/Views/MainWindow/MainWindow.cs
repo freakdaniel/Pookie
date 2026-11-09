@@ -883,7 +883,7 @@ internal sealed partial class MainWindow : IDisposable
         api.Session = connected.Account;
         browserSessions.Add(connected);
         var dispatcher = Application.Current.Dispatcher;
-        if (useNativeHttp && OperatingSystem.IsWindows())
+        if (useNativeHttp)
         {
             var transport = new SoundCloudHttpTransport(http, () => connected.Account, connected);
             nativeSoundCloud = transport;

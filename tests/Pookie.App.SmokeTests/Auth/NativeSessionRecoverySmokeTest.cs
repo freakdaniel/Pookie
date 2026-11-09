@@ -14,7 +14,7 @@ internal static class NativeSessionRecoverySmokeTest
     {
         var builder = WebApplication.CreateBuilder(); builder.Logging.ClearProviders(); builder.WebHost.UseUrls("http://127.0.0.1:0");
         await using var app = builder.Build();
-        var preparations = 0; var nativeWrites = 0; var browserWrites = 0; var rejections = 0; var denyNative = false;
+        var preparations = 0; var nativeReads = 0; var nativeWrites = 0; var browserWrites = 0; var rejections = 0; var denyNative = false;
         app.MapGet("/browser", () => Results.Content("""
             <!doctype html><title>Local native recovery fixture</title><script>
             window.ddSbh=true;window.dataDomeOptions={};
@@ -29,6 +29,13 @@ internal static class NativeSessionRecoverySmokeTest
             Interlocked.Increment(ref preparations);
             context.Response.Cookies.Append("datadome", "fixture-prepared");
             return Results.Json(new { id = 42, username = "fixture" });
+        });
+        app.MapGet("/tracks/7", (HttpContext context) =>
+        {
+            if (context.Request.Headers.Authorization != "OAuth fixture-token" ||
+                context.Request.Headers["x-datadome-clientid"] != "initial") return Results.Unauthorized();
+            Interlocked.Increment(ref nativeReads);
+            return Results.Json(new { id = 7 });
         });
         app.MapPut("/users/42/track_likes/{id:long}", (HttpContext context) =>
         {
@@ -51,6 +58,11 @@ internal static class NativeSessionRecoverySmokeTest
             using var http = new HttpClient(new FixtureRoutingHandler(new(app.Urls.Single()))) { Timeout = TimeSpan.FromSeconds(10) };
             using var native = new SoundCloudHttpTransport(http, () => browser.Account, browser);
             var stages = new List<SoundCloudRecoveryStage>(); native.RecoveryObserved += message => stages.Add(message.Stage);
+            using (var track = await native.GetJsonAsync(new("https://api-v2.soundcloud.com/tracks/7"), timeout.Token))
+            {
+                if (track.RootElement.GetProperty("id").GetInt64() != 7 || nativeReads != 1 || preparations != 0 || stages.Count != 0)
+                    throw new InvalidOperationException("A regular authorized read did not complete directly over HTTP.");
+            }
             await native.SetLikedAsync(42, 7, true, timeout.Token);
             await native.SetLikedAsync(42, 8, true, timeout.Token);
             if (preparations != 1 || nativeWrites != 2 || browserWrites != 0 || rejections != 1 || browser.Account.DataDomeClientId != "fixture-prepared")
@@ -67,7 +79,7 @@ internal static class NativeSessionRecoverySmokeTest
             await native.SetLikedAsync(42, 10, true, timeout.Token);
             if (nativeWrites != 3 || browserWrites != 1 || !stages.Contains(SoundCloudRecoveryStage.BrowserCompleted))
                 throw new InvalidOperationException("Requests did not return to native HTTP after browser fallback.");
-            Console.WriteLine("NATIVE_SESSION_RECOVERY_OK: real WebView read-only preparation, cookie handoff, native writes, native connection block with bounded browser fallback and return to native; loopback fixture only");
+            Console.WriteLine("NATIVE_SESSION_RECOVERY_OK: direct HTTP read, real WebView preparation, cookie handoff, native writes, bounded browser fallback and return to native; loopback fixture only");
         }
         finally { await BrowserPersistenceSmokeTest.DeleteFixtureProfileAsync(root); }
     }

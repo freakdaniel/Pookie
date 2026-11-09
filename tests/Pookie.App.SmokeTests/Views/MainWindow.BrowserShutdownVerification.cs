@@ -43,6 +43,8 @@ internal sealed partial class MainWindow
             lateBrowserCallbacks.Add(browserNotifications!.Value.Handler);
             var connected = new NativeBrowserSession(new("fixtureid", "fixture-token", "Chromium"), shutdownFixture.Urls.Single() + "/");
             AttachBrowser(connected);
+            if (api.Transport is not SoundCloudHttpTransport)
+                throw new InvalidOperationException("The application did not select native HTTP as the default SoundCloud transport.");
             lateBrowserCallbacks.Add(browserNotifications!.Value.Handler);
             connected.Changed += message =>
             {
