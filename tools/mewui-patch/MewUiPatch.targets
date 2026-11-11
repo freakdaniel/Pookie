@@ -1,11 +1,14 @@
 <Project>
+  <PropertyGroup>
+    <PookiePatchMetal Condition="('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('osx-'))) or ('$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX')))">true</PookiePatchMetal>
+  </PropertyGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)MewUiPatch.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" OutputItemType="PookieMewUiPatcher" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishAot;PublishTrimmed;PublishSingleFile" />
   </ItemGroup>
   <Target Name="PatchPookieMewUi" AfterTargets="ResolveReferences"
           Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <PookieMewUiOriginal Include="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll' or ('$(PookiePatchMetal)' == 'true' and '%(Filename)%(Extension)' == 'Aprillz.MewVG.Metal.dll')" />
     </ItemGroup>
     <ItemGroup>
       <PookieMewUiOriginal Update="@(PookieMewUiOriginal)">
@@ -15,9 +18,9 @@
     <WriteLinesToFile File="$(IntermediateOutputPath)mewui-patch-references.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <Exec Condition="'@(PookieMewUiOriginal)' != ''" Command="dotnet &quot;@(PookieMewUiPatcher->'%(FullPath)')&quot; &quot;%(PookieMewUiOriginal.FullPath)&quot; &quot;%(PookieMewUiOriginal.Patched)&quot; &quot;$(IntermediateOutputPath)mewui-patch-references.txt&quot;" />
     <ItemGroup Condition="'@(PookieMewUiOriginal)' != ''">
-      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePath Remove="@(ReferencePath)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll' or ('$(PookiePatchMetal)' == 'true' and '%(Filename)%(Extension)' == 'Aprillz.MewVG.Metal.dll')" />
       <ReferencePath Include="@(PookieMewUiOriginal->'%(Patched)')" />
-      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ReferencePathWithRefAssemblies Remove="@(ReferencePathWithRefAssemblies)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll' or ('$(PookiePatchMetal)' == 'true' and '%(Filename)%(Extension)' == 'Aprillz.MewVG.Metal.dll')" />
       <ReferencePathWithRefAssemblies Include="@(PookieMewUiOriginal->'%(Patched)')" />
       <ReferenceCopyLocalPaths Remove="@(PookieMewUiOriginal)" />
       <ReferenceCopyLocalPaths Include="@(PookieMewUiOriginal->'%(Patched)')" />
@@ -28,9 +31,9 @@
     <!-- Publish resolves package runtime assets independently of build references.
          Replace its Core entry before trimming/bundling; keep duplicate checks enabled. -->
     <ItemGroup>
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll' or ('$(PookiePatchMetal)' == 'true' and '%(Filename)%(Extension)' == 'Aprillz.MewVG.Metal.dll')" />
       <ResolvedFileToPublish Include="@(PookieMewUiOriginal->'%(Patched)')">
-        <RelativePath>Aprillz.MewUI.dll</RelativePath>
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
     </ItemGroup>
@@ -40,7 +43,7 @@
     <!-- AOT obtains runtime assets separately; remove the original as well as
          duplicate patched entries before ILC resolves its first assembly match. -->
     <ItemGroup>
-      <IlcReference Remove="@(IlcReference)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll'" />
+      <IlcReference Remove="@(IlcReference)" Condition="'%(Filename)%(Extension)' == 'Aprillz.MewUI.dll' or ('$(PookiePatchMetal)' == 'true' and '%(Filename)%(Extension)' == 'Aprillz.MewVG.Metal.dll')" />
       <IlcReference Include="@(PookieMewUiOriginal->'%(Patched)')" />
     </ItemGroup>
   </Target>

@@ -12,7 +12,9 @@ foreach (var directory in File.ReadAllLines(args[2]).Select(Path.GetDirectoryNam
     resolver.AddSearchDirectory(directory);
 using var assembly = AssemblyDefinition.ReadAssembly(input, new ReaderParameters { AssemblyResolver = resolver });
 var information = assembly.CustomAttributes.Single(a => a.AttributeType.FullName == "System.Reflection.AssemblyInformationalVersionAttribute").ConstructorArguments[0].Value as string;
-if (assembly.Name.Version != new Version(0,22,1,0) || information?.Contains("6cda4f9872f7fce8fc980b34f6f9322f5e5a2c39", StringComparison.Ordinal) != true)
+if (assembly.Name.Name == "Aprillz.MewVG.Metal")
+    MetalStoragePatch.Apply(assembly, information);
+else if (assembly.Name.Version != new Version(0,22,1,0) || information?.Contains("6cda4f9872f7fce8fc980b34f6f9322f5e5a2c39", StringComparison.Ordinal) != true)
     throw new InvalidOperationException("Review Pookie's MewUI extensions for this dependency version.");
 if (assembly.Name.Name == "Aprillz.MewUI")
 {
@@ -86,14 +88,14 @@ if (assembly.Name.Name == "Aprillz.MewUI")
         method.Body.MaxStackSize = Math.Max(2, method.Body.MaxStackSize);
     }
 }
-else throw new InvalidOperationException("Unsupported MewUI patch target.");
+else if (assembly.Name.Name != "Aprillz.MewVG.Metal") throw new InvalidOperationException("Unsupported MewUI patch target.");
 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
 var temporary = output + "." + Environment.ProcessId + ".tmp";
 assembly.Write(temporary);
 // Avoid making every incremental build recopy the dependency.
 if (File.Exists(output) && File.ReadAllBytes(output).AsSpan().SequenceEqual(File.ReadAllBytes(temporary))) File.Delete(temporary);
 else File.Move(temporary, output, overwrite: true);
-Console.WriteLine($"MewUI: applied Pookie extension to {assembly.Name.Name} (6cda4f98).");
+Console.WriteLine($"MewUI: applied Pookie extension to {assembly.Name.Name}.");
 
 static void AddPopupCompositorHooks(ModuleDefinition module, TypeDefinition visual)
 {

@@ -176,6 +176,13 @@ SPDX-FileComment = "The protected source and media engine wrappers are based on 
 
 # Restored NuGet assemblies in distributions; dependency source is not vendored.
 [[annotations]]
+path = "Aprillz.MewVG.Metal.dll"
+precedence = "closest"
+SPDX-FileCopyrightText = ["2026 Aprillz", "2024 .NET Port", "2026 Daniel Freak"]
+SPDX-License-Identifier = "MIT AND BSD-3-Clause"
+SPDX-FileComment = "Aprillz.MewVG.Metal 0.10.1, source commit 5758c6bfc927d6b1dac64b13f6979fd464e0fcfb (https://github.com/aprillz/MewVG). Pookie patches its private build copy to select supported scratch texture storage before calling Metal on Intel/AMD and Apple GPUs. Original source and notices are retained upstream; full terms: licenses/MIT.txt and licenses/BSD-3-Clause.txt."
+
+[[annotations]]
 path = "Serilog.dll"
 precedence = "closest"
 SPDX-FileCopyrightText = "Serilog Contributors"

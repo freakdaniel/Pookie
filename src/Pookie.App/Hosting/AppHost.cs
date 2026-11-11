@@ -11,6 +11,7 @@ internal static class AppHost
     {
         StartupLog.Event("app.host-start");
         KlipyClient.LoadDevelopmentApiKey();
+        MetalStorageCompatibility.Install();
         // Intel's Windows OpenGL presentation can stop updating after a driver
         // reset while input/audio remain alive. Use the native Windows backend;
         // app-owned bounded blur does not depend on its image-filter pipeline.
