@@ -17,6 +17,9 @@ internal static class TooltipHints
 
     internal static T Hint<T>(this T owner, string? text, object? group = null) where T : FrameworkElement
     {
+        // All hinted controls need an input modality, including plain action
+        // buttons whose focus is restored after a modal closes.
+        if (owner is Control control) KeyboardFocusFeedback.Attach(control);
         var hint = hints.GetValue(owner, element =>
         {
             element.MouseEnter += () => Layer(element)?.Request(element, keyboard: false);

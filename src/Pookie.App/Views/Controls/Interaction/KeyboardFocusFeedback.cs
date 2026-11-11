@@ -12,12 +12,15 @@ internal static class KeyboardFocusFeedback
     {
         internal readonly ObservableValue<bool> Visible = new(false);
         internal bool? Restoring;
+        internal bool Attached;
     }
     private static readonly ConditionalWeakTable<Control, State> values = new();
 
     internal static void Attach(Control control)
     {
         var state = values.GetValue(control, static _ => new());
+        if (state.Attached) return;
+        state.Attached = true;
         control.Bind(VisibleProperty, state.Visible);
         control.GotFocus += () => Set(control, state.Restoring ?? true);
         control.LostFocus += () => Set(control, false);

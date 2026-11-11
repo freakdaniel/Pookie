@@ -56,6 +56,10 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
 
     internal void Request(FrameworkElement target, bool keyboard)
     {
+        // Pointer-opened dialogs return focus for continued keyboard use. That
+        // focus restoration must not create a keyboard tooltip under a distant
+        // pointer; the next genuine hover still follows its normal delay.
+        if (keyboard && target is Control control && !KeyboardFocusFeedback.IsVisible(control)) return;
         if (disposed || !Eligible(target) || dismissed?.TryGetTarget(out var blocked) == true && blocked == target) return;
         if (owner == target && attached)
         {
@@ -125,6 +129,9 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         var bounds = VisibleAnchor(target);
         return bounds.Width > 0 && bounds.Height > 0;
     }
+    private static bool Active(FrameworkElement target, bool fromKeyboard) => fromKeyboard
+        ? target.IsFocused && (target is not Control control || KeyboardFocusFeedback.IsVisible(control))
+        : target.IsMouseOver;
     private Rect VisibleAnchor(FrameworkElement target)
     {
         var origin = target.TranslatePoint(default, window);
@@ -137,7 +144,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     {
         delay.Stop();
         var next = pending;
-        if (next == null || !Eligible(next) || !(pendingKeyboard ? next.IsFocused : next.IsMouseOver)) { CancelPending(); return; }
+        if (next == null || !Eligible(next) || !Active(next, pendingKeyboard)) { CancelPending(); return; }
         // Keep the old tooltip at its original position throughout dismissal.
         // A different anchor is presented only once that fade has completed.
         if (attached && owner != next) { delay.Interval = TimeSpan.FromMilliseconds(20); delay.Start(); return; }
@@ -207,9 +214,9 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     }
     private void CheckAnchor()
     {
-        if (pending is { } next && (!Eligible(next) || !(pendingKeyboard ? next.IsFocused : next.IsMouseOver))) CancelPending();
+        if (pending is { } next && (!Eligible(next) || !Active(next, pendingKeyboard))) CancelPending();
         if (!IsOpen || owner == null) return;
-        if (!Eligible(owner) || !(keyboard ? owner.IsFocused : owner.IsMouseOver)) { Hide(); return; }
+        if (!Eligible(owner) || !Active(owner, keyboard)) { Hide(); return; }
         Refresh(owner);
         var old = surfaceBounds;
         Place();

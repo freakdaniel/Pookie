@@ -7,15 +7,19 @@ using Pookie.SoundCloud;
 namespace Pookie.App;
 
 // One lightweight overlay shared by hover, keyboard focus and timed playback.
-// It never intercepts seeking and keeps no textures or copies of the waveform.
-internal sealed class WaveCommentPreview : Panel
+// It never intercepts seeking. The shared glass path samples only the visible
+// card and its blur halo, excluding the preview's own text and surface.
+internal sealed class WaveCommentPreview : Panel, IVisualTreeHost
 {
-    private readonly TextBlock author = new TextBlock().FontSize(13).Bold().Foreground(Color.FromRgb(142, 198, 238))
+    private readonly TextBlock author = new TextBlock().FontSize(13).Bold().Foreground(Color.White)
         .TextTrimming(TextTrimming.CharacterEllipsis);
     private readonly TextBlock time = new TextBlock().FontSize(11).Foreground(TextAppearance.Secondary);
     private readonly TextBlock body = new TextBlock().FontSize(13).Foreground(Color.FromRgb(235, 236, 239))
         .TextWrapping(TextWrapping.Wrap).TextTrimming(TextTrimming.CharacterEllipsis).MaxHeight(40);
     private readonly StackPanel content;
+    private readonly GlassCard card;
+    private readonly LiveGlassBackdrop glass;
+    private bool capturing;
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(230), Easing.CubicBezier(.2, 0, 0, 1));
     private readonly AnimationClock textFade = new(TimeSpan.FromMilliseconds(160), Easing.CubicBezier(.2, 0, 0, 1));
     private Size size, targetSize;
@@ -25,13 +29,34 @@ internal sealed class WaveCommentPreview : Panel
     internal double Reveal => reveal;
     internal Rect CardBounds { get; private set; }
     internal bool Animating => motion.IsRunning || textFade.IsRunning;
+    internal bool HasGlassBackdrop => glass.Ready;
 
     internal WaveCommentPreview()
     {
         IsVisible = false; IsHitTestVisible = false; Opacity = 0;
         content = new StackPanel().Vertical().Spacing(4).Children(
             new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(author.Column(0), time.Column(1).CenterVertical()), body);
-        Add(content);
+        card = new GlassCard { HoverEnabled = false }.CornerRadius(12).Background(PopupAppearance.Surface);
+        glass = new LiveGlassBackdrop(card, RenderBehind);
+        card.UseLiveBackdrop(glass);
+        Add(card); Add(content);
+    }
+
+    internal void CaptureLiveGlass(IGraphicsContext context) => glass.CaptureLive(context);
+
+    private void RenderBehind(IGraphicsContext context, Element root)
+    {
+        capturing = true;
+        try { root.Render(context); }
+        finally { capturing = false; }
+    }
+
+    bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor)
+    {
+        if (capturing) return true;
+        foreach (var child in Children)
+            if (!visitor(child)) return false;
+        return true;
     }
 
     internal void Show(SoundCloudComment? value, double fraction = 0)
@@ -42,6 +67,7 @@ internal sealed class WaveCommentPreview : Panel
         comment = value;
         if (value != null)
         {
+            if (from < .001) glass.Reset();
             author.Text = value.User?.Username ?? "Пользователь SoundCloud";
             var seconds = Math.Max(0, (value.Timestamp ?? 0) / 1000);
             time.Text = $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
@@ -70,6 +96,7 @@ internal sealed class WaveCommentPreview : Panel
     {
         motion.Stop(); textFade.Stop(); comment = null; reveal = 0; Opacity = 0;
         author.Text = time.Text = body.Text = ""; content.Opacity = 1; IsVisible = false;
+        glass.Reset();
     }
 
     private Size MeasureCard(double width)
@@ -87,6 +114,7 @@ internal sealed class WaveCommentPreview : Panel
     {
         targetSize = MeasureCard(availableSize.Width);
         if (!motion.IsRunning) size = targetSize;
+        card.Measure(targetSize);
         return availableSize;
     }
     protected override Size ArrangeOverride(Size finalSize)
@@ -94,16 +122,12 @@ internal sealed class WaveCommentPreview : Panel
         var width = Math.Min(size.Width, Math.Max(1, finalSize.Width - 8));
         var x = Bounds.X + Math.Clamp(anchor * finalSize.Width - width / 2, 4, Math.Max(4, finalSize.Width - width - 4));
         CardBounds = new(x, Bounds.Y + 97 - size.Height + 7 * (1 - reveal), width, size.Height);
+        card.Arrange(CardBounds);
         content.Arrange(new(x + 12, CardBounds.Y + 9, Math.Max(0, targetSize.Width - 24), Math.Max(0, targetSize.Height - 18)));
         return finalSize;
     }
-    protected override ChildClip? GetChildClip(UIElement child) => ChildClip.Rounded(CardBounds, 12);
-    protected override void OnRender(IGraphicsContext context)
-    {
-        context.FillRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(248, 31, 33, 38));
-        context.DrawRoundedRectangle(CardBounds, 12, 12, Color.FromArgb(28, 255, 255, 255), 1);
-    }
+    protected override ChildClip? GetChildClip(UIElement child) => ReferenceEquals(child, card) ? null : ChildClip.Rounded(CardBounds, 12);
     protected override void OnVisualRootChanged(Element? oldRoot, Element? newRoot)
-    { base.OnVisualRootChanged(oldRoot, newRoot); if (newRoot == null) Reset(); }
-    protected override void OnDispose() { Reset(); base.OnDispose(); }
+    { base.OnVisualRootChanged(oldRoot, newRoot); glass.Attach(newRoot as Window); if (newRoot == null) Reset(); }
+    protected override void OnDispose() { Reset(); glass.Dispose(); base.OnDispose(); }
 }

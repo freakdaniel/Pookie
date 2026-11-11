@@ -314,7 +314,8 @@ capture. `icon_raster_builds` reports SVG texture creation during each phase.
 `--track-page-ui-smoke-test` checks native title navigation without starting audio,
 centred player metadata and animated title/artist links, artist navigation and
 idempotent title clicks, comment skeletons and avatar fades, waveform preview
-appearance/resizing/dismissal, timed comment cues with dense-comment skipping and hover priority,
+appearance/resizing/dismissal, live glass waveform previews with white author names and seeking passthrough,
+timed comment cues with dense-comment skipping and hover priority,
 responsive reference hero, stable single-line title/artist/metadata geometry across
 repeated narrow/wide resizes with long text, metadata/artwork/waveform, threaded comments and replies,
 sidebar fans and 2x2 playlist previews, shared library profile/playlist cards and

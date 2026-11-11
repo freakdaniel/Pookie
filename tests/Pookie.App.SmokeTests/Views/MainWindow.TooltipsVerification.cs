@@ -143,6 +143,7 @@ internal sealed partial class MainWindow
                 RouteWaveformClick(SettingsCenter(middle));
                 await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible);
                 if (clicks != 1) throw new InvalidOperationException("A tooltip interfered with its anchor's click.");
+                await VerifyTooltipModalReturnAsync(fixture);
                 await VerifyAvatarGroupAsync(fixture, initialOverlayCount);
                 Console.WriteLine("MATERIAL_TOOLTIPS_UI_OK: anchor-centred placement, top/side edge fallback, DPI 96/110/144/192, wrapped emoji text, translucent enter/exit and continuous reversal, no native popup or focus/input capture, delayed-hover cancellation, keyboard/Escape, dynamic/recycled content, scroll/disable/deactivate/click cleanup and one idle-free overlay");
             }
@@ -154,6 +155,52 @@ internal sealed partial class MainWindow
             if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
             if (fixture != null) { ((Panel)Window.Content!).Remove(fixture); fixture.Dispose(); }
             Window.Close();
+        }
+    }
+
+    private async Task VerifyTooltipModalReturnAsync(Grid fixture)
+    {
+        ModalDialog? dialog = null;
+        var close = TrackButtons.Icon(Icons.View("x", 20), () => dialog!.Close());
+        var content = new Border().Width(240).Height(100).Background(PopupAppearance.Surface)
+            .Child(new TextBlock().Text("Оверлей").Center());
+        dialog = new ModalDialog(content, close, close);
+        var triggers = new[] { "Поделиться", "Добавить в плейлист" }.Select((text, index) =>
+            TrackButtons.Action(new TextBlock().Text("Открыть"), dialog.Show, TrackButtons.Glass, 40)
+                .Width(120).Left().Top().Margin(340 + index * 160, 340, 0, 0).Hint(text)).ToArray();
+        foreach (var trigger in triggers) fixture.Add(trigger);
+        fixture.Add(dialog);
+        try
+        {
+            await WaitForLoginFrameAsync();
+            foreach (var trigger in triggers)
+            {
+                MoveActionPointer(SettingsCenter(trigger)); RouteWaveformClick(SettingsCenter(trigger));
+                await WaitForLikedLayoutAsync(() => dialog.IsOpen && !dialog.Running);
+                MoveActionPointer(SettingsCenter(close)); RouteWaveformClick(SettingsCenter(close));
+                await WaitForLikedLayoutAsync(() => !dialog.IsVisible && trigger.IsFocused);
+                await Task.Delay(MaterialTooltipLayer.HoverDelayMs + 80, lifetime.Token);
+                if (trigger.IsMouseOver || tooltipLayer.Owner == trigger || KeyboardFocusFeedback.IsVisible(trigger))
+                    throw new InvalidOperationException($"Pointer dismissal restored a stuck tooltip on {TooltipHints.TextFor(trigger)}: hover={trigger.IsMouseOver}, focus={trigger.IsFocused}, cue={KeyboardFocusFeedback.IsVisible(trigger)}, owner={tooltipLayer.Owner == trigger}, open={tooltipLayer.IsOpen}.");
+                MoveActionPointer(SettingsCenter(trigger));
+                await WaitForLikedLayoutAsync(() => tooltipLayer.Owner == trigger && tooltipLayer.Reveal == 1);
+                MoveActionPointer(new(2, 2));
+                await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible);
+                Window.FocusManager.ClearFocus(); trigger.Focus();
+                await WaitForLikedLayoutAsync(() => tooltipLayer.Owner == trigger && tooltipLayer.Reveal == 1);
+                dialog.Show();
+                await WaitForLikedLayoutAsync(() => dialog.IsOpen && !dialog.Running);
+                dialog.Close();
+                await WaitForLikedLayoutAsync(() => !dialog.IsVisible && trigger.IsFocused && tooltipLayer.Owner == trigger && tooltipLayer.Reveal == 1);
+                Window.FocusManager.ClearFocus();
+                await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible);
+            }
+            Console.WriteLine("MODAL_TOOLTIP_RETURN_OK: pointer dismissal keeps restored triggers quiet, real hover still works, keyboard focus restores its hint");
+        }
+        finally
+        {
+            dialog.Close(true); fixture.Remove(dialog); dialog.Dispose();
+            foreach (var trigger in triggers) { fixture.Remove(trigger); trigger.Dispose(); }
         }
     }
 

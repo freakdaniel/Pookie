@@ -65,7 +65,13 @@ internal sealed partial class MainWindow
             void PreviewFrames() { reveals.Add(trackWaveCommentPreview.Reveal); widths.Add(trackWaveCommentPreview.CardBounds.Width); }
             Window.FrameRendered += PreviewFrames;
             MoveActionPointer(SettingsCenter(first.Button));
-            await WaitForLikedLayoutAsync(() => trackWaveCommentPreview.CommentId == first.Comment.Id && !trackWaveCommentPreview.Animating);
+            await WaitForLikedLayoutAsync(() => trackWaveCommentPreview.CommentId == first.Comment.Id && !trackWaveCommentPreview.Animating &&
+                trackWaveCommentPreview.HasGlassBackdrop && trackWaveCommentPreview.FindVisualChild<GlassCard>() is GlassCard { PopupBackdropPaintVersion: > 0 });
+            var previewAuthor = (TextBlock?)VisualTree.Find(trackWaveCommentPreview,
+                element => element is TextBlock text && text.Text == first.Comment.User?.Username);
+            if (previewAuthor?.Foreground != Color.White || trackWaveCommentPreview.IsHitTestVisible ||
+                Window.HitTest(trackWaveCommentPreview.CardBounds.Center) != trackDetailWaveform)
+                throw new InvalidOperationException("Waveform comment preview lost its white author or began intercepting waveform input.");
             var shortWidth = trackWaveCommentPreview.CardBounds.Width;
             CaptureUiPreview("wave-comment-hover");
             MoveActionPointer(SettingsCenter(second.Button));
@@ -101,7 +107,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Wave comment animation survived navigation to the artist.");
             api.BrowserTransport = transport;
             await MoveNavigationAsync(-1);
-            Console.WriteLine("PLAYER_WAVE_COMMENTS_OK: centred metadata, animated links and artist navigation, idempotent title clicks, skeletons/avatar fades, animated preview sizing, timed cues with dense-comment skipping and hover priority");
+            Console.WriteLine("PLAYER_WAVE_COMMENTS_OK: centred metadata, animated links and artist navigation, idempotent title clicks, skeletons/avatar fades, glass previews with white authors and seeking passthrough, animated sizing, timed cues with dense-comment skipping and hover priority");
         }
         finally
         {
