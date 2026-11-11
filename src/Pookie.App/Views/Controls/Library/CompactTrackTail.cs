@@ -10,7 +10,7 @@ namespace Pookie.App;
 internal sealed class CompactTrackTail : Grid
 {
     internal const double FullActionsThreshold = 420;
-    internal const double StatisticsWidth = 48, CompactWidth = 88, FullWidth = 176;
+    internal const double StatisticsWidth = 48, CompactWidth = 88, FullWidth = 4 * 32 + 3 * 4;
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(220), Easing.CubicBezier(.2, 0, 0, 1));
     private readonly Motion likeMotion, summaryMotion, actionsMotion;
     private readonly InkBorder summary, actions;

@@ -39,9 +39,18 @@ internal sealed partial class MainWindow
         }
         finally { Window.FrameRendered -= SampleOpen; }
         if (!opening.Any(value => value is > .01 and < .99) || positions.Select(x => Math.Round(x, 1)).Distinct().Count() < 3 ||
-            Math.Abs(row.Title.ActualWidth - titleWidth) > 1 / Window.DpiScale || likeX - LikeX() < 60 ||
+            Math.Abs(row.Title.ActualWidth - titleWidth) > 1 / Window.DpiScale ||
+            Math.Abs(likeX - LikeX() - (CompactTrackTail.FullWidth - CompactTrackTail.CompactWidth)) > 1 / Window.DpiScale ||
             row.Summary.IsHitTestVisible || !row.Actions.IsHitTestVisible || row.Overlay.Bounds != row.Cover.Bounds)
             throw new InvalidOperationException("Hover actions snapped, changed title layout, left hidden hit targets or failed to cover the complete artwork.");
+        var previousButton = row.Like;
+        foreach (var button in row.ActionButtons)
+        {
+            var gap = button.TranslatePoint(default, Window).X - previousButton.TranslatePoint(default, Window).X - previousButton.ActualWidth;
+            if (Math.Abs(gap - 4) > 1 / Window.DpiScale)
+                throw new InvalidOperationException("Compact hover actions retained an empty button slot.");
+            previousButton = button;
+        }
         VerifyCompactCoverDimming(row);
         CaptureUiPreview("track-row-hover-actions");
         row.More!.Focus(); MoveActionPointer(new Point(1, 1)); await WaitForLoginFrameAsync();
