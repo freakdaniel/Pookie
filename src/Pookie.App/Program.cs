@@ -32,7 +32,7 @@ internal static class Program
         if (args is ["--aot-ui-check"])
         {
             if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported) throw new InvalidOperationException("This check requires Native AOT.");
-            var frames = 0; var ticks = 0; Task? browserCheck = null;
+            var frames = 0; var ticks = 0; var verified = false; Task? browserCheck = null;
             using var timer = new Aprillz.MewUI.DispatcherTimer(TimeSpan.FromSeconds(1));
             await AppHost.RunAsync(AppRunOptions.FromArgs(["--demo", "--no-audio"]) with { DiscordPresence = false, SystemMediaSession = false }, window =>
             {
@@ -40,15 +40,28 @@ internal static class Program
                 timer.Tick += () =>
                 {
                     if (++ticks == 4) browserCheck = Pookie.App.Diagnostics.AotBrowserCheck.RunAsync(window.Window);
-                    if (ticks >= 6 && browserCheck is { IsCompleted: true }) window.Window.Close();
-                    if (ticks >= 50) { window.Window.Close(); Environment.ExitCode = 1; }
+                    if (ticks >= 6 && browserCheck is { IsCompleted: true })
+                    {
+                        // macOS can terminate the process when the last window
+                        // closes. Validate before closing, and let CI require
+                        // this explicit marker as well as a successful exit.
+                        try
+                        {
+                            browserCheck.GetAwaiter().GetResult();
+                            if (frames < 3 || Environment.ExitCode != 0) throw new InvalidOperationException("Native UI did not render successfully.");
+                            Console.WriteLine("AOT_UI_OK: production UI rendered " + frames + " frames and verified its browser");
+                            Console.Out.Flush(); verified = true; timer.Stop();
+                        }
+                        catch (Exception error) { Console.Error.WriteLine(error); Environment.Exit(1); }
+                        window.Window.Close();
+                    }
+                    if (ticks >= 50) { Console.Error.WriteLine("Native UI check timed out."); Environment.Exit(1); }
                 };
                 timer.Start();
             });
             if (browserCheck == null) throw new InvalidOperationException("Browser check did not start.");
             await browserCheck;
-            if (frames < 3 || Environment.ExitCode != 0) throw new InvalidOperationException("Native UI did not render successfully.");
-            Console.WriteLine("AOT_UI_OK: production UI rendered " + frames + " frames and shut down cleanly");
+            if (!verified || Environment.ExitCode != 0) throw new InvalidOperationException("Native UI check did not finish.");
             return;
         }
         if (args.Any(arg => arg.EndsWith("-smoke-test", StringComparison.Ordinal) || arg is "--smoke-test" or "--clipboard-fixture" or "--login-fixture"))

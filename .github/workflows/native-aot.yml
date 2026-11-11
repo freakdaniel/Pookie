@@ -59,31 +59,46 @@ jobs:
         run: |
           dotnet publish src/Pookie.App -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -o artifacts/native-aot/${{ matrix.rid }} 2>&1 | Tee-Object artifacts/native-aot-${{ matrix.rid }}.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify early exit cannot pass the native runner
+        shell: pwsh
+        run: |
+          function Invoke-EarlyExit {
+            $global:LASTEXITCODE = 0
+            'AOT_BROWSER_OK: simulated exit before the final UI assertion'
+          }
+          try {
+            ./scripts/verify-native-aot.ps1 -Executable Invoke-EarlyExit -Check ui -LogFile artifacts/early-exit-probe.log
+            throw 'The native runner accepted an incomplete UI check.'
+          } catch {
+            if ($_.Exception.Message -notlike '*missing AOT_UI_OK:*') { throw }
+          }
       - name: Verify native dependencies on Linux
         if: runner.os == 'Linux'
-        run: dbus-run-session -- artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-self-test tests/Fixtures/Media/chat-video.mp4
+        run: dbus-run-session -- pwsh -File scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie -Check dependencies -VideoFixture tests/Fixtures/Media/chat-video.mp4 -LogFile artifacts/native-aot-${{ matrix.rid }}-dependencies.log
       - name: Verify native dependencies on macOS
         if: runner.os == 'macOS'
-        run: artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-self-test tests/Fixtures/Media/chat-video.mp4
+        shell: pwsh
+        run: ./scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie -Check dependencies -VideoFixture tests/Fixtures/Media/chat-video.mp4 -LogFile artifacts/native-aot-${{ matrix.rid }}-dependencies.log
       - name: Verify native dependencies on Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe --aot-self-test tests/Fixtures/Media/chat-video.mp4
+        run: ./scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe -Check dependencies -VideoFixture tests/Fixtures/Media/chat-video.mp4 -LogFile artifacts/native-aot-${{ matrix.rid }}-dependencies.log
       - name: Verify native UI and embedded WebKit on Linux
         if: ${{ !cancelled() && steps.publish.outcome == 'success' && runner.os == 'Linux' }}
-        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-ui-check
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 pwsh -File scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie -Check ui -LogFile artifacts/native-aot-${{ matrix.rid }}-ui.log
       - name: Verify native UI and WebView2 WinRT on Windows
         if: ${{ !cancelled() && steps.publish.outcome == 'success' && runner.os == 'Windows' }}
         shell: pwsh
-        run: ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe --aot-ui-check
+        run: ./scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe -Check ui -LogFile artifacts/native-aot-${{ matrix.rid }}-ui.log
       - name: Verify native UI and WKWebView on macOS
         if: ${{ !cancelled() && steps.publish.outcome == 'success' && runner.os == 'macOS' }}
-        run: artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-ui-check
+        shell: pwsh
+        run: ./scripts/verify-native-aot.ps1 -Executable ./artifacts/native-aot/${{ matrix.rid }}/Pookie -Check ui -LogFile artifacts/native-aot-${{ matrix.rid }}-ui.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: native-aot-${{ matrix.rid }}
           path: |
             artifacts/native-aot/${{ matrix.rid }}/
-            artifacts/native-aot-${{ matrix.rid }}.log
+            artifacts/native-aot-${{ matrix.rid }}*.log
           if-no-files-found: error
