@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
     private LikedTrackRow CreateUserTrackRow(bool publication = false, LibraryItem? item = null)
     {
         var row = new LikedTrackRow(track => Run(() => PlayUserTrackAsync(track)), track => Run(() => OpenTrackPageAsync(track)),
-            track => Run(() => ToggleTrackLikeAsync(track)), CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)),
+            track => Run(() => ToggleTrackLikeAsync(track)), track => Run(() => ToggleTrackRepostAsync(track)),
             track => Run(() => OpenPlaylistPickerAsync(track)), (track, fraction) => Run(() => SeekUserTrackAsync(track, fraction)),
             ArtworkLayer, glass: publication, publication: publication, byline: item == null ? null : author => CreateUserByline(author, item), share: ShareTrack);
         likedRows.Add(row.Root, row);

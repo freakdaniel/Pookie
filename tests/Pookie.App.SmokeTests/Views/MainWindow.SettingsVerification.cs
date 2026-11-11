@@ -107,6 +107,19 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The settings fixture did not prepare recommendations to test their cancellation.");
 
             await SelectSettingsTabAsync(SettingsSection.Playback);
+            await SetSettingsChoiceAsync("maximum_volume", 2);
+            volume.Value = 180;
+            if (volumeSlider.Maximum != 200 || expandedVolumeSlider.Maximum != 200 || Math.Abs(audio.LastVolume - 180) > .01)
+                throw new InvalidOperationException("The 200% cap did not reach both sliders and the audio backend.");
+            ToggleMute();
+            await SetSettingsChoiceAsync("maximum_volume", 1);
+            ToggleMute();
+            if (volume.Value != 150 || Math.Abs(audio.LastVolume - 150) > .01)
+                throw new InvalidOperationException("Unmuting exceeded the reduced volume cap.");
+            await SetSettingsChoiceAsync("maximum_volume", 0);
+            if (volume.Value != 100 || volumeSlider.Maximum != 100 || expandedVolumeSlider.Maximum != 100)
+                throw new InvalidOperationException("Lowering the cap did not clamp playback immediately.");
+            volume.Value = 70;
             await SetSettingsToggleAsync("auto_continue", false);
             if (preferences.AutoContinue || playbackQueue.AutoContinue || playbackQueue.Snapshot.Recommendations.Count != 0)
                 throw new InvalidOperationException("Disabling automatic continuation did not update the actual queue policy.");
@@ -524,7 +537,7 @@ internal sealed partial class MainWindow
             var active = ReferenceEquals(tab, settingsTabs[settingsSection.Value]);
             var content = (StackPanel)tab.Content!;
             var underline = content.Children.OfType<Border>().Single();
-            var label = ((Grid)content.Children[0]).Children.OfType<TextBlock>().First();
+            var label = (TextBlock)VisualTree.Find(content, element => element is TextBlock)!;
             if (Math.Abs(underline.Opacity - (active ? 1 : 0)) > .001 || active && label.Foreground != Color.White)
                 throw new InvalidOperationException("Settings underline/label did not settle on the selected tab.");
             if (!tab.IsVisible || tab.ActualWidth <= 0 || tab.ActualHeight <= 0 || tab.Bounds.X < 0 ||
@@ -576,7 +589,8 @@ internal sealed partial class MainWindow
         public Task SeekAsync(double seconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public AudioState Poll() => new(0, 12, true, false, false);
         public void Pause(bool paused) { }
-        public void Volume(double percent) { }
+        internal double LastVolume { get; private set; }
+        public void Volume(double percent) => LastVolume = percent;
         public void Stop() { }
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

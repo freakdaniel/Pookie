@@ -8,7 +8,7 @@ namespace Pookie.App.Platform;
 
 // Preserve normal XIM/IBus composition. Only supply a character if the backend
 // forwarded the key to the app but its legacy XLookupString lost Unicode text.
-internal sealed class LinuxSearchInput : IDisposable
+internal sealed partial class LinuxSearchInput : IDisposable
 {
     private readonly Window window;
     private readonly TextBase[] fields;
@@ -99,6 +99,6 @@ internal sealed class LinuxSearchInput : IDisposable
         public int SameScreen;
     }
 
-    [DllImport("libX11.so.6")] private static extern int XkbLookupKeySym(nint display, byte keyCode, uint state, out uint consumedModifiers, out nuint symbol);
-    [DllImport("libgdk-3.so.0")] private static extern uint gdk_keyval_to_unicode(uint symbol);
+    [LibraryImport("libX11.so.6")] private static partial int XkbLookupKeySym(nint display, byte keyCode, uint state, out uint consumedModifiers, out nuint symbol);
+    [LibraryImport("libgdk-3.so.0")] private static partial uint gdk_keyval_to_unicode(uint symbol);
 }

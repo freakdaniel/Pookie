@@ -1,10 +1,10 @@
 <Project>
   <Import Project="$(MSBuildThisFileDirectory)tools/mewui-source/MewUiSource.targets" />
   <Import Project="$(MSBuildThisFileDirectory)tools/mewui-patch/MewUiPatch.targets" />
+  <Import Project="$(MSBuildThisFileDirectory)tools/libvlc-linux/LibVlcLinux.targets" />
   <!-- WebView2's SDK adds WPF and WinForms references to every .NET consumer.
        Pookie hosts CoreWebView2 directly and does not load either UI framework. -->
-  <Target Name="UseWebView2CoreOnly" BeforeTargets="ResolveAssemblyReferences"
-          Condition="'$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests'">
+  <Target Name="UseWebView2CoreOnly" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>
       <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf' or '%(Reference.Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
     </ItemGroup>
@@ -43,7 +43,7 @@
       <Output TaskParameter="Lines" ItemName="LibVlcLicenseLines" />
     </ReadLinesFromFile>
     <WriteLinesToFile File="$(IntermediateOutputPath)THIRD-PARTY-NOTICES.txt"
-                      Lines="SoundFlow LICENSE.md;@(SoundFlowLicenseLines);SoundFlow SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowNoticeLines);SoundFlow.Codecs.FFMpeg LICENSE.md;@(SoundFlowFfmpegLicenseLines);SoundFlow.Codecs.FFMpeg SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowFfmpegNoticeLines);VideoLAN LibVLCSharp 3.10.2 and Windows LibVLC 3.0.24;Source: https://code.videolan.org/videolan/LibVLCSharp and https://code.videolan.org/videolan/vlc/-/tree/3.0.24;@(LibVlcLicenseLines)"
+                      Lines="SoundFlow LICENSE.md;@(SoundFlowLicenseLines);SoundFlow SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowNoticeLines);SoundFlow.Codecs.FFMpeg LICENSE.md;@(SoundFlowFfmpegLicenseLines);SoundFlow.Codecs.FFMpeg SOUNDFLOW-THIRD-PARTY-NOTICES.txt;@(SoundFlowFfmpegNoticeLines);VideoLAN LibVLCSharp 3.10.2 and Windows/macOS LibVLC 3.0.24 (VideoLAN.LibVLC.Mac package 3.1.3.2);Source: https://code.videolan.org/videolan/LibVLCSharp and https://code.videolan.org/videolan/vlc/-/tree/3.0.24;@(LibVlcLicenseLines)"
                       Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
   </Target>
 </Project>

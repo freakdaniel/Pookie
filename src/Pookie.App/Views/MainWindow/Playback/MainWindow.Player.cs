@@ -108,7 +108,7 @@ internal sealed partial class MainWindow
             durationLabel);
         hoverReveals.Add(new HoverReveal(playerTimeline, visible =>
             { positionLabel.Opacity = durationLabel.Opacity = visible ? 1 : 0; }, () => progress.IsMouseCaptured));
-        volumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).Width(72).CenterVertical()
+        volumeSlider = ThinSlider().Minimum(0).Maximum(preferences.MaximumVolume).BindValue(volume).Width(72).CenterVertical()
             .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
         const double playButtonSize = 34, playGlyphSize = 19;
         // The play path spans x=64..240 in a 256-unit viewBox.

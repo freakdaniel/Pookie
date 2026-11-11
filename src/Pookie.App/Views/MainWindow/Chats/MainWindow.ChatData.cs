@@ -654,6 +654,7 @@ internal sealed partial class MainWindow
     private void DisposeChats()
     {
         chatEmojiEditor?.Dispose();
+        chatEmojiLeaveTimer?.Dispose();
         chatEmojiSearchTimer?.Stop(); CloseChatMessageMenu(true); chatEmojiPopup?.Close(true); ChatEmojiArtwork.Clear();
         SaveChatDraft(); CleanupChatVoiceFiles(); RememberChatThread(); if(chatHistory!=null){_=chatHistory.DisposeAsync();chatHistory=null;} chatHistorySearch?.Cancel(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatMessageSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
         chatMusicRecognizeTimer.Dispose(); chatMusicEditor?.Dispose();

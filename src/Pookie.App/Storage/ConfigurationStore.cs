@@ -16,6 +16,7 @@ internal sealed record AppConfiguration
     }
 
     public double Volume { get; set; } = 70;
+    public int MaximumVolume { get; set; } = 100;
     public double PreviousVolume { get; set; } = 70;
     public bool DiscordEnabled { get; set; } = true;
     public bool Shuffle { get; set; }
@@ -36,7 +37,7 @@ internal sealed record AppConfiguration
     public bool LyricsEnabled { get; set; } = true;
     public bool LyricsAutoScroll { get; set; } = true;
     public bool SendPlaybackHistory { get; set; } = true;
-    public bool ChatSendOnEnter { get; set; }
+    public bool ChatSendOnEnter { get; set; } = true;
     public bool ChatAutoLoad { get; set; } = true;
     public bool ChatAnimateGifs { get; set; } = true;
     public bool ChatAutoPlayVideo { get; set; } = true;
@@ -53,8 +54,9 @@ internal sealed record AppConfiguration
         LikesView = LikesView is { } view && Enum.IsDefined(view) ? view : LikesAsList ? TrackViewMode.Waveform : TrackViewMode.Cards,
         LikesAsList = LikesView is { } legacyView && Enum.IsDefined(legacyView) ? legacyView != TrackViewMode.Cards : LikesAsList,
         PlaylistView = Enum.IsDefined(PlaylistView) ? PlaylistView : TrackViewMode.List,
-        Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, 100) : 70,
-        PreviousVolume = double.IsFinite(PreviousVolume) && PreviousVolume > 0 ? Math.Clamp(PreviousVolume, 1, 100) : 70,
+        MaximumVolume = MaximumVolume is 150 or 200 ? MaximumVolume : 100,
+        Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, MaximumVolume is 150 or 200 ? MaximumVolume : 100) : 70,
+        PreviousVolume = double.IsFinite(PreviousVolume) && PreviousVolume > 0 ? Math.Clamp(PreviousVolume, 1, MaximumVolume is 150 or 200 ? MaximumVolume : 100) : 70,
         StartupPage = StartupPage is "home" or "library" ? StartupPage : "home",
         LastSearchSection = LastSearchSection is >= 0 and <= 4 ? LastSearchSection : 0,
         CommentSort = CommentSort is "NEWEST" or "OLDEST" or "TIMESTAMP" ? CommentSort : "NEWEST",

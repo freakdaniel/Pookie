@@ -128,6 +128,21 @@ test('negative DRM correction applies before playback without a graph or calibra
   assert.equal(state.normalization_gain_db,-12);assert.equal(state.playing,true);
   await f.command('stop');
 });
+test('volume boost uses a gain node and remains adjustable after starting at normal volume',async()=>{
+  const f=normalizationFixture(0);
+  await f.start();
+  assert.equal(f.contexts.length,0);
+  await f.command('volume',{volume:150});
+  assert.equal(f.contexts.length,1);
+  assert.equal(f.audios[0].volume,1);
+  assert.equal(f.contexts[0].master.gain.value,1.5);
+  await f.command('volume',{volume:200});
+  assert.equal(f.contexts[0].master.gain.value,2);
+  await f.command('volume',{volume:0});
+  assert.equal(f.contexts[0].master.gain.value,0);
+  await f.command('stop');
+});
+
 test('positive fixed gain is separate from master volume and does not secretly play a paused start',async()=>{
   const f=normalizationFixture(6);
   await f.start(true);

@@ -180,7 +180,7 @@ path = "Serilog.dll"
 precedence = "closest"
 SPDX-FileCopyrightText = "Serilog Contributors"
 SPDX-License-Identifier = "Apache-2.0"
-SPDX-FileComment = "Unmodified Serilog 4.2.0; https://github.com/serilog/serilog; source commit c00e17fdeb615d36c062569f7342f72c9ece4aa7. Complete terms: licenses/Apache-2.0.txt. Pookie's logging integration is separately licensed under BSD-3-Clause."
+SPDX-FileComment = "Unmodified Serilog 4.4.0; https://github.com/serilog/serilog; source commit 497f80fda4f9e8f98b9c13ba34b1f0530f8c4449. Complete terms: licenses/Apache-2.0.txt. Pookie's logging integration is separately licensed under BSD-3-Clause."
 
 [[annotations]]
 path = "Serilog.Sinks.Console.dll"
@@ -211,11 +211,11 @@ SPDX-License-Identifier = "MIT"
 SPDX-FileComment = "Unmodified LibSMTC 1.1.0; https://github.com/itsAbhi650/LibSMTC/tree/687133e3e8fdc55103a0502f4c6640bb5fe934bc. Full copyright and terms: licenses/MIT.txt."
 
 [[annotations]]
-path = "Tmds.DBus.dll"
+path = ["Tmds.DBus.Protocol.dll", "Tmds.DBus.dll"]
 precedence = "closest"
 SPDX-FileCopyrightText = ["2006 Alp Toker <alp@atoker.com>", "2010 Other Contributors", "2016 Tom Deseyn <tom.deseyn@gmail.com>"]
 SPDX-License-Identifier = "MIT"
-SPDX-FileComment = "Unmodified Tmds.DBus 0.95.1; https://github.com/tmds/Tmds.DBus/tree/491bde2c16d65a7904397933cffa24e15e45eb2a. Full copyright and terms: licenses/MIT.txt. Windows SDK projections use Microsoft's SDK redistribution terms; macOS MediaPlayer/AppKit frameworks are supplied by the system."
+SPDX-FileComment = "Production uses Tmds.DBus.Protocol 0.94.2; Tmds.DBus 0.95.1 is used only by the independent smoke-test client. Upstream: https://github.com/tmds/Tmds.DBus. Full copyright and terms: licenses/MIT.txt. Windows SDK projections use Microsoft's SDK redistribution terms; macOS MediaPlayer/AppKit frameworks are supplied by the system."
 
 # SoundFlow and FFmpeg/native dependency license texts and notices are read from
 # their restored packages during build and shipped in licenses/THIRD-PARTY-NOTICES.txt.
@@ -225,7 +225,7 @@ path = ["LibVLCSharp.dll", "libvlc/**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "VideoLAN and VLC contributors"
 SPDX-License-Identifier = "LGPL-2.1-or-later"
-SPDX-FileComment = "Unmodified LibVLCSharp 3.10.2 (https://code.videolan.org/videolan/LibVLCSharp) and VideoLAN.LibVLC.Windows 3.0.24 (https://code.videolan.org/videolan/libvlc-nuget). Corresponding LibVLC source: https://code.videolan.org/videolan/vlc/-/tree/3.0.24. Native libraries remain dynamically replaceable. Full terms: licenses/LGPL-2.1-or-later.txt. Linux and macOS use the system/VLC installation."
+SPDX-FileComment = "Unmodified LibVLCSharp 3.10.2 (https://code.videolan.org/videolan/LibVLCSharp), VideoLAN.LibVLC.Windows 3.0.24 and VideoLAN.LibVLC.Mac 3.1.3.2 containing LibVLC 3.0.24 (https://code.videolan.org/videolan/libvlc-nuget). Corresponding LibVLC source: https://code.videolan.org/videolan/vlc/-/tree/3.0.24. Linux bundles signed Ubuntu packages; libvlc/manifest.json and the included notices record exact versions, hashes and license provenance. Native libraries remain dynamically replaceable in managed and Native AOT distributions. Full terms: licenses/LGPL-2.1-or-later.txt."
 
 [[annotations]]
 path = "StbImageSharp.dll"

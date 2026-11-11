@@ -130,6 +130,57 @@ internal sealed class ChatMediaHosting : IDisposable
         return ChatMediaReference.Parse(reference.Code);
     }
 
+    // Metadata has its own bounded request, independently of the original body.
+    // Even hosts ignoring Range are stopped as soon as the authenticated header
+    // arrives, without waiting for a complete image/video or occupying its slot.
+    internal async Task<ChatMediaPreview?> DownloadPreviewAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token)
+    {
+        const int limit = ChatMediaCrypto.MaxPreviewBytes + 8192;
+        if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
+        if (DiskCache is { } cache)
+            foreach (var code in new[] { reference.Code + ":preview", reference.Code })
+                if (await cache.ReadPrefixAsync(code, limit, token) is { } bytes)
+                    try { if (ChatMediaCrypto.ReadPreview(bytes, reference.Key, sender, recipient) is { } cached) return cached; }
+                    catch (Exception error) when (error is CryptographicException or InvalidDataException) { }
+                    finally { CryptographicOperations.ZeroMemory(bytes); }
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        using var request = new HttpRequestMessage(HttpMethod.Get, reference.Uri);
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, limit - 1);
+        if (reference.Provider == 'q') request.Headers.Referrer = new Uri($"https://qu.ax/{reference.ObjectId}");
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+        response.EnsureSuccessStatusCode();
+        if (response.StatusCode == HttpStatusCode.PartialContent && response.Content.Headers.ContentRange?.From != 0)
+            throw new InvalidDataException("Некорректный диапазон превью.");
+        await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
+        var prefix = new byte[limit]; var count = 0;
+        try
+        {
+            while (count < prefix.Length)
+            {
+                var read = await stream.ReadAsync(prefix.AsMemory(count, Math.Min(16384, prefix.Length - count)), deadline.Token);
+                if (read == 0) break;
+                count += read;
+                var offset = PreviewOffset(prefix.AsSpan(0, count), reference.Provider);
+                if (offset < 0) continue;
+                if (count >= offset + 4 && !prefix.AsSpan(offset, 4).SequenceEqual("PKM2"u8)) return null;
+                var preview = ChatMediaCrypto.ReadPreview(prefix.AsSpan(offset, count - offset), reference.Key, sender, recipient);
+                if (preview == null) continue;
+                if (DiskCache is { } disk)
+                {
+                    var size = 36 + System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(prefix.AsSpan(offset + 4));
+                    var encrypted = prefix.AsSpan(offset, size).ToArray();
+                    try { await disk.PutAsync(reference.Code + ":preview", encrypted, token); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+                    finally { CryptographicOperations.ZeroMemory(encrypted); }
+                }
+                return preview;
+            }
+            return null; // PKM1/older packages still use the original full path.
+        }
+        finally { CryptographicOperations.ZeroMemory(prefix); }
+    }
+
     internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null, int maximumBytes = int.MaxValue)
     {
         if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");

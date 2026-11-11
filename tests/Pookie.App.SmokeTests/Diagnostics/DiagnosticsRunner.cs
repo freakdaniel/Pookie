@@ -13,6 +13,10 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args is ["--image-clipboard-smoke-test"]) { ImageClipboardSmokeTest.Run(null); return true; }
+        if (args is ["--image-clipboard-smoke-test", var image]) { ImageClipboardSmokeTest.Run(image); return true; }
+        if (args is ["--image-clipboard-read-fixture", var selection, var expected])
+        { await ImageClipboardSmokeTest.ReadAsync(selection, expected); return true; }
         if (args.Contains("--embedded-login-live-probe")) { await EmbeddedLoginLiveProbe.RunAsync(); return true; }
         if (args.Contains("--embedded-web-challenge-smoke-test")) { await EmbeddedWebChallengeSmokeTest.RunAsync(); return true; }
         if (args.Contains("--embedded-login-smoke-test") || args.Contains("--embedded-login-preview"))

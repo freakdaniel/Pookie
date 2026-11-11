@@ -42,8 +42,8 @@ internal sealed partial class WebKitLoginWindow
         uriCallback = UriChanged; createCallback = CreatePopup; closeCallback = ClosePopup;
         var scriptBody = account == null ? LoginCaptureScript.Read(origin) : BrowserRequestScript.Read(account, origin);
         CustomizeScript(ref scriptBody, account == null);
-        script = "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) { (()=>{" +
-            "const pairing=" + JsonSerializer.Serialize(pairing) + ";" +
+        script = "if(location.origin === " + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + " && window === window.top) { (()=>{" +
+            "const pairing=" + JsonSerializer.Serialize(pairing, Pookie.SoundCloud.SoundCloudJson.Default.String) + ";" +
             "window.__pookiePost=message=>window.webkit.messageHandlers.pookie.postMessage(JSON.stringify({...message,pookie_pairing:pairing}));" +
             scriptBody + "})(); }";
     }
@@ -105,7 +105,7 @@ internal sealed partial class WebKitLoginWindow
                 if (line.Length > BrowserRequestCommand.MaxLength) continue;
                 var command = JsonSerializer.Deserialize(line, SoundCloudJson.Default.BrowserRequestCommand);
                 if (command?.IsValid() != true) continue;
-                var evaluation = "if(location.origin === " + JsonSerializer.Serialize(origin) + ") window.__pookieRequest?.(" +
+                var evaluation = "if(location.origin === " + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + ") window.__pookieRequest?.(" +
                     JsonSerializer.Serialize(command, SoundCloudJson.Default.BrowserRequestCommand) + ");";
                 Dispatch(() => Native.webkit_web_view_run_javascript(rootView, evaluation, 0, 0, 0));
             }
@@ -259,7 +259,7 @@ internal sealed partial class WebKitLoginWindow
         try { return Marshal.PtrToStringUTF8(value) ?? ""; }
         finally { Native.g_free(value); }
     }
-    private static void Connect(nint instance, string signal, Delegate callback) =>
+    private static void Connect<T>(nint instance, string signal, T callback) where T : Delegate =>
         Native.g_signal_connect_data(instance, signal, Marshal.GetFunctionPointerForDelegate(callback), 0, 0, 0);
 
     private static partial class Native
@@ -271,52 +271,52 @@ internal sealed partial class WebKitLoginWindow
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate nint CreateCallback(nint view, nint action, nint data);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void CloseCallback(nint view, nint data);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate int IdleCallback(nint data);
-        [DllImport(Gtk)] public static extern int gtk_init_check(nint argc, nint argv);
-        [DllImport(Gtk)] public static extern nint gtk_window_new(int type);
-        [DllImport(Gtk)] public static extern void gtk_window_set_default_size(nint window, int width, int height);
-        [DllImport(Gtk)] public static extern void gtk_window_set_title(nint window, [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
-        [DllImport(Gtk)] public static extern void gtk_window_deiconify(nint window);
-        [DllImport(Gtk)] public static extern void gtk_window_present(nint window);
-        [DllImport(Gtk)] public static extern void gtk_window_set_skip_taskbar_hint(nint window, int skip);
-        [DllImport(Gtk)] public static extern void gtk_window_set_skip_pager_hint(nint window, int skip);
-        [DllImport(Gtk)] public static extern nint gtk_box_new(int orientation, int spacing);
-        [DllImport(Gtk)] public static extern nint gtk_label_new([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
-        [DllImport(Gtk)] public static extern void gtk_label_set_text(nint label, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
-        [DllImport(Gtk)] public static extern void gtk_label_set_selectable(nint label, int selectable);
-        [DllImport(Gtk)] public static extern void gtk_box_pack_start(nint box, nint child, int expand, int fill, uint padding);
-        [DllImport(Gtk)] public static extern void gtk_container_add(nint container, nint child);
-        [DllImport(Gtk)] public static extern void gtk_widget_show_all(nint widget);
-        [DllImport(Gtk)] public static extern void gtk_widget_hide(nint widget);
-        [DllImport(Gtk)] public static extern void gtk_widget_realize(nint widget);
+        [LibraryImport(Gtk)] public static partial int gtk_init_check(nint argc, nint argv);
+        [LibraryImport(Gtk)] public static partial nint gtk_window_new(int type);
+        [LibraryImport(Gtk)] public static partial void gtk_window_set_default_size(nint window, int width, int height);
+        [LibraryImport(Gtk)] public static partial void gtk_window_set_title(nint window, [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
+        [LibraryImport(Gtk)] public static partial void gtk_window_deiconify(nint window);
+        [LibraryImport(Gtk)] public static partial void gtk_window_present(nint window);
+        [LibraryImport(Gtk)] public static partial void gtk_window_set_skip_taskbar_hint(nint window, int skip);
+        [LibraryImport(Gtk)] public static partial void gtk_window_set_skip_pager_hint(nint window, int skip);
+        [LibraryImport(Gtk)] public static partial nint gtk_box_new(int orientation, int spacing);
+        [LibraryImport(Gtk)] public static partial nint gtk_label_new([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
+        [LibraryImport(Gtk)] public static partial void gtk_label_set_text(nint label, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
+        [LibraryImport(Gtk)] public static partial void gtk_label_set_selectable(nint label, int selectable);
+        [LibraryImport(Gtk)] public static partial void gtk_box_pack_start(nint box, nint child, int expand, int fill, uint padding);
+        [LibraryImport(Gtk)] public static partial void gtk_container_add(nint container, nint child);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_show_all(nint widget);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_hide(nint widget);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_realize(nint widget);
         [StructLayout(LayoutKind.Sequential)] public struct Allocation { public int X, Y, Width, Height; }
-        [DllImport(Gtk)] public static extern void gtk_widget_size_allocate(nint widget, ref Allocation allocation);
-        [DllImport(Gtk)] public static extern void gtk_widget_destroy(nint widget);
-        [DllImport(Gtk)] public static extern void gtk_main();
-        [DllImport(Gtk)] public static extern void gtk_main_quit();
-        [DllImport(GObject)] public static extern void g_object_unref(nint obj);
-        [DllImport(GObject)] public static extern ulong g_signal_connect_data(nint instance, [MarshalAs(UnmanagedType.LPUTF8Str)] string signal, nint callback, nint data, nint destroy, int flags);
-        [DllImport("libglib-2.0.so.0")] public static extern void g_free(nint value);
-        [DllImport("libglib-2.0.so.0")] public static extern uint g_idle_add(IdleCallback callback, nint data);
-        [DllImport(WebKit)] public static extern nint webkit_website_data_manager_new(
+        [LibraryImport(Gtk)] public static partial void gtk_widget_size_allocate(nint widget, ref Allocation allocation);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_destroy(nint widget);
+        [LibraryImport(Gtk)] public static partial void gtk_main();
+        [LibraryImport(Gtk)] public static partial void gtk_main_quit();
+        [LibraryImport(GObject)] public static partial void g_object_unref(nint obj);
+        [LibraryImport(GObject)] public static partial ulong g_signal_connect_data(nint instance, [MarshalAs(UnmanagedType.LPUTF8Str)] string signal, nint callback, nint data, nint destroy, int flags);
+        [LibraryImport("libglib-2.0.so.0")] public static partial void g_free(nint value);
+        [LibraryImport("libglib-2.0.so.0")] public static partial uint g_idle_add(IdleCallback callback, nint data);
+        [LibraryImport(WebKit)] public static partial nint webkit_website_data_manager_new(
             [MarshalAs(UnmanagedType.LPUTF8Str)] string firstProperty, [MarshalAs(UnmanagedType.LPUTF8Str)] string dataPath,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string secondProperty, [MarshalAs(UnmanagedType.LPUTF8Str)] string cachePath, nint end);
-        [DllImport(WebKit)] public static extern nint webkit_web_context_new_with_website_data_manager(nint manager);
-        [DllImport(WebKit)] public static extern nint webkit_website_data_manager_get_cookie_manager(nint manager);
-        [DllImport(WebKit)] public static extern void webkit_cookie_manager_set_persistent_storage(nint manager, [MarshalAs(UnmanagedType.LPUTF8Str)] string filename, int storage);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_new_with_context(nint context);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_new_with_related_view(nint view);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_get_settings(nint view);
-        [DllImport(WebKit)] public static extern void webkit_settings_set_user_agent(nint settings, [MarshalAs(UnmanagedType.LPUTF8Str)] string? userAgent);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_get_user_content_manager(nint view);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_get_uri(nint view);
-        [DllImport(WebKit)] public static extern void webkit_web_view_load_uri(nint view, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
-        [DllImport(WebKit)] public static extern void webkit_web_view_run_javascript(nint view, [MarshalAs(UnmanagedType.LPUTF8Str)] string script, nint cancellable, nint callback, nint data);
-        [DllImport(WebKit)] public static extern int webkit_user_content_manager_register_script_message_handler(nint manager, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
-        [DllImport(WebKit)] public static extern nint webkit_user_script_new([MarshalAs(UnmanagedType.LPUTF8Str)] string source, int frames, int injectionTime, nint allowList, nint denyList);
-        [DllImport(WebKit)] public static extern void webkit_user_content_manager_add_script(nint manager, nint script);
-        [DllImport(WebKit)] public static extern void webkit_user_script_unref(nint script);
-        [DllImport(WebKit)] public static extern nint webkit_javascript_result_get_js_value(nint result);
-        [DllImport(Jsc)] public static extern int jsc_value_is_string(nint value);
-        [DllImport(Jsc)] public static extern nint jsc_value_to_string(nint value);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_context_new_with_website_data_manager(nint manager);
+        [LibraryImport(WebKit)] public static partial nint webkit_website_data_manager_get_cookie_manager(nint manager);
+        [LibraryImport(WebKit)] public static partial void webkit_cookie_manager_set_persistent_storage(nint manager, [MarshalAs(UnmanagedType.LPUTF8Str)] string filename, int storage);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_new_with_context(nint context);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_new_with_related_view(nint view);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_settings(nint view);
+        [LibraryImport(WebKit)] public static partial void webkit_settings_set_user_agent(nint settings, [MarshalAs(UnmanagedType.LPUTF8Str)] string? userAgent);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_user_content_manager(nint view);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_uri(nint view);
+        [LibraryImport(WebKit)] public static partial void webkit_web_view_load_uri(nint view, [MarshalAs(UnmanagedType.LPUTF8Str)] string uri);
+        [LibraryImport(WebKit)] public static partial void webkit_web_view_run_javascript(nint view, [MarshalAs(UnmanagedType.LPUTF8Str)] string script, nint cancellable, nint callback, nint data);
+        [LibraryImport(WebKit)] public static partial int webkit_user_content_manager_register_script_message_handler(nint manager, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+        [LibraryImport(WebKit)] public static partial nint webkit_user_script_new([MarshalAs(UnmanagedType.LPUTF8Str)] string source, int frames, int injectionTime, nint allowList, nint denyList);
+        [LibraryImport(WebKit)] public static partial void webkit_user_content_manager_add_script(nint manager, nint script);
+        [LibraryImport(WebKit)] public static partial void webkit_user_script_unref(nint script);
+        [LibraryImport(WebKit)] public static partial nint webkit_javascript_result_get_js_value(nint result);
+        [LibraryImport(Jsc)] public static partial int jsc_value_is_string(nint value);
+        [LibraryImport(Jsc)] public static partial nint jsc_value_to_string(nint value);
     }
 }

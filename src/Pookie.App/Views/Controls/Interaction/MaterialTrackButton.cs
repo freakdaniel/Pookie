@@ -170,6 +170,7 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnMewPropertyChanged(MewProperty property)
     {
         base.OnMewPropertyChanged(property);
+        if (property == IsMouseOverProperty && pending) pendingHot = IsMouseOver;
         if (property == IsMouseOverProperty || property == IsPressedProperty || property == IsEnabledProperty)
         { RefreshSurface(); RefreshShape(); }
     }

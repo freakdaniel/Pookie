@@ -31,7 +31,7 @@ internal sealed class PlayReadyPlayback
         Completion = Task.Run(() => RunAsync(http, source, allowed, store));
     }
 
-    internal void Volume(double percent) => controls.Writer.TryWrite(new(ControlKind.Volume, Math.Clamp(percent / 100 * Math.Pow(10, gain / 20), 0, 1)));
+    internal void Volume(double percent) => controls.Writer.TryWrite(new(ControlKind.Volume, Math.Clamp(percent / 100 * Math.Pow(10, gain / 20), 0, 4)));
     internal void Pause(bool paused) => controls.Writer.TryWrite(new(ControlKind.Pause, paused ? 1 : 0));
 
     internal async Task SeekAsync(double position, CancellationToken token)
@@ -155,6 +155,7 @@ internal sealed class PlayReadyPlayback
             const ushort haveCurrentData = 2, haveFutureData = 3;
             var buffering = !paused && !ended && (!hasAudio || readyState < haveFutureData || seekTarget.HasValue || seekingNow);
             var playing = !buffering && !paused && !ended && !engine.Paused;
+            if (playing && position > 1) engine.ReportVolumeSupport();
             var buffered = media.BufferedAt(position);
             if (!ended) Volatile.Write(ref endedReported, 0);
             Volatile.Write(ref state, new(position, media.Duration, playing, buffering, ended)

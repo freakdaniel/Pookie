@@ -39,6 +39,12 @@ internal sealed partial class MainWindow
             if (chatEmojiPopup.SurfaceBounds.Width > 383 || chatEmojiPopup.SurfaceBounds.Height > 421 ||
                 chatEmojiPopup.HitTest(new Point(2, 2)) != null || chatEmojiCard.Background != chatComposer.Background)
                 throw new InvalidOperationException("Emoji panel lost its compact glass geometry or blocks the workspace.");
+            MoveActionPointer(SettingsCenter(chatEmojiCard));
+            await WaitForLoginFrameAsync();
+            MoveActionPointer(new Point(2, 2));
+            await WaitForLikedLayoutAsync(() => !chatEmojiPopup.IsVisible);
+            await OpenChatGifsAsync();
+            await WaitForLikedLayoutAsync(() => chatEmojiPopup.Reveal > .999 && !chatEmojiLoading);
             if (chatEmojiModes.Emoji.IsHitTestVisible || chatEmojiModes.Emoji.Focusable || chatEmojiModes.Children.Count != 2 ||
                 Math.Abs((chatEmojiModes.Emoji.Bounds.X + chatEmojiModes.Gif.Bounds.Right) / 2 - (chatEmojiModes.Bounds.X + chatEmojiModes.ActualWidth / 2)) > 1)
                 throw new InvalidOperationException("Emoji footer lost its centred icon modes or passive selection.");
@@ -177,6 +183,7 @@ internal sealed partial class MainWindow
             if (row.Reactions.Buttons.Count(b => b.IsVisible) != 2 || row.Reactions.Buttons.Where(b => b.IsVisible).Max(b => b.Bounds.Right) > row.Footer.Bounds.X - 1)
                 throw new InvalidOperationException("Two participants' reactions overlap the timestamp.");
             await VerifyEmojiPhotoCornersAsync(row);
+            MoveActionPointer(new Point(2, 2));
             foreach (var requestedWidth in new[] { 780, 1000, 2560 })
             {
                 var width = VerificationWindowWidth(requestedWidth);

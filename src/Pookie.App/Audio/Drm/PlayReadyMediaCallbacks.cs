@@ -12,8 +12,8 @@ using static Pookie.Audio.MediaFoundationNative;
 namespace Pookie.Audio;
 
 // Protected source and protection manager follow Microsoft's MediaEngineEMEUWPSample.
-[ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-internal sealed unsafe class PlayReadyMediaSource(nint source, nint cdm) : IProtectedMediaSource, ITrustedMediaInput, IDisposable
+[GeneratedComClass]
+internal sealed unsafe partial class PlayReadyMediaSource(nint source, nint cdm) : IProtectedMediaSource, ITrustedMediaInput, IAgileObject, IDisposable
 {
     private readonly object gate = new();
     private readonly Dictionary<(uint Stream, Guid Interface), ComReference> authorities = new();

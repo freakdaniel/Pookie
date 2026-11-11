@@ -1,0 +1,74 @@
+name: Native AOT
+
+on: [push, pull_request]
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Install Linux build and browser prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev libgtk-3-0 libwebkit2gtk-4.1-0 libgl1-mesa-dri libglx-mesa0 xvfb dbus-x11
+      - name: Build pinned MewUI packages
+        shell: pwsh
+        run: ./tools/mewui-source/build.ps1
+      - name: Enable Media Foundation for Windows native checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/mfplat.dll")) {
+            Install-WindowsFeature Server-Media-Foundation
+          }
+      - name: Publish actual native executable
+        shell: pwsh
+        run: |
+          dotnet publish src/Pookie.App -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -o artifacts/native-aot/${{ matrix.rid }} 2>&1 | Tee-Object artifacts/native-aot-${{ matrix.rid }}.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native dependencies on Linux
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-self-test tests/Fixtures/Media/chat-video.mp4
+      - name: Verify native dependencies on macOS
+        if: runner.os == 'macOS'
+        run: artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-self-test tests/Fixtures/Media/chat-video.mp4
+      - name: Verify native dependencies on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe --aot-self-test tests/Fixtures/Media/chat-video.mp4
+      - name: Verify native UI and embedded WebKit on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-ui-check
+      - name: Verify native UI and WebView2 WinRT on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./artifacts/native-aot/${{ matrix.rid }}/Pookie.exe --aot-ui-check
+      - name: Verify native UI and WKWebView on macOS
+        if: runner.os == 'macOS'
+        run: artifacts/native-aot/${{ matrix.rid }}/Pookie --aot-ui-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-aot-${{ matrix.rid }}
+          path: |
+            artifacts/native-aot/${{ matrix.rid }}/
+            artifacts/native-aot-${{ matrix.rid }}.log
+          if-no-files-found: error

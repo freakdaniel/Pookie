@@ -38,6 +38,11 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => popupQueueData.Any(block => block.Key == "recommendations" && block.Title == "Похожие дальше") &&
                 shellMenus.Single(menu => ReferenceEquals(menu.State, queueOpen)).Layer.Reveal > .999);
             CaptureUiPreview("queue-continuation");
+            var selection = playbackQueue.Snapshot.Upcoming.First();
+            await PlayQueueEntryAsync(selection.EntryId);
+            await WaitForLoginFrameAsync();
+            DismissUnfocusedShellMenus();
+            if (!queueOpen.Value) throw new InvalidOperationException("Selecting a queue track dismissed the queue panel.");
             SetExpandedPlayer(true); ToggleExpandedPanel(PlayerPanel.Queue);
             await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning && !panelAnimation.IsRunning && panelReveal > .999);
             if (!expandedQueueData.Any(block => block.Key == "recommendations" && block.Title == "Похожие дальше") ||

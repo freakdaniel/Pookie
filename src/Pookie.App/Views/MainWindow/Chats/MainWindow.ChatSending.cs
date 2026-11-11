@@ -104,6 +104,7 @@ internal sealed partial class MainWindow
         if (!chatConversations.Any(c => c.Recipient.Id == recipient.Id))
             chatConversations.Insert(0, new($"{Math.Min(user.Id, recipient.Id)}:{Math.Max(user.Id, recipient.Id)}", recipient, null, true));
         chatSending = true;
+        CloseChatGifs();
         // The outgoing item owns these files now, including clipboard staging.
         // Detach the composer before upload/POST rather than waiting for delivery.
         ClearChatAttachments(); RefreshChatComposer();
@@ -193,6 +194,7 @@ internal sealed partial class MainWindow
         if (!ChatWriteCurrent(account, token)) return;
         if (conversation.Recipient.Id != recipient.Id || conversation.LastMessage is not { } confirmed || confirmed.SenderId != account || confirmed.Body != pending.Body)
             throw new SoundCloudException("SoundCloud не подтвердил содержимое отправленного сообщения.");
+        if (chatRecipient?.Id == recipient.Id) CloseChatGifs();
         confirmed=confirmed with{ClientContent=pending.ClientContent};
         conversation=conversation with{LastMessage=confirmed};
         chatPending.Remove(recipient.Id);

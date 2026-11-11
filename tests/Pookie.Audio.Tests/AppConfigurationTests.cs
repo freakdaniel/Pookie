@@ -22,6 +22,7 @@ public sealed class AppConfigurationTests
             Assert.Equal(TrackViewMode.Waveform, saved.LikesView);
             Assert.Equal(TrackViewMode.List, saved.PlaylistView);
             Assert.True(saved.AutoContinue); Assert.True(saved.NormalizeVolume); Assert.True(saved.ChatSaveDrafts);
+            Assert.True(saved.ChatSendOnEnter);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -50,6 +51,26 @@ public sealed class AppConfigurationTests
             using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(paths.Config, "settings.json")));
             Assert.Equal("keep", json.RootElement.GetProperty("future_preference").GetProperty("mode").GetString());
             Assert.Empty(Directory.GetFiles(paths.Config, "*.tmp"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData(100, 100)]
+    [InlineData(150, 150)]
+    [InlineData(200, 180)]
+    [InlineData(999, 100)]
+    public void VolumeCapIsPersistedAndOnlyClampsValuesAboveSelectedLimit(int maximum, int expected)
+    {
+        var root = Directory.CreateTempSubdirectory("pookie-volume-cap-").FullName;
+        try
+        {
+            var store = new ConfigurationStore(new(root));
+            store.Save(new() { MaximumVolume = maximum, Volume = 180, PreviousVolume = 180, ChatSendOnEnter = false });
+            var saved = store.Load();
+            Assert.Equal(expected, saved.Volume); Assert.Equal(expected, saved.PreviousVolume);
+            Assert.Equal(maximum is 100 or 150 or 200 ? maximum : 100, saved.MaximumVolume);
+            Assert.False(saved.ChatSendOnEnter); // An explicitly chosen shortcut survives.
         }
         finally { Directory.Delete(root, true); }
     }

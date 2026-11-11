@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
         {
             if (element is Button button && button.StyleName is TrackButtons.Glass or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
         });
-        if (buttons.Count != 4) throw new InvalidOperationException("Like/repost/playlist/copy actions are missing.");
+        if (buttons.Count != 4) throw new InvalidOperationException("Like/repost/share/playlist actions are missing.");
         if (buttons[0] is not MaterialTrackButton { IsConnected: true } || buttons[1] is not MaterialTrackButton { IsConnected: true } ||
             Math.Abs(buttons[1].Bounds.X - buttons[0].Bounds.Right - 2) > 1)
             throw new InvalidOperationException("List like/repost buttons did not form a connected pair.");
@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
                     await WaitForLikedLayoutAsync(() => button.IsMouseOver && button.Background == TrackButtons.HoverColor(surface, foreground));
                     if (button.BorderThickness != 0 || button.CornerRadius != TrackRowLayout.ActionSize / 2 || Math.Abs(button.ActualHeight - TrackRowLayout.ActionSize) > 1 / Window.DpiScale || button.Cursor != CursorType.Hand)
                         throw new InvalidOperationException("Material action lost its pill shape, size or hand cursor.");
-                    CaptureUiPreview(button == buttons[0] ? "like-hover" : button == buttons[1] ? "repost-hover" : button == buttons[2] ? "playlist-hover" : "copy-hover");
+                    CaptureUiPreview(button == buttons[0] ? "like-hover" : button == buttons[1] ? "repost-hover" : button == buttons[2] ? "share-hover" : "playlist-hover");
                     var connected = button is MaterialTrackButton { IsConnected: true };
                     var pressedSurface = connected ? TrackButtons.HoverColor(surface, foreground) : TrackButtons.PressedColor(surface, foreground);
                     var cornersBeforePress = ((MaterialTrackButton)button).ConnectedCorners;
@@ -90,11 +90,11 @@ internal sealed partial class MainWindow
                 }
                 finally { button.IsEnabled = enabled; }
             }
-            Console.WriteLine("UI_LIKED_ACTIONS_OK: Material 3 pill/icon geometry, selected like, hover/press/release state layers and keyboard focus for like/copy");
+            Console.WriteLine("UI_LIKED_ACTIONS_OK: Material 3 pill/icon geometry, selected like, hover/press/release state layers and keyboard focus for like/share");
         }
         catch (Exception error)
         {
-            throw new InvalidOperationException($"Like/copy interaction failed: bounds={active?.Bounds}, " +
+            throw new InvalidOperationException($"Like/share interaction failed: bounds={active?.Bounds}, " +
                 $"enabled={active?.IsEnabled}, hover={active?.IsMouseOver}, pressed={active?.IsPressed}, background={active?.Background}", error);
         }
         finally

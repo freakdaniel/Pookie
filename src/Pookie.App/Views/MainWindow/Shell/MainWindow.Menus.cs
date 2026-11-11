@@ -43,7 +43,8 @@ internal sealed partial class MainWindow
     {
         // Check after focus routing has completed, including moves between items in the card.
         foreach (var menu in shellMenus)
-            if (menu.State.Value && !menu.Anchor.IsFocusWithin && !menu.Layer.IsFocusWithin && !InAppPopup.HasFocusFor(menu.Layer))
+            if (menu.State.Value && !menu.Anchor.IsFocusWithin && !menu.Layer.IsFocusWithin &&
+                !(ReferenceEquals(menu.State, queueOpen) && menu.Layer.IsMouseOver) && !InAppPopup.HasFocusFor(menu.Layer))
                 menu.State.Value = false;
     }
 

@@ -6,7 +6,7 @@ using Pookie.App.Storage;
 namespace Pookie.App.Browser;
 
 // WebKit compiles and caches native request rules before any SoundCloud document loads.
-internal sealed class WebKitContentFilter : IDisposable
+internal sealed partial class WebKitContentFilter : IDisposable
 {
     private const string WebKit = "libwebkit2gtk-4.1.so.0";
     private const string GObject = "libgobject-2.0.so.0";
@@ -81,20 +81,20 @@ internal sealed class WebKitContentFilter : IDisposable
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void AsyncReady(nint source, nint result, nint data);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int TimeoutCallback(nint data);
-    [DllImport(WebKit)] private static extern nint webkit_user_content_filter_store_new([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
-    [DllImport(WebKit)] private static extern void webkit_user_content_filter_store_load(nint store, [MarshalAs(UnmanagedType.LPUTF8Str)] string identifier, nint cancellable, AsyncReady callback, nint data);
-    [DllImport(WebKit)] private static extern nint webkit_user_content_filter_store_load_finish(nint store, nint result, out nint error);
-    [DllImport(WebKit)] private static extern void webkit_user_content_filter_store_save(nint store, [MarshalAs(UnmanagedType.LPUTF8Str)] string identifier, nint source, nint cancellable, AsyncReady callback, nint data);
-    [DllImport(WebKit)] private static extern nint webkit_user_content_filter_store_save_finish(nint store, nint result, out nint error);
-    [DllImport(WebKit)] private static extern void webkit_user_content_manager_add_filter(nint manager, nint filter);
-    [DllImport(WebKit)] private static extern void webkit_user_content_filter_unref(nint filter);
-    [DllImport(GLib)] private static extern nint g_bytes_new(byte[] data, nuint size);
-    [DllImport(GLib)] private static extern void g_bytes_unref(nint bytes);
-    [DllImport(GLib)] private static extern void g_error_free(nint error);
-    [DllImport(GLib)] private static extern int g_main_context_iteration(nint context, int mayBlock);
-    [DllImport(GLib)] private static extern uint g_timeout_add(uint interval, TimeoutCallback callback, nint data);
-    [DllImport(GLib)] private static extern int g_source_remove(uint tag);
-    [DllImport(GObject)] private static extern void g_object_unref(nint obj);
-    [DllImport(Gio)] private static extern nint g_cancellable_new();
-    [DllImport(Gio)] private static extern void g_cancellable_cancel(nint cancellable);
+    [LibraryImport(WebKit)] private static partial nint webkit_user_content_filter_store_new([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+    [LibraryImport(WebKit)] private static partial void webkit_user_content_filter_store_load(nint store, [MarshalAs(UnmanagedType.LPUTF8Str)] string identifier, nint cancellable, AsyncReady callback, nint data);
+    [LibraryImport(WebKit)] private static partial nint webkit_user_content_filter_store_load_finish(nint store, nint result, out nint error);
+    [LibraryImport(WebKit)] private static partial void webkit_user_content_filter_store_save(nint store, [MarshalAs(UnmanagedType.LPUTF8Str)] string identifier, nint source, nint cancellable, AsyncReady callback, nint data);
+    [LibraryImport(WebKit)] private static partial nint webkit_user_content_filter_store_save_finish(nint store, nint result, out nint error);
+    [LibraryImport(WebKit)] private static partial void webkit_user_content_manager_add_filter(nint manager, nint filter);
+    [LibraryImport(WebKit)] private static partial void webkit_user_content_filter_unref(nint filter);
+    [LibraryImport(GLib)] private static partial nint g_bytes_new(byte[] data, nuint size);
+    [LibraryImport(GLib)] private static partial void g_bytes_unref(nint bytes);
+    [LibraryImport(GLib)] private static partial void g_error_free(nint error);
+    [LibraryImport(GLib)] private static partial int g_main_context_iteration(nint context, int mayBlock);
+    [LibraryImport(GLib)] private static partial uint g_timeout_add(uint interval, TimeoutCallback callback, nint data);
+    [LibraryImport(GLib)] private static partial int g_source_remove(uint tag);
+    [LibraryImport(GObject)] private static partial void g_object_unref(nint obj);
+    [LibraryImport(Gio)] private static partial nint g_cancellable_new();
+    [LibraryImport(Gio)] private static partial void g_cancellable_cancel(nint cancellable);
 }

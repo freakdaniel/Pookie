@@ -11,6 +11,9 @@ namespace Pookie.App.Messages;
 internal sealed unsafe class ChatVideoSession : IAsyncDisposable
 {
     private readonly object nativeSync = new(), frameSync = new();
+    private readonly object diagnosticSync = new();
+    private readonly List<(string Module, string Reason)> nativeErrors = [];
+    private int failureLogged;
     private readonly byte[] bytes;
     private LibVLC? vlc;
     private MediaPlayer? player;
@@ -38,30 +41,67 @@ internal sealed unsafe class ChatVideoSession : IAsyncDisposable
         var owned = data.ToArray();
         return Task.Run(() =>
         {
-        var session = new ChatVideoSession(owned);
+        var session = new ChatVideoSession(owned) { preview = preview };
         try
         {
             lock (initialization)
             {
-                var mac = "/Applications/VLC.app/Contents/MacOS/lib";
-                if (OperatingSystem.IsMacOS() && Directory.Exists(mac)) Core.Initialize(mac); else Core.Initialize();
+                ChatVideoRuntime.Initialize();
             }
-            session.vlc = new LibVLC("--quiet", "--no-video-title-show", "--no-osd", "--no-spu", "--no-lua", "--no-metadata-network-access", "--avcodec-hw=none");
-            session.preview = preview;
+            session.vlc = new LibVLC("--no-video-title-show", "--no-osd", "--no-spu", "--no-lua", "--no-metadata-network-access", "--avcodec-hw=none");
+            session.vlc.Log += (_, entry) =>
+            {
+                if (entry.Level != LogLevel.Error) return;
+                // VLC probes several modules during successful playback too.
+                // Retain bounded diagnostics and emit them only on real failure.
+                try
+                {
+                    lock (session.diagnosticSync)
+                    {
+                        var detail = (entry.Module ?? "unknown", entry.Message);
+                        if (session.nativeErrors.Contains(detail)) return;
+                        if (session.nativeErrors.Count == 16) session.nativeErrors.RemoveAt(0);
+                        session.nativeErrors.Add(detail);
+                    }
+                }
+                catch { }
+            };
             session.player = new MediaPlayer(session.vlc);
             session.player.SetVideoCallbacks(session.videoLock, session.videoUnlock, session.display);
             session.player.SetVideoFormatCallbacks(session.setup, null);
             session.stream = new MemoryStream(session.bytes, writable: false);
             session.input = new StreamMediaInput(session.stream);
             session.media = new VlcMedia(session.vlc, session.input);
-            session.media.AddOption(":demux=avformat");
+            // The macOS runtime provides native MP4/MKV/AVI demuxers rather
+            // than an avformat module; let VLC select one for the attachment.
+            if (!OperatingSystem.IsMacOS()) session.media.AddOption(":demux=avformat");
             session.media.AddOption(":no-sub-autodetect-file");
             if (silent) session.media.AddOption(":no-audio");
             if (!session.player.Play(session.media)) throw new InvalidDataException("Видео не удалось открыть.");
             return session;
         }
-        catch { session.DisposeCore(); throw; }
+        catch { session.LogNativeErrors(); session.DisposeCore(); throw; }
         });
+    }
+    internal void LogPlaybackFailure()
+    {
+        if (Interlocked.Exchange(ref failureLogged, 1) != 0) return;
+        var state = Snapshot();
+        Pookie.Logging.AppLog.For("Pookie.Video").Write(
+            preview ? Serilog.Events.LogEventLevel.Debug : Serilog.Events.LogEventLevel.Error,
+            "Не удалось прочитать видео: ошибка декодера={DecoderFailed}; конец потока={Ended}; время={Time}",
+            state.Failed, state.Ended, state.Time);
+        LogNativeErrors();
+    }
+
+    private void LogNativeErrors()
+    {
+        (string Module, string Reason)[] details;
+        lock (diagnosticSync) details = nativeErrors.ToArray();
+        foreach (var (module, reason) in details)
+            Pookie.Logging.AppLog.For("Pookie.Video").Write(
+                preview ? Serilog.Events.LogEventLevel.Debug : Serilog.Events.LogEventLevel.Error,
+                "libVLC [{Module}]: {Reason}", module, reason);
     }
     private uint Configure(ref nint opaque, nint chroma, ref uint sourceWidth, ref uint sourceHeight, ref uint pitches, ref uint lines)
     {

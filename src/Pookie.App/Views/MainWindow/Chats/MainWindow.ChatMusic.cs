@@ -177,7 +177,7 @@ internal sealed partial class MainWindow
             ChatMusicView view = null!;
             var row = new LikedTrackRow(_ => Run(() => PlayChatMusicAsync(view)),
                 _ => Run(() => OpenChatMusicAsync(view)), track => Run(() => ToggleTrackLikeAsync(track)),
-                CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)),
+                track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)),
                 (_, fraction) => Run(() => SeekChatMusicAsync(view, fraction)), ArtworkLayer, glass: true, share: ShareTrack);
             view = new ChatMusicView(row) { Group = group }.Initialize();
             if (bubble.Body.IsVisible && url == urls[^1]) view.Margin = new Thickness(0, 0, 0, 12);

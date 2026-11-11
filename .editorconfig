@@ -12,3 +12,6 @@ indent_size = 4
 [*.{csproj,props,targets,json,yml}]
 indent_style = space
 indent_size = 2
+
+[src/**/*.cs]
+dotnet_diagnostic.SYSLIB1054.severity = warning

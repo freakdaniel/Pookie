@@ -1,4 +1,3 @@
-using DiscordRPC;
 using Xunit;
 
 namespace Pookie.Discord.Tests;
@@ -11,12 +10,12 @@ public sealed class PresenceTests
         var now = new DateTime(2026, 10, 3, 12, 0, 0, DateTimeKind.Utc);
         var presence = PresenceService.CreatePresence(new("Трек", "Исполнитель", "https://i1.sndcdn.com/art.jpg",
             "https://soundcloud.com/artist/song", 40, 180, true), now)!;
-        Assert.Equal(ActivityType.Listening, presence.Type);
+        Assert.Equal(PresenceActivityType.Listening, presence.Type);
         Assert.Equal("Трек", presence.Details);
         Assert.Equal("Исполнитель", presence.State);
-        Assert.Equal(now.AddSeconds(-40), presence.Timestamps.Start);
+        Assert.Equal(now.AddSeconds(-40), presence.Timestamps!.Start);
         Assert.Equal(now.AddSeconds(140), presence.Timestamps.End);
-        Assert.Equal("https://soundcloud.com/artist/song", Assert.Single(presence.Buttons).Url);
+        Assert.Equal("https://soundcloud.com/artist/song", Assert.Single(presence.Buttons!).Url);
     }
 
     [Theory]

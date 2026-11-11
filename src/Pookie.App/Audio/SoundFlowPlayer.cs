@@ -144,7 +144,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         lock (stateSync)
         {
             if (!double.IsFinite(percent)) throw new ArgumentOutOfRangeException(nameof(percent));
-            volume = (float)Math.Clamp(percent / 100, 0, 1);
+            volume = (float)Math.Clamp(percent / 100, 0, 2);
             if (player != null) player.Volume = volume;
         }
     }

@@ -28,6 +28,7 @@ internal sealed partial class MainWindow
     private ChatEmojiModeBar chatEmojiModes = null!;
     private Button chatGifRetry = null!;
     private DispatcherTimer chatEmojiSearchTimer = null!;
+    private DispatcherTimer chatEmojiLeaveTimer = null!;
     private bool chatEmojiLoading, chatEmojiUpdating, chatEmojiGifMode;
     private string? chatEmojiGroup;
     private ChatMessage? chatEmojiTarget;
@@ -74,6 +75,14 @@ internal sealed partial class MainWindow
         chatEmojiModes = new ChatEmojiModeBar(SetChatEmojiMode);
         chatEmojiLayout = new ChatEmojiPanelLayout(categories, MaterialSearchField.Create(chatGifSearch), chatEmojiTransition, chatEmojiModes).Initialize();
         chatEmojiCard = new GlassCard(Surface) { HoverEnabled = false, Focusable = true }.Background(ChatGlassSurface).CornerRadius(20).Padding(0).Child(chatEmojiLayout);
+        chatEmojiLeaveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(180));
+        chatEmojiLeaveTimer.Tick += () =>
+        {
+            chatEmojiLeaveTimer.Stop();
+            if (!chatEmojiCard.IsMouseOver && !chatGif.IsMouseOver) CloseChatGifs();
+        };
+        chatEmojiCard.MouseEnter += () => chatEmojiLeaveTimer.Stop();
+        chatEmojiCard.MouseLeave += () => { chatEmojiLeaveTimer.Stop(); chatEmojiLeaveTimer.Start(); };
         chatEmojiPopup = new ChatPopupLayer(chatEmojiCard, () => chatEmojiAnchor ?? chatGif.Bounds, () => chatColumns.Bounds).Initialize();
         chatEmojiPopup.Closed = () => { chatEmojiTarget = null; chatEmojiAnchor = null; ClearChatGifResults(); };
         chatEmojiCard.OnKeyDown(e => { if (e.Key == Key.Escape) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); } });
@@ -191,6 +200,7 @@ internal sealed partial class MainWindow
     }
     private void CloseChatGifs()
     {
+        chatEmojiLeaveTimer?.Stop();
         chatEmojiSearchTimer?.Stop(); chatGifsOpen.Value = false; ++chatGifGeneration; ++chatEmojiGeneration;
         chatEmojiResultsFade?.Stop();
         chatGifLoading?.Cancel(); chatGifLoading?.Dispose(); chatGifLoading = null;

@@ -154,7 +154,9 @@ public sealed class BrowserRequestProtocolTests
         Assert.False(Valid(audio with { Authorization = "token\nheader" }));
         Assert.False(Valid(audio with { Authorization = new string('a', 16385) }));
         Assert.False(Valid(audio with { Position = double.NaN }));
-        Assert.False(Valid(audio with { Volume = 101 }));
+        Assert.True(Valid(audio with { Volume = 150 }));
+        Assert.True(Valid(audio with { Volume = 200 }));
+        Assert.False(Valid(audio with { Volume = 201 }));
         Assert.False(Valid(audio with { PlaybackId = "bad" }));
         Assert.False(Valid(audio with { Action = "execute" }));
         Assert.False(Valid(audio with { Action = "stop" }));

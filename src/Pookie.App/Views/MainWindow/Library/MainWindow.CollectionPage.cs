@@ -18,7 +18,7 @@ internal sealed partial class MainWindow
     private double collectionTrackArtworkSize = 176;
     private Image collectionCover = null!, collectionBackdrop = null!, collectionPlayIcon = null!;
     private TextBlock collectionTitle = null!, collectionAuthor = null!, collectionMeta = null!, collectionDescription = null!;
-    private Button collectionPlay = null!, collectionCopy = null!, collectionDescriptionToggle = null!;
+    private Button collectionPlay = null!, collectionShare = null!, collectionDescriptionToggle = null!;
     private TextBox collectionFilter = null!;
     private StackPanel collectionDescriptionHost = null!;
     private ScrollViewer collectionDescriptionScroll = null!;
@@ -94,8 +94,6 @@ internal sealed partial class MainWindow
         {
             if (CollectionAuthor is { } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, "Исполнитель", user.AvatarUrl, User: user)));
         }, TrackButtons.Text, 20).Padding(0).Left();
-        collectionCopy = TrackButtons.Icon(Icons.View("copy", 20), () =>
-        { if (TrackLink(displayedCollection?.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, 44).Hint("Скопировать ссылку");
         collectionDescriptionToggle = TrackButtons.Action(new TextBlock().Text("Подробнее").FontSize(13), () =>
         {
             collectionDescriptionExpanded = !collectionDescriptionExpanded;
@@ -124,7 +122,7 @@ internal sealed partial class MainWindow
         var hero = new TrackPageColumns(
             new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),
                 new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Row(2).Children(TrackButtons.Connected(collectionLike, collectionRepost),
-                    TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться"), collectionCopy,
+                    collectionShare = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться"),
                     ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44), more)),
             coverFrame, true, collectionBackdrop, new Border().Background(ArtworkBackdrop.CardScrim), new ArtworkGlassSheen())
             { HeroArtworkMinWidth = 176, HeroArtworkMaxWidth = 208 }.Initialize();
@@ -232,7 +230,6 @@ internal sealed partial class MainWindow
         displayedCollection = item;
         playlistCollectionVisible.Value = page.Value == Page.LibraryCollection && item?.Playlist != null;
         if (!playlistCollectionVisible.Value) return;
-        collectionCopy.IsEnabled = TrackLink(item?.Playlist?.PermalinkUrl) != null;
         collectionTitle.Text = item!.Title; collectionAuthor.Text = item.Playlist?.User?.Username ?? item.Subtitle;
         var playlist = item.Playlist!;
         var data = activeCollection?.Items.Select(entry => entry.Track).OfType<SoundCloudTrack>().ToArray() ?? [];

@@ -39,8 +39,6 @@ internal sealed partial class MainWindow
         trackDetailLike = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(trackDetailHeart, trackDetailLikeCount),
             () => { if (trackDetailState is { } state) Run(() => ToggleTrackLikeAsync(state.Track)); }, TrackButtons.Glass, height: 44);
         var comment = TrackCommentComposerView();
-        var copy = TrackButtons.Icon(Icons.View("copy", 20).Center(),
-            () => { if (trackDetailState is { } state) CopyTrackLink(state.Track); }, TrackButtons.Glass, size: 44).Hint("Скопировать ссылку");
         var queue = TrackButtons.Icon(Icons.View("queue", 20).Center(),
             () => { if (trackDetailState is { } state) EnqueueTrack(state.Track, false); }, TrackButtons.Glass, size: 44).Hint("Добавить в очередь");
         trackDetailRepostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
@@ -50,8 +48,9 @@ internal sealed partial class MainWindow
         AttachTrackQueueMenu(queue, () => trackDetailState?.Track);
         var playlist = AddToPlaylistButton(() => trackDetailState?.Track, TrackButtons.Glass, 44);
         var actions = trackCommentActions = new TrackCommentActionRow(TrackButtons.Connected(trackDetailLike, trackDetailRepost), comment,
-            new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(ShareTrackButton(() => trackDetailState?.Track), playlist, copy, queue));
+            new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(ShareTrackButton(() => trackDetailState?.Track), playlist, queue));
         var coverFrame = new Border().CornerRadius(10).ClipToBounds().Column(1).Child(ArtworkLayer(trackDetailCover));
+        AttachTrackCoverMenu(coverFrame);
         var heroColumns = new TrackPageColumns(
             new ViewportGrid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0), waveform.Row(1).CenterVertical(), actions.Row(2)),
             coverFrame, true, trackDetailBackdrop, trackDetailScrim = new Border().Background(ArtworkBackdrop.CardScrim),

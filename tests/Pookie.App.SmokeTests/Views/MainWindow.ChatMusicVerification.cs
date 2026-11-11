@@ -44,7 +44,7 @@ internal sealed partial class MainWindow
         if (Math.Abs(track.Row.PlayButton.Bounds.Y - track.Row.Cover.Bounds.Y) > 1 ||
             Math.Abs(actionsBottom - track.Row.Cover.Bounds.Bottom) > 1 || track.Row.Waveform.ActualHeight > 57)
             throw new InvalidOperationException("Music controls no longer align with the top/bottom of the artwork or the embedded waveform is too tall.");
-        if (glassActions != 5 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
+        if (glassActions != 4 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
             trackBubble.Content.CaptionBackground != ChatOutgoingColor || playlistBubble.Content.CaptionBackground != Color.Transparent ||
             trackBubble.Footer.Bounds.Bottom > trackBubble.Body.Bounds.Bottom + 1.1 ||
             playlistBubble.Footer.Bounds.Bottom > playlistBubble.Attachments.Bounds.Bottom ||

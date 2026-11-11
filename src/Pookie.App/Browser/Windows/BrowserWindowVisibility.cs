@@ -5,7 +5,7 @@ using InfiniFrame;
 namespace Pookie.App.Browser;
 
 // InfiniFrame 0.62 exposes minimize/focus, but no hide API. Use its public OS handle.
-internal static class BrowserWindowVisibility
+internal static partial class BrowserWindowVisibility
 {
     private sealed record ServicePlacement(int Left, int Top, nint Style);
     private static readonly ConditionalWeakTable<IInfiniFrameWindow, ServicePlacement> services = new();
@@ -52,18 +52,26 @@ internal static class BrowserWindowVisibility
         }
     }
 
-    [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(nint window, int command);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetForegroundWindow(nint window);
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out Rect rect);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint window, int index, nint value);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "sel_registerName")]
-    private static extern nint Selector([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
-    [DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
-    private static extern void Send(nint receiver, nint selector, nint argument);
-    [DllImport("libgtk-3.so.0", EntryPoint = "gtk_widget_show_all")] private static extern void GtkShow(nint window);
-    [DllImport("libgtk-3.so.0", EntryPoint = "gtk_widget_hide")] private static extern void GtkHide(nint window);
-    [DllImport("libgtk-3.so.0", EntryPoint = "gtk_window_present")] private static extern void GtkPresent(nint window);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetWindowRect(nint window, out Rect rect);
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static partial nint GetWindowLongPtr(nint window, int index);
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static partial nint SetWindowLongPtr(nint window, int index, nint value);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
+    [LibraryImport("/usr/lib/libobjc.A.dylib", EntryPoint = "sel_registerName")]
+    private static partial nint Selector([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+    [LibraryImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+    private static partial void Send(nint receiver, nint selector, nint argument);
+    [LibraryImport("libgtk-3.so.0", EntryPoint = "gtk_widget_show_all")] private static partial void GtkShow(nint window);
+    [LibraryImport("libgtk-3.so.0", EntryPoint = "gtk_widget_hide")] private static partial void GtkHide(nint window);
+    [LibraryImport("libgtk-3.so.0", EntryPoint = "gtk_window_present")] private static partial void GtkPresent(nint window);
 }

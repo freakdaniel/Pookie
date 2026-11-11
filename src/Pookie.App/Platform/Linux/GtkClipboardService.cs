@@ -7,7 +7,7 @@ namespace Pookie.App.Platform;
 
 // GTK owns a separate connection to the desktop. Pump it on the UI thread so
 // other applications can request copied text without xclip/wl-copy subprocesses.
-internal sealed class GtkClipboardService : IClipboardService
+internal sealed partial class GtkClipboardService : IClipboardService
 {
     private readonly nint clipboard;
     private readonly nint selection;
@@ -109,12 +109,12 @@ internal sealed class GtkClipboardService : IClipboardService
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void TextReceivedCallback(nint clipboard, nint text, nint userData);
-    [DllImport("libgtk-3.so.0")] private static extern int gtk_init_check(nint argc, nint argv);
-    [DllImport("libgtk-3.so.0")] private static extern nint gtk_clipboard_get(nint selection);
-    [DllImport("libgtk-3.so.0")] private static extern void gtk_clipboard_set_text(nint clipboard, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, int length);
-    [DllImport("libgtk-3.so.0")] private static extern void gtk_clipboard_request_text(nint clipboard, TextReceivedCallback callback, nint userData);
-    [DllImport("libgdk-3.so.0")] private static extern nint gdk_atom_intern([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
-    [DllImport("libgdk-3.so.0")] private static extern void gdk_set_allowed_backends([MarshalAs(UnmanagedType.LPUTF8Str)] string backends);
-    [DllImport("libgdk-3.so.0")] private static extern nint gdk_selection_owner_get(nint selection);
-    [DllImport("libglib-2.0.so.0")] private static extern int g_main_context_iteration(nint context, int mayBlock);
+    [LibraryImport("libgtk-3.so.0")] private static partial int gtk_init_check(nint argc, nint argv);
+    [LibraryImport("libgtk-3.so.0")] private static partial nint gtk_clipboard_get(nint selection);
+    [LibraryImport("libgtk-3.so.0")] private static partial void gtk_clipboard_set_text(nint clipboard, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, int length);
+    [LibraryImport("libgtk-3.so.0")] private static partial void gtk_clipboard_request_text(nint clipboard, TextReceivedCallback callback, nint userData);
+    [LibraryImport("libgdk-3.so.0")] private static partial nint gdk_atom_intern([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
+    [LibraryImport("libgdk-3.so.0")] private static partial void gdk_set_allowed_backends([MarshalAs(UnmanagedType.LPUTF8Str)] string backends);
+    [LibraryImport("libgdk-3.so.0")] private static partial nint gdk_selection_owner_get(nint selection);
+    [LibraryImport("libglib-2.0.so.0")] private static partial int g_main_context_iteration(nint context, int mayBlock);
 }

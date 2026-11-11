@@ -22,7 +22,7 @@
   }
   function valid(c) {
     return c && /^[a-f0-9]{32}$/.test(c.playback_id || '') && Number.isFinite(c.position) && c.position >= 0 && c.position <= 86400 &&
-      Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 100 &&
+      Number.isFinite(c.volume) && c.volume >= 0 && c.volume <= 200 &&
       (c.normalization_gain_db == null || Number.isFinite(c.normalization_gain_db) && c.normalization_gain_db >= -24 && c.normalization_gain_db <= 6) && (c.action === 'start'
       ? typeof c.source === 'string' && c.source.length <= 8192 && typeof c.authorization === 'string' &&
         c.authorization.length > 0 && c.authorization.length <= 16384 && !/[\x00-\x1f\x7f]/.test(c.authorization)
@@ -102,17 +102,19 @@
     return Math.min(1, st.volume / 100 * Math.pow(10, st.gainDb / 20));
   }
   async function setupNormalization(st) {
-    // Attenuation stays in the media element: it needs neither PCM access nor
-    // a Worklet and applies equally to every protected frame from the start.
-    if (st.gainDb <= 0 || !window.AudioContext || !window.AudioWorkletNode) return;
+    if (st.gainDb <= 0 && st.volume <= 100) return;
+    if (st.normalization || st.normalizationPending || !window.AudioContext) return;
+    st.normalizationPending = true;
     const context = new AudioContext();
     let source;
     const url = URL.createObjectURL(new Blob([normalizationModule], {type:'text/javascript'}));
     try {
-      await context.audioWorklet.addModule(url);
+      if (st.gainDb > 0 && window.AudioWorkletNode) await context.audioWorklet.addModule(url);
       await context.resume();
       if (current !== st || st.controller.signal.aborted) { await context.close(); return; }
-      const node = new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb}});
+      const node = st.gainDb > 0 && window.AudioWorkletNode
+        ? new AudioWorkletNode(context, 'pookie-track-gain', {processorOptions:{gainDb:st.gainDb}}) : context.createGain();
+      if (node.gain) node.gain.value = Math.pow(10, st.gainDb / 20);
       const master = context.createGain(); master.gain.value = st.volume / 100;
       source = context.createMediaElementSource(st.audio);
       source.connect(node).connect(master).connect(context.destination);
@@ -122,7 +124,7 @@
       if (context.state !== 'closed') await context.close();
       // A failed graph cannot be detached back to direct media output.
       if (source && current === st) { st.audio.remove(); createAudio(st); st.normalization=null; }
-    } finally { URL.revokeObjectURL(url); }
+    } finally { st.normalizationPending = false; URL.revokeObjectURL(url); }
   }
   async function bytes(url, limit, st) {
     let delay = 250;
@@ -430,7 +432,10 @@
           st.volume = c.volume;
           if (st.normalization) {
             st.normalization.master.gain.setTargetAtTime(c.volume / 100, st.normalization.context.currentTime, .02);
-          } else st.audio.volume = directVolume(st);
+          } else {
+            st.audio.volume = directVolume(st);
+            if (st.volume > 100) await setupNormalization(st);
+          }
         }
         else if (c.action === 'pause') { st.paused = c.paused; if (c.paused) st.audio.pause(); else if (st.buffer) await st.audio.play(); }
         else if (c.action === 'seek') {

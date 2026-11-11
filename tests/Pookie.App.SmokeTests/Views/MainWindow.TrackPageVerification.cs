@@ -10,8 +10,10 @@ internal sealed partial class MainWindow
     private async Task VerifyTrackPageUiAsync()
     {
         var oldSession = api.Session; var oldTransport = api.BrowserTransport;
+        var oldPlayer = player;
         try
         {
+            player = new QueueVerificationPlayer();
             if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
                 throw new InvalidOperationException("Could not expose the native track fixture.");
             Window.WindowSize = WindowSize.Resizable(1160, 900, minWidth: 1000, minHeight: 680);
@@ -53,6 +55,22 @@ internal sealed partial class MainWindow
             { await ProbeDetailScrollingAsync(); return; }
             if (trackDescriptionUiSmoke)
             { await VerifyDescriptionFocusScrollAsync(); return; }
+            if (HasTrackCoverImage)
+            {
+                var actualCover = trackDetailCover.Source;
+                trackDetailCover.Source = Icons.Source(Icons.MissingTrackArtwork);
+                RouteContextRightClick(SettingsCenter(trackDetailCover));
+                await WaitForLoginFrameAsync();
+                if (trackCoverMenu.IsOpen) throw new InvalidOperationException("Placeholder artwork opened an image context menu.");
+                trackDetailCover.Source = actualCover;
+                RouteContextRightClick(SettingsCenter(trackDetailCover));
+                await WaitForLikedLayoutAsync(() => trackCoverMenu.Reveal > .999);
+                if (trackCoverMenu.Model.Items.OfType<MenuItem>().Count() != 2)
+                    throw new InvalidOperationException("Artwork menu must expose image and image-link copying.");
+                CaptureUiPreview("track-cover-menu", trackCoverMenu.Card);
+                trackCoverMenu.Close();
+                await WaitForLikedLayoutAsync(() => !trackCoverMenu.IsVisible);
+            }
             if (trackPlaybackUiSmoke)
             { VerifyCommentTextPixels(); await VerifyTrackPlaybackVisibilityAsync(); return; }
             if (waveformUiSmoke)
@@ -123,6 +141,7 @@ internal sealed partial class MainWindow
                 trackDetailLike.Bounds.Bottom > trackDetailCover.Bounds.Bottom + 1 || trackDetailLike.Bounds.Y <= trackDetailWaveform.Bounds.Y)
                 throw new InvalidOperationException("Hero title, author, playback, waveform and actions do not follow the reference layout.");
             await VerifyTrackDescriptionAsync();
+            Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             await VerifyCommentUserLinksAsync();
             await MoreTrackRepliesAsync(fixtures[0], trackDetailState.Comments.Comments[0]);
             if (trackDetailState.Comments.Comments[0].Replies.Length != 2 || trackDetailState.Comments.Comments[0].RepliesCursor != null)
@@ -163,7 +182,7 @@ internal sealed partial class MainWindow
             if (Math.Abs(progress.Value - progress.Maximum * .25) > .1 || trackDetailPosition.Text != FormatTime(progress.Value))
                 throw new InvalidOperationException("Track page seek is not connected to the shared player.");
             await VerifyTrackPlaylistButtonAsync(FindTrackAction(trackDetailScroll, "Добавить в плейлист"), trackDetailState!.Track);
-            await VerifyTrackClipboardAsync(FindTrackAction(trackDetailScroll, "Скопировать ссылку"), trackDetailState!.Track);
+            await VerifyTrackClipboardAsync(FindTrackAction(trackDetailScroll, "Поделиться"), trackDetailState!.Track);
             repostedIds.Add(fixtures[1].Id); RefreshRepostState();
             if (trackDetailRepost.StyleName != TrackButtons.Reposted)
                 throw new InvalidOperationException("Hero repost state was not selected.");
@@ -188,7 +207,7 @@ internal sealed partial class MainWindow
             }
             BindLibraryTrackRow(copyRow, fixtures[0] with { PermalinkUrl = null });
             await VerifyTrackPlaylistButtonAsync(FindTrackAction(copyRow.Root, "Добавить в плейлист"), fixtures[0]);
-            await VerifyTrackClipboardAsync(FindTrackAction(copyRow.Root, "Скопировать ссылку"), fixtures[0]);
+            await VerifyTrackClipboardAsync(FindTrackAction(copyRow.Root, "Поделиться"), fixtures[0]);
             Console.WriteLine("TRACK_PAGE_UI_OK: reference hero, responsive cover/sidebar, threaded comments/replies, shared seek, sidebar fans/playlists/albums, pagination, back/forward and stale response protection");
         }
         catch (Exception error)
@@ -196,7 +215,7 @@ internal sealed partial class MainWindow
         finally
         {
             if (OperatingSystem.IsWindows()) ProbeSetWindowPos(Window.Handle, -2, 0, 0, 0, 0, 0x13);
-            api.Session = oldSession; api.BrowserTransport = oldTransport; Window.Close();
+            player = oldPlayer; api.Session = oldSession; api.BrowserTransport = oldTransport; Window.Close();
         }
     }
 
@@ -207,7 +226,7 @@ internal sealed partial class MainWindow
         var longAuthor = string.Concat(Enumerable.Repeat("Исполнитель с длинным именем, ", 8));
         try
         {
-            foreach (var width in new[] { 1600, 1320, 1160, 1000, 1120, 1400, 1000, 1160 })
+            foreach (var width in new[] { 1600, 1320, 1160, 1000, 1120, 1400, 1000, 1160 }.Select(VerificationWindowWidth))
             {
                 Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 1000, minHeight: 680);
                 trackDetailTitle.Text = title; trackDetailAuthor.Text = author; trackDetailMeta.Text = meta;

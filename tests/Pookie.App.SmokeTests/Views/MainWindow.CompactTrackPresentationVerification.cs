@@ -6,7 +6,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private async Task VerifyCompactTrackPresentationAsync(CompactTrackRow row)
+    private async Task VerifyCompactTrackPresentationAsync(CompactTrackRow row, CollectionFixtureTransport transport)
     {
         Window.FocusManager.ClearFocus(); MoveActionPointer(new Point(1, 1));
         await WaitForLikedLayoutAsync(() => row.Summary.Strength > .999 && row.Actions.Strength < .001);
@@ -56,8 +56,18 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => row.Trailing.Reveal > .999);
         var origin = row.Like.TranslatePoint(default, Window); var wasLiked = likedIds.Contains(original.Id);
         var likePoint = new Point(origin.X + 16, origin.Y + 16);
-        MoveActionPointer(likePoint); RouteWaveformClick(likePoint); MoveActionPointer(new Point(1, 1));
+        transport.TrackLikeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            MoveActionPointer(likePoint); RouteWaveformClick(likePoint);
+            await WaitForLikedLayoutAsync(() => IsLikePending(original));
+            MoveActionPointer(new Point(1, 1));
+            await WaitForLikedLayoutAsync(() => !row.Like.IsMouseOver && row.Like.Background == Color.Transparent);
+            if (!IsLikePending(original)) throw new InvalidOperationException("Like hover check did not retain its delayed request.");
+        }
+        finally { transport.TrackLikeCompletion.TrySetResult(); transport.TrackLikeCompletion = null; }
         await WaitForLikedLayoutAsync(() => row.Summary.Strength > .999 && row.Actions.Strength < .001 && !IsLikePending(original) && likedIds.Contains(original.Id) != wasLiked);
+        await WaitForLikedLayoutAsync(() => !row.Like.IsPressed && row.Like.Background == Color.Transparent);
         Window.FocusManager.ClearFocus();
         CaptureUiPreview("track-row-statistics");
 

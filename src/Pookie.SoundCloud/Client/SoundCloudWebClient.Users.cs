@@ -8,7 +8,7 @@ public sealed partial class SoundCloudWebClient
     {
         if (userId <= 0) throw new ArgumentOutOfRangeException(nameof(userId));
         using var document = await GetJsonAsync(Api($"users/{userId}"), token).ConfigureAwait(false);
-        return document.RootElement.Deserialize<SoundCloudUser>(SoundCloudJson.Default.Options)
+        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser)
             is { Id: > 0 } user && user.Id == userId ? user : throw new SoundCloudException("Профиль недоступен");
     }
 

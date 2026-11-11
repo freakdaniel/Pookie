@@ -1,5 +1,14 @@
 # Application integration checks
 
+`--image-clipboard-smoke-test [image-path]` checks Linux image copying using a
+private X selection: a separate process receives the exact PNG bytes and no JPEG
+alternative is advertised. It verifies colour channels before transport and never
+reads or overwrites the user's clipboard. The optional image can be PNG or JPEG.
+
+`POOKIE_COMPACT_INTERACTION_PROBE=1` with `--collections-ui-smoke-test --no-audio`
+isolates compact row interactions. A delayed like response checks that leaving
+the button clears its hover while pending and after the request completes.
+
 The normal application uses one embedded website session for authenticated web
 API operations, protection checks and browser audio. Login and the worker share
 one durable profile. A visible slider presents the existing worker in MewUI's
@@ -78,7 +87,7 @@ and its header transition (categories return after clearing, interrupted animati
 and switching back from GIFs without reopening the panel), virtualized
 offline artwork and its bounded cache, GIF skeletons/previews with a local HTTP
 handler (separate delayed metadata/thumbnail skeletons), animation cleanup, quick and expanded message reactions, 36-character
-transport references, reaction/timestamp geometry, narrow/wide windows, Escape,
+transport references, reaction/timestamp geometry, dismissal after pointer leave, narrow/wide windows, Escape,
 conversation changes, and 10,000 menu rebinds. It never sends real messages or
 opens the microphone. GIFs remain available through the existing KLIPY setting.
 
@@ -244,6 +253,8 @@ counts/shape without identities or credentials, and makes no account writes.
 clicks, all seven library-style tabs at 1000×680, back/forward section and scroll
 restoration, the persistent likes view, real playback/lyrics/history policy
 switches, preserved current/manual queue entries, and configuration round trips.
+The 100/150/200% audio limit updates both players' sliders and the backend;
+reducing the limit also clamps the current and remembered unmute volume.
 It also verifies native Material switch geometry, animated travel and pressed size,
 cancelled/disabled input, dropdown mouse/keyboard interaction, and the cache chart's
 real file-size proportions, hover details and empty state after clearing.
@@ -256,6 +267,7 @@ scroll states for visual QA. The excluded reduced-animation preference must stay
 continuation after a track/playlist: prefetch, manual/source/recommendation priority,
 missing recommendation skip, retained original context and history identity,
 separate "Похожие дальше" sections in both queues, and repeat taking precedence.
+Selecting an upcoming track keeps the ordinary player's queue panel open.
 It uses isolated account data and fixture metadata/streams with a fake audio player.
 Queue unit tests also cover stale/cancelled results, single-flight prefetch,
 source pagination, deduplication, explicit recommendation selection, transient
@@ -304,9 +316,10 @@ replacement during hover checks Unicode boundaries with emoji, combining marks,
 CRLF and empty text. Focused descriptions are pixel-checked for an absent insertion
 caret across a blink interval; descriptions share message-body selection and
 are TextBlock controls without an editor or text input client. On Linux it
-clicks the hero and list copy buttons, resolves a missing
+opens Share from the hero and list, clicks its copy button, resolves a missing
 permalink and reads the new URL from a separate process using a private X selection;
-the user's clipboard is untouched. The writer and search inputs also work with
+the user's clipboard is untouched. The cover menu is checked on real artwork
+and suppressed on a placeholder. The writer and search inputs also work with
 `GDK_BACKEND=wayland` and no GTK clipboard service. The hero checks rendered
 forward/reverse background, icon and count colours, interruption, and the absence
 of a faded disabled state during pending requests. It uses an isolated demo profile
@@ -925,9 +938,25 @@ music-link extraction, caption preservation and rejected non-SoundCloud URLs.
 `--chat-video-smoke-test` decodes synthetic MP4, WebM, MOV, MKV and AVI fixtures
 through the production LibVLC session. Each case checks a real bitmap, pause/resume,
 seeking, disposal, and decoder ownership after the caller's input buffer is cleared.
-It plays silently and sends/uploads nothing. Linux requires LibVLC 3 and codec
-plugins; Windows builds carry the native package, and macOS uses installed VLC.
-The current native playback validation was run on Linux only.
+It plays silently and sends/uploads nothing. Linux x64 and macOS (Apple Silicon
+and Intel) development and published builds carry libVLC and codec dependencies.
+To test `dotnet run` and the published Linux bundle without setting library paths:
+
+```sh
+env -u LD_LIBRARY_PATH -u VLC_PLUGIN_PATH dotnet run --project tests/Pookie.App.SmokeTests -- --chat-video-smoke-test
+dotnet publish tests/Pookie.App.SmokeTests -c Release -r linux-x64 --self-contained true -o artifacts/video-smoke
+env -u LD_LIBRARY_PATH -u VLC_PLUGIN_PATH artifacts/video-smoke/Pookie.App.SmokeTests --chat-video-smoke-test
+```
+
+For macOS use `-r osx-arm64` or `-r osx-x64` when publishing and clear
+`DYLD_LIBRARY_PATH` / `DYLD_FALLBACK_LIBRARY_PATH` as well. The normal `dotnet run`
+command needs no RID and gets both macOS architectures from the NuGet package.
+
+The check verifies the loaded libVLC paths through `/proc/self/maps` on Linux or
+dyld's loaded-image list on macOS, native
+demuxer errors on corrupt input, and exception messages/inner exceptions/stacks
+in a temporary log. CI runs both development and relocated published video checks
+on Linux, Apple Silicon and Intel macOS. Windows builds carry the native package.
 
 `--chat-navigation-ui-smoke-test --no-audio` also checks chat folders and membership,
 local pins/favorites, ordered multiple selection, linked replies, idempotent reactions,

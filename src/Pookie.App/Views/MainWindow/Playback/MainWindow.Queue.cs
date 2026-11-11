@@ -94,6 +94,10 @@ internal sealed partial class MainWindow
 
     private async Task PlayQueueEntryAsync(long entryId)
     {
+        // The selected row is recycled when the queue advances. Keep focus in
+        // its persistent card so focus-based dismissal does not close the queue.
+        if (queueOpen.Value)
+            foreach (var menu in shellMenus.Where(menu => ReferenceEquals(menu.State, queueOpen))) menu.Layer.Card.Focus();
         if (playbackQueue.Current?.EntryId == entryId) { await ToggleAsync(); return; }
         var entry = playbackQueue.Select(entryId);
         if (entry != null) await PlayAsync(entry.Track);

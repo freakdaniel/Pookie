@@ -12,7 +12,7 @@ namespace Pookie.App.Platform;
 // separate, hidden clipboard window. A dedicated X connection receives selection
 // requests that the MewUI event dispatcher otherwise drops. GTK is an optional
 // read fallback: a Wayland-only GDK_BACKEND must never disable system copying.
-internal sealed class LinuxWindowClipboard : IClipboardService, IDisposable
+internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposable
 {
     private readonly Window window;
     private readonly GtkClipboardService? reader;
@@ -201,26 +201,26 @@ internal sealed class LinuxWindowClipboard : IClipboardService, IDisposable
     private struct SelectionRequest { public int Type; public nuint Serial; public int SendEvent; public nint Display; public nuint Owner, Requestor, Selection, Target, Property, Time; }
     [StructLayout(LayoutKind.Sequential)]
     private struct SelectionNotify { public int Type; public nuint Serial; public int SendEvent; public nint Display; public nuint Requestor, Selection, Target, Property, Time; }
-    [DllImport("libX11.so.6")] private static extern nuint XDefaultRootWindow(nint display);
-    [DllImport("libX11.so.6")] private static extern nuint XCreateSimpleWindow(nint display, nuint parent, int x, int y, uint width, uint height, uint borderWidth, nuint border, nuint background);
-    [DllImport("libX11.so.6")] private static extern int XDestroyWindow(nint display, nuint window);
-    [DllImport("libX11.so.6")] private static extern int XDeleteProperty(nint display, nuint window, nuint property);
-    [DllImport("libX11.so.6")] private static extern int XConvertSelection(nint display, nuint selection, nuint target, nuint property, nuint requestor, nuint time);
-    [DllImport("libX11.so.6")] private static extern int XGetWindowProperty(nint display, nuint window, nuint property, nint offset, nint length, int delete, nuint requestedType,
+    [LibraryImport("libX11.so.6")] private static partial nuint XDefaultRootWindow(nint display);
+    [LibraryImport("libX11.so.6")] private static partial nuint XCreateSimpleWindow(nint display, nuint parent, int x, int y, uint width, uint height, uint borderWidth, nuint border, nuint background);
+    [LibraryImport("libX11.so.6")] private static partial int XDestroyWindow(nint display, nuint window);
+    [LibraryImport("libX11.so.6")] private static partial int XDeleteProperty(nint display, nuint window, nuint property);
+    [LibraryImport("libX11.so.6")] private static partial int XConvertSelection(nint display, nuint selection, nuint target, nuint property, nuint requestor, nuint time);
+    [LibraryImport("libX11.so.6")] private static partial int XGetWindowProperty(nint display, nuint window, nuint property, nint offset, nint length, int delete, nuint requestedType,
         out nuint actualType, out int format, out nuint count, out nuint remaining, out nint data);
-    [DllImport("libX11.so.6")] private static extern int XFree(nint data);
-    [DllImport("libX11.so.6")] private static extern nint XOpenDisplay(nint name);
-    [DllImport("libX11.so.6")] private static extern int XCloseDisplay(nint display);
-    [DllImport("libX11.so.6")] private static extern int XSelectInput(nint display, nuint window, nint mask);
-    [DllImport("libX11.so.6")] private static extern int XSync(nint display, int discard);
-    [DllImport("libX11.so.6")] private static extern int XCheckTypedWindowEvent(nint display, nuint window, int type, nint ev);
-    [DllImport("libX11.so.6")] private static extern int XPending(nint display);
-    [DllImport("libX11.so.6")] private static extern int XNextEvent(nint display, nint ev);
-    [DllImport("libX11.so.6")] private static extern nuint XInternAtom(nint display, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
-    [DllImport("libX11.so.6")] private static extern int XSetSelectionOwner(nint display, nuint selection, nuint owner, nuint time);
-    [DllImport("libX11.so.6")] private static extern nuint XGetSelectionOwner(nint display, nuint selection);
-    [DllImport("libX11.so.6", EntryPoint = "XChangeProperty")] private static extern int XChangeBytes(nint display, nuint window, nuint property, nuint type, int format, int mode, byte[] data, int count);
-    [DllImport("libX11.so.6", EntryPoint = "XChangeProperty")] private static extern int XChangeAtoms(nint display, nuint window, nuint property, nuint type, int format, int mode, nuint[] data, int count);
-    [DllImport("libX11.so.6")] private static extern int XSendEvent(nint display, nuint window, int propagate, nint mask, nint ev);
-    [DllImport("libX11.so.6")] private static extern int XFlush(nint display);
+    [LibraryImport("libX11.so.6")] private static partial int XFree(nint data);
+    [LibraryImport("libX11.so.6")] private static partial nint XOpenDisplay(nint name);
+    [LibraryImport("libX11.so.6")] private static partial int XCloseDisplay(nint display);
+    [LibraryImport("libX11.so.6")] private static partial int XSelectInput(nint display, nuint window, nint mask);
+    [LibraryImport("libX11.so.6")] private static partial int XSync(nint display, int discard);
+    [LibraryImport("libX11.so.6")] private static partial int XCheckTypedWindowEvent(nint display, nuint window, int type, nint ev);
+    [LibraryImport("libX11.so.6")] private static partial int XPending(nint display);
+    [LibraryImport("libX11.so.6")] private static partial int XNextEvent(nint display, nint ev);
+    [LibraryImport("libX11.so.6")] private static partial nuint XInternAtom(nint display, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
+    [LibraryImport("libX11.so.6")] private static partial int XSetSelectionOwner(nint display, nuint selection, nuint owner, nuint time);
+    [LibraryImport("libX11.so.6")] private static partial nuint XGetSelectionOwner(nint display, nuint selection);
+    [LibraryImport("libX11.so.6", EntryPoint = "XChangeProperty")] private static partial int XChangeBytes(nint display, nuint window, nuint property, nuint type, int format, int mode, byte[] data, int count);
+    [LibraryImport("libX11.so.6", EntryPoint = "XChangeProperty")] private static partial int XChangeAtoms(nint display, nuint window, nuint property, nuint type, int format, int mode, nuint[] data, int count);
+    [LibraryImport("libX11.so.6")] private static partial int XSendEvent(nint display, nuint window, int propagate, nint mask, nint ev);
+    [LibraryImport("libX11.so.6")] private static partial int XFlush(nint display);
 }

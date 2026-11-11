@@ -1,5 +1,3 @@
-using DiscordRPC;
-using DiscordRPC.Logging;
 
 namespace Pookie.Discord;
 
@@ -10,7 +8,7 @@ public sealed class PresenceService : IDisposable
 {
     // Retain the existing Discord application's registered assets and client identity.
     private const string ApplicationId = "1090770350251458592";
-    private readonly DiscordRpcClient client = new(ApplicationId) { Logger = new NullLogger() };
+    private readonly PresenceRpcClient client = new(ApplicationId);
     private string? lastTrack;
     private bool enabled = true;
     public PresenceService() => client.Initialize();
@@ -37,7 +35,7 @@ public sealed class PresenceService : IDisposable
 
     public void Clear() { if (lastTrack == null) return; client.ClearPresence(); lastTrack = null; }
 
-    internal static RichPresence? CreatePresence(PresenceTrack track, DateTime now)
+    internal static PresenceActivity? CreatePresence(PresenceTrack track, DateTime now)
     {
         if (string.IsNullOrWhiteSpace(track.Title) || !double.IsFinite(track.Duration) || track.Duration <= 0
             || !double.IsFinite(track.Position)) return null;
@@ -47,10 +45,10 @@ public sealed class PresenceService : IDisposable
         var artwork = Uri.TryCreate(track.Artwork, UriKind.Absolute, out var image) && image.Scheme == "https"
             && image.Host.EndsWith(".sndcdn.com", StringComparison.OrdinalIgnoreCase) && image.UserInfo.Length == 0 && image.IsDefaultPort
             ? image.AbsoluteUri : "soundcloud-logo";
-        return new RichPresence
+        return new PresenceActivity
         {
-            Type = ActivityType.Listening,
-            StatusDisplay = StatusDisplayType.Details,
+            Type = PresenceActivityType.Listening,
+            StatusDisplay = PresenceStatusDisplay.Details,
             Details = Short(track.Title), State = Short(track.Artist),
             Timestamps = new(start, start.AddSeconds(track.Duration)),
             Assets = new() { LargeImageKey = artwork, SmallImageKey = "soundcloud-logo", SmallImageText = "SoundCloud" },

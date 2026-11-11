@@ -80,7 +80,8 @@ internal sealed partial class MainWindow
     private FrameworkElement TrackCommentSortView()
     {
         trackCommentSortLabel = new TextBlock().FontSize(13).Foreground(Muted).CenterVertical();
-        var button = TrackButtons.Action(trackCommentSortLabel, () => { }, TrackButtons.Text, 32).Padding(12, 0);
+        var button = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(
+            Icons.View("funnel", 17, MutedIcon).CenterVertical(), trackCommentSortLabel), () => { }, TrackButtons.Text, 32).Padding(12, 0);
         var menu = PopupAppearance.CreateMenu();
         foreach (var (sort, icon) in new[] { ("NEWEST", "clock-counter-clockwise"), ("OLDEST", "clock"), ("TIMESTAMP", "waveform") })
         {

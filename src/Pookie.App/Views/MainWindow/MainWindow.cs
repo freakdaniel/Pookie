@@ -689,6 +689,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private void Poll()
     {
+        Pookie.App.Platform.ImageClipboard.Pump();
         if (player == null || current == null || disposed || audioPreparing || !audioReady) return;
         RunSync(() =>
         {

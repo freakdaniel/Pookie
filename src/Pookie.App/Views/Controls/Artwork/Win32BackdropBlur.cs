@@ -8,7 +8,7 @@ namespace Pookie.App;
 // MewUI 0.22.1 loads the GL 1.1 glDrawArrays entry through wglGetProcAddress.
 // Windows exports it from opengl32.dll, so that loader disables its GPU filters.
 // Use the public external-write contract and import core GL functions directly.
-internal sealed unsafe class Win32BackdropBlur : IDisposable
+internal sealed unsafe partial class Win32BackdropBlur : IDisposable
 {
     internal static nint CurrentContextIdentity => OperatingSystem.IsWindows() ? Gl.CurrentContext() : 0;
     private readonly IGraphicsFactory factory;
@@ -151,7 +151,7 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
         }
         """;
 
-    internal sealed class Gl
+    internal sealed partial class Gl
     {
         internal readonly delegate* unmanaged<uint, uint> CreateShader = (delegate* unmanaged<uint, uint>)Load("glCreateShader");
         internal readonly delegate* unmanaged<uint, int, byte**, int*, void> ShaderSource = (delegate* unmanaged<uint, int, byte**, int*, void>)Load("glShaderSource");
@@ -224,16 +224,16 @@ internal sealed unsafe class Win32BackdropBlur : IDisposable
         }
 
         internal static int Integer(uint name) { int value = 0; GetIntegers(name, &value); return value; }
-        [DllImport("opengl32.dll", EntryPoint = "wglGetProcAddress", CharSet = CharSet.Ansi)] private static extern nint GetProc(string name);
-        [DllImport("libGL.so.1", EntryPoint = "glXGetProcAddressARB", CharSet = CharSet.Ansi)] private static extern nint GetLinuxProc(string name);
-        [DllImport("opengl32.dll", EntryPoint = "wglGetCurrentContext")] internal static extern nint CurrentContext();
-        [DllImport("opengl32.dll", EntryPoint = "glGetIntegerv")] internal static extern void GetIntegers(uint name, int* value);
-        [DllImport("opengl32.dll", EntryPoint = "glBindTexture")] internal static extern void BindTexture(uint target, uint texture);
-        [DllImport("opengl32.dll", EntryPoint = "glDrawArrays")] internal static extern void DrawArrays(uint mode, int first, int count);
-        [DllImport("opengl32.dll", EntryPoint = "glDisable")] internal static extern void Disable(uint capability);
-        [DllImport("opengl32.dll", EntryPoint = "glEnable")] internal static extern void Enable(uint capability);
-        [DllImport("opengl32.dll", EntryPoint = "glIsEnabled")] internal static extern byte IsEnabled(uint capability);
-        [DllImport("opengl32.dll", EntryPoint = "glColorMask")] internal static extern void ColorMask(byte red, byte green, byte blue, byte alpha);
-        [DllImport("opengl32.dll", EntryPoint = "glViewport")] internal static extern void Viewport(int x, int y, int width, int height);
+        [LibraryImport("opengl32.dll", EntryPoint = "wglGetProcAddress", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))] private static partial nint GetProc(string name);
+        [LibraryImport("libGL.so.1", EntryPoint = "glXGetProcAddressARB", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))] private static partial nint GetLinuxProc(string name);
+        [LibraryImport("opengl32.dll", EntryPoint = "wglGetCurrentContext")] internal static partial nint CurrentContext();
+        [LibraryImport("opengl32.dll", EntryPoint = "glGetIntegerv")] internal static partial void GetIntegers(uint name, int* value);
+        [LibraryImport("opengl32.dll", EntryPoint = "glBindTexture")] internal static partial void BindTexture(uint target, uint texture);
+        [LibraryImport("opengl32.dll", EntryPoint = "glDrawArrays")] internal static partial void DrawArrays(uint mode, int first, int count);
+        [LibraryImport("opengl32.dll", EntryPoint = "glDisable")] internal static partial void Disable(uint capability);
+        [LibraryImport("opengl32.dll", EntryPoint = "glEnable")] internal static partial void Enable(uint capability);
+        [LibraryImport("opengl32.dll", EntryPoint = "glIsEnabled")] internal static partial byte IsEnabled(uint capability);
+        [LibraryImport("opengl32.dll", EntryPoint = "glColorMask")] internal static partial void ColorMask(byte red, byte green, byte blue, byte alpha);
+        [LibraryImport("opengl32.dll", EntryPoint = "glViewport")] internal static partial void Viewport(int x, int y, int width, int height);
     }
 }

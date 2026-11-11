@@ -86,7 +86,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
     {
         using var document = await ExecuteAsync(HttpMethod.Get, uri, null,
             verification == null ? null : ct => verification.GetJsonAsync(uri, ct), token).ConfigureAwait(false);
-        return JsonSerializer.SerializeToUtf8Bytes(document.RootElement);
+        return JsonSerializer.SerializeToUtf8Bytes(document.RootElement, SoundCloudJson.Default.JsonElement);
     }
 
     private WebSession Account()

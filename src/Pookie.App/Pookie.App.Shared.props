@@ -4,11 +4,24 @@
     <RootNamespace>Pookie.App</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UserSecretsId>Pookie-development</UserSecretsId>
+    <EnableAotAnalyzer Condition="'$(MSBuildProjectName)' == 'Pookie.App'">true</EnableAotAnalyzer>
+    <EnableTrimAnalyzer Condition="'$(MSBuildProjectName)' == 'Pookie.App'">true</EnableTrimAnalyzer>
+    <PookieVlcRuntime>$(RuntimeIdentifier)</PookieVlcRuntime>
+    <PookieVlcRuntime Condition="'$(PookieVlcRuntime)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PookieVlcRuntime>
   </PropertyGroup>
   <Import Project="Pookie.App.Platform.props" />
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <DefineConstants>$(DefineConstants);POOKIE_NATIVE_AOT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <!-- Use the C#/WinRT projection, not a raw UWP .winmd reference. -->
+    <WebView2UseWinRT>false</WebView2UseWinRT>
+    <WebView2EnableCsWinRTProjection>true</WebView2EnableCsWinRTProjection>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <Compile Remove="$(MSBuildThisFileDirectory)Browser/Windows/InfiniFrameLoginWindow.cs;$(MSBuildThisFileDirectory)Browser/Windows/BrowserWindowVisibility.cs" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
-    <PookieVlcRuntime>$(RuntimeIdentifier)</PookieVlcRuntime>
-    <PookieVlcRuntime Condition="'$(PookieVlcRuntime)' == ''">$(NETCoreSdkRuntimeIdentifier)</PookieVlcRuntime>
     <VlcWindowsX64Enabled>true</VlcWindowsX64Enabled>
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
     <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
@@ -41,10 +54,13 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="LibVLCSharp" Version="3.10.2" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'" />
-    <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+    <PackageReference Include="VideoLAN.LibVLC.Mac" Version="3.1.3.2" Condition="'$(PookieVlcRuntime)' == 'osx-arm64' or '$(PookieVlcRuntime)' == 'osx-x64'" />
+    <!-- Pin the core too: 4.4 includes the transitive trimming feature switch
+         that removes reflection-based object destructuring from native builds. -->
+    <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageReference Include="Tmds.DBus" Version="0.95.1" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.2" />
     <PackageReference Include="LibSMTC" Version="1.1.0" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'" />
 
     <InternalsVisibleTo Include="Pookie.Audio.Tests" />

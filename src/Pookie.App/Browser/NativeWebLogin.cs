@@ -102,15 +102,22 @@ internal static class NativeWebLogin
                 using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 1024, leaveOpen: true);
                 writer.Write(JsonSerializer.Serialize(session, SoundCloudJson.Default.WebSession));
             }
+#if POOKIE_NATIVE_AOT
+            if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native AOT uses the in-window browser; standalone InfiniFrame diagnostic workers require the managed build.");
+            var connected = WebKitLoginWindow.Run(Connected, profilePath, fixtureUri, hidden);
+#else
             var useWebKit = OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe";
             var connected = useWebKit ? WebKitLoginWindow.Run(Connected, profilePath, fixtureUri, hidden) : InfiniFrameLoginWindow.Run(Connected, profilePath, fixtureUri, hidden);
+#endif
             return connected ? 0 : 1;
         }
+#if !POOKIE_NATIVE_AOT
         catch (InfiniFrameLoginWindow.BridgeException error)
         {
             AppLog.Failure("Pookie.Login", "Ошибка обмена с окном входа", error);
             return 3;
         }
+#endif
         catch (Exception error)
         {
             AppLog.Failure("Pookie.Login", "Не удалось открыть окно входа", error);

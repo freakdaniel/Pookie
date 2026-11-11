@@ -5,7 +5,7 @@ using Windows.Media;
 
 namespace Pookie.Media.Windows;
 
-internal sealed class WindowsMediaSession : IMediaSession
+internal sealed partial class WindowsMediaSession : IMediaSession
 {
     private readonly LibSmtcController controller;
     private (string Id, string Title, string Artist, string? Artwork)? metadata;
@@ -84,7 +84,7 @@ internal sealed class WindowsMediaSession : IMediaSession
     public void Dispose()
     { if (disposed) return; Clear(); disposed = true; controller.Dispose(); }
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SetCurrentProcessExplicitAppUserModelID(string appId);
 }
 #endif

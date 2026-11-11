@@ -20,6 +20,15 @@ internal sealed partial class MainWindow
             await ShowWorkspaceAsync();
             await imageDiskCache.WriteAsync(transport.Playlist.ArtworkUrl!, ArtworkFixtureBitmap(500), lifetime.Token);
             var item = LibraryData.FromPlaylist(transport.Playlist with { Tracks = [], TrackCount = 0, Title = "Old title" });
+            if (Environment.GetEnvironmentVariable("POOKIE_COMPACT_INTERACTION_PROBE") == "1")
+            {
+                await OpenLibraryItemAsync(item);
+                Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive &&
+                    compactTrackRows.Any(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.ActualWidth > 200));
+                var row = compactTrackRows.First(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window);
+                await VerifyCompactTrackPresentationAsync(row, transport);
+                return;
+            }
             await VerifyOverviewCardHoverAsync(item);
             await VerifyCollectionCardPlaybackAsync(item);
             await OpenLibraryItemAsync(item);
@@ -66,9 +75,9 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 176 and <= 208 && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
             if (Math.Abs(collectionPlay.ActualWidth - 64) >= 1 / Window.DpiScale || collectionPlay.Bounds.Right >= collectionTitle.Bounds.X ||
                 Math.Abs(collectionPlay.Bounds.Y - collectionTitle.Bounds.Y) > 1 ||
-                Math.Abs(collectionLike.Bounds.X - collectionPlay.Bounds.X) > 1 || collectionCopy.Bounds.Y <= collectionTitle.Bounds.Bottom ||
+                Math.Abs(collectionLike.Bounds.X - collectionPlay.Bounds.X) > 1 || collectionShare.Bounds.Y <= collectionTitle.Bounds.Bottom ||
                 Math.Abs(collectionAuthor.Bounds.Y - collectionMeta.Bounds.Y) > 2 || collectionAuthor.Bounds.X < collectionTitle.Bounds.X ||
-                Math.Abs(follow.Bounds.Y - collectionLike.Bounds.Y) > 1 || follow.Bounds.X <= collectionCopy.Bounds.X ||
+                Math.Abs(follow.Bounds.Y - collectionLike.Bounds.Y) > 1 || follow.Bounds.X <= collectionShare.Bounds.X ||
                 Math.Abs(collectionPlay.Bounds.Y - collectionCover.Bounds.Y) > 1 ||
                 Math.Abs(collectionCover.ActualWidth - collectionCover.ActualHeight) > 1 ||
                 collectionCover.ActualHeight + 48 > 256 + 1 / Window.DpiScale)
@@ -95,14 +104,14 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Connected playlist actions lost their gap, selected shape or colours.");
             TrackButtons.SetConfirmed(follow, false, TrackButtons.Glass);
             await WaitForLikedLayoutAsync(() => follow.Background == TrackButtons.GlassSurface);
-            if (follow.Background != collectionCopy.Background) throw new InvalidOperationException("Playlist follow background differs from other inactive actions.");
+            if (follow.Background != collectionShare.Background) throw new InvalidOperationException("Playlist follow background differs from other inactive actions.");
             RefreshFollowingButtons();
             var compact = compactTrackRows.First(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window);
             if (Math.Abs(compact.Cover.Bounds.X - compact.Root.Bounds.X - 8) > 1 || Math.Abs(compact.Root.ActualHeight - 64) >= 1 / Window.DpiScale || Math.Abs(compact.Cover.ActualWidth - 44) >= 1 / Window.DpiScale ||
                 compact.Duration.Bounds.Right >= compact.Root.Bounds.Right ||
                 likedRows.Values.Any(row => row.Root.FindVisualRoot() == Window && row.Track?.Id == 9000))
                 throw new InvalidOperationException("Playlist rows did not use compact unnumbered tracks and trailing actions.");
-            await VerifyCompactTrackPresentationAsync(compact);
+            await VerifyCompactTrackPresentationAsync(compact, transport);
             await VerifyCompactArtworkBudgetAsync();
             MoveActionPointer(new(compact.Cover.Bounds.X + 4, compact.Cover.Bounds.Y + 4));
             await WaitForLikedLayoutAsync(() => compact.Actions.Strength > .999);
@@ -344,6 +353,7 @@ internal sealed partial class MainWindow
         };
         public int FollowWrites, PlaylistWrites, PlaylistLikeWrites;
         internal bool PlaylistFails;
+        internal TaskCompletionSource? TrackLikeCompletion;
         public bool LastPlaylistReposted;
         public TaskCompletionSource PlaylistLikeCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool LastFollowing;
@@ -394,7 +404,8 @@ internal sealed partial class MainWindow
         }
         private async Task<JsonDocument> WaitPickerAsync(Uri uri, CancellationToken token)
         { await PickerHold!.Task.WaitAsync(token); PickerHold = null; return await GetJsonAsync(uri, token); }
-        public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default) =>
+            TrackLikeCompletion?.Task.WaitAsync(cancellationToken) ?? Task.CompletedTask;
         public Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken cancellationToken = default)
         { PlaylistLikeWrites++; return PlaylistLikeCompletion.Task; }
         public Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken cancellationToken = default)

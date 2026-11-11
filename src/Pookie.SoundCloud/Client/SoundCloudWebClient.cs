@@ -198,7 +198,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             if (entry.ValueKind != JsonValueKind.Object) continue;
             if (entry.TryGetProperty("track_id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt64(out var value) && fetched.TryGetValue(value, out var track))
                 ordered.Add(LibraryItem.FromTrack(track));
-            else ordered.AddRange(LibraryData.Parse(JsonSerializer.SerializeToElement(new[] { entry })).Items);
+            else ordered.AddRange(LibraryData.Parse(JsonSerializer.SerializeToElement(new[] { entry }, SoundCloudJson.Default.JsonElementArray)).Items);
         }
         return await EnrichLibraryAsync(new(ordered.DistinctBy(item => item.Key).ToArray(), parsed.NextHref), cancellationToken);
     }

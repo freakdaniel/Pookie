@@ -88,7 +88,7 @@ internal static partial class InfiniFrameLoginWindow
             if (line.Length > BrowserRequestCommand.MaxLength) continue;
             var command = JsonSerializer.Deserialize(line, SoundCloudJson.Default.BrowserRequestCommand);
             if (command?.IsValid() != true) continue;
-            var script = "if(location.origin === " + JsonSerializer.Serialize(origin) + ") window.__pookieRequest?.(" +
+            var script = "if(location.origin === " + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + ") window.__pookieRequest?.(" +
                 JsonSerializer.Serialize(command, SoundCloudJson.Default.BrowserRequestCommand) + ");";
             await window.Features.JavaScript.ExecuteJavaScriptAsync(AsExpression(script), token);
         }
@@ -157,9 +157,9 @@ internal static partial class InfiniFrameLoginWindow
     // Valid v2 messages go through InfiniFrame's named Post handler, not its raw-message event.
     // The capability is installed only in the permitted top frame, as in the WebKit bridge.
     private static string CreateBridgeScript(string origin, string pairing, string script) =>
-        "if(location.origin === " + JsonSerializer.Serialize(origin) + " && window === window.top) {\n" +
-        "const pairing = " + JsonSerializer.Serialize(pairing) + ";\n" +
-        "window.__pookiePost = message => window.infiniframe.host.postData({id:" + JsonSerializer.Serialize(BridgeMessageId) +
+        "if(location.origin === " + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + " && window === window.top) {\n" +
+        "const pairing = " + JsonSerializer.Serialize(pairing, Pookie.SoundCloud.SoundCloudJson.Default.String) + ";\n" +
+        "window.__pookiePost = message => window.infiniframe.host.postData({id:" + JsonSerializer.Serialize(BridgeMessageId, Pookie.SoundCloud.SoundCloudJson.Default.String) +
         ",command:'Post',version:2,data:{...message,pookie_pairing:pairing}});\n" + script + "\n}";
 
     private static async Task ObservePagesAsync(IInfiniFrameWindow window, string script, CancellationToken token, bool hideWhenReady = false)

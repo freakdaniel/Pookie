@@ -70,7 +70,7 @@ public sealed record BrowserAudioCommand(string Action, string PlaybackId, strin
     public bool IsValid() => (PageUrl == null || Action == "start" && PageUrl.Length <= 8192 && Uri.TryCreate(PageUrl, UriKind.Absolute, out var page) &&
         page.GetLeftPart(UriPartial.Authority) == "https://soundcloud.com" && page.UserInfo == "" && page.Query == "" && page.Fragment == "") &&
         Guid.TryParseExact(PlaybackId, "N", out _) && double.IsFinite(Position) && Position is >= 0 and <= 86400 &&
-        double.IsFinite(Volume) && Volume is >= 0 and <= 100 && double.IsFinite(NormalizationGainDb) && NormalizationGainDb is >= -24 and <= 6 && (Action == "start"
+        double.IsFinite(Volume) && Volume is >= 0 and <= 200 && double.IsFinite(NormalizationGainDb) && NormalizationGainDb is >= -24 and <= 6 && (Action == "start"
         ? Source is { Length: > 0 and <= 8192 } && Uri.TryCreate(Source, UriKind.Absolute, out var uri) &&
           SoundCloudWebClient.IsMediaUri(uri) && uri.Fragment == "" && Authorization is { Length: > 0 and <= 16384 } &&
           !Authorization.Any(c => c < 32 || c == 127)

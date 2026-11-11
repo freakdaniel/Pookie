@@ -137,10 +137,11 @@ internal sealed partial class MainWindow
             if (disposed || generation != chatVideoGeneration || !chatVideoOpen.Value) { await session.DisposeAsync(); return; }
             chatVideoSession = session; session.Volume((int)Math.Round(chatVideoVolume.Value)); SetChatVideoMuted(chatVideoVolume.Value == 0); session.Rate(chatVideoRate); chatVideoStarted = DateTimeOffset.UtcNow; chatVideoTimer.Start();
         }
-        catch
+        catch (Exception error)
         {
+            ChatVideoRuntime.LogFailure(error);
             if (!disposed && generation == chatVideoGeneration)
-                chatVideoStatus.Text = OperatingSystem.IsLinux() ? "Не удалось открыть видео. Проверь, установлен ли libvlc и его видеокодеки." : "Не удалось открыть видео. Возможно, его кодек не поддерживается.";
+                chatVideoStatus.Text = "Не удалось открыть видео. Подробности записаны в журнал.";
         }
     }
     private void RefreshChatVideo()
@@ -151,7 +152,7 @@ internal sealed partial class MainWindow
         RefreshChatVideoControlVisibility();
         var state = session.Snapshot();
         if (state.Failed || chatVideoVersion == 0 && (state.Ended || DateTimeOffset.UtcNow - chatVideoStarted > TimeSpan.FromSeconds(15)))
-        { chatVideoStatus.Text = "Не удалось прочитать видеодорожку. Файл можно сохранить из меню сообщения."; chatVideoTimer.Stop(); }
+        { session.LogPlaybackFailure(); chatVideoStatus.Text = "Не удалось прочитать видеодорожку. Файл можно сохранить из меню сообщения."; chatVideoTimer.Stop(); }
         chatVideoPlayIcon.Source = Icons.Source(state.Playing ? "pause-solid" : "play-solid", Color.White);
         static string Time(long ms) => TimeSpan.FromMilliseconds(Math.Max(0, ms)).ToString(ms >= 3600000 ? @"h\:mm\:ss" : @"m\:ss");
         chatVideoTime.Text = Time(state.Ended ? state.Length : state.Time); chatVideoRemaining.Text = "−" + Time(state.Ended ? 0 : Math.Max(0, state.Length - state.Time));

@@ -46,6 +46,9 @@ internal sealed partial class MainWindow
 
     private FrameworkElement PlaybackSettingsView() => SettingsGroups(
         SettingsGroup("Музыка",
+            SettingsChoice("maximum_volume", "Максимальная громкость", "Верхняя граница ползунка громкости аудиоплеера",
+                () => preferences.MaximumVolume, value => UpdatePreferences(p => p with { MaximumVolume = value }),
+                ("100%", 100), ("150%", 150), ("200%", 200)),
             SettingsToggle("auto_continue", "Продолжать похожими треками", "Подбирать музыку, когда закончится текущая очередь; текущий трек и добавленные вручную сохраняются",
                 () => preferences.AutoContinue, value => UpdatePreferences(p => p with { AutoContinue = value })),
             SettingsToggle("normalization", "Выравнивать громкость треков", "Приблизительная поправка по звуковой волне трека; применяется со следующего трека",
@@ -65,7 +68,7 @@ internal sealed partial class MainWindow
             SettingsToggle("chat_background", "Обновлять чаты в фоне", "Получать новые сообщения и обновлять счётчик при переходе в другие разделы",
                 () => preferences.ChatBackgroundRefresh, value => UpdatePreferences(p => p with { ChatBackgroundRefresh = value }))),
         SettingsGroup("Вложения",
-            SettingsChoice("chat_download", "Загружать входящие вложения", "Вложение скачивается целым пакетом, включая файлы и видео",
+            SettingsChoice("chat_download", "Загружать входящие вложения", "Сначала метаданные и превью; оригиналы видимых вложений загружаются в фоне",
                 () => preferences.ChatAutoLoad, value => UpdatePreferences(p => p with { ChatAutoLoad = value }), ("Автоматически", true), ("По нажатию", false)),
             SettingsToggle("chat_gifs", "Анимировать GIF", "В видимой части открытого чата и в результатах поиска GIF",
                 () => preferences.ChatAnimateGifs, value => UpdatePreferences(p => p with { ChatAnimateGifs = value })),

@@ -40,7 +40,7 @@ internal sealed partial class MainWindow
     private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null)
     {
         var row = new LikedTrackRow(select ?? SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            CopyTrackLink, track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack);
+            track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);

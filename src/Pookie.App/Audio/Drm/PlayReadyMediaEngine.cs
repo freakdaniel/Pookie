@@ -9,10 +9,11 @@ using static Pookie.Audio.MediaFoundationNative;
 
 namespace Pookie.Audio;
 
-internal sealed unsafe class PlayReadyMediaEngine(nint engine, PlayReadyEngineEvents events)
+internal sealed unsafe class PlayReadyMediaEngine(nint engine, PlayReadyEngineEvents events, PlayReadyVolumeTransform volumeEffect)
 {
     private static readonly Guid EngineFactory = new("4d645ace-26aa-4688-9be1-df3516990b93");
     private static readonly Guid ProtectedContent = new("9f8021e8-9c8c-487e-bb5c-79aa4779938c");
+    private bool boostRequested, boostWarningLogged;
 
     internal static Task RunAsync(HttpClient http, PlayReadyHlsStream media, string authorization, string store,
         Action<PlayReadyMediaEngine> playback, CancellationToken stop)
@@ -84,9 +85,9 @@ internal sealed unsafe class PlayReadyMediaEngine(nint engine, PlayReadyEngineEv
         using var reads = CancellationTokenSource.CreateLinkedTokenSource(stop);
         using var source = OpenSource(media, reads.Token);
         using var wrapped = new PlayReadyMediaSource(source.Value, cdm);
-        // Media Foundation marshals this source across COM apartments. The CLR
-        // wrapper supplies IMarshal via the free-threaded marshaler.
-        using var exportedSource = new ComReference(Marshal.GetComInterfaceForObject<PlayReadyMediaSource, IProtectedMediaSource>(wrapped));
+        // The generated, agile COM wrapper works across Media Foundation's
+        // apartments without the runtime's built-in COM marshaller.
+        using var exportedSource = Export<IProtectedMediaSource>(wrapped);
         using var extension = Export<IMediaEngineExtension>(new PlayReadySourceExtension(exportedSource.Value));
         using var protection = Export<IContentProtectionManager>(new PlayReadyProtectionManager(cdm, services));
         var events = new PlayReadyEngineEvents();
@@ -103,14 +104,21 @@ internal sealed unsafe class PlayReadyMediaEngine(nint engine, PlayReadyEngineEv
         Check(((delegate* unmanaged[Stdcall]<nint, uint, nint, nint*, int>)Slot(factory.Value, 3))(
             factory.Value, audioOnly, attributesPtr, &enginePtr), "IMFMediaEngineClassFactory.CreateInstance");
         using var engine = new ComReference(enginePtr);
+        using var volumeEffect = new PlayReadyVolumeTransform();
+        using var exportedVolume = Export<IVolumeTransform>(volumeEffect);
         try
         {
+            using var extendedEngine = Query(enginePtr, new("83015ead-b1e6-40d0-a98a-37145ffe1ad1"), "IMFMediaEngineEx");
+            // Protected output policies may reject application effects. Keep
+            // playback available when the native protected path cannot use it.
+            Check(((delegate* unmanaged[Stdcall]<nint, nint, int, int>)Slot(extendedEngine.Value, 61))(
+                extendedEngine.Value, exportedVolume.Value, 1), "IMFMediaEngineEx.InsertAudioEffect");
             using var protectedEngine = Query(enginePtr, ProtectedContent, "IMFMediaEngineProtectedContent");
             Check(Call(protectedEngine.Value, 7, protection.Value), "SetContentProtectionManager");
             var name = Marshal.StringToBSTR("customSrc");
             try { Check(Call(enginePtr, 6, name), "IMFMediaEngine.SetSource"); }
             finally { Marshal.FreeBSTR(name); }
-            playback(new(enginePtr, events));
+            playback(new(enginePtr, events, volumeEffect));
         }
         finally
         {
@@ -150,8 +158,19 @@ internal sealed unsafe class PlayReadyMediaEngine(nint engine, PlayReadyEngineEv
         else Check(Call(engine, 32), "IMFMediaEngine.Play");
     }
 
-    internal void Volume(double value) =>
-        Check(((delegate* unmanaged[Stdcall]<nint, double, int>)Slot(engine, 37))(engine, value), "IMFMediaEngine.SetVolume");
+    internal void Volume(double value)
+    {
+        boostRequested = value > 1;
+        volumeEffect.Gain = (float)Math.Max(1, value);
+        Check(((delegate* unmanaged[Stdcall]<nint, double, int>)Slot(engine, 37))(engine, Math.Clamp(value, 0, 1)), "IMFMediaEngine.SetVolume");
+    }
+
+    internal void ReportVolumeSupport()
+    {
+        if (!boostRequested || boostWarningLogged || volumeEffect.IsProcessing) return;
+        boostWarningLogged = true;
+        AppLog.For("Pookie.Audio.PlayReady").Warning("Защищённый аудиотракт Windows не применил эффект усиления; громкость этого потока ограничена 100%");
+    }
 
     internal void Seek(double seconds) =>
         Check(((delegate* unmanaged[Stdcall]<nint, double, int>)Slot(engine, 17))(engine, seconds), "IMFMediaEngine.SetCurrentTime");

@@ -44,7 +44,7 @@ internal sealed partial class EmbeddedLoginView
         pendingRequests.Add(command.Id, result);
         try
         {
-            await browser!.ExecuteAsync("if(window===window.top && location.origin===" + JsonSerializer.Serialize(origin) +
+            await browser!.ExecuteAsync("if(window===window.top && location.origin===" + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) +
                 ") window.__pookieRequest?.(" + JsonSerializer.Serialize(command, SoundCloudJson.Default.BrowserRequestCommand) + ");");
             return await result.Task.WaitAsync(token);
         }
@@ -52,7 +52,7 @@ internal sealed partial class EmbeddedLoginView
     }
 
     internal Task CancelReadAsync(string id) => stopped || browser == null ? Task.CompletedTask : browser.ExecuteAsync(
-        "if(location.origin===" + JsonSerializer.Serialize(origin) + ") window.__pookieRequest?.({id:" + JsonSerializer.Serialize(id) + ",operation:'cancel'});");
+        "if(location.origin===" + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + ") window.__pookieRequest?.({id:" + JsonSerializer.Serialize(id, Pookie.SoundCloud.SoundCloudJson.Default.String) + ",operation:'cancel'});");
 
     private void WorkerMessage(string raw, string source)
     {

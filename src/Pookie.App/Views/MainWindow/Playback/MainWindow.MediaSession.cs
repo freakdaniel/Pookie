@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
                 if (!seekDragging) FlushSeek();
                 break;
             case MediaAction.Volume:
-                if (double.IsFinite(command.Value)) volume.Value = Math.Clamp(command.Value * 100, 0, 100);
+                if (double.IsFinite(command.Value)) volume.Value = Math.Clamp(command.Value * 100, 0, preferences.MaximumVolume);
                 UpdateSystemMedia();
                 break;
             case MediaAction.Shuffle: shuffle.Value = command.Value != 0; UpdateSystemMedia(); break;

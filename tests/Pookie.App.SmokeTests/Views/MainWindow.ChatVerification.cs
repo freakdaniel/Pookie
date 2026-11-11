@@ -121,7 +121,9 @@ internal sealed partial class MainWindow
             chatInput.Text = "Тестовое сообщение";
             transport.NextSentAt = DateTimeOffset.FromUnixTimeSeconds(chatMessages.Last().SentAt.ToUnixTimeSeconds());
             transport.DelaySend = true;
+            await OpenChatGifsAsync();
             var sending = SendChatAsync();
+            if (chatEmojiPopup.IsOpen) throw new InvalidOperationException("Sending a message left the emoji/GIF picker open.");
             await WaitForLikedLayoutAsync(() => transport.Sends == 1);
             if (chatSend.IsEnabled) throw new InvalidOperationException("A pending send accepts a second click.");
             await SendChatAsync();

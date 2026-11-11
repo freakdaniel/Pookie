@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <PookieLibVlcLinuxDirectory>$(MSBuildThisFileDirectory)../../build/libvlc/linux-x64</PookieLibVlcLinuxDirectory>
+    <PookieLibVlcRuntime>$(RuntimeIdentifier)</PookieLibVlcRuntime>
+    <PookieLibVlcRuntime Condition="'$(PookieLibVlcRuntime)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PookieLibVlcRuntime>
+  </PropertyGroup>
+  <!-- Register the runtime as ordinary SDK content before target paths are
+       assigned. Build, dotnet run, publish and clean then share the same files. -->
+  <Target Name="PreparePookieLinuxLibVlc" BeforeTargets="AssignTargetPaths"
+          Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '$(PookieLibVlcRuntime)' == 'linux-x64' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!$([MSBuild]::IsOSPlatform('Linux'))" Text="Linux builds bundle native libVLC and must run on Linux (Ubuntu 22.04+ with python3, apt, dpkg, binutils and ubuntu-keyring)." />
+    <Exec Command="python3 &quot;$(MSBuildThisFileDirectory)prepare.py&quot; --output &quot;$(PookieLibVlcLinuxDirectory)&quot;" />
+    <ItemGroup>
+      <PookieLinuxVlcFile Include="$(PookieLibVlcLinuxDirectory)/**/*" />
+      <None Include="@(PookieLinuxVlcFile)" Link="libvlc/%(PookieLinuxVlcFile.RecursiveDir)%(PookieLinuxVlcFile.Filename)%(PookieLinuxVlcFile.Extension)"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -13,7 +13,7 @@ internal static class ChatVideoProbe
             {
                 token.ThrowIfCancellationRequested();
                 if (session.PreviewInfo() is { } info && (info.DurationMs > 0 || i == 59)) { if (session.Poster() is { } image) poster?.Invoke(image); return info.Valid ? info : null; }
-                if (session.Snapshot().Failed) return null;
+                if (session.Snapshot().Failed) { session.LogPlaybackFailure(); return null; }
                 await Task.Delay(50, token);
             }
         }
@@ -21,7 +21,7 @@ internal static class ChatVideoProbe
         catch (Exception error)
         {
             // Poster extraction is optional; keep sending/downloading available.
-            Pookie.Logging.AppLog.Failure("Pookie.Video", "Не удалось подготовить кадр видео", error, Serilog.Events.LogEventLevel.Debug);
+            ChatVideoRuntime.LogFailure(error, preview: true);
         }
         return null;
     }

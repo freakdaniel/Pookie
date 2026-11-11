@@ -10,8 +10,9 @@ namespace Pookie.Logging;
 public sealed record LoggingOptions(LogEventLevel? ConsoleMinimum = LogEventLevel.Information,
     LogEventLevel? FileMinimum = LogEventLevel.Debug);
 
-// Shared by the application and audio library. Callers log fixed actions and safe
-// metadata, never session objects, URLs with queries, response bodies or exception messages.
+// Shared by the application and audio library. Network/account callers log fixed
+// actions and safe metadata, never sessions, query URLs, bodies or exception messages.
+// Local video diagnostics explicitly retain native loader/decoder failure details.
 public static class AppLog
 {
     private static readonly object gate = new();
@@ -71,7 +72,9 @@ public static class AppLog
     public static void Failure(string category, string action, Exception error, LogEventLevel level = LogEventLevel.Error, int? httpStatus = null)
     {
         var root = error.GetBaseException();
-        var rootOperation = root.TargetSite == null ? null : root.TargetSite.DeclaringType?.Name + "." + root.TargetSite.Name;
+        // Native AOT does not retain arbitrary method metadata. Stack strings
+        // remain available for diagnostics without reflecting Exception.TargetSite.
+        var rootOperation = root.StackTrace?.Split('\n', 2)[0].Trim();
         httpStatus ??= root is HttpRequestException { StatusCode: { } status } ? (int)status : null;
         For(category).ForContext("ErrorType", error.GetType().Name).ForContext("HttpStatus", httpStatus)
             .ForContext("StackTrace", error.StackTrace).ForContext("RootStackTrace", root.StackTrace)

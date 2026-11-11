@@ -138,8 +138,8 @@ internal sealed partial class MainWindow
         }
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "RedrawWindow", ExactSpelling = true)]
-    private static extern int RedrawTrackWindow(nint window, nint updateRect, nint updateRegion, uint flags);
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "RedrawWindow")]
+    private static partial int RedrawTrackWindow(nint window, nint updateRect, nint updateRegion, uint flags);
 
     private void CompleteTrackResizePaint()
     {

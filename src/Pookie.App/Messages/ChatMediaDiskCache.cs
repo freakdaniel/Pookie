@@ -18,10 +18,26 @@ internal sealed class ChatMediaDiskCache
     private static string NameFor(string code)
     {
         var gif = code.EndsWith(":gif", StringComparison.Ordinal);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gif ? code[..^4] : code))) + (gif ? ".gif.bin" : ".bin");
+        var preview = code.EndsWith(":preview", StringComparison.Ordinal);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(gif ? code[..^4] : preview ? code[..^8] : code))) + (gif ? ".gif.bin" : preview ? ".preview.bin" : ".bin");
     }
-    private static bool IsPinned(string name, HashSet<string> names) => names.Contains(name) || name.EndsWith(".gif.bin", StringComparison.Ordinal) && names.Contains(name[..^8] + ".bin");
+    private static bool IsPinned(string name, HashSet<string> names) => names.Contains(name) || name.EndsWith(".gif.bin", StringComparison.Ordinal) && names.Contains(name[..^8] + ".bin") || name.EndsWith(".preview.bin", StringComparison.Ordinal) && names.Contains(name[..^12] + ".bin");
     private string PathFor(string code) => Path.Combine(IsPinned(NameFor(code), pinned) ? favorites : directory, NameFor(code));
+    internal async Task<byte[]?> ReadPrefixAsync(string code, int maximumBytes, CancellationToken token)
+    {
+        await io.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var path = PathFor(code);
+            if (!File.Exists(path)) return null;
+            await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, FileOptions.Asynchronous);
+            var bytes = new byte[(int)Math.Min(input.Length, maximumBytes)];
+            await input.ReadExactlyAsync(bytes, token).ConfigureAwait(false);
+            return bytes;
+        }
+        catch (IOException) { return null; }
+        finally { io.Release(); }
+    }
     internal async Task<byte[]?> ReadAsync(string code, CancellationToken token, int maximumBytes = int.MaxValue)
     {
         await io.WaitAsync(token).ConfigureAwait(false);

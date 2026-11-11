@@ -37,7 +37,7 @@ internal sealed partial class MainWindow
         if (entry.Item.Track is { } track)
         {
             var row = new LikedTrackRow(value => Run(() => PlayFeedTrackAsync(value)), value => Run(() => OpenTrackPageAsync(value)),
-                value => Run(() => ToggleTrackLikeAsync(value)), CopyTrackLink, value => Run(() => ToggleTrackRepostAsync(value)),
+                value => Run(() => ToggleTrackLikeAsync(value)), value => Run(() => ToggleTrackRepostAsync(value)),
                 value => Run(() => OpenPlaylistPickerAsync(value)), (value, fraction) => Run(() => SeekFeedTrackAsync(value, fraction)),
                 ArtworkLayer, glass: true, publication: true, share: ShareTrack);
             view.Track = row; likedRows.Add(row.Root, row);

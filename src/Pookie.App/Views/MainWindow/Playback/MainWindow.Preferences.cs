@@ -7,6 +7,14 @@ internal sealed partial class MainWindow
 {
     private void ApplyPlaybackPreferences(AppConfiguration before)
     {
+        if (before.MaximumVolume != preferences.MaximumVolume)
+        {
+            previousVolume = Math.Min(previousVolume, preferences.MaximumVolume);
+            volume.Value = Math.Min(volume.Value, preferences.MaximumVolume);
+            if (volumeSlider != null) volumeSlider.Maximum = preferences.MaximumVolume;
+            if (expandedVolumeSlider != null) expandedVolumeSlider.Maximum = preferences.MaximumVolume;
+            ApplyMusicVolume(); UpdateSystemMedia();
+        }
         if (before.AutoContinue != preferences.AutoContinue)
         {
             playbackQueue.SetAutoContinue(preferences.AutoContinue);

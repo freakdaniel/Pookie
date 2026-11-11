@@ -111,7 +111,7 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
         if (!double.IsFinite(percent)) throw new ArgumentOutOfRangeException(nameof(percent));
         lock (sync)
         {
-            volume = Math.Clamp(percent, 0, 100);
+            volume = Math.Clamp(percent, 0, 200);
             native.Volume(volume);
             if (playbackId is { } id && browser is { } connected) Queue(connected, new("volume", id, Volume: volume));
         }

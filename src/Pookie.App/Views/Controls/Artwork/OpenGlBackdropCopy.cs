@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Rendering;
@@ -7,22 +7,21 @@ namespace Pookie.App;
 
 // Copy the part of the window already painted below the popup. A framebuffer
 // blit can downsample in the same operation without transferring pixels to CPU.
-internal static unsafe class OpenGlBackdropCopy
+internal static unsafe partial class OpenGlBackdropCopy
 {
-    private static readonly Dictionary<Type, MethodInfo?> flushMethods = [];
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "FlushQueuedDraws")]
+    private static extern void FlushQueuedDraws(
+        [UnsafeAccessorType("Aprillz.MewUI.Rendering.MewVG.MewVGX11GraphicsContext, Aprillz.MewUI.Backend.MewVG.X11")] object context);
 
     internal static bool TryCopy(IGraphicsContext context, IRenderSurface destination, Rect pixels)
     {
         if (!OperatingSystem.IsLinux() || GetCurrentContext() == 0 || destination is not IExternalWritableGpuSurface writable)
             return false;
-        var type = context.GetType();
-        if (!flushMethods.TryGetValue(type, out var flush))
-            flushMethods[type] = flush = type.GetMethod("FlushQueuedDraws", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (flush == null) return false;
+        if (context.GetType().FullName != "Aprillz.MewUI.Rendering.MewVG.MewVGX11GraphicsContext") return false;
 
         // MewVG queues drawing until flush. This is its own mid-frame flush,
         // which preserves the transform and clip for the commands that follow.
-        flush.Invoke(context, null);
+        FlushQueuedDraws(context);
         var draw = Get(0x8CA6);
         var read = Get(0x8CAA);
         var texture = Get(0x8069);
@@ -53,16 +52,16 @@ internal static unsafe class OpenGlBackdropCopy
 
     internal static int Get(uint name) { int value = 0; GetIntegers(name, &value); return value; }
     private const string Library = "libGL.so.1";
-    [DllImport(Library, EntryPoint = "glXGetCurrentContext")] internal static extern nint GetCurrentContext();
-    [DllImport(Library, EntryPoint = "glGetIntegerv")] internal static extern void GetIntegers(uint name, int* value);
-    [DllImport(Library, EntryPoint = "glIsEnabled")] internal static extern byte IsEnabled(uint capability);
-    [DllImport(Library, EntryPoint = "glDisable")] internal static extern void Disable(uint capability);
-    [DllImport(Library, EntryPoint = "glEnable")] internal static extern void Enable(uint capability);
-    [DllImport(Library, EntryPoint = "glBindFramebuffer")] internal static extern void BindFramebuffer(uint target, uint framebuffer);
-    [DllImport(Library, EntryPoint = "glBindTexture")] internal static extern void BindTexture(uint target, uint texture);
-    [DllImport(Library, EntryPoint = "glViewport")] internal static extern void Viewport(int x, int y, int width, int height);
-    [DllImport(Library, EntryPoint = "glDrawArrays")] internal static extern void DrawArrays(uint mode, int first, int count);
-    [DllImport(Library, EntryPoint = "glColorMask")] internal static extern void ColorMask(byte red, byte green, byte blue, byte alpha);
-    [DllImport(Library, EntryPoint = "glBlitFramebuffer")] private static extern void Blit(
+    [LibraryImport(Library, EntryPoint = "glXGetCurrentContext")] internal static partial nint GetCurrentContext();
+    [LibraryImport(Library, EntryPoint = "glGetIntegerv")] internal static partial void GetIntegers(uint name, int* value);
+    [LibraryImport(Library, EntryPoint = "glIsEnabled")] internal static partial byte IsEnabled(uint capability);
+    [LibraryImport(Library, EntryPoint = "glDisable")] internal static partial void Disable(uint capability);
+    [LibraryImport(Library, EntryPoint = "glEnable")] internal static partial void Enable(uint capability);
+    [LibraryImport(Library, EntryPoint = "glBindFramebuffer")] internal static partial void BindFramebuffer(uint target, uint framebuffer);
+    [LibraryImport(Library, EntryPoint = "glBindTexture")] internal static partial void BindTexture(uint target, uint texture);
+    [LibraryImport(Library, EntryPoint = "glViewport")] internal static partial void Viewport(int x, int y, int width, int height);
+    [LibraryImport(Library, EntryPoint = "glDrawArrays")] internal static partial void DrawArrays(uint mode, int first, int count);
+    [LibraryImport(Library, EntryPoint = "glColorMask")] internal static partial void ColorMask(byte red, byte green, byte blue, byte alpha);
+    [LibraryImport(Library, EntryPoint = "glBlitFramebuffer")] private static partial void Blit(
         int left, int bottom, int right, int top, int destLeft, int destBottom, int destRight, int destTop, uint mask, uint filter);
 }

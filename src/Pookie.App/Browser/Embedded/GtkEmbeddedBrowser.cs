@@ -226,43 +226,43 @@ internal sealed partial class WebKitLoginWindow
     private static partial class Native
     {
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate int PolicyCallback(nint view, nint decision, int kind, nint data);
-        [DllImport(WebKit)] public static extern nint webkit_navigation_policy_decision_get_navigation_action(nint decision);
-        [DllImport(WebKit)] public static extern nint webkit_navigation_action_get_request(nint action);
-        [DllImport(WebKit)] public static extern nint webkit_uri_request_get_uri(nint request);
-        [DllImport(WebKit)] public static extern void webkit_policy_decision_ignore(nint decision);
+        [LibraryImport(WebKit)] public static partial nint webkit_navigation_policy_decision_get_navigation_action(nint decision);
+        [LibraryImport(WebKit)] public static partial nint webkit_navigation_action_get_request(nint action);
+        [LibraryImport(WebKit)] public static partial nint webkit_uri_request_get_uri(nint request);
+        [LibraryImport(WebKit)] public static partial void webkit_policy_decision_ignore(nint decision);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void LoadCallback(nint view, int stage, nint data);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void SnapshotCallback(nint view, nint operation, nint data);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate int PngWriteCallback(nint data, nint bytes, uint length);
-        [DllImport(WebKit)] public static extern void webkit_web_view_get_snapshot(nint view, int region, int options, nint cancel, SnapshotCallback callback, nint data);
-        [DllImport(WebKit)] public static extern nint webkit_web_view_get_snapshot_finish(nint view, nint operation, out nint error);
-        [DllImport("libglib-2.0.so.0")] public static extern void g_error_free(nint error);
-        [DllImport("libcairo.so.2")] public static extern int cairo_surface_write_to_png_stream(nint surface, PngWriteCallback callback, nint data);
-        [DllImport("libcairo.so.2")] public static extern void cairo_surface_destroy(nint surface);
-        [DllImport("libgdk-3.so.0")] public static extern void gdk_set_allowed_backends([MarshalAs(UnmanagedType.LPUTF8Str)] string backends);
-        [DllImport(Gtk)] public static extern nint gtk_plug_new(nint socket);
-        [DllImport(Gtk)] public static extern void gtk_widget_set_size_request(nint widget, int width, int height);
-        [DllImport(Gtk)] public static extern void gtk_widget_grab_focus(nint widget);
-        [DllImport(Gtk)] public static extern int gtk_widget_get_scale_factor(nint widget);
-        [DllImport(Gtk)] public static extern nint gtk_widget_get_window(nint widget);
-        [DllImport(Gtk)] public static extern void gtk_window_resize(nint window, int width, int height);
+        [LibraryImport(WebKit)] public static partial void webkit_web_view_get_snapshot(nint view, int region, int options, nint cancel, SnapshotCallback callback, nint data);
+        [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_snapshot_finish(nint view, nint operation, out nint error);
+        [LibraryImport("libglib-2.0.so.0")] public static partial void g_error_free(nint error);
+        [LibraryImport("libcairo.so.2")] public static partial int cairo_surface_write_to_png_stream(nint surface, PngWriteCallback callback, nint data);
+        [LibraryImport("libcairo.so.2")] public static partial void cairo_surface_destroy(nint surface);
+        [LibraryImport("libgdk-3.so.0")] public static partial void gdk_set_allowed_backends([MarshalAs(UnmanagedType.LPUTF8Str)] string backends);
+        [LibraryImport(Gtk)] public static partial nint gtk_plug_new(nint socket);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_set_size_request(nint widget, int width, int height);
+        [LibraryImport(Gtk)] public static partial void gtk_widget_grab_focus(nint widget);
+        [LibraryImport(Gtk)] public static partial int gtk_widget_get_scale_factor(nint widget);
+        [LibraryImport(Gtk)] public static partial nint gtk_widget_get_window(nint widget);
+        [LibraryImport(Gtk)] public static partial void gtk_window_resize(nint window, int width, int height);
         [StructLayout(LayoutKind.Sequential)] public struct Geometry
         {
             public int MinWidth, MinHeight, MaxWidth, MaxHeight, BaseWidth, BaseHeight, WidthIncrement, HeightIncrement;
             public double MinAspect, MaxAspect;
             public int Gravity;
         }
-        [DllImport(Gtk)] public static extern void gtk_window_set_geometry_hints(nint window, nint widget, ref Geometry geometry, int mask);
-        [DllImport("libgdk-3.so.0")] public static extern nint gdk_window_get_display(nint window);
-        [DllImport("libgdk-3.so.0")] public static extern nint gdk_x11_display_get_xdisplay(nint display);
-        [DllImport("libgdk-3.so.0")] public static extern nint gdk_x11_window_get_xid(nint window);
-        [DllImport("libglib-2.0.so.0")] public static extern int g_main_context_pending(nint context);
-        [DllImport("libglib-2.0.so.0")] public static extern int g_main_context_iteration(nint context, int mayBlock);
-        [DllImport("libX11.so.6")] public static extern int XMoveResizeWindow(nint display, nint window, int x, int y, uint width, uint height);
-        [DllImport("libX11.so.6")] public static extern int XFlush(nint display);
-        [DllImport("libX11.so.6")] public static extern int XMapRaised(nint display, nint window);
-        [DllImport("libX11.so.6")] public static extern int XUnmapWindow(nint display, nint window);
-        [DllImport("libX11.so.6")] public static extern int XSetInputFocus(nint display, nint window, int revert, nint time);
-        [DllImport(WebKit)] public static extern void webkit_permission_request_deny(nint request);
-        [DllImport(WebKit)] public static extern nint webkit_navigation_policy_decision_get_frame_name(nint decision);
+        [LibraryImport(Gtk)] public static partial void gtk_window_set_geometry_hints(nint window, nint widget, ref Geometry geometry, int mask);
+        [LibraryImport("libgdk-3.so.0")] public static partial nint gdk_window_get_display(nint window);
+        [LibraryImport("libgdk-3.so.0")] public static partial nint gdk_x11_display_get_xdisplay(nint display);
+        [LibraryImport("libgdk-3.so.0")] public static partial nint gdk_x11_window_get_xid(nint window);
+        [LibraryImport("libglib-2.0.so.0")] public static partial int g_main_context_pending(nint context);
+        [LibraryImport("libglib-2.0.so.0")] public static partial int g_main_context_iteration(nint context, int mayBlock);
+        [LibraryImport("libX11.so.6")] public static partial int XMoveResizeWindow(nint display, nint window, int x, int y, uint width, uint height);
+        [LibraryImport("libX11.so.6")] public static partial int XFlush(nint display);
+        [LibraryImport("libX11.so.6")] public static partial int XMapRaised(nint display, nint window);
+        [LibraryImport("libX11.so.6")] public static partial int XUnmapWindow(nint display, nint window);
+        [LibraryImport("libX11.so.6")] public static partial int XSetInputFocus(nint display, nint window, int revert, nint time);
+        [LibraryImport(WebKit)] public static partial void webkit_permission_request_deny(nint request);
+        [LibraryImport(WebKit)] public static partial nint webkit_navigation_policy_decision_get_frame_name(nint decision);
     }
 }

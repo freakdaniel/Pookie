@@ -6,7 +6,7 @@ namespace Pookie.App.Platform;
 
 internal sealed record ChatClipboardData(string[] Files, byte[]? Image = null, string Extension = ".png");
 
-internal static class ChatClipboard
+internal static partial class ChatClipboard
 {
     internal static string[] FileUris(string text) => text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
         .Where(line => line.StartsWith("file:", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(line, UriKind.Absolute, out var uri) && uri.IsFile &&
@@ -101,7 +101,7 @@ internal static class ChatClipboard
         finally { handle.Free(); }
     }
 
-    private static (ChatClipboardData? Data, byte[]? Dib) ReadWindows()
+    private static unsafe (ChatClipboardData? Data, byte[]? Dib) ReadWindows()
     {
         if (!OpenClipboard(0)) return default;
         try
@@ -115,7 +115,12 @@ internal static class ChatClipboard
                 {
                     var length = DragQueryFileW(drop, i, null, 0);
                     if (length > 32768) continue;
-                    var path = new StringBuilder((int)length + 1); DragQueryFileW(drop, i, path, (uint)path.Capacity); paths.Add(path.ToString());
+                    var path = new char[(int)length + 1];
+                    fixed (char* buffer = path)
+                    {
+                        var copied = DragQueryFileW(drop, i, buffer, (uint)path.Length);
+                        if (copied > 0 && copied <= length) paths.Add(new string(buffer, 0, (int)copied));
+                    }
                 }
                 if (paths.Count > 0) return (new(paths.ToArray()), null);
             }
@@ -139,24 +144,32 @@ internal static class ChatClipboard
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void TargetsCallback(nint clipboard, nint atoms, int count, nint state);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void ContentsCallback(nint clipboard, nint selection, nint state);
-    [DllImport("libgtk-3.so.0")] private static extern int gtk_init_check(nint argc, nint argv);
-    [DllImport("libgtk-3.so.0")] private static extern nint gtk_clipboard_get(nint selection);
-    [DllImport("libgtk-3.so.0")] private static extern void gtk_clipboard_request_targets(nint clipboard, TargetsCallback callback, nint state);
-    [DllImport("libgtk-3.so.0")] private static extern void gtk_clipboard_request_contents(nint clipboard, nint target, ContentsCallback callback, nint state);
-    [DllImport("libgtk-3.so.0")] private static extern int gtk_selection_data_get_length(nint data);
-    [DllImport("libgtk-3.so.0")] private static extern int gtk_selection_data_get_format(nint data);
-    [DllImport("libgtk-3.so.0")] private static extern nint gtk_selection_data_get_data(nint data);
-    [DllImport("libgdk-3.so.0")] private static extern nint gdk_atom_intern([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
-    [DllImport("libgdk-3.so.0")] private static extern nint gdk_atom_name(nint atom);
-    [DllImport("libglib-2.0.so.0")] private static extern void g_free(nint pointer);
-    [DllImport("libglib-2.0.so.0")] private static extern int g_main_context_iteration(nint context, int mayBlock);
-    [DllImport("user32.dll")] private static extern bool OpenClipboard(nint window);
-    [DllImport("user32.dll")] private static extern bool CloseClipboard();
-    [DllImport("user32.dll")] private static extern bool IsClipboardFormatAvailable(uint format);
-    [DllImport("user32.dll")] private static extern nint GetClipboardData(uint format);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormatW(string name);
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern uint DragQueryFileW(nint drop, uint index, StringBuilder? path, uint size);
-    [DllImport("kernel32.dll")] private static extern nuint GlobalSize(nint memory);
-    [DllImport("kernel32.dll")] private static extern nint GlobalLock(nint memory);
-    [DllImport("kernel32.dll")] private static extern bool GlobalUnlock(nint memory);
+    [LibraryImport("libgtk-3.so.0")] private static partial int gtk_init_check(nint argc, nint argv);
+    [LibraryImport("libgtk-3.so.0")] private static partial nint gtk_clipboard_get(nint selection);
+    [LibraryImport("libgtk-3.so.0")] private static partial void gtk_clipboard_request_targets(nint clipboard, TargetsCallback callback, nint state);
+    [LibraryImport("libgtk-3.so.0")] private static partial void gtk_clipboard_request_contents(nint clipboard, nint target, ContentsCallback callback, nint state);
+    [LibraryImport("libgtk-3.so.0")] private static partial int gtk_selection_data_get_length(nint data);
+    [LibraryImport("libgtk-3.so.0")] private static partial int gtk_selection_data_get_format(nint data);
+    [LibraryImport("libgtk-3.so.0")] private static partial nint gtk_selection_data_get_data(nint data);
+    [LibraryImport("libgdk-3.so.0")] private static partial nint gdk_atom_intern([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
+    [LibraryImport("libgdk-3.so.0")] private static partial nint gdk_atom_name(nint atom);
+    [LibraryImport("libglib-2.0.so.0")] private static partial void g_free(nint pointer);
+    [LibraryImport("libglib-2.0.so.0")] private static partial int g_main_context_iteration(nint context, int mayBlock);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool OpenClipboard(nint window);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseClipboard();
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsClipboardFormatAvailable(uint format);
+    [LibraryImport("user32.dll")] private static partial nint GetClipboardData(uint format);
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial uint RegisterClipboardFormatW(string name);
+    [LibraryImport("shell32.dll")] private static unsafe partial uint DragQueryFileW(nint drop, uint index, char* path, uint size);
+    [LibraryImport("kernel32.dll")] private static partial nuint GlobalSize(nint memory);
+    [LibraryImport("kernel32.dll")] private static partial nint GlobalLock(nint memory);
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GlobalUnlock(nint memory);
 }

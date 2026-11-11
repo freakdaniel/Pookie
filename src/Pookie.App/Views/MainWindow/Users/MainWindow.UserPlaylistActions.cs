@@ -16,13 +16,10 @@ internal sealed partial class MainWindow
         var repeat = Icons.View("repeat", 20, TrackButtons.OnSurface);
         var like = TrackButtons.Icon(heart, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, false)), TrackButtons.Glass, size);
         var repost = TrackButtons.Icon(repeat, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, true)), TrackButtons.Glass, size);
-        var copy = TrackButtons.Icon(Icons.View("copy", 20, TrackButtons.OnSurface), () =>
-        { if (TrackLink(item.Playlist?.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, size).Hint("Скопировать ссылку");
-        copy.IsEnabled = TrackLink(item.Playlist?.PermalinkUrl) != null;
         var queue = TrackButtons.Icon(Icons.View("queue", 20, TrackButtons.OnSurface),
             () => Run(() => EnqueueUserPlaylistAsync(item)), TrackButtons.Glass, size).Hint("Добавить в очередь");
         var root = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Height(size).Left()
-            .Children(TrackButtons.Connected(like, repost), copy, queue);
+            .Children(TrackButtons.Connected(like, repost), TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => OpenShare(item), TrackButtons.Glass, size).Hint("Поделиться"), queue);
         (views ?? userPlaylistActionViews).Add(new(item, root, like, repost, heart, repeat, queue));
         RefreshUserPlaylistActions();
         return root;

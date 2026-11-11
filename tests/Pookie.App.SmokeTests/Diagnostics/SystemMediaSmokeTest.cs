@@ -14,7 +14,7 @@ internal static class SystemMediaSmokeTest
 
     public static async Task RunAsync()
     {
-        await CheckMprisAsync();
+        if (OperatingSystem.IsLinux()) await CheckMprisAsync();
 #if WINDOWS
         using var session = await MediaSession.CreateAsync(action => action());
         var commands = new System.Collections.Concurrent.ConcurrentQueue<MediaCommand>();
@@ -49,15 +49,15 @@ internal static class SystemMediaSmokeTest
 
     private static async Task CheckMprisAsync()
     {
-        var options = new ServerConnectionOptions();
-        using var server = new Connection(options);
+        var address = Address.Session;
+        using var server = new Tmds.DBus.Protocol.DBusConnection(address);
+        await server.ConnectAsync();
         using var session = new MprisMediaSession(server);
-        await server.RegisterObjectAsync(session);
-        var address = await options.StartAsync("tcp:host=127.0.0.1,port=0");
+        await server.RequestNameAsync(MprisMediaSession.ServiceName);
         using var client = new Connection(address);
         await client.ConnectAsync();
-        var player = client.CreateProxy<IMprisPlayer>("fixture", new ObjectPath("/org/mpris/MediaPlayer2"));
-        var root = client.CreateProxy<IMprisRoot>("fixture", new ObjectPath("/org/mpris/MediaPlayer2"));
+        var player = client.CreateProxy<IMprisPlayer>(MprisMediaSession.ServiceName, new ObjectPath("/org/mpris/MediaPlayer2"));
+        var root = client.CreateProxy<IMprisRoot>(MprisMediaSession.ServiceName, new ObjectPath("/org/mpris/MediaPlayer2"));
         var commands = new System.Collections.Concurrent.ConcurrentQueue<MediaCommand>();
         session.Command += commands.Enqueue;
         session.Update(track);
@@ -72,8 +72,8 @@ internal static class SystemMediaSmokeTest
         var changed = await changes.Task.WaitAsync(TimeSpan.FromSeconds(3));
         if (changed.Get<string>("PlaybackStatus") != "Paused") throw new InvalidOperationException("MPRIS signal missing.");
         await player.PauseAsync(); await player.NextAsync();
-        await player.SetPositionAsync(MprisMediaSession.TrackPath("stale"), 50_000_000);
-        await player.SetPositionAsync(MprisMediaSession.TrackPath("42"), 30_000_000);
+        await player.SetPositionAsync(new ObjectPath(MprisMediaSession.TrackPath("stale").ToString()), 50_000_000);
+        await player.SetPositionAsync(new ObjectPath(MprisMediaSession.TrackPath("42").ToString()), 30_000_000);
         await player.SetAsync("Volume", .5);
         if (!commands.Any(value => value.Action == MediaAction.Pause) || !commands.Any(value => value.Action == MediaAction.Next) ||
             commands.Count(value => value.Action == MediaAction.Seek) != 1 ||

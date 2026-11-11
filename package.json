@@ -13,7 +13,10 @@
     "license:check": "node scripts/check-licenses.cjs",
     "build-linux": "dotnet publish src/Pookie.App -c Release -r linux-x64 --self-contained true -o artifacts/linux-x64",
     "build-win": "dotnet publish src/Pookie.App -c Release -r win-x64 --self-contained true -o artifacts/win-x64",
-    "build-mac": "dotnet publish src/Pookie.App -c Release -r osx-arm64 --self-contained true -o artifacts/osx-arm64"
+    "build-mac": "dotnet publish src/Pookie.App -c Release -r osx-arm64 --self-contained true -o artifacts/osx-arm64",
+    "build-aot-linux": "dotnet publish src/Pookie.App -c Release -r linux-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -o artifacts/native-aot/linux-x64",
+    "build-aot-win": "dotnet publish src/Pookie.App -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -o artifacts/native-aot/win-x64",
+    "build-aot-mac": "dotnet publish src/Pookie.App -c Release -r osx-arm64 --self-contained true -p:PublishAot=true -p:TrimmerSingleWarn=false -p:TreatWarningsAsErrors=true -p:ILLinkTreatWarningsAsErrors=true -o artifacts/native-aot/osx-arm64"
   },
   "engines": {
     "node": ">=22"

@@ -42,7 +42,7 @@ internal sealed class MacMediaSession : IMediaSession
             Command?.Invoke(new(action, value));
             return 0;
         };
-        var block = new ObjC.Block(callback);
+        var block = ObjC.Block.Create(callback);
         var target = ObjC.Send(command, ObjC.S("addTargetWithHandler:"), block.Pointer);
         ObjC.Send(target, ObjC.S("retain"));
         ObjC.SetBool(command, ObjC.S("setEnabled:"), false);
@@ -112,7 +112,7 @@ internal sealed class MacMediaSession : IMediaSession
                 var capturedImage = image;
                 ObjC.Send(capturedImage, ObjC.S("retain"));
                 ArtworkHandler callback = (_, _) => capturedImage;
-                artworkBlock = new(callback, () => ObjC.Release(capturedImage));
+                artworkBlock = ObjC.Block.Create(callback, () => ObjC.Release(capturedImage));
                 artwork = ObjC.Artwork(ObjC.Send(ObjC.objc_getClass("MPMediaItemArtwork"), ObjC.S("alloc")), ObjC.S("initWithBounds:requestHandler:"), new(512, 512), artworkBlock.Pointer);
                 Publish();
             });

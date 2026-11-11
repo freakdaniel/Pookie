@@ -164,8 +164,8 @@ internal unsafe partial interface IPmpHostApp
     [PreserveSig] int ActivateClassById(char* id, nint stream, Guid* iid, nint* value);
 }
 
-[ComVisible(true), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("279a808d-aec7-40c8-9c6b-a6b492c78a66")]
-public unsafe interface IProtectedMediaSource
+[GeneratedComInterface, Guid("279a808d-aec7-40c8-9c6b-a6b492c78a66")]
+public unsafe partial interface IProtectedMediaSource
 {
     // IMFMediaEventGenerator slots precede IMFMediaSource slots.
     [PreserveSig] int GetEvent(uint flags, nint* value);
@@ -180,8 +180,8 @@ public unsafe interface IProtectedMediaSource
     [PreserveSig] int Shutdown();
 }
 
-[ComVisible(true), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("542612c4-a1b8-4632-b521-de11ea64a0b0")]
-public unsafe interface ITrustedMediaInput
+[GeneratedComInterface, Guid("542612c4-a1b8-4632-b521-de11ea64a0b0")]
+public unsafe partial interface ITrustedMediaInput
 {
     [PreserveSig] int GetInputTrustAuthority(uint stream, Guid* iid, nint* value);
 }

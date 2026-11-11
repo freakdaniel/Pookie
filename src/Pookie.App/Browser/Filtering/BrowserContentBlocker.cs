@@ -1,5 +1,7 @@
 using Pookie.App.Diagnostics;
+#if !POOKIE_NATIVE_AOT
 using InfiniFrame;
+#endif
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -10,6 +12,7 @@ internal static class BrowserContentBlocker
     private sealed record Rule(string Host, string PathPrefix);
     private static readonly Rule[] rules = ReadRules();
 
+#if !POOKIE_NATIVE_AOT
     public static void Attach(IInfiniFrameWindow window)
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -23,6 +26,7 @@ internal static class BrowserContentBlocker
     private static (Stream? Data, string? ContentType) Filter(IInfiniFrameWindow window, string url) =>
         ShouldBlock(url)
             ? (new MemoryStream("[]"u8.ToArray(), writable: false), "application/json") : (null, null);
+#endif
 
     public static bool ShouldBlock(string url)
     {

@@ -1,6 +1,11 @@
 #if WINDOWS
 using Aprillz.MewUI;
 using Microsoft.Web.WebView2.Core;
+#if POOKIE_NATIVE_AOT
+using BrowserBounds = Windows.Foundation.Rect;
+#else
+using BrowserBounds = System.Drawing.Rectangle;
+#endif
 
 namespace Pookie.App.Browser;
 
@@ -10,7 +15,7 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
     private CoreWebView2Environment? environment;
     private CoreWebView2Controller? active;
     private nint parent;
-    private System.Drawing.Rectangle bounds;
+    private BrowserBounds bounds;
     private bool visible;
     private bool disposed;
     private string script = "";
@@ -20,14 +25,23 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
     public async Task InitializeAsync(nint parent, string profile, string script, bool isolated)
     {
         this.parent = parent; this.script = script;
+#if POOKIE_NATIVE_AOT
+        environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, profile,
+            new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--disable-features=HardwareMediaKeyHandling,MediaSessionService" });
+#else
         environment = await CoreWebView2Environment.CreateAsync(null, profile,
             new CoreWebView2EnvironmentOptions("--disable-features=HardwareMediaKeyHandling,MediaSessionService"));
+#endif
         if (!disposed) await CreateControllerAsync();
     }
 
     private async Task<CoreWebView2Controller?> CreateControllerAsync()
     {
+#if POOKIE_NATIVE_AOT
+        var controller = await environment!.CreateCoreWebView2ControllerAsync(CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)parent));
+#else
         var controller = await environment!.CreateCoreWebView2ControllerAsync(parent);
+#endif
         if (disposed) { controller.Close(); return null; }
         controller.IsVisible = false;
         var web = controller.CoreWebView2;
@@ -41,7 +55,11 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
         web.WebResourceRequested += (_, e) =>
         {
             if (!disposed && BrowserContentBlocker.ShouldBlock(e.Request.Uri))
-                e.Response = environment!.CreateWebResourceResponse(new MemoryStream("[]"u8.ToArray(), writable: false),
+                e.Response = environment!.CreateWebResourceResponse(new MemoryStream("[]"u8.ToArray(), writable: false)
+#if POOKIE_NATIVE_AOT
+                    .AsRandomAccessStream()
+#endif
+                    ,
                     200, "OK", "Content-Type: application/json");
         };
         web.NavigationStarting += (_, e) => e.Cancel = !events.Navigate(e.Uri, true);
@@ -52,7 +70,7 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
         web.FrameCreated += (_, e) => AttachFrame(e.Frame);
         web.NewWindowRequested += async (_, e) =>
         {
-            using var pending = e.GetDeferral();
+            var pending = e.GetDeferral();
             e.Handled = true;
             try
             {
@@ -61,6 +79,7 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
                 if (popup != null) e.NewWindow = popup.CoreWebView2;
             }
             catch (Exception error) { if (!disposed) events.Failed(error); }
+            finally { pending.Complete(); }
         };
         web.WindowCloseRequested += (_, _) => ClosePopup(controller);
         web.ProcessFailed += (_, _) => events.Failed(new InvalidOperationException("Браузер входа завершился. Повтори вход."));
@@ -68,7 +87,11 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
         if (disposed) { controller.Close(); return null; }
         if (active != null) active.IsVisible = false;
         controllers.Add(controller); active = controller;
+#if POOKIE_NATIVE_AOT
+        controller.DefaultBackgroundColor = Windows.UI.Color.FromArgb(255, 17, 17, 19);
+#else
         controller.DefaultBackgroundColor = System.Drawing.Color.FromArgb(17, 17, 19);
+#endif
         controller.Bounds = bounds; controller.IsVisible = visible;
         return controller;
     }
@@ -112,7 +135,12 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
     public async Task<byte[]> CaptureAsync()
     {
         using var buffer = new MemoryStream();
+#if POOKIE_NATIVE_AOT
+        using var random = buffer.AsRandomAccessStream();
+        await active!.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, random);
+#else
         await active!.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, buffer);
+#endif
         return buffer.ToArray();
     }
     public void Dispose()

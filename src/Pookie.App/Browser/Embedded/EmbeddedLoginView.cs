@@ -74,8 +74,8 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
             browser = host;
             var body = workerAccount == null ? EmbeddedLoginPage.ReadyScript + "\n" + LoginCaptureScript.Read(origin) :
                 BrowserRequestScript.Read(workerAccount, origin, includeAudio: !OperatingSystem.IsWindows());
-            var script = "if(window===window.top && location.origin===" + JsonSerializer.Serialize(origin) + ") { (()=>{\n" +
-                "const pairing=" + JsonSerializer.Serialize(pairing) + ";\n" +
+            var script = "if(window===window.top && location.origin===" + JsonSerializer.Serialize(origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + ") { (()=>{\n" +
+                "const pairing=" + JsonSerializer.Serialize(pairing, Pookie.SoundCloud.SoundCloudJson.Default.String) + ";\n" +
                 "window.__pookiePost=message=>{const raw=JSON.stringify({...message,pookie_pairing:pairing});" +
                 "if(window.chrome?.webview) window.chrome.webview.postMessage(raw);" +
                 "else window.webkit.messageHandlers.pookie.postMessage(raw);};\n" + body + "\n})(); }";

@@ -7,6 +7,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly SemaphoreSlim chatMediaGate = new(2, 2);
+    private readonly SemaphoreSlim chatMediaPreviewGate = new(4, 4);
     private readonly HashSet<ChatBubbleRow> chatMediaLayoutPending = [];
     private bool chatMediaLayoutQueued;
 
@@ -83,13 +84,66 @@ internal sealed partial class MainWindow
         if (disposed || !workspace.IsVisible || page.Value != Page.Chats || ChatMediaReference.Parse(message.Body) == null) return;
         var visible=chatRecipient?.Id==peer && ChatRows.Any(r=>r.Bound&&r.Message?.Id==message.Id&&r.Root.Bounds.Bottom>chatViewport.Bounds.Y&&r.Root.Bounds.Y<chatViewport.Bounds.Bottom);
         var inboxVisible=((FrameworkElement)chatColumns.Children[0]).IsVisible && chatInboxBindings.Any(p=>p.Value.Recipient.Id==peer&&p.Value.LastMessage?.Id==message.Id&&p.Key.Bounds.Bottom>chatColumns.Bounds.Y&&p.Key.Bounds.Y<chatColumns.Bounds.Bottom);
-        if ((!visible&&!inboxVisible)||chatMediaLoads.Count>=4)return;
+        if ((!visible&&!inboxVisible) || !visible && ChatMediaSummaryFor(message, peer)?.Photos != null) return;
         if (!AllowAutomaticChatMedia(message) || page.Value != Page.Chats || HasDecodedChatMedia(message, peer) || ChatMediaReference.Parse(message.Body) == null || me == null ||
             !chatMediaAutoRequested.Add(ChatMediaCacheId(message, peer))) return;
         chatMediaAutoOrder.Enqueue(ChatMediaCacheId(message, peer));
         while (chatMediaAutoOrder.Count > 256) chatMediaAutoRequested.Remove(chatMediaAutoOrder.Dequeue());
-        Run(async () => { if (await EnsureChatMediaAsync(message, peer, automatic: true)) chatMediaAutoRequested.Remove(ChatMediaCacheId(message, peer)); });
+        Run(async () =>
+        {
+            var account = me?.Id; var generation = chatMediaCacheGeneration;
+            var key = ChatMediaCacheId(message, peer); var token = ChatAutomaticMediaToken();
+            try
+            {
+                if (ChatMediaSummaryFor(message, peer)?.Photos == null && account is { } id && ChatMediaReference.Parse(message.Body) is { } reference)
+                {
+                    ChatMediaPreview? preview = null;
+                    try
+                    {
+                        await chatMediaPreviewGate.WaitAsync(token);
+                        try { preview = await chatMedia.DownloadPreviewAsync(reference, message.SenderId, message.SenderId == id ? peer : id, token); }
+                        finally { chatMediaPreviewGate.Release(); }
+                        if (preview != null) await ApplyChatMediaPreviewAsync(preview, message, peer, id, generation, token);
+                    }
+                    finally
+                    {
+                        System.Security.Cryptography.CryptographicOperations.ZeroMemory(reference.Key);
+                        if (preview != null) foreach (var image in preview.Images) if (image != null) System.Security.Cryptography.CryptographicOperations.ZeroMemory(image.Pixels);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+            catch (Exception error) when (error is OperationCanceledException or HttpRequestException or IOException or System.Security.Cryptography.CryptographicException or InvalidOperationException)
+            { /* A missing/legacy preview must not prevent opening the original. */ }
+            if (disposed || token.IsCancellationRequested || me?.Id != account || generation != chatMediaCacheGeneration) return;
+            var stillVisible = page.Value == Page.Chats && chatRecipient?.Id == peer && ChatRows.Any(row => row.Bound && row.Message?.Id == message.Id && row.Root.Bounds.Bottom > chatViewport.Bounds.Y && row.Root.Bounds.Y < chatViewport.Bounds.Bottom);
+            // Inbox rows only need metadata. Originals use their own two-slot
+            // background queue for messages visible in the open conversation.
+            if (stillVisible && AllowAutomaticChatMedia(message) && !await EnsureChatMediaAsync(message, peer, automatic: true)) return;
+            chatMediaAutoRequested.Remove(key);
+        });
     }
+    private async Task ApplyChatMediaPreviewAsync(ChatMediaPreview early, Pookie.SoundCloud.ChatMessage message, long peer, long account, long cacheGeneration, CancellationToken token)
+    {
+        if (CachedChatMedia(message, peer) != null) return;
+        var cacheId = ChatMediaCacheId(message, peer);
+        var photos = await Task.Run(() => early.Images.Select(image =>
+        {
+            if (image == null) return null;
+            var source = ImageSource.FromBgraPixels(image.ThumbWidth, image.ThumbHeight, image.Pixels.AsSpan());
+            return new ChatMediaPhoto(new(image.Width, image.Height), source, ArtworkBackdrop.Create(source, 1) ?? source);
+        }).ToArray(), token);
+        if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration || CachedChatMedia(message, peer) != null) return;
+        var first = photos.FirstOrDefault(p => p != null);
+        var description = new ChatMediaPackage(early.SenderId, early.RecipientId, early.Caption,
+            early.Files.Select(f => new ChatAttachment(f.Name, f.Type, [], f.AsFile, f.Video, f.Voice)).ToArray(), early.GifUrl);
+        AddChatMediaSummary(cacheId, new(ChatPresentation.MediaLabel(description), first?.Source, first?.Size, early.Caption, photos, early.Files,early.Reply));
+        foreach (var row in ChatRows.Where(r => r.Bound && r.Message != null && ChatMediaCacheId(r.Message, chatRecipient?.Id ?? 0) == cacheId).ToArray())
+        { row.FollowMediaResize = ChatIsAtBottom(); row.Content.AnimateMediaChange(); StopChatAnimations(row.Attachments); row.Attachments.Clear(); BindChatMediaPreview(row);row.RefreshExtensions(); }
+        foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
+        if (chatHistory is { } history) await history.SaveMediaMetadataAsync(peer, message.Id, early.Files, early.Caption, token);
+    }
+
     private async Task<bool> EnsureChatMediaAsync(Pookie.SoundCloud.ChatMessage message, long peer, bool automatic = false)
     {
         var key = ChatMediaCacheId(message, peer);
@@ -124,24 +178,9 @@ internal sealed partial class MainWindow
             await chatMediaGate.WaitAsync(token);
             entered = true;
             ChatMediaPackage package;
-            package = await chatMedia.DownloadAsync(reference, message.SenderId, message.SenderId == account ? peer : account, token, async early =>
-            {
-                if (early.Files.Length == 0 && early.GifUrl != null) return;
-                var photos = await Task.Run(() => early.Images.Select(image =>
-                {
-                    if (image == null) return null;
-                    var source = ImageSource.FromBgraPixels(image.ThumbWidth, image.ThumbHeight, image.Pixels.AsSpan());
-                    return new ChatMediaPhoto(new(image.Width, image.Height), source, ArtworkBackdrop.Create(source, 1) ?? source);
-                }).ToArray(), token);
-                if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) return;
-                var first = photos.FirstOrDefault(p => p != null);
-                var description = new ChatMediaPackage(early.SenderId, early.RecipientId, early.Caption,
-                    early.Files.Select(f => new ChatAttachment(f.Name, f.Type, [], f.AsFile, f.Video, f.Voice)).ToArray(), early.GifUrl);
-                AddChatMediaSummary(cacheId, new(ChatPresentation.MediaLabel(description), first?.Source, first?.Size, early.Caption, photos, early.Files,early.Reply));
-                foreach (var row in ChatRows.Where(r => r.Bound && r.Message != null && ChatMediaCacheId(r.Message, chatRecipient?.Id ?? 0) == cacheId).ToArray())
-                { row.FollowMediaResize = ChatIsAtBottom(); row.Content.AnimateMediaChange(); StopChatAnimations(row.Attachments); row.Attachments.Clear(); BindChatMediaPreview(row);row.RefreshExtensions(); }
-                foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
-            });
+            package = await chatMedia.DownloadAsync(reference, message.SenderId, message.SenderId == account ? peer : account, token,
+                early => ChatMediaSummaryFor(message, peer)?.Photos != null ? Task.CompletedTask :
+                    ApplyChatMediaPreviewAsync(early, message, peer, account, cacheGeneration, token));
             downloaded = package;
             if (disposed || token.IsCancellationRequested || me?.Id != account || cacheGeneration != chatMediaCacheGeneration) { ClearMediaPackage(package); return false; }
             var summary = await PrepareChatMediaSummaryAsync(package, token);

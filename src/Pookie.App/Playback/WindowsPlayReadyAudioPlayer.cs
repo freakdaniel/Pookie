@@ -69,7 +69,7 @@ internal sealed class WindowsPlayReadyAudioPlayer(IAudioPlayer native, HttpClien
         if (!double.IsFinite(percent)) throw new ArgumentOutOfRangeException(nameof(percent));
         lock (gate)
         {
-            volume = Math.Clamp(percent, 0, 100);
+            volume = Math.Clamp(percent, 0, 200);
             native.Volume(volume);
             active?.Volume(volume);
         }

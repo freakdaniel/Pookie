@@ -320,9 +320,14 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             StartupLog.Event("browser.child-input-ready");
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
             void Received(BrowserRequestEvent message) => writer.WriteLine(JsonSerializer.Serialize(message, SoundCloudJson.Default.BrowserRequestEvent));
+#if POOKIE_NATIVE_AOT
+            if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native AOT uses the in-window browser; standalone InfiniFrame diagnostic workers require the managed build.");
+            WebKitLoginWindow.RunRequests(session, Received, profile, fixture);
+#else
             if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe")
                 WebKitLoginWindow.RunRequests(session, Received, profile, fixture);
             else InfiniFrameLoginWindow.RunRequests(session, Received, profile, fixture);
+#endif
             return 0;
         }
         catch (Exception error)

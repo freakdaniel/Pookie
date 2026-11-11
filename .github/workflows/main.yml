@@ -22,12 +22,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             rid: linux-x64
           - os: windows-latest
             rid: win-x64
           - os: macos-latest
             rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,11 +47,31 @@ jobs:
       - name: Restore
         run: dotnet restore Pookie.slnx
       - name: Test
+        if: runner.os != 'Windows'
+        run: npm test
+      - name: Enable Media Foundation for audio tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR/System32/mfplat.dll")) {
+            Install-WindowsFeature Server-Media-Foundation
+          }
+      - name: Test Windows including native PCM gain
+        if: runner.os == 'Windows'
         run: npm test
       - name: Check JavaScript
         run: npm run lint
+      - name: Verify development video runtime
+        if: matrix.rid == 'linux-x64' || startsWith(matrix.rid, 'osx-')
+        run: env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH -u VLC_PLUGIN_PATH dotnet run --project tests/Pookie.App.SmokeTests -c Release -- --chat-video-smoke-test
       - name: Publish Pookie
         run: dotnet publish src/Pookie.App -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/${{ matrix.rid }}
+      - name: Verify bundled video runtime
+        if: matrix.rid == 'linux-x64' || startsWith(matrix.rid, 'osx-')
+        run: |
+          dotnet publish tests/Pookie.App.SmokeTests -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/video-smoke
+          mv artifacts/video-smoke "artifacts/video smoke relocated"
+          env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH -u VLC_PLUGIN_PATH "artifacts/video smoke relocated/Pookie.App.SmokeTests" --chat-video-smoke-test
       - uses: actions/upload-artifact@v4
         with:
           name: pookie-${{ matrix.rid }}

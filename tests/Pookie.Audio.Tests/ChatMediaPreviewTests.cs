@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Security.Cryptography;
 using Pookie.App.Messages;
+using Pookie.App.Storage;
 using Xunit;
 
 namespace Pookie.Audio.Tests;
@@ -57,6 +58,75 @@ public sealed class ChatMediaPreviewTests
         finally { stream.Resume.TrySetResult(); }
         Assert.Equal("Подпись", (await load).Caption);
     }
+    [Theory]
+    [InlineData('p', false)]
+    [InlineData('q', false)]
+    [InlineData('p', true)]
+    [InlineData('q', true)]
+    public async Task MetadataRequestFinishesWithoutReadingOriginalEvenWhenHostIgnoresRange(char provider, bool partial)
+    {
+        var key = RandomNumberGenerator.GetBytes(16);
+        var encrypted = ChatMediaCrypto.Encrypt(Package(), key);
+        var length = 36 + BinaryPrimitives.ReadInt32LittleEndian(encrypted.AsSpan(4));
+        var bytes = provider == 'q' ? ChatMediaArchive.Wrap(encrypted) : encrypted;
+        var offset = provider == 'q' ? 30 + BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(26)) + BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(28)) : 0;
+        var stream = new PausedStream(bytes, offset + length);
+        using var hosting = new ChatMediaHosting(new RangeHandler(stream, partial));
+        var preview = await hosting.DownloadPreviewAsync(new(provider, "abcdef", key), 42, 90, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.NotNull(preview);
+        Assert.Equal("Подпись", preview.Caption);
+        Assert.Equal(48, preview.Images[0]!.Width);
+        Assert.False(stream.Resume.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task CachedMetadataReopensOfflineAndFollowsPinnedAttachmentAcrossCacheClear()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pookie-preview-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = new AppDataPaths(root);
+            var disk = new ChatMediaDiskCache(paths, 42);
+            var key = RandomNumberGenerator.GetBytes(16);
+            var reference = new ChatMediaReference('p', "abcdef", key);
+            var encrypted = ChatMediaCrypto.Encrypt(Package(), key);
+            using (var hosting = new ChatMediaHosting(new RangeHandler(new MemoryStream(encrypted), false)) { DiskCache = disk })
+                Assert.NotNull(await hosting.DownloadPreviewAsync(reference, 42, 90, CancellationToken.None));
+            Assert.Null(await disk.ReadAsync(reference.Code, CancellationToken.None));
+            Assert.InRange((await disk.ReadAsync(reference.Code + ":preview", CancellationToken.None))!.Length, 1, encrypted.Length - 1);
+            await disk.SetPinnedAsync([reference.Code]);
+            await disk.ClearAsync();
+            var reopened = new ChatMediaDiskCache(paths, 42);
+            await reopened.SetPinnedAsync([reference.Code]);
+            using var offline = new ChatMediaHosting(new OfflineHandler()) { DiskCache = reopened };
+            var preview = await offline.DownloadPreviewAsync(reference, 42, 90, CancellationToken.None);
+            Assert.Equal("Подпись", preview!.Caption);
+            Assert.Equal(48, preview.Images[0]!.Width);
+            await reopened.SetPinnedAsync([]);
+            await reopened.ClearAsync();
+            Assert.Null(await reopened.ReadAsync(reference.Code + ":preview", CancellationToken.None));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+            throw new InvalidOperationException("An offline metadata preview must use its encrypted cache.");
+    }
+
+    private sealed class RangeHandler(Stream stream, bool partial) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Assert.Equal(0, Assert.Single(request.Headers.Range!.Ranges).From);
+            Assert.DoesNotContain("key", request.RequestUri!.AbsoluteUri);
+            var content = new StreamContent(stream);
+            if (partial) content.Headers.ContentRange = new(0, Math.Min(stream.Length, ChatMediaCrypto.MaxPreviewBytes + 8192) - 1, stream.Length);
+            return Task.FromResult(new HttpResponseMessage(partial ? HttpStatusCode.PartialContent : HttpStatusCode.OK) { Content = content });
+        }
+    }
+
     private sealed class DownloadHandler(Stream stream) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>

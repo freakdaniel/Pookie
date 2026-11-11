@@ -8,7 +8,7 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Auth;
 
 // DPAPI binds this encrypted file to the signed-in Windows user, not the machine.
-internal sealed class WindowsSessionVault(AppDataPaths paths) : ISessionVault
+internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISessionVault
 {
     internal const int MaxSize = 65536;
     private readonly string file = Path.Combine(paths.Config, "soundcloud-session.bin");
@@ -100,9 +100,13 @@ internal sealed class WindowsSessionVault(AppDataPaths paths) : ISessionVault
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct DataBlob { public int Size; public nint Data; }
-    [DllImport("crypt32.dll", SetLastError = true)] private static extern bool CryptProtectData(
+    [LibraryImport("crypt32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CryptProtectData(
         ref DataBlob input, nint description, nint entropy, nint reserved, nint prompt, uint flags, out DataBlob output);
-    [DllImport("crypt32.dll", SetLastError = true)] private static extern bool CryptUnprotectData(
+    [LibraryImport("crypt32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CryptUnprotectData(
         ref DataBlob input, nint description, nint entropy, nint reserved, nint prompt, uint flags, out DataBlob output);
-    [DllImport("kernel32.dll")] private static extern nint LocalFree(nint memory);
+    [LibraryImport("kernel32.dll")] private static partial nint LocalFree(nint memory);
 }

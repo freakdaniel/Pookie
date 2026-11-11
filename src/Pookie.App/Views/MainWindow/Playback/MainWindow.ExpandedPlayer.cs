@@ -200,7 +200,7 @@ internal sealed partial class MainWindow
 
     private ExpandedGlassSurface ExpandedVolumeControl()
     {
-        expandedVolumeSlider = ThinSlider().Minimum(0).Maximum(100).BindValue(volume).CenterVertical();
+        expandedVolumeSlider = ThinSlider().Minimum(0).Maximum(preferences.MaximumVolume).BindValue(volume).CenterVertical();
         expandedVolumeSlider.Opacity = 0;
         expandedVolumeSlider.IsEnabled = false;
         expandedVolumeSlider.Transitions = [.. expandedVolumeSlider.Transitions ?? [],

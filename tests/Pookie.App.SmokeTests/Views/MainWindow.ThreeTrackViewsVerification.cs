@@ -28,7 +28,7 @@ internal sealed partial class MainWindow
         MoveActionPointer(new(row.Cover.Bounds.X + 4, row.Cover.Bounds.Y + 4));
         await WaitForLikedLayoutAsync(() => row.Trailing.Reveal > .999);
         if (row.Root.ActualWidth >= CompactTrackTail.FullActionsThreshold &&
-            (row.ExtraActions is not { IsVisible: true } || row.ActionButtons.Length != 4 || row.Repost is not { ActualWidth: > 20 }))
+            (row.ExtraActions is not { IsVisible: true } || row.ActionButtons.Length != 3 || row.Repost is not { ActualWidth: > 20 }))
             throw new InvalidOperationException("Trending row collapsed its actions despite having room for the complete strip.");
         MoveActionPointer(row.Cover.Bounds.Center);
         await WaitForLikedLayoutAsync(() => row.Overlay.Opacity > .999 && row.PlaybackButton.IsHitTestVisible);

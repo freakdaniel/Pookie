@@ -3,6 +3,9 @@ using System.Text.Json.Serialization;
 namespace Pookie.SoundCloud;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(System.Text.Json.JsonElement))]
+[JsonSerializable(typeof(System.Text.Json.JsonElement[]))]
 [JsonSerializable(typeof(SoundCloudPlaylist))]
 [JsonSerializable(typeof(SoundCloudTrack))]
 [JsonSerializable(typeof(SoundCloudUser))]
