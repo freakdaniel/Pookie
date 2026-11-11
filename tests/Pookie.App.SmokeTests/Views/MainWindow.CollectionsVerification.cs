@@ -313,11 +313,14 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("The playlist card did not enqueue the whole playlist in order.");
         playbackQueue.Clear();
         var tile = libraryTiles.Values.First(tile => tile.Track != null && tile.Root.ActualWidth > 100);
+        shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + tile.Author.Bounds.Y - startupHeader.Bounds.Bottom - 80));
+        await WaitForLoginFrameAsync();
+        await WaitForLikedLayoutAsync(() => tile.Author.Bounds.Y > startupHeader.Bounds.Bottom && tile.Author.Bounds.Bottom < Window.ClientSize.Height - 100);
         MoveActionPointer(new Point(tile.Author.Bounds.X + 5, tile.Author.Bounds.Center.Y));
         await WaitForLikedLayoutAsync(() => tile.Author.Foreground != Muted);
         MoveActionPointer(new Point(2, 2));
         await WaitForLikedLayoutAsync(() => tile.Author.Foreground == Muted);
-        shellScroll.SetScrollOffsets(0, Math.Max(0, overviewSections["playlists"].Grid.Bounds.Y - 210));
+        shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + overviewSections["playlists"].Grid.Bounds.Y - startupHeader.Bounds.Bottom - 24));
         await WaitForLoginFrameAsync();
         await CheckCard("playlists");
     }

@@ -17,10 +17,6 @@ internal sealed partial class MainWindow
         foreach (var emphasis in new[] { .35, 1d })
         {
             using var sheen = new GlassSheenRaster();
-            var width = (int)Math.Ceiling(size.Width * scale); var height = (int)Math.Ceiling(size.Height * scale);
-            using var ink = new WriteableBitmap(width,height);
-            using (var write = ink.LockForWrite()) GlassSheenRaster.FillPixels(write.PixelsBgra32,width,height,emphasis);
-            using var image = BitmapImage.Create(Window.GraphicsFactory,ink);
             var corners = new CornerRadius(18,4,4,18);
             foreach (var phase in new[] { 0d, .4, .8 })
             {
@@ -35,15 +31,14 @@ internal sealed partial class MainWindow
                     if(cached) sheen.Draw(context,bounds,corners,emphasis,scale);
                     else
                     {
-                        // Original drawing path: dithered fill plus a native
-                        // gradient stroke in absolute coordinates, independent
-                        // of the reused local geometry and gradient endpoints.
-                        context.Save(); context.SetClipPath(GlassSheen.Shape(bounds,corners));
-                        context.DrawImage(image,bounds); context.Restore();
-                        var inset = new Rect(bounds.X+.5,bounds.Y+.5,bounds.Width-1,bounds.Height-1);
-                        context.DrawPath(GlassSheen.Shape(inset,new CornerRadius(17.5,3.5,3.5,17.5)),
-                            new Pen(new LinearGradientBrush(new Point(bounds.X,bounds.Y),new Point(bounds.X,bounds.Bottom),
-                                [new(0,Color.FromArgb((byte)(28+emphasis*16),255,255,255)),new(.55,Color.FromArgb(9,255,255,255)),new(1,Color.FromArgb(4,255,255,255))]),1));
+                        // Direct fresh composition without the retained raster.
+                        // The texture already contains silhouette coverage.
+                        var grid = GlassRasterGrid.For(context, bounds, scale);
+                        using var ink = new WriteableBitmap(grid.Width, grid.Height);
+                        using (var write = ink.LockForWrite()) GlassSheenRaster.FillPixels(write.PixelsBgra32,
+                            grid.Width, grid.Height, size, corners, emphasis, tileBounds: grid.Tile);
+                        using var image = BitmapImage.Create(Window.GraphicsFactory,ink);
+                        context.DrawImage(image, grid.Destination(bounds));
                     }
                     context.EndFrame();
                     return ((ICpuPixelSurface)surface).GetReadOnlyPixelSpan().ToArray();
@@ -65,7 +60,7 @@ internal sealed partial class MainWindow
                     throw new InvalidOperationException($"Cached glass edge changed its shape: dpi={scale}, size={size}, phase={phase}, mean={mean}, sampling={sampling}.");
             }
         }
-        Console.WriteLine($"GLASS_EDGE_CACHE_PIXELS_OK: native stroke comparison, connected corners, moving fractional pixels and 96/110/144/192 DPI; mean<={maximumMean:F3}, sampling<={maximumSampling}");
+        Console.WriteLine($"GLASS_EDGE_CACHE_PIXELS_OK: direct texture comparison, connected corners, moving fractional pixels and 96/110/144/192 DPI; mean<={maximumMean:F3}, sampling<={maximumSampling}");
         VerifyChatFadePixels();
         VerifyChatProfileGradientPixels();
         VerifyButtonGraphicsState();

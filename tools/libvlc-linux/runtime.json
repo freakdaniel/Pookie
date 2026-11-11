@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "rid": "linux-x64",
+  "asset": "libvlc-linux-x64.tar.gz",
+  "baseline": "glibc 2.35+ (x86-64)"
+}

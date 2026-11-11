@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
 {
     private static bool IsLibrary(Page value) => value is Page.Library or Page.LibraryTracks || IsCollectionPage(value);
     private static bool IsCollectionPage(Page value) => value is Page.LibraryPlaylists or Page.LibraryAlbums or
-        Page.LibraryStations or Page.LibraryFollowing or Page.LibraryHistory or Page.LibraryCollection;
+        Page.LibraryStations or Page.LibraryFollowing or Page.LibraryHistory or Page.LibraryCollection or Page.LibraryMixes;
     private readonly Dictionary<string, LibraryPage> libraryPages = [];
     private readonly Dictionary<string, Task<LibraryPage>> libraryLoads = [];
     private readonly Dictionary<string, DateTimeOffset> libraryLoadedAt = [];
@@ -39,10 +39,10 @@ internal sealed partial class MainWindow
 
     private static string SectionTitle(Page target) => target switch {
         Page.LibraryPlaylists => "Плейлисты", Page.LibraryAlbums => "Альбомы", Page.LibraryStations => "Станции",
-        Page.LibraryFollowing => "Подписки", Page.LibraryHistory => "История", _ => "Библиотека" };
+        Page.LibraryFollowing => "Подписки", Page.LibraryHistory => "История", Page.LibraryMixes => "Миксы", _ => "Библиотека" };
     private static string SectionSource(Page target) => target switch {
         Page.LibraryPlaylists or Page.LibraryAlbums => "collections", Page.LibraryStations => "stations",
-        Page.LibraryFollowing => "following", Page.LibraryHistory => "history", _ => "recent" };
+        Page.LibraryFollowing => "following", Page.LibraryHistory => "history", Page.LibraryMixes => "mixes", _ => "recent" };
 
     private Button SectionHeader(string title, Action click, double fontSize = 22)
     {
@@ -170,11 +170,11 @@ internal sealed partial class MainWindow
 
     private async Task<LibraryPage> LoadLibrarySourceAsync(string source)
     {
-        if (libraryPages.TryGetValue(source, out var cached) && (demo || source is not ("recent" or "history") ||
-            libraryLoadedAt.TryGetValue(source, out var at) && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(source == "recent" ? 2 : 15))) return cached;
+        if (libraryPages.TryGetValue(source, out var cached) && (demo || source is not ("recent" or "history" or "mixes") ||
+            libraryLoadedAt.TryGetValue(source, out var at) && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(source == "mixes" ? 600 : source == "recent" ? 2 : 15))) return cached;
         if (demo || me == null) return new([], null);
         if (!libraryLoads.TryGetValue(source, out var request))
-            libraryLoads[source] = request = api.GetLibraryAsync(source, me.Id, lifetime.Token);
+            libraryLoads[source] = request = source == "mixes" ? LoadPersonalMixesAsync(me.Id) : api.GetLibraryAsync(source, me.Id, lifetime.Token);
         var session = api.Session;
         try
         {
@@ -192,11 +192,11 @@ internal sealed partial class MainWindow
         var generation = ++overviewRefreshGeneration;
         var session = api.Session;
         bool Current() => !disposed && generation == overviewRefreshGeneration && api.Session == session;
-        overviewPending.UnionWith(["recent", "collections", "stations", "following"]);
+        overviewPending.UnionWith(["mixes", "recent", "collections", "stations", "following"]);
         RefreshOverviewSections();
         try
         {
-            foreach (var source in new[] { "recent", "collections", "stations", "following" })
+            foreach (var source in new[] { "mixes", "recent", "collections", "stations", "following" })
             {
                 if (!Current()) return;
                 try
@@ -232,7 +232,10 @@ internal sealed partial class MainWindow
     {
         overviewPending.Remove(source);
         foreach (var key in source == "collections" ? new[] { "playlists", "albums" } : new[] { source })
-            if (overviewSections.TryGetValue(key, out var section)) { overviewErrors[key] = message; section.Empty.Text = message; }
+        {
+            overviewErrors[key] = message;
+            if (overviewSections.TryGetValue(key, out var section)) section.Empty.Text = message;
+        }
         RefreshOverviewSections();
     }
 
@@ -253,6 +256,7 @@ internal sealed partial class MainWindow
     {
         if (expandedHost?.IsVisible == true) { overviewRefreshPending = true; return; }
         overviewRefreshPending = false;
+        RefreshLibraryMixOverview();
         foreach (var (key, section) in overviewSections)
         {
             var items = LibraryItems(key).Take(6).ToArray();

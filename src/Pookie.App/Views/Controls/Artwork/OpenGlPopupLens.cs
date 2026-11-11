@@ -129,7 +129,7 @@ internal sealed unsafe class OpenGlPopupLens : IDisposable
         }
     }
 
-    // Same Snell profile and lighting as the artwork lens. The texture and
+    // Same Snell profile as the artwork lens. The texture and
     // fragment coordinates both run bottom-up on the OpenGL path.
     private const string FragmentSource = """
         #version 140
@@ -168,10 +168,9 @@ internal sealed unsafe class OpenGlPopupLens : IDisposable
             vec3 refracted = vec3(ray(scene + bend * 1.14, 0, clarity),
                                   ray(scene + bend, 1, clarity),
                                   ray(scene + bend * 0.86, 2, clarity));
-            float light = dot(normal, vec2(-0.55, 0.835));
-            float reflection = 0.16 * pow(1.0 - cos(incidence), 5.0)
-                + rim * rim * rim * pow(abs(light), 4.0) * (light >= 0.0 ? 0.28 : 0.11);
-            color = vec4(mix(mix(refracted, vec3(1.0), reflection), tint.rgb, tint.a), 1.0);
+            // GlassSheenRaster supplies the single reflection layer above tint,
+            // just as it does for the CPU lens. Do not bake in a second rim.
+            color = vec4(mix(refracted, tint.rgb, tint.a), 1.0);
         }
         """;
 }

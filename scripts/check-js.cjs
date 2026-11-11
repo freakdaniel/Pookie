@@ -12,4 +12,4 @@ function check(directory) {
         }
     }
 }
-for (const directory of ['scripts', 'tests', 'src/Pookie.App/Browser/Scripts']) check(directory);
+for (const directory of ['scripts', 'tests', 'tools', 'src/Pookie.App/Browser/Scripts']) check(directory);

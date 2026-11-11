@@ -230,6 +230,13 @@ native window: `dotnet test tests/Pookie.Playback.Tests`. They cover manual entr
 priority/editing/duplicates, actual history and forward traversal, stable shuffle,
 repeat/end behavior, immutable snapshots and independent cancellable pagination.
 
+For the glass performance regression, run `--mixes-ui-smoke-test --no-audio`
+with `POOKIE_GLASS_PERF=1` and `POOKIE_PERF_CAPTURE=/tmp/glass-frames.json`.
+The isolated fixture reports repeated profile-menu frame times, first visible
+menu paint, and continuous waveform scrolling in a mix. Omit `POOKIE_UI_PREVIEW`
+when comparing timings. `GLASS_MOTION_CACHE_OK` in the chrome check independently
+asserts that fractional movement and hover reuse one optical raster.
+
 `--expanded-glass-ui-smoke-test` checks fullscreen glass controls with a synthetic
 cover: actual pixel softening, fresh samples after artwork replacement, connected
 like/repost selection shapes, a native shuffle click and pointer-focus feedback.
@@ -284,6 +291,14 @@ account isolation, and native radio/play/card clicks. Radio and continuation use
 SoundCloud's related-track order and filter exclusions, unavailable tracks and
 likely reuploads. Explicit speed edits remain distinct. Exclusions from the
 former Wave profile are imported into the account's radio settings.
+
+`--mixes-ui-smoke-test --no-audio` focuses on the library's personal mixes: all
+mixes, Daily Drops and Weekly Wave in one overview shelf and a dedicated tab,
+shared discovery caching, the mix header with leading artwork and playback/queue
+actions, hidden library tabs on detail pages, filtering, back navigation and
+retry after a failed load. It uses an isolated fixture account and metadata
+transport. `POOKIE_UI_PREVIEW=<directory>` saves wide/narrow detail and library
+previews.
 
 For a passive carousel performance probe, set `POOKIE_MIX_PROBE=fixture` or
 `POOKIE_MIX_PROBE=live` and run the same Home command. Live mode reads the saved

@@ -8,6 +8,9 @@ namespace Pookie.App;
 internal static class GlassSheen
 {
     internal static readonly Color Surface = Color.FromArgb(218, 49, 49, 55);
+    // Neutral dark glass should describe its silhouette quietly. Prominent
+    // filled controls retain the stronger reflection in their pigment layer.
+    internal const double ReflectionOpacity = .38;
 
     internal static Color ControlTint(double brightness = 0)
     {
@@ -27,17 +30,6 @@ internal static class GlassSheen
     internal static PathGeometry Shape(Rect bounds, CornerRadius corners) => PathGeometry.FromRoundedRect(bounds,
         corners.TopLeft, corners.TopRight, corners.BottomRight, corners.BottomLeft);
 
-    internal static void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, GlassGeometry geometry, double emphasis)
-    {
-        if (bounds.Width <= 0 || bounds.Height <= 0) return;
-        var edge = new Rect(bounds.X + .5, bounds.Y + .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1));
-        var inset = new CornerRadius(Math.Max(0, corners.TopLeft - .5), Math.Max(0, corners.TopRight - .5),
-            Math.Max(0, corners.BottomRight - .5), Math.Max(0, corners.BottomLeft - .5));
-        context.DrawPath(geometry.Get(edge, inset), new Pen(new LinearGradientBrush(
-            new Point(bounds.X, bounds.Y), new Point(bounds.X, bounds.Bottom),
-            [new(0, Color.FromArgb((byte)(28 + emphasis * 16), 255, 255, 255)),
-             new(.55, Color.FromArgb(9, 255, 255, 255)), new(1, Color.FromArgb(4, 255, 255, 255))]), 1));
-    }
 }
 
 // One shape per owner, invalidated only when layout or connected corners change.

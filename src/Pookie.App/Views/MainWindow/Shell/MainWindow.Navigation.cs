@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings, UserProfile }
+    private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings, UserProfile, LibraryMixes }
     private readonly ObservableValue<Page> page = new(Page.Home);
     private readonly ObservableValue<string> eyebrow = new("ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ");
     private readonly ObservableValue<bool> profileOpen = new(false);

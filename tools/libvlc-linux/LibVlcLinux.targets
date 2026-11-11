@@ -8,8 +8,9 @@
        assigned. Build, dotnet run, publish and clean then share the same files. -->
   <Target Name="PreparePookieLinuxLibVlc" BeforeTargets="AssignTargetPaths"
           Condition="('$(MSBuildProjectName)' == 'Pookie.App' or '$(MSBuildProjectName)' == 'Pookie.App.SmokeTests') and '$(PookieLibVlcRuntime)' == 'linux-x64' and '$(DesignTimeBuild)' != 'true'">
-    <Error Condition="!$([MSBuild]::IsOSPlatform('Linux'))" Text="Linux builds bundle native libVLC and must run on Linux (Ubuntu 22.04+ with python3, apt, dpkg, binutils and ubuntu-keyring)." />
-    <Exec Command="python3 &quot;$(MSBuildThisFileDirectory)prepare.py&quot; --output &quot;$(PookieLibVlcLinuxDirectory)&quot;" />
+    <Error Condition="!$([MSBuild]::IsOSPlatform('Linux'))" Text="Linux builds bundle native libVLC and must run on Linux with Node.js 22+, tar and flock." />
+    <Exec Command="node &quot;$(MSBuildThisFileDirectory)prepare.cjs&quot; --output &quot;$(PookieLibVlcLinuxDirectory)&quot;"
+          StandardOutputImportance="High" StandardErrorImportance="High" />
     <ItemGroup>
       <PookieLinuxVlcFile Include="$(PookieLibVlcLinuxDirectory)/**/*" />
       <None Include="@(PookieLinuxVlcFile)" Link="libvlc/%(PookieLinuxVlcFile.RecursiveDir)%(PookieLinuxVlcFile.Filename)%(PookieLinuxVlcFile.Extension)"

@@ -29,7 +29,7 @@ internal sealed partial class MainWindow
     private bool trackPageUiSmoke, trackDescriptionUiSmoke, trackPlaybackUiSmoke, waveformUiSmoke;
     private bool trackPageLiveUi;
     private string? livePlaylistUrl;
-    private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke;
+    private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke, libraryMixesUiSmoke;
     private bool webPlaylistEditingOnly;
     private bool memoryUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
@@ -75,7 +75,8 @@ internal sealed partial class MainWindow
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
         likesFilterUiSmoke = args.Contains("--likes-filter-ui-smoke-test");
         commentsUiSmoke = args.Contains("--comments-ui-smoke-test");
-        homeUiSmoke = args.Contains("--home-ui-smoke-test");
+        libraryMixesUiSmoke = args.Contains("--mixes-ui-smoke-test");
+        homeUiSmoke = libraryMixesUiSmoke || args.Contains("--home-ui-smoke-test");
         if (args.Contains("--smoke-test"))
         {
             closeTimer = new DispatcherTimer(TimeSpan.FromSeconds(5));

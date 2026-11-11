@@ -63,6 +63,12 @@ internal sealed partial class MainWindow
             }
             if (homeMixCarousel.VisibleCoverCount != 5 || homeMixSection.Children.OfType<Button>().Any())
                 throw new InvalidOperationException("The hero must show five covers without a separate playback button.");
+            if (libraryMixesUiSmoke)
+            {
+                player = null;
+                await VerifyLibraryMixesUiAsync(transport);
+                return;
+            }
             await WaitForLoginFrameAsync(); CaptureUiPreview("home-wide");
             player = null;
             var still = homeMixCarousel.FrontIndex;
@@ -192,6 +198,7 @@ internal sealed partial class MainWindow
             await NavigateHomeAsync();
             if (HomeItems("recent")[0].Track?.Id != 106) throw new InvalidOperationException("Cached Home did not include the latest local playback.");
             if (transport.HomeReads != reads) throw new InvalidOperationException("Cached Home repeated section requests on return.");
+            await VerifyLibraryMixesUiAsync(transport);
             transport.FailMixes = true;
             var chartBeforeError = homeChartRows.ToArray();
             await NavigateHomeAsync(force: true);
@@ -323,11 +330,20 @@ internal sealed partial class MainWindow
             for (var x = 0; x < side; x++)
             {
                 var color = colors[i].Lerp(Color.FromRgb(26, 20, 30), ((x + y) % side) / (2d * side));
+                if (y is >= 53 and <= 60 && x is >= 5 and <= 59) color = FixtureMixBadgeColor(i + 1);
+                if (y is >= 55 and <= 59 && x is >= 8 and <= 25 && x % 4 != 0) color = Color.FromRgb(0, 0, 0);
                 var offset = (y * side + x) * 4;
                 pixels[offset] = color.B; pixels[offset + 1] = color.G; pixels[offset + 2] = color.R; pixels[offset + 3] = 255;
             }
             collectionImages[HomeFixtureTransport.MixArtwork(i + 1)] = ImageSource.FromBgraPixels(side, side, pixels);
         }
+    }
+
+    private static Color FixtureMixBadgeColor(int index)
+    {
+        Color[] colors = [Color.FromRgb(255, 101, 0), Color.FromRgb(82, 140, 216), Color.FromRgb(198, 42, 124),
+            Color.FromRgb(18, 34, 85), Color.FromRgb(255, 210, 62), Color.FromRgb(48, 168, 127), Color.FromRgb(190, 190, 196)];
+        return colors[index - 1];
     }
 
     private Point FindHomeMixPoint(int index, bool play = false)
@@ -361,7 +377,7 @@ internal sealed partial class MainWindow
         internal const string Artwork = "https://i1.sndcdn.com/home-fixture-t500x500.jpg";
         internal static string MixArtwork(int index) => $"https://i1.sndcdn.com/home-mix-{index}-t500x500.jpg";
         internal bool FailMixes, FailChart;
-        internal int HomeReads, ChartReads;
+        internal int HomeReads, ChartReads, MixReads;
         internal TaskCompletionSource RelatedReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource? ChartReady;
         internal SoundCloudTrack[] Recent { get; } = Enumerable.Range(101, 6).Select(id => Track(id, id - 100,
@@ -380,9 +396,12 @@ internal sealed partial class MainWindow
             if (path is "/me/play-history/contexts" or "/me/play-history/tracks" or "/users/42/likes") return Tracks(Recent);
             if (path == "/me/track_likes/ids") return JsonDocument.Parse("[101,102,103,104,105,106]");
             if (path == "/users/42/followings/ids") return JsonDocument.Parse("[7,8,9]");
+            if (path is "/me/library/all" or "/me/library/stations" or "/users/42/followings")
+                return JsonDocument.Parse("{\"collection\":[]}");
             if (path == "/stream") return Tracks(Enumerable.Range(301, 6).Select(id => Track(id, 7 + id % 3, "Новый релиз " + (id - 300))));
             if (path == "/mixed-selections")
             {
+                MixReads++;
                 if (FailMixes) throw new HttpRequestException("Fixture: mixes unavailable");
                 static object Playlist(string urn, string title, string description, string artwork = Artwork) => new
                 {
@@ -419,8 +438,11 @@ internal sealed partial class MainWindow
                 var hipHop = urn.EndsWith(":genre-0");
                 var general = urn.EndsWith(":all-genres");
                 var entries = hipHop ? Chart.Reverse().ToArray() : general ? Chart : Recent;
+                var artwork = urn.Contains(":your-moods:") && int.TryParse(urn.Split(':')[^1], out var mixIndex) ? MixArtwork(mixIndex) : Artwork;
                 var mix = new SoundCloudPlaylist { Urn = urn, Title = hipHop ? "Hip Hop" : general ? "All Genres" : "Your Mix " + urn.Split(':')[^1],
-                    Tracks = entries, TrackCount = entries.Length, ArtworkUrl = Artwork };
+                    Tracks = entries, TrackCount = entries.Length, ArtworkUrl = artwork,
+                    Genre = "Electronic", TagList = "\"Alternative Rock\" ambient electronic",
+                    Description = "Исполнитель 1, Исполнитель 2, Исполнитель 3", ShortDescription = "Fixture artists" };
                 return JsonDocument.Parse(JsonSerializer.Serialize(mix, SoundCloudJson.Default.SoundCloudPlaylist));
             }
             if (path.StartsWith("/tracks/"))

@@ -12,6 +12,12 @@ internal sealed class CardShadow : Panel
     private readonly double radius;
     private readonly FrameworkElement child;
     private readonly BoxShadowRaster shadow;
+    private bool drawShadow = true;
+    internal bool DrawShadow
+    {
+        get => drawShadow;
+        set { if (drawShadow == value) return; drawShadow = value; InvalidateVisual(); }
+    }
 
     internal CardShadow(FrameworkElement child, double blur = 12, double offset = 4, double radius = 20, Color? color = null,
         bool softFalloff = false)
@@ -32,7 +38,7 @@ internal sealed class CardShadow : Panel
 
     protected override void OnRender(IGraphicsContext context)
     {
-        if (child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;
+        if (!DrawShadow || child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;
         // The window and the half-resolution header capture share one raster.
         shadow.Draw(context, child.Bounds, radius, rasterScale: GetDpi() / 96d);
     }

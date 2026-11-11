@@ -3,7 +3,16 @@ name: Native AOT
 on: [push, pull_request]
 
 jobs:
+  libvlc:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/libvlc-linux.yml
+
   native:
+    needs: libvlc
+    env:
+      POOKIE_LIBVLC_ARCHIVE: ${{ github.workspace }}/artifacts/libvlc-runtime/libvlc-linux-x64.tar.gz
+      POOKIE_LIBVLC_SHA256: ${{ needs.libvlc.outputs.sha256 }}
     strategy:
       fail-fast: false
       matrix:
@@ -19,6 +28,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: libvlc-linux-x64
+          path: artifacts/libvlc-runtime
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |

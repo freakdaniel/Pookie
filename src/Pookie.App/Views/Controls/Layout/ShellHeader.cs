@@ -50,7 +50,7 @@ internal sealed class ShellHeader : Grid
     }
 
     private static GlassCard Card(FrameworkElement content, double leftInset, double rightInset) =>
-        new GlassCard { HoverEnabled = false, ReflectionEnabled = false }.Height(CardHeight).CornerRadius(CardHeight / 2)
+        new GlassCard { HoverEnabled = false }.Height(CardHeight).CornerRadius(CardHeight / 2)
             .Padding(leftInset, 0, rightInset, 0).CenterVertical().Child(content);
 
     internal static Rect StateLayerBounds(FrameworkElement control, double dpiScale)

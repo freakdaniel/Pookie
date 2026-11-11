@@ -94,6 +94,7 @@ internal sealed partial class MainWindow
         async Task Discover()
         {
             discover = await Read<SoundCloudDiscoverShelves?>("mixes", async () => await api.GetDiscoverShelvesAsync(user.Id, token), null);
+            if (Current() && discover != null) CachePersonalMixes(discover);
             Update("mixes", "made-for-you", "trends");
         }
         await Task.WhenAll(Recent(), Recommendations(), Releases(), Discover());

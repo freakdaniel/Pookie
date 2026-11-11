@@ -10,8 +10,10 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
 {
     private double sideWidth, height;
     private double measuredMainWidth = double.NaN;
-    internal double HeroArtworkMinWidth { get; init; } = 280;
-    internal double HeroArtworkMaxWidth { get; init; } = 400;
+    internal double HeroArtworkMinWidth { get; set; } = 280;
+    internal double HeroArtworkMaxWidth { get; set; } = 400;
+    internal bool HeroArtworkLeading { get; set; }
+    internal bool HeroFitContent { get; set; }
     internal Image BackgroundArtwork => background.OfType<Image>().First();
 
     // Only the layers physically behind the controls, never the cover column,
@@ -40,9 +42,9 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         // layouts at two widths as comments move through the viewport.
         var mainWidth = Math.Max(0, Math.Round((innerWidth - sideWidth - 32) * scale) / scale);
         side.Measure(new Size(sideWidth, hero ? sideWidth : availableSize.Height));
-        main.Measure(new Size(mainWidth, hero ? sideWidth : availableSize.Height));
+        main.Measure(new Size(mainWidth, hero ? HeroFitContent ? double.PositiveInfinity : sideWidth : availableSize.Height));
         measuredMainWidth = mainWidth;
-        height = (hero ? sideWidth : Math.Max(main.DesiredSize.Height, side.DesiredSize.Height)) + (hero ? 48 : 0);
+        height = (hero && !HeroFitContent ? sideWidth : Math.Max(main.DesiredSize.Height, side.DesiredSize.Height)) + (hero ? 48 : 0);
         foreach (var layer in background) layer.Measure(new Size(width, height));
         return new Size(width, height);
     }
@@ -57,11 +59,12 @@ internal sealed class TrackPageColumns(FrameworkElement main, FrameworkElement s
         // Refresh star-column minima only when width changes, never while merely scrolling.
         if (!measuredMainWidth.Equals(mainWidth))
         {
-            main.Measure(new Size(mainWidth, hero ? sideWidth : height));
+            main.Measure(new Size(mainWidth, hero && !HeroFitContent ? sideWidth : height));
             measuredMainWidth = mainWidth;
         }
-        main.Arrange(new Rect(Bounds.X + 24, y, mainWidth, height - (hero ? 48 : 0)));
-        side.Arrange(new Rect(Bounds.X + 24 + mainWidth + 32, y, sideWidth, height - (hero ? 48 : 0)));
+        main.Arrange(new Rect(Bounds.X + 24 + (HeroArtworkLeading ? sideWidth + 32 : 0), y, mainWidth, height - (hero ? 48 : 0)));
+        side.Arrange(new Rect(Bounds.X + 24 + (HeroArtworkLeading ? 0 : mainWidth + 32), y, sideWidth,
+            hero && HeroFitContent ? sideWidth : height - (hero ? 48 : 0)));
         return finalSize;
     }
 }

@@ -20,23 +20,13 @@ internal static class LiquidGlassOptics
         var incidence = MathF.Asin(rim * rim);
         var transmission = MathF.Asin(MathF.Sin(incidence) / 1.48f);
         var bend = 8 * MathF.Tan(incidence - transmission);
-        var fresnel = .16f * MathF.Pow(1 - MathF.Cos(incidence), 5);
-        return new EdgeSample(bend, .48f * rim * rim, fresnel, rim * rim * rim);
+        return new EdgeSample(bend, .48f * rim * rim);
     }).ToArray();
 
     internal static EdgeSample At(float depth) =>
         Profile[(int)MathF.Round(Math.Clamp(depth, 0, Thickness) * Steps / Thickness)];
 
-    internal readonly record struct EdgeSample(float Bend, float Clarity, float Fresnel, float Glare)
-    {
-        internal float Reflection(Vector2 normal)
-        {
-            // Light from above and left, with a weaker reflection opposite it.
-            var light = Vector2.Dot(normal, new(-.55f, -.835f));
-            var directional = light * light;
-            return Fresnel + Glare * directional * directional * (light >= 0 ? .28f : .11f);
-        }
-    }
+    internal readonly record struct EdgeSample(float Bend, float Clarity);
 }
 
 // Each control caches its own lens. A scroll that moves the control together
@@ -264,12 +254,11 @@ internal sealed class LiquidGlassLens : IDisposable
                 var normal = corner ? new Vector2(MathF.CopySign(edgeX / distance, dx), MathF.CopySign(edgeY / distance, dy)) :
                     edgeX > edgeY ? new(MathF.CopySign(1, dx), 0) : new(0, MathF.CopySign(1, dy));
                 var optics = LiquidGlassOptics.At(depth);
-                var reflection = optics.Reflection(normal);
                 if (!hasBackdrop)
                 {
-                    // The card already paints the scene beneath this lens. Keep
-                    // its specular rim visible while the first sample is pending.
-                    output.Slice(index, 4).Fill((byte)(255 * reflection + .5f));
+                    // Reflections are painted once, above the material's tint,
+                    // by GlassSheenRaster, including while this sample is pending.
+                    output.Slice(index, 4).Clear();
                     continue;
                 }
                 var bendX = -normal.X * optics.Bend * scaleX;
@@ -279,7 +268,7 @@ internal sealed class LiquidGlassLens : IDisposable
                     // BGRA order: blue, green and red sample different rays.
                     var dispersion = .86f + channel * .14f;
                     var value = source.Sample(sx + bendX * dispersion, sy + bendY * dispersion, channel, optics.Clarity);
-                    output[index + channel] = (byte)(value + (255 - value) * reflection + .5f);
+                    output[index + channel] = (byte)(value + .5f);
                 }
                 output[index + 3] = 255;
             }

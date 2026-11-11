@@ -1,0 +1,54 @@
+name: Linux libVLC runtime
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      sha256:
+        description: SHA-256 of the tested Linux runtime archive
+        value: ${{ jobs.runtime.outputs.sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-22.04
+    outputs:
+      sha256: ${{ steps.checksum.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read runtime metadata
+        id: metadata
+        run: node tools/libvlc-linux/runtime.cjs >> "$GITHUB_OUTPUT"
+      - name: Prepare runtime in the packaging environment
+        run: |
+          node tools/libvlc-linux/build-runtime.cjs --output build/libvlc-ci/runtime
+          node tools/libvlc-linux/pack-runtime.cjs --input build/libvlc-ci/runtime --output artifacts/libvlc-linux
+      - name: Verify archive checksum
+        id: checksum
+        env:
+          ASSET: ${{ steps.metadata.outputs.asset }}
+        run: |
+          (cd artifacts/libvlc-linux && sha256sum --check "$ASSET.sha256")
+          node tools/libvlc-linux/runtime.cjs --checksum "artifacts/libvlc-linux/$ASSET.sha256" >> "$GITHUB_OUTPUT"
+      - name: Test runtime archive preparation
+        run: node --test tests/libvlc-linux.test.cjs
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Verify decoding from the packaged archive
+        env:
+          POOKIE_LIBVLC_ARCHIVE: ${{ github.workspace }}/artifacts/libvlc-linux/${{ steps.metadata.outputs.asset }}
+          POOKIE_LIBVLC_SHA256: ${{ steps.checksum.outputs.sha256 }}
+        run: env -u LD_LIBRARY_PATH -u VLC_PLUGIN_PATH dotnet run --project tests/Pookie.App.SmokeTests -c Release -- --chat-video-smoke-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libvlc-linux-x64
+          path: artifacts/libvlc-linux/*
+          if-no-files-found: error

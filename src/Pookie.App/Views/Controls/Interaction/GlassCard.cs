@@ -9,7 +9,6 @@ namespace Pookie.App;
 internal class GlassCard : ContentControl
 {
     private readonly GlassSheenRaster sheen = new();
-    private readonly GlassGeometry edgeGeometry = new();
     private readonly BoxShadowRaster shadow = new(6, 2, Color.FromArgb(90, 0, 0, 0));
     private readonly Color? underlay;
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
@@ -22,7 +21,6 @@ internal class GlassCard : ContentControl
     { popupBackdrop?.Unregister(this); popupBackdrop = backdrop; backdrop.Register(this); InvalidateVisual(); }
     internal bool HoverEnabled { get; init; } = true;
     internal bool ShadowEnabled { get; init; } = true;
-    internal bool ReflectionEnabled { get; init; } = true;
 
     internal GlassCard(Color? underlay = null)
     {
@@ -56,8 +54,7 @@ internal class GlassCard : ContentControl
         }
         RenderGlassBackground(context);
         var corners = new CornerRadius(CornerRadius);
-        if (ReflectionEnabled) sheen.Draw(context, Bounds, corners, emphasis, GetDpi() / 96d);
-        else GlassSheen.DrawEdge(context, Bounds, corners, edgeGeometry, emphasis);
+        sheen.Draw(context, Bounds, corners, emphasis, GetDpi() / 96d);
     }
 
     protected virtual void RenderGlassBackground(IGraphicsContext context) { }

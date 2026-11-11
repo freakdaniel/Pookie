@@ -24,7 +24,8 @@ internal sealed partial class MainWindow
     private double likedArtworkSize = 176;
     private int libraryColumns = 6;
 
-    private FrameworkElement LibraryTabs() => new StackPanel().Horizontal().Spacing(22)
+    private StackPanel libraryTabs = null!;
+    private FrameworkElement LibraryTabs() => libraryTabs = new StackPanel().Horizontal().Spacing(22)
         .BindIsVisible(page, value => IsLibrary(value) && value != Page.LibraryCollection).Children(
             LibraryTab("Обзор", Page.Library, () =>
             {
@@ -37,6 +38,7 @@ internal sealed partial class MainWindow
                 Run(RefreshOverviewDataAsync);
             }),
             LibraryTab("Лайки", Page.LibraryTracks, ShowLibraryTracks),
+            LibraryTab("Миксы", Page.LibraryMixes, () => Run(() => ShowLibrarySectionAsync(Page.LibraryMixes))),
             LibraryTab("Плейлисты", Page.LibraryPlaylists, () => Run(() => ShowLibrarySectionAsync(Page.LibraryPlaylists))),
             LibraryTab("Альбомы", Page.LibraryAlbums, () => Run(() => ShowLibrarySectionAsync(Page.LibraryAlbums))),
             LibraryTab("Станции", Page.LibraryStations, () => Run(() => ShowLibrarySectionAsync(Page.LibraryStations))),

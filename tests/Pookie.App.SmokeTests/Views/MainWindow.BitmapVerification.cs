@@ -79,10 +79,35 @@ internal sealed partial class MainWindow
         for (var i = 0; i < backdrop.Length; i += 4)
             backdrop[i] = backdrop[i + 1] = backdrop[i + 2] = 80;
         Paint();
-        if (lens[Pixel(0, 1)] <= lens[Pixel(size - 1, 1)] + 6 ||
-            lens[Pixel(size - 1, 1)] <= 80 || lens[Pixel(size / 2, 1)] != 80 || lens[Pixel(0, 3)] != 255)
-            throw new InvalidOperationException("Glass glare did not follow the surface normal with a weaker reflection on the far edge.");
-        Console.WriteLine("LIQUID_GLASS_PIXELS_OK: RGB refraction, directional reflection, undistorted center");
+        if (lens[Pixel(0, 1)] != 80 || lens[Pixel(size - 1, 1)] != 80 ||
+            lens[Pixel(size / 2, 1)] != 80 || lens[Pixel(0, 3)] != 255)
+            throw new InvalidOperationException("The backdrop lens baked in a second reflection beneath the material tint.");
+        Console.WriteLine("LIQUID_GLASS_PIXELS_OK: RGB refraction, undistorted center, reflection kept out of backdrop");
+
+        // The shared contour must have opposing light lobes and a narrow falloff,
+        // including at the small radii used by connected buttons. This distinguishes
+        // it from both a uniform outline and the previous broad double bevel.
+        foreach (var scale in new[] { 1d, 110 / 96d, 1.5, 2 })
+        foreach (var shape in new[] { new CornerRadius(22), new CornerRadius(22, 5, 5, 22) })
+        {
+            const double w = 116, h = 44;
+            var width = (int)Math.Ceiling(w * scale); var height = (int)Math.Ceiling(h * scale);
+            var ink = new byte[width * height * 4];
+            GlassSheenRaster.FillPixels(ink, width, height, new Size(w, h), shape, .35, premultiplied: true);
+            int Alpha(double x, double y) => ink[((int)(y / h * height) * width + (int)(x / w * width)) * 4 + 3];
+            var upper = Alpha(w / 2, .5); var lower = Alpha(w / 2, h - .6);
+            if (upper < lower || lower < 6 || upper < Alpha(.5, h / 2) + 4 ||
+                Alpha(w / 2, 4) > 9 || Alpha(w / 2, h - 4) > 9 || Alpha(w / 2, h / 2) > 6)
+                throw new InvalidOperationException($"Glass contour became a uniform stroke or wide bevel at scale {scale}: upper={upper}, lower={lower}, side={Alpha(.5, h / 2)}, interior={Alpha(w / 2, 4)}.");
+            for (var index = 0; index < ink.Length; index += 4)
+            {
+                if (ink[index + 3] > 68)
+                    throw new InvalidOperationException("Neutral dark glass has an overbright reflection contour.");
+                if (ink[index] != ink[index + 3] || ink[index + 1] != ink[index + 3] || ink[index + 2] != ink[index + 3])
+                    throw new InvalidOperationException("Glass highlight pixels are not neutral premultiplied light.");
+            }
+        }
+        Console.WriteLine("GLASS_RIM_OK: narrow opposing highlights, quiet interior, connected corners and 96/110/144/192 DPI");
     }
 
     private void VerifyLiquidGlassEdgeCoverage()
@@ -111,6 +136,83 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException($"The curved glass outline did not receive subpixel coverage at {scale:P0} DPI: {partial} pixels.");
         }
         Console.WriteLine("LIQUID_GLASS_EDGE_OK: antialiased curved corners at 96/110/144/192 DPI and fractional positions");
+    }
+
+    private void VerifyGlassHighlightSampling()
+    {
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        var worstMean = 0d; var worstPixel = 0;
+        foreach (var scale in new[] { 1d, 110 / 96d, 1.25, 1.5, 2 })
+        foreach (var (phase, translated) in new[] { (0d, false), (.4, false), (.4, true) })
+        foreach (var size in new[] { new Size(44, 44), new Size(116, 36) })
+        foreach (var filled in new[] { false, true })
+        {
+            var offset = translated ? 0 : phase / scale;
+            var bounds = new Rect(4 + offset, 4 + offset, size.Width, size.Height);
+            var corners = new CornerRadius(size.Height / 2, 5, 5, size.Height / 2);
+            var width = (int)Math.Ceiling((size.Width + 10) * scale);
+            var height = (int)Math.Ceiling((size.Height + 10) * scale);
+            byte[] Render(int detail)
+            {
+                using var sheen = new GlassSheenRaster();
+                using var pigment = new TintedGlassRaster();
+                using var target = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(width * detail, height * detail, scale * detail));
+                using var context = Window.GraphicsFactory.CreateContext(target);
+                context.BeginFrame(target); context.Clear(Color.Black);
+                if (translated) context.Translate(phase / scale, phase / scale);
+                if (filled) pigment.Draw(context, bounds, size.Height / 2, Color.FromRgb(255, 101, 0));
+                else sheen.Draw(context, bounds, corners, .35);
+                context.EndFrame();
+                return ((ICpuPixelSurface)target).GetReadOnlyPixelSpan().ToArray();
+            }
+            var actual = Render(1); var reference = Render(8);
+            var count = 0; var sumError = 0d; var maximum = 0;
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                var sum = 0;
+                for (var sy = 0; sy < 8; sy++)
+                for (var sx = 0; sx < 8; sx++)
+                    sum += reference[((y * 8 + sy) * width * 8 + x * 8 + sx) * 4 + (filled ? 2 : 0)];
+                var expected = (sum + 32) / 64;
+                var painted = actual[(y * width + x) * 4 + (filled ? 2 : 0)];
+                if (expected < 8 && painted < 8 || filled && expected > 247 && painted > 247) continue;
+                var error = Math.Abs(painted - expected);
+                maximum = Math.Max(maximum, error); sumError += error; count++;
+            }
+            var mean = sumError / Math.Max(1, count);
+            worstMean = Math.Max(worstMean, mean); worstPixel = Math.Max(worstPixel, maximum);
+            if (mean > 2 || maximum > 12)
+                throw new InvalidOperationException($"Glass highlight sampling failed: dpi={scale}, phase={phase}, translated={translated}, size={size}, filled={filled}, mean={mean:F2}, max={maximum}.");
+        }
+        Console.WriteLine($"GLASS_HIGHLIGHT_AA_OK: neutral/filled rims match an 8x reference at 96/110/120/144/192 DPI and fractional positions; mean={worstMean:F2}, max={worstPixel}");
+    }
+
+    private void VerifyGlassMotionCache()
+    {
+        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
+        using var sheen = new GlassSheenRaster();
+        using var filled = new TintedGlassRaster();
+        using var target = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(380, 180, 1.25));
+        using var context = Window.GraphicsFactory.CreateContext(target);
+        for (var frame = 0; frame < 30; frame++)
+        {
+            context.BeginFrame(target); context.Clear(Color.Black);
+            context.Save(); context.Translate(frame * .17, frame * .23);
+            var bounds = new Rect(10 + frame * .19, 10 + frame * .13, 240, 64);
+            sheen.Draw(context, bounds, new CornerRadius(20), frame / 29d, minimumScale: 2);
+            filled.Draw(context, bounds, 20, FixtureMixBadgeColor(1), minimumScale: 2);
+            context.Restore(); context.EndFrame();
+        }
+        using var capture = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(300, 100, 1));
+        using var captureContext = Window.GraphicsFactory.CreateContext(capture);
+        captureContext.BeginFrame(capture); captureContext.Clear(Color.Black);
+        sheen.Draw(captureContext, new Rect(10, 10, 240, 64), new CornerRadius(20), minimumScale: 2);
+        filled.Draw(captureContext, new Rect(10, 10, 240, 64), 20, FixtureMixBadgeColor(1), minimumScale: 2);
+        captureContext.EndFrame();
+        if (sheen.Rasterizations != 1 || filled.Rasterizations != 1)
+            throw new InvalidOperationException($"Moving/hovering glass or a smaller backdrop capture rebuilt optical rasters: neutral={sheen.Rasterizations}, filled={filled.Rasterizations}.");
+        Console.WriteLine($"GLASS_MOTION_CACHE_OK: 30 fractional scroll/translation/hover frames and a smaller backdrop capture reuse neutral/filled optical images ({sheen.PixelBytes} bytes)");
     }
 
     private void VerifyShadowRasterPixels()

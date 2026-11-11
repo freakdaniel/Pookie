@@ -63,129 +63,39 @@ internal sealed class DecorationRaster : IDisposable
 // its image between frames, so a global LRU must not dispose another view's ink.
 internal sealed class GlassSheenRaster : IDisposable
 {
-    private WriteableBitmap? bitmap;
-    private IImage? image;
-    private IGraphicsFactory? factory;
-    private double paintedEmphasis = double.NaN;
-    private readonly GlassGeometry clip = new(), edge = new();
-    private Rect edgeBounds;
-    private double edgeEmphasis = double.NaN;
-    private Pen? edgePen;
-    private ImageBrush? sheenBrush;
-    private (int Width, int Height)? requestedSize;
-    private bool rasterizing;
-    private int revision;
+    private readonly GlassRimRaster patch = new();
+    internal int Rasterizations => patch.Rasterizations;
+    internal long PixelBytes => patch.PixelBytes;
 
     internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1,
         double minimumScale = 0, bool resizing = false, Action? invalidateAfterResize = null)
     {
-        if (bounds.Width <= 0 || bounds.Height <= 0) return;
-        var graphics = Application.Current.GraphicsFactory;
-        // A smaller header-blur capture can share the view's full-resolution
-        // raster instead of reallocating it between capture and window frames.
-        var scale = Math.Max(context.DpiScale, minimumScale);
-        var width = Math.Max(1, (int)Math.Ceiling(bounds.Width * scale));
-        var height = Math.Max(1, (int)Math.Ceiling(bounds.Height * scale));
-        // During a short width transition, compose the existing reflection.
-        // Recreate it once at the final size, preserving static pixel dithering.
-        var sameFactory = image != null && factory == graphics;
-        requestedSize = (width, height);
-        if (!sameFactory || image!.PixelHeight != height || !resizing && image.PixelWidth != width)
-        {
-            if (sameFactory && invalidateAfterResize != null)
-            {
-                if (!rasterizing) RenderResize(graphics, width, height, emphasis, invalidateAfterResize);
-            }
-            else
-            {
-                Dispose();
-                SetBitmap(graphics, new WriteableBitmap(width, height, clear: false));
-            }
-        }
-        if (paintedEmphasis != emphasis)
-        {
-            using var write = bitmap!.LockForWrite();
-            FillPixels(write.PixelsBgra32, image!.PixelWidth, image.PixelHeight, emphasis, premultiplied: true);
-            paintedEmphasis = emphasis;
-        }
-        // Quantize only at the final physical pixel size. Stretching a small
-        // dithered texture would average the noise away and restore the bands.
-        context.Save();
-        try
-        {
-            // Scrolling only moves the coordinate system. Keeping paths and
-            // gradient endpoints local lets Direct2D reuse geometry and stop
-            // collections instead of filling its caches with every position.
-            context.Translate(bounds.X, bounds.Y);
-            var local = new Rect(0, 0, bounds.Width, bounds.Height);
-            if (sheenBrush == null || sheenBrush.DestinationRect != local)
-                sheenBrush = new(image!, new Rect(0, 0, image!.PixelWidth, image.PixelHeight), local, TileMode.None);
-            context.FillPath(clip.Get(local, corners), sheenBrush);
-            DrawEdge(context, local, corners, emphasis);
-        }
-        finally { context.Restore(); }
+        // Hover is composition alpha, not a new optical raster. The image is
+        // local to the control and follows fractional motion through filtering.
+        patch.Draw(context, bounds, corners, minimumScale, opacity: .85 + .15 * Math.Clamp(emphasis, 0, 1));
     }
 
-    private void SetBitmap(IGraphicsFactory graphics, WriteableBitmap next)
+    internal static void FillPixels(Span<byte> pixels, int width, int height, Size size, CornerRadius corners, double emphasis,
+        bool premultiplied = false, Rect? tileBounds = null, bool reflectionOnly = false)
     {
-        ClearBitmap();
-        factory = graphics;
-        bitmap = next;
-        image = BitmapImage.CreatePremultipliedView(graphics, bitmap);
-    }
-
-    private void RenderResize(IGraphicsFactory graphics, int width, int height, double emphasis, Action invalidate)
-    {
-        rasterizing = true;
-        var capturedRevision = revision;
-        var dispatcher = Application.Current.Dispatcher!;
-        _ = Task.Run(() =>
-        {
-            var pixels = GC.AllocateUninitializedArray<byte>(checked(width * height * 4));
-            FillPixels(pixels, width, height, emphasis, premultiplied: true);
-            dispatcher.BeginInvoke(() =>
-            {
-                if (capturedRevision != revision) return;
-                rasterizing = false;
-                if (requestedSize == (width, height))
-                {
-                    SetBitmap(graphics, new WriteableBitmap(new Bgra32PixelBuffer(width, height, pixels)));
-                    paintedEmphasis = emphasis;
-                }
-                invalidate();
-            });
-        });
-    }
-
-    private void DrawEdge(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis)
-    {
-        if (edgePen == null || edgeBounds != bounds || edgeEmphasis != emphasis)
-        {
-            edgeBounds = bounds; edgeEmphasis = emphasis;
-            edgePen = new Pen(new LinearGradientBrush(new Point(bounds.X,bounds.Y),new Point(bounds.X,bounds.Bottom),
-                [new(0,Color.FromArgb((byte)(28+emphasis*16),255,255,255)),new(.55,Color.FromArgb(9,255,255,255)),new(1,Color.FromArgb(4,255,255,255))]),1);
-        }
-        var insetBounds = new Rect(bounds.X+.5,bounds.Y+.5,Math.Max(0,bounds.Width-1),Math.Max(0,bounds.Height-1));
-        var insetCorners = new CornerRadius(Math.Max(0,corners.TopLeft-.5),Math.Max(0,corners.TopRight-.5),Math.Max(0,corners.BottomRight-.5),Math.Max(0,corners.BottomLeft-.5));
-        context.DrawPath(edge.Get(insetBounds,insetCorners),edgePen);
-    }
-
-    internal static void FillPixels(Span<byte> pixels, int width, int height, double emphasis, bool premultiplied = false)
-    {
-        var denominator = (double)width * width + (double)height * height;
+        var tile = tileBounds ?? new Rect(0, 0, size.Width, size.Height);
+        var denominator = size.Width * size.Width + size.Height * size.Height;
         var words = System.Runtime.InteropServices.MemoryMarshal.Cast<byte,uint>(pixels);
         for (var y = 0; y < height; y++)
         {
             var row = y * width;
-            var vertical = (y + .5) * height;
+            var localY = tile.Y + (y + .5) / height * tile.Height;
             for (var x = 0; x < width; x++)
             {
-                var position = ((x + .5) * width + vertical) / denominator;
-                var alpha = position < .45 ? (17 + emphasis * 6) * (1 - position / .45) + 5 * position / .45
-                    : 5 - 4 * (position - .45) / .55;
+                var localX = tile.X + (x + .5) / width * tile.Width;
+                var position = (localX * size.Width + localY * size.Height) / denominator;
+                var ambient = position < .45 ? (3 + emphasis) * (1 - position / .45) + position / .45
+                    : 1 - .5 * (position - .45) / .55;
+                var rim = GlassRim.SamplePixel(localX, localY, tile.Width / width, tile.Height / height, size, corners, emphasis);
+                var alpha = (reflectionOnly ? 0 : ambient * rim.Coverage) + 255 * rim.Reflection * GlassSheen.ReflectionOpacity;
                 // A stable, neutral one-level dither preserves fractional alpha
                 // without visible grain, moving noise or changes to the glass tint.
-                var coverage = (byte)Math.Clamp(alpha + PlayerGradient.Noise(x, y), 0, 255);
+                var coverage = rim.Coverage == 0 ? (byte)0 : (byte)Math.Clamp(alpha + PlayerGradient.Noise(x, y), 0, 255);
                 // Premultiplied white has identical BGRA bytes. One store also
                 // avoids three extra bounds checks in the animated reflection.
                 if (premultiplied) words[row + x] = (uint)coverage * 0x01010101u;
@@ -199,18 +109,5 @@ internal sealed class GlassSheenRaster : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        revision++;
-        requestedSize = null;
-        rasterizing = false;
-        ClearBitmap();
-    }
-
-    private void ClearBitmap()
-    {
-        sheenBrush = null;
-        image?.Dispose(); image = null; bitmap?.Dispose(); bitmap = null;
-        factory = null; paintedEmphasis = double.NaN;
-    }
+    public void Dispose() { patch.Dispose(); }
 }

@@ -328,7 +328,7 @@ internal sealed partial class MainWindow
             CollectionPage().BindIsVisible(page, IsCollectionPage),
             SettingsPageView().BindIsVisible(page, value => value == Page.Settings));
         return new DockPanel().LastChildFill().Spacing(18).Children(
-            LibraryTabs().DockTop().BindIsVisible(page, IsLibrary),
+            LibraryTabs().DockTop(),
             listBody);
     }
 
@@ -341,6 +341,7 @@ internal sealed partial class MainWindow
         overviewLikesLoadingView = CreateLibraryLoadingView(libraryGrid, preview: true);
         var overview = new StackPanel().Vertical().Spacing(32).Padding(0, 14).Children(
             OverviewSection("Недавно прослушанное", "recent", Page.LibraryHistory),
+            LibraryMixOverview(),
             new StackPanel().Vertical().Spacing(18).Children(
                 SectionHeader("Понравившиеся треки", ShowLibraryTracks), overviewLikesLoadingView.Root,
                 overviewLikesEmpty = new TextBlock().Text("Здесь пока ничего нет.")
