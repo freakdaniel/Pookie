@@ -4,6 +4,11 @@ namespace Pookie.Media.MacOS;
 
 internal static partial class ObjC
 {
+    // Class lookups below require the frameworks to be registered first.
+    // An explicit constructor prevents beforefieldinit from deferring their
+    // loads until Constant() is called, which Native AOT otherwise can do.
+    static ObjC() { }
+
     private const string Library = "/usr/lib/libobjc.A.dylib";
     internal static readonly nint Media = NativeLibrary.Load("/System/Library/Frameworks/MediaPlayer.framework/MediaPlayer");
     private static readonly nint appKit = NativeLibrary.Load("/System/Library/Frameworks/AppKit.framework/AppKit");

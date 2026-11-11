@@ -1,0 +1,12 @@
+<Project>
+  <!-- The pinned projects use a trailing directory separator in PackagePath.
+       NuGet writes buildTransitive//*.targets on Unix, then reports NU5129
+       because the expected package target is not at its canonical ZIP path. -->
+  <Target Name="NormalizePookieMewUiPackagePaths" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <None Update="@(None)" Condition="'%(None.Pack)' == 'true' and $([System.String]::Copy('%(None.PackagePath)').StartsWith('buildTransitive'))">
+        <PackagePath>$([System.String]::Copy('%(None.PackagePath)').Replace('\', '/').TrimEnd('/'))/%(None.Filename)%(None.Extension)</PackagePath>
+      </None>
+    </ItemGroup>
+  </Target>
+</Project>

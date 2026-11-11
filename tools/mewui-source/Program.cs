@@ -57,6 +57,8 @@ static async Task BuildPackagesAsync()
     string[] common = [
         "-c", "Release", "-p:ImportDirectoryBuildProps=false", "-p:ImportDirectoryBuildTargets=false",
         $"-p:PackageVersion={version}", "-p:ContinuousIntegrationBuild=true",
+        $"-p:CustomBeforeMicrosoftCommonTargets={Path.Combine(directory, "MewUiPack.targets")}",
+        $"-p:CustomBeforeMicrosoftCommonCrossTargetingTargets={Path.Combine(directory, "MewUiPack.targets")}",
         "--disable-build-servers", "-m:1", "--verbosity", "quiet"
     ];
     foreach (var name in new[] { "MewUI.Analyzers", "MewUI.Generators", "MewUI.Preview" })
