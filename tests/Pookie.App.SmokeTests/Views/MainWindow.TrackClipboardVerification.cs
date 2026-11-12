@@ -13,7 +13,7 @@ internal sealed partial class MainWindow
         if (!OperatingSystem.IsLinux()) return;
         var previous = nativeClipboard;
         var previousWriter = windowClipboard;
-        var previousShareClipboard = shareLink.ClipboardService;
+        var previousShareClipboard = shareClipboard;
         var selection = "POOKIE_COPY_TEST_" + Guid.NewGuid().ToString("N");
         nativeClipboard = null;
         windowClipboard = previousWriter!.ForSelection(null, selection);
@@ -21,7 +21,7 @@ internal sealed partial class MainWindow
         {
             using var oldOwner = previousWriter.ForSelection(null, selection);
             oldOwner.TrySetText("Previous clipboard content");
-            shareLink.ClipboardService = windowClipboard;
+            shareClipboard = windowClipboard;
             RouteWaveformClick(new(button.Bounds.X + button.ActualWidth / 2, button.Bounds.Y + button.ActualHeight / 2));
             await WaitForLikedLayoutAsync(() => shareDialog.IsOpen && !shareDialog.Running && !shareContent.Resizing &&
                 sharePreview.Opacity == 1 && shareCopy.IsEnabled && shareUri != null && shareCopy.ActualWidth > 0);
@@ -38,7 +38,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException($"Track copy did not reach another Linux application: {output}; {await reader.StandardError.ReadToEndAsync()}");
             await reader.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
         }
-        finally { CloseShare(true); shareLink.ClipboardService = previousShareClipboard; windowClipboard.Dispose(); windowClipboard = previousWriter; nativeClipboard = previous; }
+        finally { CloseShare(true); shareClipboard = previousShareClipboard; windowClipboard.Dispose(); windowClipboard = previousWriter; nativeClipboard = previous; }
         Console.WriteLine("TRACK_COPY_OK: Share exports a SoundCloud URL to an external Linux process");
     }
 }

@@ -13,6 +13,15 @@ public sealed record SoundCloudPlaylist
     public string? ShortDescription { get; init; }
     public SoundCloudUser? MadeFor { get; init; }
     public string? PermalinkUrl { get; init; }
+    public string? Permalink { get; init; }
+    public string? SetType { get; init; }
+    public string? ReleaseDate { get; init; }
+    public int? ReleaseDay { get; init; }
+    public int? ReleaseMonth { get; init; }
+    public int? ReleaseYear { get; init; }
+    public string? PurchaseUrl { get; init; }
+    public string? LabelName { get; init; }
+    public string? License { get; init; }
     public string? PlaylistType { get; init; }
     public bool IsAlbum { get; init; }
     public bool IsSystemPlaylist { get; init; }

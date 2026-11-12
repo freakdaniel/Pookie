@@ -440,12 +440,28 @@ lists, fixed scroll viewports, drafts/privacy, single seeded playlist creation,
 write-error handling, keyboard focus/dismissal and snapshot cleanup. Service
 writes use only the local fixture transport.
 
+The picker has a stationary Share-style Add/Create tab header, with no plus/back
+navigation or redundant page title. Both dialogs use `DialogPageDeck` for the
+same 260ms fade-through/24 DIP slide, independent page viewports and continuous
+retargeting; outgoing and incoming contents never paint simultaneously. Share
+keeps the native widget behind its cached frame for the complete tab transition.
+The empty creation form omits the submit action and its space. Typing reveals it
+with opacity/slide and a 280ms card-height transition; clearing the title reverses
+that reveal. Drafts and privacy survive tab changes. Both track plaques show
+duration and compact play count (or an em dash when unknown).
+
 The Share checks use the same `TrackDialogChrome` plaque as playlist dialogs,
 with equal 16 DIP insets and no playback controls or redundant dialog headings.
-They cover four destination icons (Telegram/VK/X brand marks and email), link
-copying with an icon/tooltip, an opaque rounded URL field, and a connected glass
-timecode/copy group. Copy uses the same blue glass accent as Widevine acceptance,
-with a white copy/check icon; the four destinations are colored circular buttons
+They cover five destination icons (Telegram/VK/X/Snapchat brand marks and email),
+even spacing with the outer button edges aligned to the URL row, and the official
+white/black Snapchat Ghost on yellow and X on black. The URL and timecode share
+one rounded glass surface; copying remains a separate circular button with the
+same blue glass accent as Widevine acceptance. Its white copy/check glyph animates
+both ways, returns after two seconds, restarts that delay on repeat copying, and
+clears on link changes or closing. Failed clipboard writes never show success.
+The URL and widget code use single-line text displays without a caret. Share opens
+with neutral focus; changing tabs never activates an editor automatically.
+The five destinations are colored circular buttons
 with captions beneath them. The timecode popup always shows minutes/seconds and adds hours for long tracks,
 focuses the first visible field, and validates drafts without changing the applied
 link. Invalid inputs and digits animate red and shake; correcting them restores
@@ -455,15 +471,75 @@ popup focus, blank-area clicks that dismiss the caret without closing the popup,
 pixel-verified live backdrop colors and blurred edges without foreground feedback,
 native retained card repainting before offscreen probes can mask a stale image,
 animated time label/button width, zero timestamps, private URL
-preservation, and focus return after closing. The message tab searches recipients and prepares a draft
-in the regular chat composer, preserving existing text; opening Share never sends
-a message. Recipient checks cover circular cached avatars, left-aligned names and
-profile details, recent conversations, search clear/loading states and row selection.
+preservation, and focus return after closing. The message tab has glass search and
+message fields, a white input magnifier with reversible spinner animation, clickable
+scrollbars in the card gutter, a glass pencil button and a blue glass Send button.
+Send keeps its label while a spinner appears and the button fades smoothly. The
+busy appearance remains through successful modal dismissal and resets after closing.
+Sending commits to the durable outbox before one POST and never navigates to chats
+or modifies their drafts. Checks cover duplicate clicks, closing/reopening while a
+send is pending, rejected sends and lost acknowledgements without automatic replay.
+Opening Share never sends a message. Recipient checks cover circular cached avatars,
+left-aligned names and profile details, recent conversations, clear/loading states,
+cancelled searches and row selection.
 List captions are omitted; an empty search shows the bundled route sticker with
 the “А тут тупик” title and its description, and clearing the query restores users.
-Embed checks parse the generated iframe, verify escaped/private URLs,
+The Widget tab checks parse the generated iframe, verify escaped/private URLs,
 layout/color settings, disabled autoplay, invalid-color handling, and exact HTML
 copying with an isolated clipboard. No real message or social post is sent.
+The live preview starts its own isolated browser only on the Widget tab, uses
+the official iframe/API, reflects color/layout changes, and pauses/hides outside
+that tab. The 450px visual player fits in a taller dialog; small windows scale
+the complete preview above the compact code/copy row. Transitions use a cached
+frame while the native browser is hidden, and closing releases its profile/engine.
+Iframe navigation never launches the system browser.
+The player mode uses the playlist privacy segmented control with an opt-in glass
+pill that stretches during travel. Its fixed optical raster is transformed on the
+GPU; inactive options animate only their icon/text color on hover.
+A separate color row offers five population-ranked artwork colors, HEX editing
+and an HSV/RGB picker. HEX and the palette action form a connected glass group;
+the action has the same light glass hover state as the other dialog buttons.
+Sampling is bounded to 64×64 pixels and runs off the UI
+thread; a late palette never overwrites the selected color. Presets, HEX and the
+picker all update the iframe using its exact requested URL in the existing host,
+retaining the displayed frame without restarting the whole browser page or loader.
+The production `api.js` currently coerces `load()` options (including `color`) to
+booleans. Refreshing the iframe and binding a fresh widget proxy preserves actual
+HEX colors and a fresh READY boundary. The live probe checks more than protocol
+completion: two distinct preset colors must appear in captured player pixels,
+in both compact and visual layouts.
+The picker uses the
+in-app animated glass popup rather than a native popup window. Before it opens,
+the browser's current frame is captured and painted, then the mapped native child
+moves offscreen without a GTK unmap/remap or pause/reload. The frame stays through
+the handoff: on X11 moving the child and replacing its exposed front-buffer
+rectangle use one server transaction, avoiding the server's app-background clear.
+The code waits for the outer window present, not the earlier retained-surface
+`FrameRendered` callback. The saved frame also stays through
+the complete popup exit; color edits retain it and defer widget refresh until the
+popup is gone. Modal dismissal also captures/presents the current player before
+its staged exit. Native tests sample actual desktop pixels every 5ms and after
+window frames during popup entry/exit, preset refresh and modal dismissal, rather
+than checking cached pixels alone. Loading uses the captcha overlay's SoundCloud
+mark with its transparent asset gutters cropped; the visible mark/spinner group
+is centered with a 16 DIP gap. Share's tab indicators snap when resetting to Link,
+and repeated Widget/Message dismissal/reopen cycles assert only Link is underlined.
+Both the
+web page's clipped viewport and the cached frame keep the same 12 DIP corner
+radius through mode changes and modal dismissal; native checks verify pixels.
+The copy tooltip prepares the same frozen native frame before its first visible
+paint and retains it through dismissal. A desktop-pixel check verifies that its
+inverse surface really covers the browser, including the overlapping preview area.
+
+Set `POOKIE_WIDGET_NATIVE=1` with the Share smoke test to exercise the actual platform
+browser on an isolated local page. For a read-only live widget check, set
+`POOKIE_WIDGET_REAL_ONLY=1` and `POOKIE_WIDGET_REAL_LINK` to a public SoundCloud URL.
+It loads the real widget with autoplay disabled, captures its pixels, and closes it.
+`POOKIE_SHARE_FUNCTIONAL_ONLY=1` runs the Share interaction/regression scenarios
+independently of the opening/resize performance benchmark, useful when unrelated
+desktop work makes its 16.7ms frame budget unstable. The default benchmark and its
+thresholds remain unchanged; native desktop-pixel handoff checks still run with
+`POOKIE_WIDGET_NATIVE=1` in the functional run.
 
 `--memory-ui-smoke-test` creates and discards three batches of 100 sidebar cards with
 500px artwork, including cards removed during an active loading shimmer. Weak-reference
@@ -1229,11 +1305,23 @@ can reopen the durable profile after cancellation. Invisible checks stay hidden;
 a hard block is terminal. The fixture also verifies shutdown and profile release.
 No real SoundCloud account or account mutation is used.
 
-`--collections-ui-smoke-test --web-playlist-editing-only --no-audio` checks web
-playlist menus, metadata/privacy editing, reordered/removed tracks, incomplete
-track-order protection and deletion confirmation/library refresh. JavaScript
-unit tests cover the numeric web routes, multipart JPEG artwork, owner/source
-order validation and no blind replay after an unconfirmed write.
+`--collections-ui-smoke-test --web-playlist-editing-only --no-audio` checks the
+matte glass playlist editor and its four sliding tabs (Basic, Tracks, Release, Access),
+neutral initial focus, custom release-type popup/Escape, inline date validation,
+bounded small-window layout and changed-only saving. Basic contains artwork,
+title and description; Release groups the catalog/publishing settings; Access
+contains the permalink and privacy. The card measures each page and animates its
+height, including shrinking a track draft down to one row and interrupted tab
+changes, while retaining the glass backdrop. Complete lists have no count/help
+heading. Extended settings include
+the permalink, genre/tags, release date/type, purchase URL, label and license.
+Reorder/removal stays in a cancelable draft until Save; incomplete snapshots can
+still update metadata without replacing hidden tracks. Pending edits cannot be
+dismissed or repeated. The fixture verifies metadata/order confirmation,
+deletion confirmation and library refresh without changing a real account.
+JavaScript and HTTP unit tests cover optional metadata/clear/type mapping, input
+validation, numeric web routes, multipart JPEG artwork, owner/source-order
+validation and no blind replay after an unconfirmed write.
 
 The retained `--native-session-recovery-smoke-test` exercises the optional library
 HTTP transport and its standalone browser verifier against loopback fixtures. The

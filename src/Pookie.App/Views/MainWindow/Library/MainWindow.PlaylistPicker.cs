@@ -10,11 +10,15 @@ internal sealed partial class MainWindow
     private StackPanel playlistChoices = null!;
     private TextBlock playlistPickerTrack = null!, playlistPickerMessage = null!;
     private TextBlock playlistPickerArtist = null!;
+    private TextBlock playlistPickerDuration = null!, playlistPickerPlays = null!;
     private Image playlistPickerCover = null!;
     private PaletteGlassCard playlistPickerPreview = null!;
     private PlaylistDialogContent playlistDialogContent = null!;
     private Button playlistPickerClose = null!;
     private Button playlistPickerCreate = null!;
+    private Button playlistPickerAdd = null!;
+    private Border playlistPickerFocus = null!;
+    private readonly ObservableValue<bool> playlistPickerSection = new(false);
     private PlaylistDialogPages playlistDialogPages = null!;
     private LibraryLoadingView playlistPickerLoading = null!;
     private ModalDialog playlistDialog = null!;
@@ -35,7 +39,10 @@ internal sealed partial class MainWindow
         playlistPickerTrack = new TextBlock().FontSize(15).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         playlistPickerArtist = new TextBlock().FontSize(13).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         playlistPickerCover = new Image().Width(56).Height(56).StretchMode(Stretch.UniformToFill);
-        playlistPickerPreview = TrackDialogChrome.Preview(ArtworkLayer(playlistPickerCover), playlistPickerTrack, playlistPickerArtist);
+        playlistPickerDuration = new TextBlock().FontSize(13).Foreground(Muted).Right();
+        playlistPickerPlays = new TextBlock().FontSize(12).Foreground(Muted).Right();
+        playlistPickerPreview = TrackDialogChrome.Preview(ArtworkLayer(playlistPickerCover), playlistPickerTrack, playlistPickerArtist,
+            new StackPanel().Vertical().Spacing(5).Children(playlistPickerDuration, playlistPickerPlays));
         playlistPickerMessage = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(40).Margin(24, 0, 24, 0).IsVisible(false);
         var scroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(playlistChoices);
@@ -45,18 +52,18 @@ internal sealed partial class MainWindow
         playlistPickerLoading.Root.Margin = new Thickness(16, 0, 8, 20);
         playlistPickerClose = TrackButtons.Icon(Icons.View("x", 20), ClosePlaylistPicker, TrackButtons.Glass).Top();
         ((MaterialTrackButton)playlistPickerClose).UseLightGlassFinish();
-        playlistPickerCreate = TrackButtons.Icon(Icons.View("plus", 20), () => ShowPlaylistCreation(true), TrackButtons.Glass);
-        ((MaterialTrackButton)playlistPickerCreate).UseLightGlassFinish();
+        playlistPickerAdd = SectionTab("Добавить", playlistPickerSection, false, () => ShowPlaylistCreation(false), animate: false);
+        playlistPickerCreate = SectionTab("Создать", playlistPickerSection, true, () => ShowPlaylistCreation(true), animate: false);
+        playlistPickerFocus = new Border { Focusable = true, IsTabStop = false }.Height(32).Margin(24, 24, 24, 0)
+            .Background(Color.Transparent).BorderThickness(0).Child(new StackPanel().Horizontal().Spacing(24).Children(playlistPickerAdd, playlistPickerCreate));
         var list = new DockPanel().LastChildFill().Spacing(12).Children(
-            new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).DockTop().Children(
-                TrackDialogChrome.Heading("Добавить в плейлист").Column(0),
-                playlistPickerCreate.Column(1)),
             playlistPickerMessage.DockTop(), playlistPickerLoading.Root);
         playlistDialogPages = new PlaylistDialogPages(list, PlaylistCreationView());
-        var card = TrackDialogChrome.MatteBody(playlistDialogPages, () => playlistDialogContent?.Resizing == true)
+        var pages = new DockPanel().LastChildFill().Spacing(16).Children(playlistPickerFocus.DockTop(), playlistDialogPages);
+        var card = TrackDialogChrome.MatteBody(pages, () => playlistDialogContent?.Resizing == true)
             .MaxHeight(PlaylistDialogContent.MaximumBodyHeight);
         playlistDialogContent = new PlaylistDialogContent(card, playlistPickerPreview);
-        playlistDialog = TrackDialogChrome.MatteDialog(playlistDialogContent, card, playlistPickerClose, playlistPickerClose,
+        playlistDialog = TrackDialogChrome.MatteDialog(playlistDialogContent, card, playlistPickerFocus, playlistPickerClose,
             () => playlistDialogPages.Animating || playlistPickerLoading.Skeleton.IsVisible, reserveTransitionHeight: true);
         playlistDialog.DismissRequested = ClosePlaylistPicker;
         playlistDialog.Presented = playlistDialogContent.RevealTrack;
@@ -136,6 +143,8 @@ internal sealed partial class MainWindow
         ResetPlaylistCreation();
         playlistPickerTarget = track; playlistPickerOpen.Value = true;
         playlistPickerTrack.Text = track.Title; playlistPickerArtist.Text = track.Author;
+        playlistPickerDuration.Text = FormatTime(track.DurationSeconds);
+        playlistPickerPlays.Text = track.PlaybackCount is { } plays ? LikedTrackRow.ShortCount(plays) : "—";
         playlistChoices.Clear(); playlistPickerIds.Clear(); SetPlaylistPickerMessage("");
         var artwork = track.ArtworkUrl ?? track.User?.AvatarUrl;
         SetCardArtwork(playlistPickerCover, null, artwork);
@@ -152,7 +161,7 @@ internal sealed partial class MainWindow
         {
             var playlists = await api.GetPlaylistChoicesForTrackAsync(user.Id, track.Id, token);
             if (disposed || generation != playlistPickerGeneration || api.Session != session) return;
-            SetPlaylistPickerMessage(playlists.Length == 0 ? "Пока нет плейлистов. Создай первый кнопкой +." : "");
+            SetPlaylistPickerMessage(playlists.Length == 0 ? "Пока нет плейлистов. Создай первый во вкладке «Создать»." : "");
             foreach (var item in playlists)
                 if (playlistPickerIds.Add(item.Playlist!.Id)) playlistChoices.Add(PlaylistChoice(item, user.Id, track, session, generation));
             FitPlaylistList();

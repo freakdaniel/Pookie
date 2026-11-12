@@ -12,8 +12,8 @@ internal sealed partial class MainWindow
 {
     private async Task VerifySharePanelAsync(SoundCloudTrack track, LibraryItem playlist)
     {
-        var previous = shareLink.ClipboardService;
-        var clipboard = new ShareClipboard(); shareLink.ClipboardService = clipboard;
+        var previous = shareClipboard;
+        var clipboard = new ShareClipboard(); shareClipboard = clipboard;
         try
         {
             MoveActionPointer(new(2, 2)); collectionFilter.Focus();
@@ -21,22 +21,27 @@ internal sealed partial class MainWindow
             track = track with { PermalinkUrl = "https://soundcloud.com/fixture/shared-track/s-secret?secret_token=s-private", Duration = 180000, PlaybackCount = 65400 };
             ShareTrack(track);
             await WaitForLikedLayoutAsync(() => shareDialog.IsOpen && !shareDialog.Running && !shareContent.Resizing && sharePreview.Opacity == 1 && shareCopy.ActualWidth > 0);
-            if (!shareLink.IsReadOnly || !shareLink.IsFocused || !shareTimeAction.IsVisible || shareLink.Text != track.PermalinkUrl)
+            if (shareLink.Focusable || !shareFocusAnchor.IsFocused || !shareTimeAction.IsVisible || shareLink.Text != track.PermalinkUrl)
                 throw new InvalidOperationException("Share panel lost its target, private link, initial focus or read-only URL.");
             VerifyShareChrome();
-            if (shareStartSeconds != null || shareTimeAction.Width != 48 || shareTab.Value != 0 || shareDestinations.Count != 4)
+            await VerifySharePageTransitionsAsync();
+            if (shareStartSeconds != null || shareTimeAction.Width != 48 || shareTab.Value != 0 || shareDestinations.Count != 5)
                 throw new InvalidOperationException("Share retained playback position, another tab or missing destinations.");
+            if (shareDestinations.Any(button => TooltipHints.TextFor(button) != null || button.ToolTip != null))
+                throw new InvalidOperationException("Share destinations retained redundant tooltips above their visible captions.");
             RouteWaveformClick(SettingsCenter(shareTimeAction));
             await WaitForLikedLayoutAsync(() => shareTimePopup?.Reveal == 1 && shareMinutes.IsFocused);
             await WaitForLoginFrameAsync();
-            if (!shareMinutes.IsFocused) throw new InvalidOperationException("Modal stole time popup focus.");
+            if (!shareMinutes.IsFocused || shareMinutes.SelectionLength != shareMinutes.Text.Length)
+                throw new InvalidOperationException("Time popup lost initial focus or select-all.");
             var popupLayer = (ChatPopupLayer)VisualTree.Find(shareTimePopup!, element => element is ChatPopupLayer)!;
             await WaitForLikedLayoutAsync(() => popupLayer.HasGlassBackdrop);
             var popupCard = (GlassCard)VisualTree.Find(shareTimePopup!, element => element is GlassCard)!;
             RouteWaveformClick(new(popupCard.Bounds.X + 12, popupCard.Bounds.Y + 12));
             await WaitForLoginFrameAsync();
-            if (!shareTimePopup!.IsOpen || !shareDialog.IsOpen || shareMinutes.IsFocusWithin || shareSeconds.IsFocusWithin || !popupCard.IsFocused)
-                throw new InvalidOperationException("Blank popup click closed it or left the text caret active.");
+            if (!shareTimePopup!.IsOpen || !shareDialog.IsOpen || shareMinutes.IsFocusWithin || shareSeconds.IsFocusWithin || !popupCard.IsFocused ||
+                new[] { shareHours, shareMinutes, shareSeconds }.Any(field => field.SelectionLength != 0))
+                throw new InvalidOperationException("Blank popup click closed it or retained an input caret/selection.");
             RouteWaveformClick(SettingsCenter(shareMinutes));
             if (!shareMinutes.IsFocused) throw new InvalidOperationException("Time input did not resume after a blank click.");
             await VerifyPopupGlassSourceAsync(popupLayer);
@@ -57,10 +62,12 @@ internal sealed partial class MainWindow
             if (!shareLink.Text.EndsWith("#t=1:23", StringComparison.Ordinal) || !shareLink.Text.Contains("secret_token=s-private"))
                 throw new InvalidOperationException("Timed sharing removed the private access token or failed to add the timestamp.");
             RouteWaveformClick(SettingsCenter(shareCopy));
-            if (clipboard.Text != shareLink.Text || TooltipHints.TextFor(shareCopy) != "Скопировано")
+            if (clipboard.Text != shareLink.Text || TooltipHints.TextFor(shareCopy) != "Скопировано" ||
+                !shareCopyIcon.Confirmed || !shareCopyIcon.Animating)
                 throw new InvalidOperationException("Share copy button did not write the displayed link.");
             await Task.Delay(250, lifetime.Token); await WaitForLoginFrameAsync();
             CaptureUiPreview("share-track");
+            await VerifyShareCopyFeedbackAsync(clipboard);
             ToggleShareTime();
             await WaitForLikedLayoutAsync(() => shareTimePopup!.Reveal == 1 && shareMinutes.IsFocused);
             var appliedLink = shareLink.Text;
@@ -113,7 +120,7 @@ internal sealed partial class MainWindow
                 !decoded.Contains("auto_play=false") || iframe.Attribute("height")!.Value != "166")
                 throw new InvalidOperationException("Embed lost private access or produced an invalid/default-autoplay iframe.");
             CopyShareEmbed();
-            if (clipboard.Text != shareEmbedCode.Text || shareEmbedCopyLabel.Text != "Скопировано")
+            if (clipboard.Text != shareEmbedCode.Text || !shareEmbedCopyGlyph.Confirmed)
                 throw new InvalidOperationException("Embed did not copy its actual displayed HTML.");
             shareEmbedColor.Text = "\"bad";
             if (shareEmbedCopy.IsEnabled || shareEmbedCode.Text != "" || !shareMessage.IsVisible)
@@ -123,6 +130,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Embed layout/color selection did not change the generated iframe.");
             await Task.Delay(250, lifetime.Token); await WaitForLoginFrameAsync();
             CaptureUiPreview("share-embed");
+            await VerifyShareWidgetAsync(track);
             var users = chatConversations.ToArray();
             try
             {
@@ -153,15 +161,15 @@ internal sealed partial class MainWindow
                     throw new InvalidOperationException("Empty recipient search lost the route illustration or its requested copy.");
                 CaptureUiPreview("share-recipients-empty");
                 shareRecipientSearch.Text = "?"; await SearchShareRecipientsAsync();
-                if (!shareSearchClear.IsVisible || shareSearchBusy.IsActive) throw new InvalidOperationException("Recipient search did not expose clear/settle its loading state.");
+                if (!shareSearchClear.IsVisible || shareSearchGlyph.Loading) throw new InvalidOperationException("Recipient search did not expose clear/settle its loading state.");
                 await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareSearchClear.ActualWidth > 0);
                 RouteWaveformClick(SettingsCenter(shareSearchClear)); await SearchShareRecipientsAsync();
                 await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareRecipientSearch.Text.Length == 0 && !shareSearchClear.IsVisible && shareRecipientChoices.Children.Count == 3);
                 row = (Button)shareRecipientChoices.Children[0]; RouteWaveformClick(SettingsCenter(row));
                 if (shareRecipient?.Id != 77 || shareRecipientDetails.Text != recipient.FullName) throw new InvalidOperationException("Recipient row click did not select its actual profile.");
                 shareComposeText.Text = "Послушай";
-                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && sharePrepare.ActualHeight > 0);
-                if (!sharePrepare.IsEnabled || shareRecipientPicker.IsVisible || !shareComposeFields.IsVisible)
+                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareSend.ActualHeight > 0);
+                if (!shareSend.IsEnabled || shareRecipientPicker.IsVisible || !shareComposeFields.IsVisible)
                     throw new InvalidOperationException("Selecting a recipient did not reveal a usable draft composer.");
                 var draft = SharedMessageDraft("Старый черновик", shareComposeText.Text, shareLink.Text);
                 if (draft != "Старый черновик\nПослушай\n" + shareLink.Text || SharedMessageDraft(draft, "", "") != draft)
@@ -170,6 +178,7 @@ internal sealed partial class MainWindow
                 CaptureUiPreview("share-message");
             }
             finally { artworkRequests["https://i1.sndcdn.com/share-avatar-fixture.jpg"] = Task.FromResult<ImageSource?>(null); chatConversations.Clear(); chatConversations.AddRange(users); }
+            Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             SelectShareTab(0);
             var escape = new KeyEventArgs(Key.Escape, 0); shareDialog.HandleKey(escape);
             await WaitForLikedLayoutAsync(() => !shareDialog.IsVisible);
@@ -217,9 +226,12 @@ internal sealed partial class MainWindow
                 }
                 CloseShare(true);
             }
-            Console.WriteLine("SHARE_UI_OK: compact dialog chrome and equal plaque padding, four real social icons, icon copy/tooltip, duration-aware timecode units, animated red/shaking fields without tooltips/error text, plaque duration/plays, draft validation, popup focus/keyboard, animated time width/reset, private embed HTML/color/layout/copy, recipient draft preserving existing text, Escape/focus return and reopen");
+            await VerifyShareMessageSendingAsync(track);
+            await VerifyShareTabResetAsync(track);
+            if (Environment.GetEnvironmentVariable("POOKIE_WIDGET_NATIVE") == "1") await VerifyShareWidgetNativeAsync(track);
+            Console.WriteLine("SHARE_UI_OK: compact dialog chrome and equal plaque padding, five destination icons including Snapchat, icon copy/tooltip, duration-aware timecode units, animated red/shaking fields without tooltips/error text, plaque duration/plays, draft validation, popup focus/keyboard, animated time width/reset, private widget HTML/color/layout/copy, background message sending, Escape/focus return and reopen");
         }
-        finally { CloseShare(true); shareLink.ClipboardService = previous; }
+        finally { CloseShare(true); shareClipboard = previous; }
     }
 
     private void RouteShareKey(Key key)
@@ -228,6 +240,64 @@ internal sealed partial class MainWindow
         typeof(Window).GetMethod("RaisePreviewKeyDown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
             .Invoke(Window, [args]);
         if (!args.Handled) RouteSettingsKey(key);
+    }
+
+    private async Task VerifySharePageTransitionsAsync()
+    {
+        var samples = 0; var fading = 0; var y = shareFocusAnchor.Bounds.Y - shareContent.BodyBounds.Y;
+        void Frame()
+        {
+            if (!sharePages.Animating) return;
+            samples++;
+            if (sharePages.ContentOverlaps || Math.Abs(shareFocusAnchor.Bounds.Y - shareContent.BodyBounds.Y - y) > .5)
+                throw new InvalidOperationException("Share's shared header moved or its tab pages overlapped during transition.");
+            var page = sharePages.PageContent(shareTab.Value).Parent as UIElement;
+            if (page?.Opacity is > 0 and < 1) fading++;
+        }
+        Window.FrameRendered += Frame;
+        try
+        {
+            foreach (var tab in new[] { 1, 2, 0 })
+            {
+                SelectShareTab(tab);
+                await WaitForLikedLayoutAsync(() => !sharePages.Animating && !shareContent.Resizing);
+            }
+            SelectShareTab(1); await Task.Delay(65, lifetime.Token);
+            SelectShareTab(2); await Task.Delay(65, lifetime.Token);
+            SelectShareTab(0);
+            await WaitForLikedLayoutAsync(() => !sharePages.Animating && !shareContent.Resizing);
+            if (samples < 6 || fading < 3 || !shareLinksPanel.IsVisible || shareComposePanel.IsVisible || shareEmbedPanel.IsVisible)
+                throw new InvalidOperationException("Share skipped fade-through frames or settled on an outdated page after rapid retargeting.");
+            Console.WriteLine("SHARE_PAGE_TRANSITIONS_OK: same fade-through slide as playlists, stationary shared header, separate content, fixed page viewports and rapid retargeting");
+        }
+        finally { Window.FrameRendered -= Frame; }
+    }
+
+    private async Task VerifyShareTabResetAsync(SoundCloudTrack track)
+    {
+        MoveActionPointer(new(2, 2));
+        foreach (var last in new[] { 2, 1, 2 })
+        {
+            ShareTrack(track); SelectShareTab(last);
+            await WaitForLikedLayoutAsync(() => !shareDialog.Running && !shareContent.Resizing);
+            CloseShare(); await WaitForLikedLayoutAsync(() => !shareDialog.IsVisible);
+            ShareTrack(track);
+            Check();
+            await WaitForLikedLayoutAsync(() => !shareDialog.Running); Check();
+            CaptureUiPreview("share-tabs-reopened-" + last);
+            CloseShare(true);
+        }
+        Console.WriteLine("SHARE_TAB_RESET_OK: Link alone is selected immediately and after opening, following Widget/Message/Widget dismissal cycles");
+        void Check()
+        {
+            if (shareTab.Value != 0 || !shareLinksPanel.IsVisible || shareEmbedPanel.IsVisible || shareComposePanel.IsVisible)
+                throw new InvalidOperationException("Reopening Share did not reset its content to Link.");
+            for (var index = 0; index < shareSectionTabs.Length; index++)
+            {
+                var line = (Border)VisualTree.Find(shareSectionTabs[index], element => element is Border { Height: 2 })!;
+                if (line.Opacity != (index == 0 ? 1 : 0)) throw new InvalidOperationException("Reopened Share retained an animated underline on tab " + index);
+            }
+        }
     }
 
     private async Task VerifyPopupGlassSourceAsync(ChatPopupLayer popup)
@@ -313,21 +383,66 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Share plaque gained player controls or lost the external close button.");
         var headings = new List<string>();
         VisualTree.Visit(shareForm, element => { if (element is TextBlock text) headings.Add(text.Text); });
-        if (headings.Contains("Поделиться") || headings.Contains("Ссылка на трек") || shareCopy.Content is not Image ||
-            shareLink.Parent is not Border { Background.A: 255, CornerRadius: 24 })
-            throw new InvalidOperationException("Share retained headings, visible copy text, or a glass/square link field.");
+        if (!headings.Contains("Виджет") || headings.Contains("Встроить"))
+            throw new InvalidOperationException("Share did not rename its embed tab to Widget.");
+        if (headings.Contains("Поделиться") || headings.Contains("Ссылка на трек") || shareCopy.Content is not CopyFeedbackGlyph ||
+            shareLinkGlass.Background.A == 255 || shareLinkGlass.CornerRadius != 24 || shareLink.Parent != shareTimeAction.Parent ||
+            ((MaterialTrackButton)shareCopy).IsConnected || ((MaterialTrackButton)shareTimeAction).IsConnected)
+            throw new InvalidOperationException("Share lost its glass URL/timecode group or separate circular copy button.");
+        if (Math.Abs(shareDestinations[0].Bounds.X - shareLinkGlass.Bounds.X) > .1 ||
+            Math.Abs(shareDestinations[^1].Bounds.Right - shareCopy.Bounds.Right) > .1)
+            throw new InvalidOperationException("Outer social buttons are not aligned with the URL and copy row.");
+        var step = SettingsCenter(shareDestinations[1]).X - SettingsCenter(shareDestinations[0]).X;
+        // Natural caption widths can snap adjacent button centres to either
+        // side of a physical pixel at fractional layout coordinates.
+        var spacingTolerance = 1 / Window.DpiScale + .01;
+        for (var index = 2; index < shareDestinations.Count; index++)
+            if (Math.Abs(SettingsCenter(shareDestinations[index]).X - SettingsCenter(shareDestinations[index - 1]).X - step) > spacingTolerance)
+                throw new InvalidOperationException("Social button spacing is uneven: " + string.Join(", ", shareDestinations.Select(button => SettingsCenter(button).X)));
+        if (shareDestinations[2].Background != Color.Black)
+            throw new InvalidOperationException("X lost its black background.");
         if (shareTrackDuration.Text != "3:00" || shareTrackPlays.Text != "65.4K" ||
             Math.Abs(shareTrackDuration.Bounds.Right - plaque.Right + 16) > .1 ||
             shareTrackPlays.Bounds.Y <= shareTrackDuration.Bounds.Y)
             throw new InvalidOperationException("Share plaque lost right-aligned duration/play count or their order.");
-        foreach (var name in new[] { "SimpleIcons.social-telegram", "SimpleIcons.social-vk", "SimpleIcons.social-x", "envelope" })
+        foreach (var name in new[] { "SimpleIcons.social-telegram", "SimpleIcons.social-vk", "SimpleIcons.social-x", "snapchat", "envelope" })
             if (Icons.Source(name).IntrinsicSize.Width <= 0) throw new InvalidOperationException("Share logo failed to load: " + name);
+    }
+
+    private async Task VerifyShareCopyFeedbackAsync(ShareClipboard clipboard)
+    {
+        var bounds = shareCopy.Bounds;
+        await Task.Delay(1000, lifetime.Token);
+        if (!shareCopyIcon.Confirmed || shareCopyIcon.Animating || shareCopyIcon.Progress != 1)
+            throw new InvalidOperationException("Copy confirmation did not settle or returned too early.");
+        CopyShareLink();
+        await Task.Delay(1100, lifetime.Token);
+        if (!shareCopyIcon.Confirmed || TooltipHints.TextFor(shareCopy) != "Скопировано")
+            throw new InvalidOperationException("Repeated copying did not restart the confirmation delay.");
+        await WaitForLikedLayoutAsync(() => !shareCopyIcon.Confirmed && shareCopyIcon.Progress is > 0 and < 1);
+        CaptureUiPreview("share-copy-return");
+        await WaitForLikedLayoutAsync(() => !shareCopyIcon.Animating && shareCopyIcon.Progress == 0);
+        if (shareCopy.Bounds != bounds || TooltipHints.TextFor(shareCopy) != "Скопировать ссылку")
+            throw new InvalidOperationException("Copy reversal moved the button or retained its success hint.");
+        CopyShareLink();
+        await WaitForLikedLayoutAsync(() => shareCopyIcon.Progress is > 0 and < 1);
+        CaptureUiPreview("share-copy-confirm");
+        RefreshShareLink();
+        await WaitForLikedLayoutAsync(() => !shareCopyIcon.Animating && shareCopyIcon.Progress == 0);
+        clipboard.AcceptWrites = false;
+        CopyShareLink();
+        if (shareCopyIcon.Confirmed || TooltipHints.TextFor(shareCopy) != "Не удалось скопировать. Повторить")
+            throw new InvalidOperationException("Failed copying showed a success check.");
+        clipboard.AcceptWrites = true;
+        RefreshShareLink();
+        Console.WriteLine("SHARE_COPY_FEEDBACK_OK: animated confirmation and return after two seconds, repeat restarts the delay, stable geometry, link reset and failed-write feedback");
     }
 
     private sealed class ShareClipboard : IClipboardService
     {
         internal string Text = "";
-        public bool TrySetText(string text) { Text = text; return true; }
+        internal bool AcceptWrites = true;
+        public bool TrySetText(string text) { if (!AcceptWrites) return false; Text = text; return true; }
         public bool TryGetText(out string text) { text = Text; return true; }
     }
 }

@@ -10,6 +10,7 @@ internal sealed partial class MainWindow
     private TextBlock playlistCreateMessage = null!;
     private FrameworkElement playlistCreateForm = null!;
     private PlaylistPrivacySelector playlistCreatePrivacy = null!;
+    private PlaylistCreateAction playlistCreateAction = null!;
     private Button playlistCreatePublic = null!, playlistCreatePrivate = null!, playlistCreateSave = null!;
     private bool playlistCreateIsPrivate, playlistCreateUnconfirmed;
     private readonly HashSet<WebSession> pendingPlaylistCreates = [];
@@ -24,21 +25,20 @@ internal sealed partial class MainWindow
         playlistCreatePublic = playlistCreatePrivacy.Public; playlistCreatePrivate = playlistCreatePrivacy.Private;
         playlistCreateSave = TrackButtons.Action(new TextBlock().Text("Создать и добавить").FontSize(14).SemiBold(),
             () => Run(CreatePickerPlaylistAsync), TrackButtons.Glass, 44);
-        ((MaterialTrackButton)playlistCreateSave).UseLightGlassFinish();
+        ((MaterialTrackButton)playlistCreateSave).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
+        ((MaterialTrackButton)playlistCreateSave).UseGlassAccentStateLayer();
+        playlistCreateAction = new PlaylistCreateAction(playlistCreateSave);
         playlistCreateMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
-        playlistCreateForm = new StackPanel().Vertical().Spacing(20).Children(
-            new Grid().Columns("*,40").Rows("40").Spacing(16).Margin(24, 24, 24, 0).Children(
-                TrackDialogChrome.Heading("Создать плейлист"),
-                TrackButtons.Icon(Icons.View("arrow-left", 20), () => ShowPlaylistCreation(false), TrackButtons.Glass).Column(1)),
-            new StackPanel().Vertical().Spacing(18).Margin(24, 0, 24, 24).Children(
-                name,
-                playlistCreatePrivacy,
-                playlistCreateMessage, playlistCreateSave));
+        playlistCreateForm = new StackPanel().Vertical().Margin(24, 0, 24, 24).Children(
+            name.Margin(0, 0, 0, 18), playlistCreatePrivacy,
+            playlistCreateMessage.Margin(0, 18, 0, 0), playlistCreateAction);
         return playlistCreateForm;
     }
     private void ResetPlaylistCreation()
     {
         playlistDialogPages.Show(false, animate: false);
+        playlistPickerSection.Value = false;
+        playlistCreateAction.Reveal(false, animate: false);
         playlistCreateUnconfirmed = false;
         playlistCreateName.Text = ""; SetPlaylistCreationMessage("");
         playlistCreateIsPrivate = false;
@@ -49,6 +49,7 @@ internal sealed partial class MainWindow
         if (!playlistDialog.IsOpen || playlistPickerClosing || playlistDialogPages.Creating == create) return;
         if (create && playlistCreateName.Text.Length == 0) playlistCreateIsPrivate = playlistPickerTarget?.Sharing == "private";
         playlistDialogPages.Show(create);
+        playlistPickerSection.Value = create;
         if (create)
         {
             RefreshPlaylistCreation(); FitPlaylistCreation(); playlistCreateName.Focus();
@@ -56,7 +57,7 @@ internal sealed partial class MainWindow
         else
         {
             if (playlistPickerLoading.Loading) playlistDialogContent.SetLoadingSize(true); else FitPlaylistList();
-            playlistPickerCreate.Focus();
+            playlistPickerFocus.Focus();
         }
     }
     private void SetPlaylistPrivacy(bool isPrivate)
@@ -65,7 +66,8 @@ internal sealed partial class MainWindow
     {
         var width = playlistDialogContent.BodyBounds.Width > 0 ? playlistDialogContent.BodyBounds.Width : PlaylistDialogContent.PreferredWidth;
         playlistCreateForm.Measure(new(width, double.PositiveInfinity));
-        playlistDialogPages.FormHeight = playlistCreateForm.DesiredSize.Height;
+        playlistDialogPages.FormHeight = playlistCreateForm.DesiredSize.Height + PlaylistDialogPages.HeaderHeight +
+            playlistCreateAction.TargetHeight - playlistCreateAction.CurrentHeight;
         playlistDialogPages.InvalidateMeasure();
         playlistDialogContent.FitCreation(playlistDialogPages.FormHeight, animate: playlistDialog.IsOpen);
     }
@@ -81,7 +83,10 @@ internal sealed partial class MainWindow
         playlistCreateName.IsEnabled = playlistCreatePublic.IsEnabled = playlistCreatePrivate.IsEnabled = !busy && !playlistCreateUnconfirmed;
         playlistCreatePrivacy.Select(playlistCreateIsPrivate);
         var valid = playlistCreateName.Text.Trim() is { Length: > 0 and <= 255 } title && !title.Any(char.IsControl);
+        playlistCreateAction.Reveal(playlistCreateName.Text.Length > 0 || busy || playlistCreateUnconfirmed,
+            animate: playlistDialog?.IsOpen == true && playlistDialogPages.Creating);
         TrackButtons.SetAvailability(playlistCreateSave, valid && !demo && me != null && api.Session != null && !playlistCreateUnconfirmed && !busy, busy);
+        if (playlistDialogPages?.Creating == true) FitPlaylistCreation();
     }
     private async Task CreatePickerPlaylistAsync()
     {

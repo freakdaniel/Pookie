@@ -19,6 +19,7 @@ internal sealed class PlaylistDialogContent : Panel
     private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(280), Easing.CubicBezier(.2, 0, 0, 1));
     private double bodyHeight = PreferredBodyHeight;
     internal double TargetBodyHeight { get; private set; } = PreferredBodyHeight;
+    internal double BodyHeightLimit { get; set; } = MaximumBodyHeight;
     internal bool Resizing => resize.IsRunning;
     private double amount;
     private Action? hidden;
@@ -35,7 +36,7 @@ internal sealed class PlaylistDialogContent : Panel
         Add(track); Add(body);
     }
     internal void SetLoadingSize(bool animate) => ResizeTo(PreferredBodyHeight, animate);
-    internal void FitCreation(double height, bool animate = true) => ResizeTo(Math.Min(MaximumBodyHeight, height), animate);
+    internal void FitCreation(double height, bool animate = true) => ResizeTo(Math.Min(BodyHeightLimit, height), animate);
     internal static double PlaylistHeight(int count, bool message) =>
         Math.Min(MaximumBodyHeight, 96 + (count > 0 ? count * 72d - 8 : 72) + (count > 0 && message ? 44 : 0));
     internal void FitPlaylists(int count, bool message)

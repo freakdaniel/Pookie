@@ -176,9 +176,34 @@ test('web metadata editing never replaces a partial playlist order', async () =>
     return response(200,playlist);
   });
   h.window.__pookieRequest({id:'09'.repeat(16),operation:'playlist-edit',edit:{kind:'update',user_id:42,playlist_id:77,
-    update:{user_id:42,playlist_id:77,title:'New',description:'',sharing:'private',expected_track_ids:[8,7]}}});
+    update:{user_id:42,playlist_id:77,title:'New',description:'',sharing:'private'}}});
   await tick();assert.equal(playlist.track_count,20);assert.deepEqual(playlist.tracks,[{id:8},{id:7}]);
   assert.equal(h.messages.at(-1).status,200);assert.equal(h.calls.length,3);
+});
+
+test('extended playlist metadata has bounded fields and explicit clear/type mapping', async () => {
+  const snapshot={id:77,user:{id:42},is_album:true,track_count:20,tracks:[{id:8}]};
+  const h=harness((_,options)=>{
+    if(options.method==='PUT') {
+      const data=JSON.parse(options.body).playlist;
+      assert.equal(data.tracks,undefined);assert.equal(data.release_date,null);
+      assert.equal(data.playlist_type,'ep');assert.equal(data.set_type,'album');
+      assert.equal(data.genre,'Rock');assert.equal(data.tag_list,'rock "indie rock"');
+      assert.equal(data.permalink,'updated');assert.equal(data.license,'cc-by');
+      assert.equal(data.purchase_url,'https://example.com/buy');assert.equal(data.label_name,'Label');
+    }
+    return response(200,snapshot);
+  });
+  const update={user_id:42,playlist_id:77,title:'Title',description:'',sharing:'private',metadata:{
+    permalink:'updated',genre:'Rock',tag_list:'rock "indie rock"',release_date:'',playlist_type:'ep',
+    purchase_url:'https://example.com/buy',label_name:'Label',license:'cc-by'}};
+  h.window.__pookieRequest({id:'21'.repeat(16),operation:'playlist-edit',edit:{kind:'update',user_id:42,playlist_id:77,update}});
+  await tick();assert.deepEqual(h.calls.map(([,options])=>options.method),['GET','PUT','GET']);
+  const count=h.calls.length;
+  for(const metadata of [{release_date:'2026-02-30'},{permalink:'../me'},{purchase_url:'javascript:alert(1)'},{admin:true},{license:'unknown'}]) {
+    h.window.__pookieRequest({id:'22'.repeat(16),operation:'playlist-edit',edit:{kind:'update',user_id:42,playlist_id:77,update:{...update,metadata}}});
+    await tick();assert.equal(h.calls.length,count);
+  }
 });
 
 test('web playlist edits reject foreign owners, incomplete removal and changed source order before writing', async () => {

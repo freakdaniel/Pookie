@@ -124,7 +124,6 @@ public sealed partial class SoundCloudHttpTransport
             var playlist = current.RootElement;
             if (!MatchesResource(playlist, "playlists", request.PlaylistId) ||
                 !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", request.UserId) ||
-                playlist.TryGetProperty("is_album", out var album) && album.ValueKind == JsonValueKind.True ||
                 playlist.TryGetProperty("is_system_playlist", out var system) && system.ValueKind == JsonValueKind.True)
                 throw new SoundCloudException("Этот плейлист нельзя редактировать.");
 
@@ -201,6 +200,21 @@ public sealed partial class SoundCloudHttpTransport
             writer.WriteString("title", update.Title);
             writer.WriteString("description", update.Description);
             writer.WriteString("sharing", update.Sharing);
+            if (update.Metadata is { } metadata)
+            {
+                if (metadata.Permalink != null) writer.WriteString("permalink", metadata.Permalink);
+                if (metadata.Genre != null) writer.WriteString("genre", metadata.Genre);
+                if (metadata.TagList != null) writer.WriteString("tag_list", metadata.TagList);
+                if (metadata.ReleaseDate != null) writer.WriteString("release_date", metadata.ReleaseDate.Length == 0 ? null : metadata.ReleaseDate + "T00:00:00.000Z");
+                if (metadata.PlaylistType != null)
+                {
+                    writer.WriteString("playlist_type", metadata.PlaylistType == "playlist" ? null : metadata.PlaylistType);
+                    writer.WriteString("set_type", metadata.PlaylistType == "playlist" ? "playlist" : "album");
+                }
+                if (metadata.PurchaseUrl != null) writer.WriteString("purchase_url", metadata.PurchaseUrl);
+                if (metadata.LabelName != null) writer.WriteString("label_name", metadata.LabelName);
+                if (metadata.License != null) writer.WriteString("license", metadata.License);
+            }
         }
         if (ids != null)
         {

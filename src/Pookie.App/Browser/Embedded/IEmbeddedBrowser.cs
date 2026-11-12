@@ -12,6 +12,9 @@ internal interface IEmbeddedBrowser : IDisposable
     void SetBounds(Rect bounds, double scale);
     void SetVisible(bool visible);
     Task<byte[]> CaptureAsync();
+    // Platforms with native child expose events may atomically replace the
+    // child with this already decoded frame while moving it offscreen.
+    bool TryParkWithSnapshot(Rect bounds, double scale, byte[] bgra, int width, int height) => false;
     Task ShutdownAsync() { Dispose(); return Task.CompletedTask; }
 }
 

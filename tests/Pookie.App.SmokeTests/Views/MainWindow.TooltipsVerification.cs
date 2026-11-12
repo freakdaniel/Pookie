@@ -138,7 +138,8 @@ internal sealed partial class MainWindow
                 if (tooltipLayer.IsVisible || tooltipLayer.Running || tooltipLayer.Owner != null)
                     throw new InvalidOperationException("Deactivation retained tooltip animation or its anchor.");
                 typeof(Window).GetMethod("RaiseActivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!.Invoke(Window, []);
-                Window.FocusManager.ClearFocus(); MoveActionPointer(SettingsCenter(middle));
+                Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
+                Window.FocusManager.ClearFocus(); MoveActionPointer(new(2, 2)); MoveActionPointer(SettingsCenter(middle));
                 await WaitForLikedLayoutAsync(() => tooltipLayer.IsOpen && tooltipLayer.Reveal == 1);
                 RouteWaveformClick(SettingsCenter(middle));
                 await WaitForLikedLayoutAsync(() => !tooltipLayer.IsVisible);

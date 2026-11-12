@@ -10,6 +10,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyShareGlassAsync(SoundCloudTrack track)
     {
+        shareWidgetPreview.BrowserFactory = events => { var browser = new WidgetBrowserFixture(events); widgetBrowsers.Add(browser); return browser; };
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var intervals = new List<double>();
@@ -91,6 +92,7 @@ internal sealed partial class MainWindow
                 var lostGlass = false;
                 void Frame()
                 {
+                    if (sharePages.ContentOverlaps) throw new InvalidOperationException("Share painted two tab pages simultaneously.");
                     var now = Stopwatch.GetTimestamp();
                     intervals.Add(Stopwatch.GetElapsedTime(previous, now).TotalMilliseconds); previous = now;
                     sizes.Add(Math.Round(shareContent.BodyBounds.Height, 2));
@@ -102,7 +104,7 @@ internal sealed partial class MainWindow
                 try
                 {
                     SelectShareTab(tab);
-                    await WaitForLikedLayoutAsync(() => !shareContent.Resizing);
+                    await WaitForLikedLayoutAsync(() => !shareContent.Resizing && !sharePages.Animating);
                     await WaitForLoginFrameAsync();
                 }
                 finally { Window.FrameRendered -= Frame; }
@@ -131,7 +133,7 @@ internal sealed partial class MainWindow
             SelectShareTab(1); await Task.Delay(60, lifetime.Token);
             SelectShareTab(2); await Task.Delay(60, lifetime.Token);
             SelectShareTab(0);
-            await WaitForLikedLayoutAsync(() => !shareContent.Resizing);
+            await WaitForLikedLayoutAsync(() => !shareContent.Resizing && !sharePages.Animating);
             if (shareTab.Value != 0 || !shareLinksPanel.IsVisible || shareComposePanel.IsVisible || shareEmbedPanel.IsVisible)
                 throw new InvalidOperationException("Interrupted Share resize settled on an outdated tab.");
             Console.WriteLine("SHARE_RESIZE_OK: nine tab transitions including empty recipients, retained background/reflection, smooth intermediate sizes and interrupted resize");

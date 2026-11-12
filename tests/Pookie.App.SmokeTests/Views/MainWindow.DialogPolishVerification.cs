@@ -29,21 +29,29 @@ internal sealed partial class MainWindow
         {
             ShowPlaylistCreation(true);
             await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating && !playlistDialogContent.Resizing);
-            if (sampled < 3 || Math.Abs(playlistDialogContent.BodyBounds.Bottom - playlistCreateSave.Bounds.Bottom - 24) > 1)
-                throw new InvalidOperationException("Creation did not animate or retained empty space beneath its submit button.");
+            if (sampled < 3 || playlistCreateAction.IsVisible || playlistCreateAction.Progress != 0)
+                throw new InvalidOperationException("Empty creation did not animate or retained its hidden submit action.");
+            var header = new List<string>();
+            VisualTree.Visit(playlistDialogContent, child => { if (child is TextBlock text) header.Add(text.Text); });
+            if (!header.Contains("Добавить") || !header.Contains("Создать") || header.Contains("Создать плейлист") || header.Contains("Добавить в плейлист"))
+                throw new InvalidOperationException("Playlist dialog retained its old heading or lost its shared section tabs.");
             VisualTree.Visit(playlistCreateForm, child =>
             { if (child is TextBlock { Text: "Доступ" }) throw new InvalidOperationException("The redundant privacy heading remains."); });
             var icons = new HashSet<object>();
             VisualTree.Visit(playlistCreatePrivacy, child => { if (child is Image { Source: { } source }) icons.Add(source); });
-            if (!icons.Contains(Icons.Source("globe", TrackButtons.OnSurface)) || !icons.Contains(Icons.Source("lock-simple", TrackButtons.OnSurface)))
+            bool HasIcon(string name) => icons.Contains(Icons.Source(name, Color.White)) || icons.Contains(Icons.Source(name, Color.FromRgb(166, 166, 173)));
+            if (!HasIcon("globe") || !HasIcon("lock-simple"))
                 throw new InvalidOperationException("The privacy selector lost its globe/lock icons.");
             var left = playlistCreatePrivacy.SelectionBounds.X;
+            var reflections = playlistCreatePrivacy.ReflectionRasterizations;
+            if (reflections == 0) throw new InvalidOperationException("Playlist privacy lost its glass pill.");
             SetPlaylistPrivacy(true);
-            await WaitForLikedLayoutAsync(() => playlistCreatePrivacy.Animating && playlistCreatePrivacy.SelectionBounds.X > left + 1);
+            await WaitForLikedLayoutAsync(() => playlistCreatePrivacy.Animating && playlistCreatePrivacy.SelectionBounds.X > left + 1 && playlistCreatePrivacy.SelectionBounds.Height < 40);
             CaptureUiPreview("dialog-privacy-moving");
             await WaitForLikedLayoutAsync(() => !playlistCreatePrivacy.Animating);
-            if (playlistCreatePrivacy.SelectionBounds.X <= left || playlistCreatePublic.StyleName != TrackButtons.Text || playlistCreatePrivate.StyleName != TrackButtons.Text)
-                throw new InvalidOperationException("Privacy did not slide one neutral pill between transparent tabs.");
+            if (playlistCreatePrivacy.SelectionBounds.X <= left || playlistCreatePublic.StyleName != TrackButtons.Text || playlistCreatePrivate.StyleName != TrackButtons.Text ||
+                playlistCreatePrivacy.ReflectionRasterizations != reflections)
+                throw new InvalidOperationException("Privacy lost its liquid glass pill or rebuilt its optics during switching.");
             CaptureUiPreview("dialog-create-compact");
             ShowPlaylistCreation(false);
             await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating && !playlistDialogContent.Resizing);

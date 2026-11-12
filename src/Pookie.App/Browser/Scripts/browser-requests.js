@@ -383,10 +383,10 @@
       const current = await fetchProtected(new URL(`${url.href}?representation=full`), 'GET', context);
       if (!current.ok) { send({ kind: 'complete', request_id: command.id, status: current.status }); return; }
       const playlist = (await readJson(current, context)).json;
-      if (playlist?.id !== edit.playlist_id || playlist.user?.id !== edit.user_id || playlist.is_album || playlist.is_system_playlist)
+      if (playlist?.id !== edit.playlist_id || playlist.user?.id !== edit.user_id || playlist.is_system_playlist)
         throw new Error('playlist-owner-mismatch');
       let body, contentType = 'application/json';
-      if (edit.kind === 'remove' || edit.update?.track_ids != null) {
+      if (edit.kind === 'remove' || edit.update?.track_ids != null || edit.update?.expected_track_ids != null) {
         if (!Array.isArray(playlist.tracks) || playlist.tracks.length !== playlist.track_count ||
           playlist.tracks.some(track => !Number.isSafeInteger(track.id) || track.id <= 0)) throw new Error('playlist-incomplete');
       }
@@ -397,7 +397,15 @@
         const ids = playlist.tracks?.map(track => track.id);
         if (update.expected_track_ids && (ids?.length !== update.expected_track_ids.length ||
           ids.some((id, index) => id !== update.expected_track_ids[index]))) throw new Error('playlist-order-changed');
-        body = JSON.stringify({ playlist: { title: update.title, description: update.description, sharing: update.sharing,
+        const metadata = update.metadata || {};
+        const fields = Object.fromEntries(['permalink', 'genre', 'tag_list', 'purchase_url', 'label_name', 'license']
+          .filter(key => metadata[key] != null).map(key => [key, metadata[key]]));
+        if (metadata.release_date != null) fields.release_date = metadata.release_date ? metadata.release_date + 'T00:00:00.000Z' : null;
+        if (metadata.playlist_type != null) {
+          fields.playlist_type = metadata.playlist_type === 'playlist' ? null : metadata.playlist_type;
+          fields.set_type = metadata.playlist_type === 'playlist' ? 'playlist' : 'album';
+        }
+        body = JSON.stringify({ playlist: { title: update.title, description: update.description, sharing: update.sharing, ...fields,
           ...(update.track_ids ? { tracks: update.track_ids } : {}) } });
       } else if (edit.kind === 'artwork') {
         const bytes = Uint8Array.from(atob(edit.artwork), value => value.charCodeAt(0));
@@ -601,7 +609,7 @@
         typeof update.title === 'string' && update.title.trim() === update.title && update.title.length > 0 && update.title.length <= 255 &&
         !/[\u0000-\u001f\u007f-\u009f]/.test(update.title) && typeof update.description === 'string' && update.description.length <= 4000 &&
         !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(update.description) &&
-        ['public', 'private'].includes(update.sharing) && ids(update.track_ids) && ids(update.expected_track_ids);
+        ['public', 'private'].includes(update.sharing) && ids(update.track_ids) && ids(update.expected_track_ids) && validPlaylistMetadata(update.metadata);
     }
     if (edit.update != null) return false;
     if (edit.kind === 'remove') return id(edit.track_id) && edit.artwork == null;
@@ -610,6 +618,27 @@
     try { const bytes = atob(edit.artwork); return bytes.length >= 4 && bytes.length <= 1048576 &&
       bytes.charCodeAt(0) === 255 && bytes.charCodeAt(1) === 216 && bytes.charCodeAt(bytes.length - 2) === 255 && bytes.charCodeAt(bytes.length - 1) === 217; }
     catch { return false; }
+  }
+
+  function validPlaylistMetadata(value) {
+    if (value == null) return true;
+    if (typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key =>
+      !['permalink', 'genre', 'tag_list', 'release_date', 'playlist_type', 'purchase_url', 'label_name', 'license'].includes(key))) return false;
+    const text = (key, max) => value[key] == null || typeof value[key] === 'string' && value[key].length <= max && !/[\u0000-\u001f\u007f-\u009f]/.test(value[key]);
+    if (!text('genre', 255) || !text('tag_list', 4000) || !text('label_name', 255) || !text('purchase_url', 2000)) return false;
+    if (value.permalink != null && (typeof value.permalink !== 'string' || !/^[a-zA-Z0-9_-]{1,255}$/.test(value.permalink))) return false;
+    if (value.release_date != null && value.release_date !== '') {
+      if (typeof value.release_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.release_date)) return false;
+      const date = new Date(value.release_date + 'T00:00:00.000Z');
+      if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.release_date || date.getUTCFullYear() === 0) return false;
+    }
+    if (value.playlist_type != null && !['playlist', 'album', 'ep', 'single', 'compilation'].includes(value.playlist_type)) return false;
+    if (value.license != null && !['all-rights-reserved', 'no-rights-reserved', 'cc-by', 'cc-by-sa', 'cc-by-nd', 'cc-by-nc', 'cc-by-nc-sa', 'cc-by-nc-nd', 'cc0'].includes(value.license)) return false;
+    if (value.purchase_url) {
+      try { const url = new URL(value.purchase_url); if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return false; }
+      catch { return false; }
+    }
+    return true;
   }
 
   window.__pookieRequest = command => {

@@ -20,7 +20,7 @@ internal sealed partial class WebKitLoginWindow
         private readonly Native.LoadCallback loaded;
         private readonly List<nint> pages = [];
         private readonly HashSet<nint> managers = [];
-        private nint plug, container, xid, display;
+        private nint plug, container, xid, display, parentWindow;
         private string script = "";
         private WebKitContentFilter? filter;
         private int width = 1, height = 1;
@@ -42,6 +42,7 @@ internal sealed partial class WebKitLoginWindow
 
         public Task InitializeAsync(nint parent, string profile, string script, bool isolated)
         {
+            parentWindow = parent;
             this.script = script;
             Native.gdk_set_allowed_backends("x11");
             if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException("Не удалось запустить встроенный WebKitGTK. Нужен libwebkit2gtk-4.1-0 и X11/XWayland.");
@@ -178,6 +179,38 @@ internal sealed partial class WebKitLoginWindow
             else { Native.gtk_widget_hide(plug); Native.XUnmapWindow(display, xid); }
             Native.XFlush(display);
         }
+
+        public bool TryParkWithSnapshot(Rect bounds, double scale, byte[] bgra, int pixelWidth, int pixelHeight)
+        {
+            if (disposed || xid == 0 || parentWindow == 0 || !BitConverter.IsLittleEndian || bounds.X < 0 || bounds.Y < 0 ||
+                pixelWidth != (int)Math.Round(bounds.Width * scale) || pixelHeight != (int)Math.Round(bounds.Height * scale) ||
+                bgra.Length != (long)pixelWidth * pixelHeight * 4) return false;
+            if (Native.XGetGeometry(display, parentWindow, out _, out _, out _, out _, out _, out _, out var depth) == 0 || depth is not (24 or 32)) return false;
+            var data = Native.malloc((nuint)bgra.Length);
+            if (data == 0) return false;
+            Marshal.Copy(bgra, 0, data, bgra.Length);
+            var image = Native.XCreateImage(display, Native.XDefaultVisual(display, Native.XDefaultScreen(display)), depth,
+                2, 0, data, (uint)pixelWidth, (uint)pixelHeight, 32, pixelWidth * 4);
+            if (image == 0) { Native.free(data); return false; }
+            var gc = Native.XCreateGC(display, parentWindow, 0, 0);
+            try
+            {
+                if (gc == 0) return false;
+                // Moving a native child exposes/clears its old rectangle before
+                // the next GL swap. Replace those front-buffer pixels in the
+                // same X11 transaction; the compositor cannot see a dark hole.
+                Native.XGrabServer(display);
+                try
+                {
+                    Native.XMoveWindow(display, xid, short.MinValue, short.MinValue);
+                    Native.XPutImage(display, parentWindow, gc, image, 0, 0, (int)Math.Round(bounds.X * scale),
+                        (int)Math.Round(bounds.Y * scale), (uint)pixelWidth, (uint)pixelHeight);
+                }
+                finally { Native.XUngrabServer(display); Native.XFlush(display); }
+                return true;
+            }
+            finally { if (gc != 0) Native.XFreeGC(display, gc); Native.XDestroyImage(image); }
+        }
     
 
 
@@ -259,6 +292,19 @@ internal sealed partial class WebKitLoginWindow
         [LibraryImport("libglib-2.0.so.0")] public static partial int g_main_context_iteration(nint context, int mayBlock);
         [LibraryImport("libX11.so.6")] public static partial int XMoveResizeWindow(nint display, nint window, int x, int y, uint width, uint height);
         [LibraryImport("libX11.so.6")] public static partial int XFlush(nint display);
+        [LibraryImport("libX11.so.6")] public static partial int XMoveWindow(nint display, nint window, int x, int y);
+        [LibraryImport("libX11.so.6")] public static partial int XGrabServer(nint display);
+        [LibraryImport("libX11.so.6")] public static partial int XUngrabServer(nint display);
+        [LibraryImport("libX11.so.6")] public static partial int XDefaultScreen(nint display);
+        [LibraryImport("libX11.so.6")] public static partial nint XDefaultVisual(nint display, int screen);
+        [LibraryImport("libX11.so.6")] public static partial nint XCreateImage(nint display, nint visual, uint depth, int format, int offset, nint data, uint width, uint height, int pad, int stride);
+        [LibraryImport("libX11.so.6")] public static partial nint XCreateGC(nint display, nint window, nuint mask, nint values);
+        [LibraryImport("libX11.so.6")] public static partial int XFreeGC(nint display, nint gc);
+        [LibraryImport("libX11.so.6")] public static partial int XPutImage(nint display, nint window, nint gc, nint image, int sourceX, int sourceY, int x, int y, uint width, uint height);
+        [LibraryImport("libX11.so.6")] public static partial int XDestroyImage(nint image);
+        [LibraryImport("libX11.so.6")] public static partial int XGetGeometry(nint display, nint window, out nint root, out int x, out int y, out uint width, out uint height, out uint border, out uint depth);
+        [LibraryImport("libc")] public static partial nint malloc(nuint size);
+        [LibraryImport("libc")] public static partial void free(nint pointer);
         [LibraryImport("libX11.so.6")] public static partial int XMapRaised(nint display, nint window);
         [LibraryImport("libX11.so.6")] public static partial int XUnmapWindow(nint display, nint window);
         [LibraryImport("libX11.so.6")] public static partial int XSetInputFocus(nint display, nint window, int revert, nint time);

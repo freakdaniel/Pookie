@@ -24,8 +24,8 @@ internal sealed partial class MainWindow
         shareTimeLabel = new TextBlock().FontSize(13).SemiBold().CenterVertical();
         shareTimePrefix = new Border().Width(0).Opacity(0).ClipToBounds().Child(shareTimeLabel);
         shareTimeAction = TrackButtons.Icon(new StackPanel().Horizontal().Center().Children(
-            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Glass, 48).Hint("Таймкод");
-        ((MaterialTrackButton)shareTimeAction).UseLightGlassFinish();
+            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Text, 48).Hint("Таймкод");
+        ((MaterialTrackButton)shareTimeAction).UseListStateLayer();
         return shareTimeAction;
     }
 
@@ -103,7 +103,11 @@ internal sealed partial class MainWindow
         shareTimePopup = new InAppPopup();
         shareTimePopup.InitializePopup(card, () => shareTimeAction.Bounds, () => MenuPlacement.Below, alignCenter: true);
         foreach (var field in new[] { shareHours, shareMinutes, shareSeconds })
-        { field.OnTextChanged(_ => { if (!settingShareTime) ValidateShareTime(); }); field.GotFocus += field.SelectAll; }
+        {
+            field.OnTextChanged(_ => { if (!settingShareTime) ValidateShareTime(); });
+            field.GotFocus += field.SelectAll;
+            field.LostFocus += () => field.Select(field.SelectionStart, 0);
+        }
     }
 
     private bool TryShareTime(out int seconds)

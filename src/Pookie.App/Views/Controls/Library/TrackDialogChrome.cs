@@ -15,10 +15,10 @@ internal static class TrackDialogChrome
                 new Border().Background(Color.Transparent).BorderThickness(0).CornerRadius(24).ClipToBounds().Child(content));
 
     internal static ModalDialog MatteDialog(PlaylistDialogContent content, GlassCard card, UIElement focus,
-        FrameworkElement close, Func<bool>? refreshing = null, bool reserveTransitionHeight = false) =>
+        FrameworkElement close, Func<bool>? refreshing = null, bool reserveTransitionHeight = false, bool tall = false) =>
         new(content, focus, close, staticBackdrop: true, cacheTransition: true, backdropTint: MatteTint,
             glassSurface: card, refreshTransition: () => content.Animating || content.Resizing || refreshing?.Invoke() == true,
-            glassMaximumHeight: PlaylistDialogContent.MaximumBodyHeight, glassVerticalOffset: PlaylistDialogContent.BodyCenterOffset,
+            glassMaximumHeight: tall ? 960 : PlaylistDialogContent.MaximumBodyHeight, glassVerticalOffset: PlaylistDialogContent.BodyCenterOffset,
             transitionMaximumHeight: reserveTransitionHeight
                 ? PlaylistDialogContent.MaximumBodyHeight + PlaylistDialogContent.BodyCenterOffset * 2 : null);
 

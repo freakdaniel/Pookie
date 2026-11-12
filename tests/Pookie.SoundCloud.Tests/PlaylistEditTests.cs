@@ -176,4 +176,42 @@ public sealed class PlaylistEditTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);
     }
+
+    [Fact]
+    public async Task ExtendedMetadataIsWrittenWithoutReplacingAnIncompleteTrackSnapshot()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            calls++;
+            if (request.Method == HttpMethod.Get) return Json("""{"id":11,"user":{"id":42},"track_count":20,"tracks":[{"id":8}]}""");
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("playlist");
+            Assert.False(data.TryGetProperty("tracks", out _));
+            Assert.Equal("updated", data.GetProperty("permalink").GetString());
+            Assert.Equal("Rock", data.GetProperty("genre").GetString());
+            Assert.Equal("rock \"indie rock\"", data.GetProperty("tag_list").GetString());
+            Assert.Equal("2026-11-13T00:00:00.000Z", data.GetProperty("release_date").GetString());
+            Assert.Equal("ep", data.GetProperty("playlist_type").GetString());
+            Assert.Equal("album", data.GetProperty("set_type").GetString());
+            Assert.Equal("https://example.com/buy", data.GetProperty("purchase_url").GetString());
+            Assert.Equal("Label", data.GetProperty("label_name").GetString());
+            Assert.Equal("cc-by", data.GetProperty("license").GetString());
+            return Json();
+        }));
+        using var transport = new SoundCloudHttpTransport(http, Session);
+        using var result = await transport.EditPlaylistAsync(new("update", 42, 11, new(42, 11, "Title", "", "private",
+            Metadata: new("updated", "Rock", "rock \"indie rock\"", "2026-11-13", "ep", "https://example.com/buy", "Label", "cc-by"))));
+        Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public void ExtendedMetadataRejectsInvalidInputsAndCanClearOptionalValues()
+    {
+        Assert.True(new PlaylistMetadataUpdate(Genre: "", TagList: "", ReleaseDate: "", PurchaseUrl: "", LabelName: "").IsValid());
+        foreach (var metadata in new[] { new PlaylistMetadataUpdate(Permalink: "../me"), new(Permalink: ""), new(Genre: "bad\nvalue"),
+            new(ReleaseDate: "2026-02-30"), new(ReleaseDate: "13.11.2026"), new(PurchaseUrl: "javascript:alert(1)"),
+            new(PurchaseUrl: "https://user:secret@example.com"), new(PlaylistType: "whatever"), new(License: "custom") })
+            Assert.False(new PlaylistUpdateRequest(42, 11, "Title", "", "private", Metadata: metadata).IsValid());
+    }
 }

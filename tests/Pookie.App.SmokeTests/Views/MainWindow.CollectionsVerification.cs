@@ -34,7 +34,10 @@ internal sealed partial class MainWindow
                     await VerifyPlaylistDialogAsync(transport.Playlist.Tracks[0], transport);
                     return;
                 }
-                await VerifyShareGlassAsync(transport.Playlist.Tracks[0]);
+                if (Environment.GetEnvironmentVariable("POOKIE_WIDGET_REAL_ONLY") == "1") { await VerifyShareWidgetNativeAsync(transport.Playlist.Tracks[0]); return; }
+                if (Environment.GetEnvironmentVariable("POOKIE_SHARE_FUNCTIONAL_ONLY") == "1")
+                    shareWidgetPreview.BrowserFactory = events => { var browser = new WidgetBrowserFixture(events); widgetBrowsers.Add(browser); return browser; };
+                else await VerifyShareGlassAsync(transport.Playlist.Tracks[0]);
                 await VerifySharePanelAsync(transport.Playlist.Tracks[0], LibraryData.FromPlaylist(transport.Playlist));
                 return;
             }

@@ -148,6 +148,10 @@ internal sealed partial class MainWindow : IDisposable
             .OnLoaded(OnWindowLoaded)
             .OnClosed(Dispose);
         tooltipLayer = new MaterialTooltipLayer(Window);
+        tooltipLayer.PreparePresentation = target => ReferenceEquals(target, shareEmbedCopy) && shareDialog?.IsOpen == true && shareTab.Value == 2
+            ? shareWidgetPreview.FreezeForTooltipAsync() : Task.CompletedTask;
+        tooltipLayer.PresentationEnded = () =>
+        { if (!tooltipLayer.IsVisible && !tooltipLayer.Preparing) shareWidgetPreview?.ResumeFromTooltip(); };
         Window.Closing += args =>
         {
             var deferral=args.GetDeferral();
@@ -171,6 +175,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.DpiChanged += (_, _) => RefreshCompactArtworkDpi();
         Window.ClientSizeChanged += size =>
         {
+            if (playlistEditor?.IsOpen == true) FitPlaylistEditor(animate: false);
             if (page.Value == Page.Track)
             {
                 BeginTrackResize();
@@ -182,7 +187,13 @@ internal sealed partial class MainWindow : IDisposable
             if (widevineSetup != null && widevineDialog.HandleKey(e)) return;
             if (embeddedLoginDialog.HandleKey(e)) return;
             if (playlistPickerClosing) { e.Handled = true; return; }
+            if (playlistEditor.IsOpen && InAppPopup.HandleKey(Window, e)) return;
             if (playlistEditor.HandleKey(e)) return;
+            if (shareWidgetColorPopup?.IsOpen == true)
+            {
+                shareWidgetColorPopup.HandleKey(e);
+                return;
+            }
             if (HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
@@ -805,7 +816,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        CloseShare(true); shareTimePopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        CloseShare(true); shareTimePopup?.Dispose(); shareWidgetColorPopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;
@@ -853,6 +864,7 @@ internal sealed partial class MainWindow : IDisposable
     internal async Task FinishShutdownAsync()
     {
         Dispose();
+        if (shareWidgetPreview != null) await shareWidgetPreview.Shutdown.ConfigureAwait(false);
         await FlushChatPersistenceAsync().ConfigureAwait(false);
         await configuration.FlushAsync().ConfigureAwait(false);
         foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);

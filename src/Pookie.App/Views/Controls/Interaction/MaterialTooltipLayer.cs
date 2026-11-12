@@ -31,6 +31,10 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     private Point origin;
     private Rect groupFrom;
     private double groupProgress = 1, placedGroupProgress;
+    private int preparationVersion, preparing;
+    internal Func<FrameworkElement, Task>? PreparePresentation;
+    internal Action? PresentationEnded;
+    internal bool Preparing => preparing != 0;
     internal bool IsOpen { get; private set; }
     internal double Reveal => amount;
     internal Rect SurfaceBounds => surfaceBounds;
@@ -121,6 +125,12 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         if ((target ?? pending ?? owner) is { } blocked) dismissed = new(blocked);
         Hide();
     }
+    internal void ResetDismissal(UIElement scope)
+    {
+        if (dismissed?.TryGetTarget(out var blocked) != true) return;
+        for (Element? element = blocked; element != null; element = element.Parent)
+            if (ReferenceEquals(element, scope)) { dismissed = null; return; }
+    }
     private bool Eligible(FrameworkElement target)
     {
         if (!window.IsActive || target.FindVisualRoot() != window || !target.IsEffectivelyEnabled || TooltipHints.TextFor(target) == null) return false;
@@ -148,6 +158,24 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         // Keep the old tooltip at its original position throughout dismissal.
         // A different anchor is presented only once that fade has completed.
         if (attached && owner != next) { delay.Interval = TimeSpan.FromMilliseconds(20); delay.Start(); return; }
+        if (PreparePresentation is { } prepare)
+        { _ = ShowPreparedAsync(next, ++preparationVersion, prepare); return; }
+        ShowNow(next);
+    }
+    private async Task ShowPreparedAsync(FrameworkElement next, int version, Func<FrameworkElement, Task> prepare)
+    {
+        preparing++; var shown = false;
+        try
+        {
+            await prepare(next);
+            if (disposed || version != preparationVersion || pending != next || !Eligible(next) || !Active(next, pendingKeyboard)) return;
+            ShowNow(next); shown = true;
+        }
+        catch (Exception error) { Pookie.Logging.AppLog.Failure("Pookie.Tooltip", "Подготовка подсказки недоступна", error, Serilog.Events.LogEventLevel.Debug); }
+        finally { preparing--; if (!shown) PresentationEnded?.Invoke(); }
+    }
+    private void ShowNow(FrameworkElement next)
+    {
         pending = null; owner = next; keyboard = pendingKeyboard;
         label.Text = TooltipHints.TextFor(next)!;
         // Retained rendering records this small card once and applies its opacity
@@ -171,7 +199,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     { for (var parent = target.Parent; parent != null; parent = parent.Parent) yield return parent; }
     private void CancelPending()
     {
-        pending = null; delay.Stop();
+        preparationVersion++; pending = null; delay.Stop();
         if (!IsOpen) Unobserve();
     }
     private void Hide(bool immediate = false)
@@ -201,6 +229,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         IsVisible = false;
         if (attached) { window.OverlayLayer.Remove(this); attached = false; }
         owner = null; label.Text = "";
+        PresentationEnded?.Invoke();
     }
     private void Observe()
     {

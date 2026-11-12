@@ -9,7 +9,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyPlaylistDialogAsync(SoundCloudTrack track, CollectionFixtureTransport transport)
     {
-        Window.Activate(); MoveActionPointer(new(2, 2));
+        Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive); MoveActionPointer(new(2, 2));
         await VerifyPlaylistMoreFocusAsync();
         collectionFilter.Focus();
         const string cover = "https://i1.sndcdn.com/playlist-dialog-cover.jpg";
@@ -43,7 +43,8 @@ internal sealed partial class MainWindow
             transport.PickerHold.SetResult(); await loading;
             await WaitForLikedLayoutAsync(() => !playlistPickerLoading.Skeleton.IsVisible && !playlistDialogContent.Resizing && playlistPickerPreview.Palette != PlayerPalette.Neutral);
             var compactHeight = playlistDialogContent.BodyBounds.Height;
-            if (compactHeight >= loadingBounds.Height || heights.Count < 3 || playlistPickerTrack.Text != track.Title || playlistPickerArtist.Text != track.Author)
+            if (compactHeight >= loadingBounds.Height || heights.Count < 3 || playlistPickerTrack.Text != track.Title || playlistPickerArtist.Text != track.Author ||
+                playlistPickerDuration.Text != FormatTime(track.DurationSeconds) || playlistPickerPlays.Text != (track.PlaybackCount is { } plays ? LikedTrackRow.ShortCount(plays) : "—"))
                 throw new InvalidOperationException("The loaded playlist dialog did not shrink smoothly or lost the track preview.");
             if (playlistDialogContent.Children.OfType<GlassCard>().Single().BorderThickness != 0)
                 throw new InvalidOperationException("The main dialog retained its outline.");
@@ -88,6 +89,9 @@ internal sealed partial class MainWindow
             if (Math.Abs(playlistDialogContent.BodyBounds.Height - 168) > .5) throw new InvalidOperationException("The error state did not fit its message.");
             await OpenPlaylistPickerAsync(track);
             await WaitForLikedLayoutAsync(() => playlistDialogContent.TrackReveal == 1 && !playlistDialogContent.Animating);
+            // Native resize probes can deactivate the window. Focus restoration
+            // is conditional on activation, so establish that precondition.
+            Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             RouteChatEscape();
             if (!playlistDialog.IsOpen || playlistDialog.Reveal != 1 || !playlistPickerClosing)
                 throw new InvalidOperationException("The dialog started closing before its track preview hid.");
@@ -145,14 +149,20 @@ internal sealed partial class MainWindow
             playlistDialogContent.Bounds.Contains(playlistPickerClose.Bounds.Center) || chatVideoClose.StyleName != TrackButtons.Glass)
             throw new InvalidOperationException($"Dialog/media close button is not glass or aligned to the overlay corner: actual={playlistPickerClose.Bounds}, expected={expectedClose}, overlaps={playlistDialogContent.Bounds.Contains(playlistPickerClose.Bounds.Center)}, mediaStyle={chatVideoClose.StyleName}.");
         RouteWaveformClick(SettingsCenter(playlistPickerCreate));
-        if (!playlistCreateName.IsFocused || !playlistDialogPages.Creating || playlistCreateSave.IsEnabled)
+        if (!playlistCreateName.IsFocused || !playlistDialogPages.Creating || playlistCreateSave.IsEnabled || playlistCreateAction.IsVisible)
             throw new InvalidOperationException("Creation did not focus its empty title or allowed a blank write.");
         await WaitForLikedLayoutAsync(() => playlistDialogPages.Animating && playlistDialogContent.Resizing);
         CaptureUiPreview("dialog-create-transition");
         await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating && !playlistDialogContent.Resizing);
         playlistCreateName.Text = "Новый 🎵"; SetPlaylistPrivacy(true);
         if (!playlistCreateSave.IsEnabled) throw new InvalidOperationException("A valid playlist title did not enable creation.");
-        if (playlistCreateSave.StyleName != TrackButtons.Glass || playlistCreateSave.Background.A >= 100 || playlistCreateSave.Background.R != 255 ||
+        await WaitForLikedLayoutAsync(() => playlistCreateAction.Progress is > .1 and < .9 && playlistCreateAction.Animating);
+        CaptureUiPreview("dialog-create-button-entering");
+        await WaitForLikedLayoutAsync(() => !playlistCreateAction.Animating && !playlistDialogContent.Resizing);
+        if (playlistCreateAction.Progress != 1 || playlistCreateSave.Opacity != 1 ||
+            Math.Abs(playlistDialogContent.BodyBounds.Bottom - playlistCreateSave.Bounds.Bottom - 24) > 1)
+            throw new InvalidOperationException("Typing a title did not reveal its action and grow the card smoothly.");
+        if (playlistCreateSave.StyleName != TrackButtons.Glass || ((MaterialTrackButton)playlistCreateSave).GlassAccentSurface != TrackButtons.BlueGlassAccent ||
             playlistPickerCreate.Background.A >= 100)
             throw new InvalidOperationException("Playlist creation lost its translucent light glass surface.");
         CaptureUiPreview("dialog-create-form");
