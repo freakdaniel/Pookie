@@ -10,7 +10,7 @@ internal static class EmbeddedLoginLiveProbe
         MainWindow? tested = null;
         try
         {
-            await AppHost.RunAsync(new() { Preview = true, RequireSignIn = true, SkipSessionRestore = true,
+            await AppHost.RunAsync(new() { RequireWidevineSetup = false, Preview = true, RequireSignIn = true, SkipSessionRestore = true,
                 IsolatedData = true, SilentAudio = true, AudioEnabled = false, DiscordPresence = false, SystemMediaSession = false }, window =>
             {
                 tested = window;

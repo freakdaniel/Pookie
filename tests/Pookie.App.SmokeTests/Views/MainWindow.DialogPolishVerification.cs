@@ -49,45 +49,12 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !playlistDialogPages.Animating && !playlistDialogContent.Resizing);
         }
         finally { Window.FrameRendered -= CheckViewport; }
-        await VerifyOverlayCloseBlurAsync();
+        if (((MaterialTrackButton)playlistPickerClose).HasOverlayBlur || playlistPickerClose.StyleName != TrackButtons.Glass ||
+            playlistPickerClose.Background.R != 255 || playlistPickerClose.Background.A >= 100)
+            throw new InvalidOperationException("Playlist close button lost its light glass finish or restored CPU backdrop captures.");
         transport.PickerCount = 2; await OpenPlaylistPickerAsync(track);
         await WaitForLikedLayoutAsync(() => !playlistDialogContent.Resizing);
-        Console.WriteLine("PLAYLIST_DIALOG_POLISH_OK: stable viewport through both transitions, measured compact form, no privacy heading, moving neutral pill/icons and bounded pixel-verified close-button blur");
+        Console.WriteLine("PLAYLIST_DIALOG_POLISH_OK: stable viewport through both transitions, measured compact form, no privacy heading, moving neutral pill/icons and light glass close without CPU backdrop captures");
     }
 
-    private async Task VerifyOverlayCloseBlurAsync()
-    {
-        var bands = new OverlayGlassBands().Width(40).Height(40).Right().Top().Margin(0, 12, 24, 0).IsHitTestVisible(false);
-        workspace.Add(bands);
-        var frames = 0;
-        void Count() { frames++; if (frames < 4) Window.InvalidateVisual(); }
-        Window.FrameRendered += Count;
-        try
-        {
-            await WaitForLikedLayoutAsync(() => frames >= 4 && ((MaterialTrackButton)playlistPickerClose).HasOverlayBlur);
-            var button = (MaterialTrackButton)playlistPickerClose;
-            if (button.OverlayBlurBounds.Width > 90 || button.OverlayBlurBounds.Height > 90)
-                throw new InvalidOperationException("Overlay glass captured more than the button and its halo.");
-            using var scope = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-            using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.CpuPixels(20, 3, 1));
-            using var renderer = Window.GraphicsFactory.CreateContext(surface);
-            renderer.BeginFrame(surface);
-            using var viewport = WindowPresentation.CaptureViewport(surface);
-            renderer.Clear(Color.Black); renderer.Translate(-button.Bounds.X - 10, -button.Bounds.Y - 7);
-            button.Render(renderer); renderer.EndFrame();
-            var pixels = ((ICpuPixelSurface)surface).CopyPixels();
-            var values = Enumerable.Range(0, 20).Select(i => (int)pixels[i * 4]).ToArray();
-            if (values.Max() - values.Min() > 25) throw new InvalidOperationException("Sharp background stripes survived inside the close button's glass.");
-            CaptureUiPreview("dialog-close-blurred");
-        }
-        finally { Window.FrameRendered -= Count; workspace.Remove(bands); bands.Dispose(); }
-    }
-    private sealed class OverlayGlassBands : Control
-    {
-        protected override void OnRender(IGraphicsContext context)
-        {
-            for (var x = 0; x < Bounds.Width; x += 2)
-                context.FillRectangle(new(Bounds.X + x, Bounds.Y, 2, Bounds.Height), x % 4 == 0 ? Color.White : Color.Black);
-        }
-    }
 }

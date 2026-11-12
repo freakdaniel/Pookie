@@ -20,11 +20,26 @@ internal sealed class GlassRimRaster : IDisposable
     internal long PixelBytes => raster?.PixelBytes ?? 0;
 
     internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double minimumScale,
-        Color? pigment = null, double opacity = 1)
+        Color? pigment = null, double opacity = 1, bool reuseHeight = false)
     {
         if (bounds.IsEmpty) return;
         var graphics = Application.Current.GraphicsFactory;
         var scale = Math.Max(context.DpiScale, minimumScale);
+        if (reuseHeight && raster != null && factory == graphics && paintedSize.Width == bounds.Width &&
+            paintedCorners == corners && paintedScale == scale && paintedPigment == pigment)
+        {
+            var previousAlpha = context.GlobalAlpha;
+            context.GlobalAlpha = previousAlpha * (float)opacity;
+            try
+            {
+                var target = new Rect(bounds.X + tile.X, bounds.Y + tile.Y, tile.Width,
+                    tile.Height + bounds.Height - paintedSize.Height);
+                var edge = Math.Max(Math.Max(corners.TopLeft, corners.TopRight), Math.Max(corners.BottomLeft, corners.BottomRight)) + 2;
+                VerticalRasterStretch.Draw(context, raster.Image, target, edge);
+            }
+            finally { context.GlobalAlpha = previousAlpha; }
+            return;
+        }
         if (raster == null || factory != graphics || paintedSize != bounds.Size || paintedCorners != corners ||
             paintedScale != scale || paintedPigment != pigment)
         {

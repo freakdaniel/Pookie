@@ -22,6 +22,7 @@ internal static class TrackButtons
     internal static readonly Color TonalSurface = Color.FromRgb(49, 49, 53);
     internal static readonly Color SelectedSurface = Color.FromRgb(78, 40, 51);
     internal static readonly Color GlassSurface = GlassSheen.ControlTint();
+    internal static readonly Color BlueGlassAccent = Color.FromArgb(220, 49, 112, 211);
     internal static readonly Color OnSelected = Color.FromRgb(255, 177, 193);
     internal static readonly Color RepostedSurface = Color.FromRgb(67, 49, 92);
     internal static readonly Color OnReposted = Color.FromRgb(211, 185, 255);

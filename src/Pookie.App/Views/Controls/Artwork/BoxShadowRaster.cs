@@ -15,11 +15,11 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
     private int left, top, right, bottom;
     internal long PixelBytes => raster?.PixelBytes ?? 0;
 
-    internal void Draw(IGraphicsContext context, Rect bounds, double cornerRadius, double opacity = 1, double rasterScale = 0)
+    internal void Draw(IGraphicsContext context, Rect bounds, double cornerRadius, double opacity = 1, double rasterScale = 0, bool cache = false)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0 || blur <= 0 || color.A == 0) return;
         var nextRadius = Math.Max(0, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2));
-        if (!softFalloff && !OperatingSystem.IsWindows())
+        if (!softFalloff && !OperatingSystem.IsWindows() && !cache)
         {
             context.DrawBoxShadow(bounds, nextRadius, blur,
                 Color.FromArgb((byte)Math.Round(color.A * opacity), color.R, color.G, color.B), offsetY: offset);

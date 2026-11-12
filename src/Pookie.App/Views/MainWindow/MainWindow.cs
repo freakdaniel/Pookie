@@ -19,6 +19,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow : IDisposable
 {
+    private readonly WidevineSetup? widevineSetup;
     private readonly bool demo;
     private readonly bool isolatedRun;
     private readonly bool requireSignIn;
@@ -76,6 +77,7 @@ internal sealed partial class MainWindow : IDisposable
     public MainWindow(AppRunOptions options, string brandFontFamily)
     {
         this.brandFontFamily = brandFontFamily;
+        widevineSetup = options.RequireWidevineSetup ? options.WidevineSetupOverride ?? WidevineSetup.Default() : null;
         demo = options.Preview;
         requireSignIn = options.RequireSignIn;
         skipSessionRestore = options.SkipSessionRestore;
@@ -177,6 +179,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (widevineSetup != null && widevineDialog.HandleKey(e)) return;
             if (embeddedLoginDialog.HandleKey(e)) return;
             if (playlistPickerClosing) { e.Handled = true; return; }
             if (playlistEditor.HandleKey(e)) return;
@@ -230,6 +233,12 @@ internal sealed partial class MainWindow : IDisposable
         timer.Start(); clipboardTimer?.Start();
         Run(async () =>
         {
+            if (widevineSetup != null)
+            {
+                try { await PrepareWidevineAtStartupAsync(); }
+                catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
+            }
+            if (lifetime.IsCancellationRequested) return;
             try { await StartupLog.RunAsync("startup.initialize", InitializeAsync); }
             catch (SoundCloudException error) when (error.SessionRejected)
             {
@@ -458,6 +467,8 @@ internal sealed partial class MainWindow : IDisposable
                     source = source with { NormalizationGainDb = 0 };
             }
             if (generation != playGeneration || disposed) return;
+            if (source.Transport == AudioTransport.WidevineHls)
+                status.Value = "Подготавливаем защищённое воспроизведение…";
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
@@ -811,6 +822,11 @@ internal sealed partial class MainWindow : IDisposable
         expandedQueueAnimation.Dispose();
         popupQueueAnimation.Dispose();
         expandedQueueFade.Dispose();
+        if (widevineSetup != null)
+        {
+            widevineDialog.Close(immediate: true);
+            widevineLicenseLinks.Dispose();
+        }
         OnDisposed();
         loginSpinner.IsActive = false;
         CancelSeek(); seekTimer.Dispose();

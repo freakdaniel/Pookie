@@ -2,6 +2,10 @@ namespace Pookie.App.Hosting;
 
 internal sealed record AppRunOptions
 {
+    // Windows protected playback uses the system PlayReady backend.
+    // Widevine installation and consent belong to the Linux/macOS startup path.
+    internal bool RequireWidevineSetup { get; init; } = !OperatingSystem.IsWindows();
+    internal Pookie.Audio.WidevineSetup? WidevineSetupOverride { get; init; }
     public bool Preview { get; init; }
     public bool RequireSignIn { get; init; } = true;
     public bool SkipSessionRestore { get; init; }

@@ -45,7 +45,7 @@ internal sealed partial class MainWindow
             var compactHeight = playlistDialogContent.BodyBounds.Height;
             if (compactHeight >= loadingBounds.Height || heights.Count < 3 || playlistPickerTrack.Text != track.Title || playlistPickerArtist.Text != track.Author)
                 throw new InvalidOperationException("The loaded playlist dialog did not shrink smoothly or lost the track preview.");
-            if (playlistDialogContent.Children.OfType<Border>().Single().BorderThickness != 0)
+            if (playlistDialogContent.Children.OfType<GlassCard>().Single().BorderThickness != 0)
                 throw new InvalidOperationException("The main dialog retained its outline.");
             if (playlistPickerMessage.IsVisible || playlistPickerClose.Background.R != 255 || playlistPickerClose.Background.A >= 100)
                 throw new InvalidOperationException("The normal picker retained its subtitle or a dark close-button tint.");
@@ -132,7 +132,7 @@ internal sealed partial class MainWindow
             ClosePlaylistPicker(); playlistDialog.Close(true);
             if (playlistDialog.Running || playlistDialog.HasSnapshots || playlistDialog.IsVisible)
                 throw new InvalidOperationException("Immediate dialog teardown retained clocks or surfaces.");
-            Console.WriteLine("MODAL_DIALOG_UI_OK: shared video scrim without background capture/blur, perspective entrance, quicker content exit, retained overlay, continuous reversal, immediate focus, Tab trap, Escape/outside dismissal, click-through exit, conditional focus restoration and snapshot/clock cleanup");
+            Console.WriteLine("MODAL_DIALOG_UI_OK: shared video scrim and bounded matte glass, perspective entrance, quicker content exit, retained overlay, continuous reversal, immediate focus, Tab trap, Escape/outside dismissal, click-through exit, conditional focus restoration and snapshot/clock cleanup");
         }
         finally { Window.FrameRendered -= Sample; ClosePlaylistPicker(); playlistDialog.Close(true); }
     }

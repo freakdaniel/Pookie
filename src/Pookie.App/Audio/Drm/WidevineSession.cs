@@ -43,7 +43,8 @@ internal sealed class WidevineSession : IDisposable
     internal static async Task<WidevineSession> OpenAsync(HttpClient http, byte[] initData,
         Func<HttpRequestMessage> createLicenseRequest, CancellationToken token, byte[]? serverCertificate = null, Action<string>? reportVerification = null)
     {
-        var library = CdmLocator.Find() ?? throw new DrmPlaybackException("Не найден Widevine CDM. Установи модуль защищённого воспроизведения через Chrome, Brave или Firefox.");
+        var library = await WidevineRuntime.GetAsync(token);
+        Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug("Модуль Widevine CDM: {CdmPath}", library);
         NativeWidevine handle;
         try { handle = new(library); }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)

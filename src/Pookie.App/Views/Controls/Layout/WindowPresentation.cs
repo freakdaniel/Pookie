@@ -27,7 +27,8 @@ internal static class WindowPresentation
     {
         BeforeReplay(null) = enabled ? static (element, context) =>
         {
-            if (element is ChatPopupLayer popup) popup.CaptureLiveGlass(context);
+            if (element is ModalDialog dialog) dialog.CaptureLiveGlass(context);
+            else if (element is ChatPopupLayer popup) popup.CaptureLiveGlass(context);
             else if (element is WaveCommentPreview comment) comment.CaptureLiveGlass(context);
             else if (element is ShellHeader.BackdropLayer header) header.CaptureLiveGlass(context);
             else if (element is GlassToolGroup tool)

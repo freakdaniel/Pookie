@@ -20,7 +20,7 @@ The host supplies glibc and its loader.
 
 `pack-runtime.cjs` creates `libvlc-linux-x64.tar.gz` with deterministic ordering,
 timestamps, ownership and gzip metadata, plus its `.sha256` file. The application
-jobs download this artifact and pass the producer job's SHA-256 to `prepare.cjs`,
+jobs download this artifact and pass the producer job's SHA-256 to the C# installer,
 which verifies the archive before extracting it into `build/libvlc/linux-x64`.
 MSBuild copies the runtime into build and publish outputs.
 
@@ -31,12 +31,15 @@ the archive format revision, architecture, filename and baseline.
 
 ## Local builds
 
-`prepare.cjs` uses `POOKIE_LIBVLC_ARCHIVE`, or automatically finds the archive in
-`artifacts/libvlc-runtime/` or `artifacts/libvlc-linux/`. It checks the explicit
+The .NET 10 installer (`LibVlcLinux.csproj`) uses `POOKIE_LIBVLC_ARCHIVE`, or
+automatically finds the archive in `artifacts/libvlc-runtime/` or
+`artifacts/libvlc-linux/`. It checks the explicit
 `POOKIE_LIBVLC_SHA256` when provided, otherwise reads the adjacent `.sha256` file.
 A valid installed cache can be reused without the archive. A failed checksum or
 extraction preserves the previous cache, and concurrent builds share a kernel
-lock. Application builds do not invoke a package manager or fetch from Releases.
+lock through .NET file sharing. Application builds do not invoke Node.js, a
+package manager, tar, gzip or flock, or fetch from Releases. The installer uses
+the .NET libraries for hashing, gzip/tar extraction and file locking.
 
 For a fresh checkout, download the `libvlc-linux-x64` artifact from the desired
 application workflow run into `artifacts/libvlc-runtime/`. With GitHub CLI:
@@ -54,10 +57,17 @@ export POOKIE_LIBVLC_ARCHIVE="/absolute/path/libvlc-linux-x64.tar.gz"
 dotnet run --project tests/Pookie.App.SmokeTests -- --chat-video-smoke-test
 ```
 
-Local archive installation needs Linux, Node.js 22+, tar/gzip and flock. It does
-not need apt, dpkg, readelf, patchelf, Python or an Ubuntu keyring. If neither an
-archive nor a valid cache is available, the build reports how to obtain the CI
+Local archive installation needs only Linux and the .NET 10 SDK. Node.js is
+only used by the maintenance scripts, their tests and CI runtime production.
+If neither an archive nor a valid cache is available, the build reports how to obtain the CI
 artifact rather than silently selecting system libraries.
+
+MSBuild runs the installer automatically for build, run and publish. To invoke
+it directly without Node.js:
+
+```sh
+dotnet run --project tools/libvlc-linux -- --output build/libvlc/linux-x64 --root .
+```
 
 The producer can also be exercised manually in a Debian/Ubuntu packaging
 environment:

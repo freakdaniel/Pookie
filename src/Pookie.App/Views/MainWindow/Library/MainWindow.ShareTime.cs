@@ -24,7 +24,8 @@ internal sealed partial class MainWindow
         shareTimeLabel = new TextBlock().FontSize(13).SemiBold().CenterVertical();
         shareTimePrefix = new Border().Width(0).Opacity(0).ClipToBounds().Child(shareTimeLabel);
         shareTimeAction = TrackButtons.Icon(new StackPanel().Horizontal().Center().Children(
-            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Tonal, 48).Hint("Таймкод");
+            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Glass, 48).Hint("Таймкод");
+        ((MaterialTrackButton)shareTimeAction).UseLightGlassFinish();
         return shareTimeAction;
     }
 

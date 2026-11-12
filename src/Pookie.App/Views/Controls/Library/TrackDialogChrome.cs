@@ -6,7 +6,21 @@ namespace Pookie.App;
 internal static class TrackDialogChrome
 {
     internal const double PreviewHeight = 88;
+    internal static readonly Color MatteTint = Color.FromArgb(244, 24, 24, 28);
     internal static TextBlock Heading(string title) => new TextBlock().Text(title).FontSize(21).Bold().CenterVertical();
+
+    internal static GlassCard MatteBody(FrameworkElement content, Func<bool> resizing) =>
+        new GlassCard { HoverEnabled = false, ResizeInProgress = resizing }.Padding(0).CornerRadius(24)
+            .MaxWidth(PlaylistDialogContent.MaximumWidth).Child(
+                new Border().Background(Color.Transparent).BorderThickness(0).CornerRadius(24).ClipToBounds().Child(content));
+
+    internal static ModalDialog MatteDialog(PlaylistDialogContent content, GlassCard card, UIElement focus,
+        FrameworkElement close, Func<bool>? refreshing = null, bool reserveTransitionHeight = false) =>
+        new(content, focus, close, staticBackdrop: true, cacheTransition: true, backdropTint: MatteTint,
+            glassSurface: card, refreshTransition: () => content.Animating || content.Resizing || refreshing?.Invoke() == true,
+            glassMaximumHeight: PlaylistDialogContent.MaximumBodyHeight, glassVerticalOffset: PlaylistDialogContent.BodyCenterOffset,
+            transitionMaximumHeight: reserveTransitionHeight
+                ? PlaylistDialogContent.MaximumBodyHeight + PlaylistDialogContent.BodyCenterOffset * 2 : null);
 
     internal static PaletteGlassCard Preview(FrameworkElement artwork, TextBlock title, TextBlock author, FrameworkElement? trailing = null)
     {

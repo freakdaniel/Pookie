@@ -67,7 +67,7 @@ internal sealed partial class MainWindow
         playlistCreateForm.Measure(new(width, double.PositiveInfinity));
         playlistDialogPages.FormHeight = playlistCreateForm.DesiredSize.Height;
         playlistDialogPages.InvalidateMeasure();
-        playlistDialogContent.FitCreation(playlistDialogPages.FormHeight);
+        playlistDialogContent.FitCreation(playlistDialogPages.FormHeight, animate: playlistDialog.IsOpen);
     }
     private void SetPlaylistCreationMessage(string text)
     {

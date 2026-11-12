@@ -397,11 +397,56 @@ narrow/wide hero layout, back-navigation filter/scroll, playlist likes/reposts,
 following/unfollowing, isolated pending states, playlist selection and stale account
 replies. All writes use a local fixture transport.
 
+`--share-ui-smoke-test --no-audio` runs the Share checks independently of the
+collection action/hover scenarios. It measures the first and two repeated opens,
+checks stable body geometry, one GPU glass backdrop per opening, cached standard
+perspective/blur animation and backdrop reuse during hover. It verifies sampled
+red/blue page colors through the glass and then exercises all Share tabs/actions.
+The initial body size is settled before opening; only live tab changes resize it.
+The body/plaque graphics are warmed before the startup spinner starts, and the
+external close button uses its glass finish without CPU backdrop readbacks.
+Native frame intervals must have p95 at most 33.4 ms and no gap over 100 ms.
+Run without `POOKIE_UI_PREVIEW` for timing, then enable it for screenshots.
+
+Tab resizing has its own checks: nine transitions cover all tabs, repeated entry
+and empty recipients, followed by interruption/reversal. Their p95 budget is
+16.7 ms with no interval over 50 ms. The menu samples its maximum body envelope
+once and reuses that blur across all heights, including the settled state. The
+GPU optical composition updates in the same fixed-capacity surface on every
+intermediate frame; there is no frozen optical image replaced at completion.
+Checks assert the texture's identity, current geometry, zero output allocations,
+and zero background/blur or reflection raster regeneration during each resize.
+Rounded ends of the sheen retain their size while only its flat middle stretches.
+Foreground controls keep their normal layout and font sizes.
+The shadow uses a cached corner patch. Hidden tab graphics are warmed before the
+startup spinner, without opening Share or making recipient requests.
+Preview mode also captures an intermediate frame as `share-tab-resize`.
+The dark matte tint leaves only subtle background color. A pixel check compares
+glass immediately before the opening animation hands off to live content with
+the settled result, preventing a last-frame material change.
+
+`--playlist-dialog-ui-smoke-test --no-audio` runs the matching playlist picker
+checks separately from collection hover actions. Share and the picker use the
+same matte tint/body builder and GPU backdrop path. The picker also reserves a
+maximum-height transition surface, so a fast list response during opening does
+not allocate a new snapshot for each intermediate height. Its list, creation
+form and skeleton are warmed before the startup spinner starts; the close button
+uses the light glass finish without CPU backdrop readbacks.
+Checks measure cold opening, loading-to-list, list/form transitions, reversal and
+an immediate list response during entrance. They assert texture identity, current
+GPU optics, no extra background captures/reflection rasters, and pixel continuity
+at the final animation handoff. Existing picker checks cover empty/long/error
+lists, fixed scroll viewports, drafts/privacy, single seeded playlist creation,
+write-error handling, keyboard focus/dismissal and snapshot cleanup. Service
+writes use only the local fixture transport.
+
 The Share checks use the same `TrackDialogChrome` plaque as playlist dialogs,
 with equal 16 DIP insets and no playback controls or redundant dialog headings.
 They cover four destination icons (Telegram/VK/X brand marks and email), link
-copying with an icon/tooltip, an opaque rounded URL field, and a connected button
-group. The timecode popup always shows minutes/seconds and adds hours for long tracks,
+copying with an icon/tooltip, an opaque rounded URL field, and a connected glass
+timecode/copy group. Copy uses the same blue glass accent as Widevine acceptance,
+with a white copy/check icon; the four destinations are colored circular buttons
+with captions beneath them. The timecode popup always shows minutes/seconds and adds hours for long tracks,
 focuses the first visible field, and validates drafts without changing the applied
 link. Invalid inputs and digits animate red and shake; correcting them restores
 their colors. Fields have labels without redundant tooltips or error prose.
@@ -637,8 +682,15 @@ SoundCloud profile. These checks preserve its existing session. Set
 `POOKIE_DRM_DIAGNOSTICS=1` for bounded failure metadata without credentials or
 license payloads in the output.
 
+`--stream-formats-probe TRACK_URL` compares the advertised lists from `/resolve`
+and `/tracks/{id}`, then inspects the latter (used by production playback) with
+the saved account in an isolated browser profile. It reports endpoint status,
+protocol, preview flags, playlist duration and Widevine/PlayReady/FairPlay/AES-128 markers
+without printing signed URLs or tokens. It does not load a CDM, request a DRM
+license, play audio or record playback history.
+
 The native reference check runs independently of the SoundCloud profile and
-can run while the app is open. It loads an installed Widevine CDM of the same
+can run while the app is open. It prepares Pookie's own Widevine CDM of the same
 architecture as the process, acquires a license for the public Shaka Angel One
 sample, and decodes one encrypted AAC fragment to non-silent PCM. Run the same
 command on Windows, Linux and macOS:
@@ -646,6 +698,22 @@ command on Windows, Linux and macOS:
 ```bash
 dotnet run --project tests/Pookie.App.SmokeTests -- --native-widevine-reference-probe
 ```
+
+On Linux/macOS, start Pookie normally and accept the Widevine terms in its startup
+overlay before running native CDM probes. Normal Windows startup uses PlayReady
+and skips Widevine setup. Explicit native Widevine diagnostics on Windows require
+a separately provisioned component and acceptance receipt; the default Windows
+protected-audio scenario uses PlayReady. Probes do not accept terms on the user’s behalf.
+Before showing a new consent card, startup queries Google's component updater,
+verifies the offered archive's exact size and SHA-256, and reads its `LICENSE`.
+After acceptance it installs that same downloaded archive into Pookie's
+`Components/Widevine/<runtime>/<version>` data directory. No browser or Firefox
+metadata is needed, and no Widevine terms are embedded in the app. Later sessions
+validate and reuse the accepted installed component offline; a new consent card
+requires fresh terms from Google. Interrupted downloads do not replace an existing
+installation. The original vendor `LICENSE` stays beside the library. See
+[`Audio/Drm/README.md`](../../src/Pookie.App/Audio/Drm/README.md) for supported
+platforms, updates and the separate Widevine licensing requirement.
 
 `NATIVE_WIDEVINE_REFERENCE_PCM_OK` confirms the local CDM and decoder work with
 the public sample. On Windows or Linux with a valid Pookie session, use
@@ -1186,3 +1254,40 @@ preview in the composer and search: profile URLs, typed URL continuation, the lo
 spinner, crossfades and editable URL fallback, shared metadata reads, single-line height,
 vertical text alignment and image attachment insets. Preview captures are written when
 `POOKIE_UI_PREVIEW` points to an output directory.
+
+### Mandatory Widevine consent
+
+Normal startup requires this flow on Linux/macOS only. Windows uses PlayReady
+without a Widevine download or consent card. The isolated fixture explicitly
+enables the Widevine flow on every host so its UI can still be tested on Windows.
+
+```bash
+POOKIE_UI_PREVIEW=artifacts/ui-requested dotnet run --project tests/Pookie.App.SmokeTests -- --widevine-consent-ui-smoke-test
+```
+
+Uses an isolated temporary consent store, a fake license fetcher and component installer; it never
+accepts terms for the real profile or downloads a proprietary module. Verifies
+the continuous loader behind dense matte glass (without extra logo fades),
+fixed right-column width and aligned action edges across 1000/1280 viewport
+widths, flexible left column, top-aligned license and white Widevine brand appearing with the card,
+equally sized actions with
+a blue glass primary action, standard perspective/blur animation reusing a single
+card capture, stable text layout, cached glass backdrop, absence of an extra checkbox/waiting status, clickable
+vendor URL, dynamically supplied license text, failed license retrieval and retry
+before the card, mandatory button acceptance, Escape/backdrop handling, persisted
+acceptance, failed download/retry on the loading screen and release after setup.
+The fixture deliberately blocks the preparation worker for 450 ms and verifies
+that the visible spinner continues producing distinct animation phases.
+Captures the overlay at 1000×680 and 1280×840. Other UI fixtures disable component
+setup through test host options so they do not depend on network or legal consent.
+
+For a frame-interval comparison of opening and repeated action-button hovers:
+
+```bash
+POOKIE_WIDEVINE_PERF=1 dotnet run --project tests/Pookie.App.SmokeTests -- --widevine-consent-ui-smoke-test
+```
+
+Run without `POOKIE_UI_PREVIEW` so screenshot readbacks do not affect timings.
+The performance run also reports the maximum spinner frame gap around card
+opening/closing, and verifies that hover does not rebuild the background sample
+or the blue button’s optical rim. Resize/reopen still refresh the sample.

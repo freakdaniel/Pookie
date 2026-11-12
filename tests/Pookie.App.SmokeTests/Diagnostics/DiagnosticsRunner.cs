@@ -13,6 +13,7 @@ internal static class DiagnosticsRunner
 {
     public static async Task<bool> TryRunAsync(string[] args)
     {
+        if (args is ["--widevine-consent-ui-smoke-test"]) { await WidevineConsentUiSmokeTest.RunAsync(); return true; }
         if (args is ["--image-clipboard-smoke-test"]) { ImageClipboardSmokeTest.Run(null); return true; }
         if (args is ["--image-clipboard-smoke-test", var image]) { ImageClipboardSmokeTest.Run(image); return true; }
         if (args is ["--image-clipboard-read-fixture", var selection, var expected])
@@ -30,6 +31,7 @@ internal static class DiagnosticsRunner
         if (args.Length is 2 or 3 && args[0] == "--chat-media-hosting-live-probe")
         { await ChatMediaHostingLiveProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--native-drm-probe") { await NativeDrmProbe.RunAsync(args[1]); return true; }
+        if (args is ["--stream-formats-probe", var formatsUrl]) { await StreamFormatsProbe.RunAsync(formatsUrl); return true; }
         if (args is ["--native-playready-audio-probe", var trackUrl])
         {
             if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This diagnostic uses Windows Media Foundation.");

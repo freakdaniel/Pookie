@@ -10,7 +10,7 @@ namespace Pookie.App;
 internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphicsContext, Element> renderBehind,
     ChatPopupLayer? popup = null, Color? tint = null, Func<Rect>? captureArea = null, double maximumSampleSide = 512,
     double sampleDensity = .5, bool reuseStrip = false, Func<bool>? deferResizeCapture = null,
-    Func<bool>? paceCapture = null) : IDisposable
+    Func<bool>? paceCapture = null, bool staticBackdrop = false, Func<bool>? resizing = null) : IDisposable
 {
     private static readonly HashSet<LiveGlassBackdrop> active = [];
     private static readonly HashSet<Window> warming = [];
@@ -24,11 +24,19 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
     private Size captureViewport;
     private double captureDpi;
     private bool capturing;
+    private bool gpuSample;
     private bool holdResizeCapture;
     private DispatcherTimer? captureRetry;
     private long lastCapture;
     internal long Version { get; private set; }
+    internal long OpticalPaints { get; private set; }
+    internal int OpticalAllocations { get; private set; }
+    internal IImage? OpticalImage(GlassCard card) => cards.TryGetValue(card, out var ink) ? ink.Output?.Image : null;
+    internal bool IsOpticsCurrent(GlassCard card) => cards.TryGetValue(card, out var ink) &&
+        ink.Version == Version && ink.PaintedBounds == PresentedBounds(card.Bounds);
     internal bool Ready => sample != null && (capturedBounds == SampleBounds || resizeBounds == SampleBounds);
+    private bool CanReuseStaticSample => staticBackdrop && Ready && capturedBounds == SampleBounds &&
+        window is { } owner && captureViewport == owner.ClientSize && captureDpi == owner.DpiScale;
     internal bool HasGpuOptics => Ready && cards.Values.Any(ink => ink.Version == Version && ink.Output?.Image != null);
     internal Rect CaptureBounds => Ready ? capturedBounds : Rect.Empty;
     private Rect SurfaceBounds => popup?.SurfaceBounds ?? captureArea?.Invoke() ?? surface.Bounds;
@@ -156,7 +164,7 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
             changed = false;
             foreach (var backdrop in active)
             {
-                if (backdrop.window != owner || !backdrop.Visible) continue;
+                if (backdrop.window != owner || !backdrop.Visible || backdrop.CanReuseStaticSample) continue;
                 // Include the fractional edge pixels that a framebuffer copy
                 // reads. Otherwise its source can still contain the old glass.
                 var bounds = SampleDips(SamplePixels(backdrop.SampleBounds, owner.ClientSize, owner.DpiScale), owner.DpiScale);
@@ -170,13 +178,32 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
 
     internal void CaptureLive(IGraphicsContext context)
     {
-        if (capturing || holdResizeCapture || !Visible || popup is { Reveal: <= 0 } || SurfaceBounds.IsEmpty ||
+        if (capturing) return;
+        if (resizing != null)
+        {
+            // Keep the captured scene texture; update the optical shape in the
+            // same output surface on every frame, including the last one.
+            if (resizing() && ReuseForResizedFrame())
+            {
+                PaintOptics(context.DpiScale);
+                return;
+            }
+            if (holdResizeCapture) ResumeCapture();
+        }
+        if (holdResizeCapture || !Visible || popup is { Reveal: <= 0 } || SurfaceBounds.IsEmpty ||
             cards.Count == 0 || window?.Content is not { } root ||
             context.GetClipBoundsLocal() is { } clip && !clip.IntersectsWith(SampleBounds)) return;
 
         var owner = window;
         var requested = SampleBounds;
         var dpi = context.DpiScale;
+        // A standalone startup screen has no changing content behind its glass.
+        // Reuse its optical sample until the viewport, card geometry or DPI changes.
+        if (CanReuseStaticSample && captureDpi == dpi)
+        {
+            PaintOptics(dpi);
+            return;
+        }
         // Scroll can trigger several paints in one display interval. Keep the
         // blurred strip visible and rebuild it once the newest offset settles
         // for that interval, even when there is no next input packet.
@@ -226,6 +253,7 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
                 sample = new(owner.GraphicsFactory, capacity, scale);
             }
             var copied = !reuseStrip && context.GetTransform().IsIdentity && sample.CopyBackdrop(context, pixels);
+            gpuSample = copied;
             if (!copied)
             {
                 sample.Capture(target =>
@@ -239,23 +267,37 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
             capturedBounds = requested;
             resizeBounds = Rect.Empty;
             Version++;
-            if (copied && glLenses.TryGetValue(owner, out var lens))
-            {
-                foreach (var (card, ink) in cards)
-                {
-                    if (!card.IsVisible || card.Bounds.IsEmpty) continue;
-                    var visual = PresentedBounds(card.Bounds);
-                    if (ink.Output?.Size != card.Bounds.Size)
-                    {
-                        ink.Output?.Dispose();
-                        ink.Output = new(card.Bounds.Size);
-                    }
-                    if (lens.Paint(ink.Output, sample, visual, card.CornerRadius * visual.Width / card.Bounds.Width, dpi, Tint))
-                        ink.Version = Version;
-                }
-            }
+            PaintOptics(dpi);
         }
         finally { capturing = false; }
+    }
+
+    private void PaintOptics(double dpi)
+    {
+        if (!gpuSample || sample == null || window == null || !glLenses.TryGetValue(window, out var lens)) return;
+        foreach (var (card, ink) in cards)
+        {
+            if (!card.IsVisible || card.Bounds.IsEmpty) continue;
+            var visual = PresentedBounds(card.Bounds);
+            if (ink.Version == Version && ink.PaintedBounds == visual) continue;
+            // Height-animated cards sample their maximum envelope once. The
+            // optical output keeps that capacity even when the body is smaller.
+            var capacity = resizing == null ? card.Bounds.Size
+                : new Size(card.Bounds.Width, Math.Max(card.Bounds.Height, SurfaceBounds.Height));
+            if (ink.Output?.Size != capacity)
+            {
+                ink.Output?.Dispose();
+                ink.Output = new(capacity);
+                OpticalAllocations++;
+            }
+            if (lens.Paint(ink.Output, sample, visual, card.CornerRadius * visual.Width / card.Bounds.Width, dpi, Tint))
+            {
+                ink.Version = Version;
+                ink.PaintedBounds = visual;
+                ink.PaintedSize = card.Bounds.Size;
+                OpticalPaints++;
+            }
+        }
     }
 
     internal void Draw(GlassCard card, IGraphicsContext context, bool presented)
@@ -270,7 +312,17 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         }
         if (ink.Version == Version && ink.Output?.Image is { } optical)
         {
-            context.FillPath(shape, new ImageBrush(optical, new Rect(0, 0, optical.PixelWidth, optical.PixelHeight), local, TileMode.None));
+            if (holdResizeCapture && ink.PaintedSize.Width == local.Width && ink.PaintedSize.Height != local.Height)
+            {
+                context.Save();
+                try
+                {
+                    context.SetClipRoundedRect(local, card.CornerRadius, card.CornerRadius);
+                    VerticalRasterStretch.Draw(context, optical, local, card.CornerRadius + 4, ink.PaintedSize.Height);
+                }
+                finally { context.Restore(); }
+            }
+            else context.FillPath(shape, new ImageBrush(optical, new Rect(0, 0, optical.PixelWidth, optical.PixelHeight), local, TileMode.None));
             if (presented) card.PopupBackdropPaintVersion = Version;
             return;
         }
@@ -279,8 +331,10 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         if (!resizeBounds.IsEmpty)
         {
             var horizontal = resizeBounds.Width / capturedBounds.Width;
+            var vertical = resizeBounds.Height / capturedBounds.Height;
             imageBounds = new Rect(resizeBounds.X + (imageBounds.X - capturedBounds.X) * horizontal,
-                imageBounds.Y + resizeBounds.Y - capturedBounds.Y, imageBounds.Width * horizontal, imageBounds.Height);
+                resizeBounds.Y + (imageBounds.Y - capturedBounds.Y) * vertical,
+                imageBounds.Width * horizontal, imageBounds.Height * vertical);
         }
         var visual = PresentedBounds(local);
         var scale = visual.Width / local.Width;
@@ -315,6 +369,7 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         window = null;
         sample?.Dispose();
         sample = null;
+        gpuSample = false;
         foreach (var ink in cards.Values) { ink.Output?.Dispose(); ink.Output = null; }
         Reset();
         ResumeCapture();
@@ -330,5 +385,7 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
         internal readonly GlassGeometry Geometry = new();
         internal OpenGlPopupLens.Output? Output;
         internal long Version;
+        internal Rect PaintedBounds;
+        internal Size PaintedSize;
     }
 }

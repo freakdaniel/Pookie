@@ -53,25 +53,46 @@ internal sealed partial class MainWindow
                 playlistPickerCreate.Column(1)),
             playlistPickerMessage.DockTop(), playlistPickerLoading.Root);
         playlistDialogPages = new PlaylistDialogPages(list, PlaylistCreationView());
-        var card = new Border().Background(PopupAppearance.Surface).BorderBrush(Color.Transparent)
-            .BorderThickness(0).CornerRadius(24).Padding(0).ClipToBounds()
-            .MaxWidth(PlaylistDialogContent.MaximumWidth).MaxHeight(PlaylistDialogContent.MaximumBodyHeight)
-            .Child(playlistDialogPages);
+        var card = TrackDialogChrome.MatteBody(playlistDialogPages, () => playlistDialogContent?.Resizing == true)
+            .MaxHeight(PlaylistDialogContent.MaximumBodyHeight);
         playlistDialogContent = new PlaylistDialogContent(card, playlistPickerPreview);
-        playlistDialog = new ModalDialog(playlistDialogContent, playlistPickerClose, playlistPickerClose)
+        playlistDialog = TrackDialogChrome.MatteDialog(playlistDialogContent, card, playlistPickerClose, playlistPickerClose,
+            () => playlistDialogPages.Animating || playlistPickerLoading.Skeleton.IsVisible, reserveTransitionHeight: true);
+        playlistDialog.DismissRequested = ClosePlaylistPicker;
+        playlistDialog.Presented = playlistDialogContent.RevealTrack;
+        playlistDialog.Closed = () =>
         {
-            DismissRequested = ClosePlaylistPicker,
-            Presented = playlistDialogContent.RevealTrack,
-            Closed = () =>
-            {
-                playlistPickerClosing = false;
-                playlistDialogContent.FreezeSize();
-                playlistDialogContent.ResetTrack(); playlistPickerPreview.ResetPalette();
-                StopCardArtwork(playlistPickerCover); playlistPickerCover.Source = null;
-            }
+            playlistPickerClosing = false;
+            playlistDialogContent.FreezeSize();
+            playlistDialogContent.ResetTrack(); playlistPickerPreview.ResetPalette();
+            StopCardArtwork(playlistPickerCover); playlistPickerCover.Source = null;
         };
-        ((MaterialTrackButton)playlistPickerClose).UseOverlayBackdrop(playlistDialog, playlistDialog.RenderGlassBackdrop);
         return playlistDialog;
+    }
+
+    private async Task WarmPlaylistDialogAsync()
+    {
+        playlistDialogContent.ShowTrackImmediately();
+        try
+        {
+            playlistDialogPages.Show(true, animate: false);
+            FitPlaylistCreation(); playlistDialog.InvalidateTransitionSnapshot();
+            await playlistDialog.WarmTransitionAsync(lifetime.Token);
+            playlistDialogPages.Show(false, animate: false);
+            playlistDialogPages.ListHeight = PlaylistDialogContent.PreferredBodyHeight;
+            playlistDialogContent.SetLoadingSize(false);
+            playlistPickerLoading.Skeleton.IsVisible = true;
+            playlistDialog.InvalidateTransitionSnapshot();
+            await playlistDialog.WarmTransitionAsync(lifetime.Token);
+        }
+        finally
+        {
+            playlistPickerLoading.Skeleton.IsVisible = false;
+            playlistDialogPages.Show(false, animate: false);
+            playlistDialogContent.SetLoadingSize(false);
+            playlistDialogContent.ResetTrack(); playlistDialog.InvalidateTransitionSnapshot();
+        }
+        await playlistDialog.WarmTransitionAsync(lifetime.Token);
     }
 
     private void ClosePlaylistPicker()
@@ -120,6 +141,7 @@ internal sealed partial class MainWindow
         SetCardArtwork(playlistPickerCover, null, artwork);
         playlistPickerRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = playlistPickerRequest.Token;
+        playlistDialog.InvalidateTransitionSnapshot();
         playlistDialog.Show();
         if (alreadyOpen) playlistDialogContent.RevealTrack();
         Run(() => LoadPlaylistPickerArtworkAsync(artwork, generation, token));

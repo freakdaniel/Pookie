@@ -127,7 +127,7 @@ internal sealed partial class MainWindow
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
         return new PresentationRoot().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), PlaylistEditorView().Row(0), ShareView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0), EmbeddedLoginPanel().Row(0));
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), PlaylistEditorView().Row(0), ShareView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0), EmbeddedLoginPanel().Row(0), WidevineSetupView().Row(0));
     }
 
     private bool ScrollShellWheel(MouseWheelEventArgs args)
@@ -156,13 +156,14 @@ internal sealed partial class MainWindow
         startupLogo.Opacity = 0;
         startupSpinner = new LoadingSpinner().Width(34).Height(34).IsActive(true).CenterHorizontal();
         startupSpinner.Opacity = 0;
+        var logoSlot = new Border().Width(138).Height(130).CenterHorizontal().CenterVertical()
+            .Child(startupLogo.CenterHorizontal().CenterVertical());
         startupBrand = new StackPanel().Vertical().Spacing(22).CenterHorizontal().CenterVertical().Children(
-            new Border().Width(138).Height(130).CenterHorizontal().CenterVertical()
-                .Child(startupLogo.CenterHorizontal().CenterVertical()),
-            startupSpinner);
+            logoSlot, startupSpinner);
         startupCurtain = new Border().Background(Surface).ClipToBounds();
         // Loader content belongs to the viewport, never to the moving curtain.
-        startupBrandLayer = new Grid().Columns("*").Rows("*").Children(startupBrand);
+        startupBrandLayer = new Grid().Columns("*").Rows("*").Children(startupBrand,
+            WidevineStartupFailureView().Bottom().Margin(32, 0, 32, 32));
         startupSplash = new Grid().Columns("*").Rows("*").Children(startupCurtain, startupBrandLayer);
         startupSplash.SizeChanged += e =>
         {

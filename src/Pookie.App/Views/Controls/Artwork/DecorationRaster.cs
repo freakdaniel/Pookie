@@ -68,11 +68,11 @@ internal sealed class GlassSheenRaster : IDisposable
     internal long PixelBytes => patch.PixelBytes;
 
     internal void Draw(IGraphicsContext context, Rect bounds, CornerRadius corners, double emphasis = 1,
-        double minimumScale = 0, bool resizing = false, Action? invalidateAfterResize = null)
+        double minimumScale = 0, bool resizing = false, Action? invalidateAfterResize = null, bool reuseHeight = false)
     {
         // Hover is composition alpha, not a new optical raster. The image is
         // local to the control and follows fractional motion through filtering.
-        patch.Draw(context, bounds, corners, minimumScale, opacity: .85 + .15 * Math.Clamp(emphasis, 0, 1));
+        patch.Draw(context, bounds, corners, minimumScale, opacity: .85 + .15 * Math.Clamp(emphasis, 0, 1), reuseHeight: reuseHeight);
     }
 
     internal static void FillPixels(Span<byte> pixels, int width, int height, Size size, CornerRadius corners, double emphasis,

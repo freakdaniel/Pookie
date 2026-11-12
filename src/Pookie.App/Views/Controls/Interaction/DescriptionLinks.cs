@@ -18,6 +18,7 @@ internal sealed class DescriptionLinks : IDisposable
         @"(?<![\w@])(?:tgk?|тгк?)(?:[^\S\r\n]*:[^\S\r\n]*|[^\S\r\n]+)@?(?<username>[a-z][a-z0-9_]{4,31})(?![\w@/-]|\.[\p{L}\p{N}_])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
     private readonly DescriptionTextBlock editor;
+    private readonly bool showIcons;
     internal Action<Uri> OpenLink { get; set; }
     private Link[] links = [];
     private readonly Dictionary<Link, DescriptionLinkIcon> icons = [];
@@ -39,9 +40,9 @@ internal sealed class DescriptionLinks : IDisposable
     internal IReadOnlyList<Link> Links => links;
     internal Uri? HoveredUri => hovered?.Uri;
 
-    internal DescriptionLinks(DescriptionTextBlock editor, Action<Uri> open)
+    internal DescriptionLinks(DescriptionTextBlock editor, Action<Uri> open, bool showIcons = true)
     {
-        this.editor = editor; OpenLink = open;
+        this.editor = editor; this.showIcons = showIcons; OpenLink = open;
         editor.Links = this;
         editor.TextChanged += Changed;
         editor.MouseMove += Move; editor.MouseLeave += Leave;
@@ -84,7 +85,8 @@ internal sealed class DescriptionLinks : IDisposable
             result.Add(new(match.Index, match.Length, new Uri("https://t.me/" + match.Groups["username"].Value)));
         }
         links = result.OrderBy(link => link.Start).ToArray(); hovered = pressed = null; dragged = false;
-        foreach (var link in links) icons[link] = new(editor, System.Globalization.StringInfo.GetNextTextElement(text, link.Start), () => ColorFor(link));
+        if (showIcons)
+            foreach (var link in links) icons[link] = new(editor, System.Globalization.StringInfo.GetNextTextElement(text, link.Start), () => ColorFor(link));
         documentText = editor.Text;
         editor.Cursor = CursorType.IBeam; editor.RefreshLayout();
         if (LoadIcon != null) _ = LoadIconsAsync(loading.Token);

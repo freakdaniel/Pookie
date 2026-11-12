@@ -12,6 +12,10 @@ internal sealed partial class MainWindow
 
     private async Task HoldStartupSplashAsync()
     {
+        await WarmShareDialogAsync();
+        await WarmPlaylistDialogAsync();
+        if (widevineSetup != null)
+            await widevineDialog.WarmTransitionAsync(lifetime.Token);
         var sizeEasing = Easing.CubicBezier(0.16, 1, 0.3, 1);
         var fadeEasing = Easing.CubicBezier(0.2, 0, 0, 1);
         await AnimateStartupAsync(560, Easing.Linear, progress =>
@@ -22,10 +26,16 @@ internal sealed partial class MainWindow
             startupLogo.Opacity = fadeEasing(Math.Clamp(progress * 560 / 360, 0, 1));
             startupSpinner.Opacity = fadeEasing(Math.Clamp(progress * 560 / 300, 0, 1));
         });
+        await HoldVisibleStartupAsync();
+    }
+
+    private async Task HoldVisibleStartupAsync()
+    {
         var presented = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnRendered()
         {
-            if (startupLogo.Width == 132 && startupLogo.Height == 124 &&
+            if (startupBrandLayer.IsVisible && startupBrand.Opacity == 1 &&
+                startupLogo.Width == 132 && startupLogo.Height == 124 &&
                 startupLogo.Opacity == 1 && startupSpinner.Opacity == 1 &&
                 Math.Abs(startupLogo.ActualWidth - 132) < 1 && Math.Abs(startupLogo.ActualHeight - 124) < 1)
                 presented.TrySetResult();

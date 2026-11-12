@@ -30,7 +30,7 @@ internal sealed partial class MainWindow
     private bool trackPageLiveUi;
     private string? livePlaylistUrl;
     private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke, libraryMixesUiSmoke;
-    private bool webPlaylistEditingOnly;
+    private bool webPlaylistEditingOnly, shareUiSmoke, playlistDialogUiSmoke;
     private bool memoryUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
@@ -70,7 +70,9 @@ internal sealed partial class MainWindow
         trackPageUiSmoke = trackDescriptionUiSmoke || trackPlaybackUiSmoke || waveformUiSmoke || args.Contains("--track-page-ui-smoke-test");
         trackPageLiveUi = args.Contains("--track-page-live-ui-probe");
         if (args is ["--playlist-page-live-ui-probe", var playlistUrl]) livePlaylistUrl = playlistUrl;
-        collectionsUiSmoke = args.Contains("--collections-ui-smoke-test");
+        shareUiSmoke = args.Contains("--share-ui-smoke-test");
+        playlistDialogUiSmoke = args.Contains("--playlist-dialog-ui-smoke-test");
+        collectionsUiSmoke = shareUiSmoke || playlistDialogUiSmoke || args.Contains("--collections-ui-smoke-test");
         webPlaylistEditingOnly = args.Contains("--web-playlist-editing-only");
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
         likesFilterUiSmoke = args.Contains("--likes-filter-ui-smoke-test");

@@ -109,7 +109,7 @@ internal static class EmbeddedWebChallengeSmokeTest
         MainWindow? tested = null;
         try
         {
-            await AppHost.RunAsync(new() { SkipSessionRestore = true, RequireSignIn = true, IsolatedData = true, AudioEnabled = false, DiscordPresence = false,
+            await AppHost.RunAsync(new() { RequireWidevineSetup = false, SkipSessionRestore = true, RequireSignIn = true, IsolatedData = true, AudioEnabled = false, DiscordPresence = false,
                 SystemMediaSession = false }, window =>
             {
                 tested = window;

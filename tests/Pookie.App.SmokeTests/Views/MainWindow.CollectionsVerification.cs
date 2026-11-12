@@ -20,6 +20,24 @@ internal sealed partial class MainWindow
             await ShowWorkspaceAsync();
             await imageDiskCache.WriteAsync(transport.Playlist.ArtworkUrl!, ArtworkFixtureBitmap(500), lifetime.Token);
             var item = LibraryData.FromPlaylist(transport.Playlist with { Tracks = [], TrackCount = 0, Title = "Old title" });
+            if (shareUiSmoke || playlistDialogUiSmoke)
+            {
+                await OpenLibraryItemAsync(item);
+                await WaitForLikedLayoutAsync(() => collectionFilter.ActualWidth > 0);
+                // Present the collection fixture before measuring Share's first
+                // opening, rather than counting that page's initial raster work.
+                await WaitForLoginFrameAsync(); await WaitForLoginFrameAsync();
+                await Task.Delay(300, lifetime.Token);
+                if (playlistDialogUiSmoke)
+                {
+                    await VerifyPlaylistMatteAsync(transport.Playlist.Tracks[0], transport);
+                    await VerifyPlaylistDialogAsync(transport.Playlist.Tracks[0], transport);
+                    return;
+                }
+                await VerifyShareGlassAsync(transport.Playlist.Tracks[0]);
+                await VerifySharePanelAsync(transport.Playlist.Tracks[0], LibraryData.FromPlaylist(transport.Playlist));
+                return;
+            }
             if (Environment.GetEnvironmentVariable("POOKIE_COMPACT_INTERACTION_PROBE") == "1")
             {
                 await OpenLibraryItemAsync(item);

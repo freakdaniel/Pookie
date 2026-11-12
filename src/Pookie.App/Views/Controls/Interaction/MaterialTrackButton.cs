@@ -21,7 +21,10 @@ internal sealed class MaterialTrackButton : Button
     protected override void OnClick() { if (!passive) base.OnClick(); }
 
     private (Color Surface, Color Foreground)? palette;
-    private bool coloredGlass;
+    private bool coloredGlass, accentStateLayer;
+    private double accentState, accentStateFrom, accentStateTarget;
+    internal int AccentRasterizations => tintedGlass?.Rasterizations ?? 0;
+    internal void UseGlassAccentStateLayer() => accentStateLayer = true;
     internal Color? GlassAccentSurface => coloredGlass ? palette?.Surface : null;
     internal void GlassAccent(Color? surface, Color foreground)
     {
@@ -77,6 +80,7 @@ internal sealed class MaterialTrackButton : Button
         Transitions = [];
         surfaceClock.TickCallback = amount =>
         {
+            accentState = accentStateFrom + (accentStateTarget - accentStateFrom) * amount;
             glassTint = BlendSurface(glassTintFrom, glassTintTarget, amount);
             Background = BlendSurface(surfaceFrom, target!.Value, amount);
         };
@@ -160,8 +164,8 @@ internal sealed class MaterialTrackButton : Button
         var hot = !suppressStateLayer && !passive && (pending ? pendingHot : IsEnabled && IsMouseOver);
         // Connected toggles animate directly between selection states. A separate
         // pressed colour/shape would introduce a detour during that transition.
-        var next = !suppressStateLayer && !passive && !connected && !pending && IsEnabled && IsPressed ? TrackButtons.PressedColor(surface, foreground) :
-            hot ? TrackButtons.HoverColor(surface, foreground) : surface;
+        var pressed = !suppressStateLayer && !passive && !connected && !pending && IsEnabled && IsPressed;
+        var next = pressed ? TrackButtons.PressedColor(surface, foreground) : hot ? TrackButtons.HoverColor(surface, foreground) : surface;
         if (lightGlass && variant == TrackButtons.Glass)
             next = Color.FromArgb((byte)(IsEnabled && IsPressed ? 56 : hot ? 44 : 32), 255, 255, 255);
         if (listStateLayer && variant == TrackButtons.Text)
@@ -170,10 +174,12 @@ internal sealed class MaterialTrackButton : Button
         var first = target == null;
         surfaceClock.Stop();
         surfaceFrom = Background;
+        accentStateFrom = accentState;
+        accentStateTarget = pressed ? .12 : hot ? .08 : 0;
         glassTintFrom = glassTint;
         glassTintTarget = variant == TrackButtons.Glass ? GlassSheen.LightControlTint(next) : Color.FromArgb(160, next.R, next.G, next.B);
         target = next;
-        if (first || snap || FindVisualRoot() is not Window) { glassTint = glassTintTarget; Background = next; }
+        if (first || snap || FindVisualRoot() is not Window) { accentState = accentStateTarget; glassTint = glassTintTarget; Background = next; }
         else surfaceClock.Start();
     }
 
@@ -208,8 +214,14 @@ internal sealed class MaterialTrackButton : Button
             var corners = new CornerRadius(CornerRadius);
             var finish = tintedGlass ??= new();
             finish.DrawShadow(context, bounds, CornerRadius);
+            if (overlayBackdrop is { Ready: true }) overlayBackdrop.Draw(context, bounds, CornerRadius);
             glassBackdrop?.Draw(context, bounds, corners, geometry.Get(bounds, corners), lens ??= new(), GetDpi() / 96d, InvalidateVisual);
-            finish.Draw(context, bounds, CornerRadius, Background, GetDpi() / 96d);
+            // Keep the expensive optical rim raster fixed. Hover/press animate a
+            // cheap GPU state layer over the same blue glass pigment.
+            finish.Draw(context, bounds, CornerRadius, accentStateLayer ? palette!.Value.Surface : Background, GetDpi() / 96d);
+            if (accentStateLayer && accentState > 0 && palette is { } ink)
+                context.FillRoundedRectangle(bounds, CornerRadius, CornerRadius,
+                    Color.FromArgb((byte)Math.Round(255 * accentState), ink.Foreground.R, ink.Foreground.G, ink.Foreground.B));
             return;
         }
         if (overlayBackdrop is { Ready: true })

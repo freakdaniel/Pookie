@@ -7,7 +7,18 @@ const path = require('node:path');
 const test = require('node:test');
 const { runtime } = require('../tools/libvlc-linux/runtime.cjs');
 
-const script = path.resolve(__dirname, '../tools/libvlc-linux/prepare.cjs');
+const repository = path.resolve(__dirname, '..');
+const dotnet = process.env.PATH.split(path.delimiter).map(directory => path.join(directory, 'dotnet'))
+    .find(file => fs.existsSync(file));
+const installerOutput = fs.mkdtempSync(path.join(tmpdir(), 'pookie vlc installer-'));
+test.after(() => fs.rmSync(installerOutput, { recursive: true, force: true }));
+const script = path.join(installerOutput, 'LibVlcLinux.dll');
+if (process.platform === 'linux') {
+    assert.ok(dotnet, 'Linux installer tests require the .NET 10 SDK');
+    const build = spawnSync(dotnet, ['build', path.join(repository, 'tools/libvlc-linux/LibVlcLinux.csproj'),
+        '--output', installerOutput, '--verbosity', 'quiet'], { encoding: 'utf8', timeout: 60_000 });
+    assert.equal(build.status, 0, build.stdout + build.stderr);
+}
 const linux = { skip: process.platform !== 'linux' };
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -20,13 +31,8 @@ function fixture(t) {
     fs.mkdirSync(input);
     fs.mkdirSync(output);
     fs.mkdirSync(commands);
-    // Exercise the real archive installer with no package manager available.
-    for (const command of ['flock', 'tar', 'gzip']) {
-        const binary = process.env.PATH.split(path.delimiter).map(directory => path.join(directory, command))
-            .find(file => fs.existsSync(file));
-        assert.ok(binary, `Linux tests require ${command}`);
-        fs.symlinkSync(binary, path.join(commands, command));
-    }
+    // The installer runs with an empty PATH: no Node, tar, gzip, flock or package manager.
+    // Only fixture/archive production below uses the CI packaging tools.
     const manifest = { version: runtime.version, rid: runtime.rid, packages: [] };
     fs.writeFileSync(path.join(input, 'manifest.json'), JSON.stringify(manifest));
     for (const file of ['libvlc.so.5', 'libvlccore.so.9', 'vlc/plugins/codec/libavcodec_plugin.so',
@@ -45,7 +51,7 @@ function fixture(t) {
     };
     const hash = repack();
     const env = { ...process.env, PATH: commands, POOKIE_LIBVLC_ARCHIVE: archive, POOKIE_LIBVLC_SHA256: hash };
-    const invoke = (extraEnv = {}, entry = script) => spawnSync(process.execPath, [entry, '--output', output], {
+    const invoke = (extraEnv = {}, root = repository) => spawnSync(dotnet, [script, '--output', output, '--root', root], {
         encoding: 'utf8', env: { ...env, ...extraEnv }, timeout: 15_000,
     });
     const noTemporaryFiles = () => assert.deepEqual(fs.readdirSync(root)
@@ -53,16 +59,7 @@ function fixture(t) {
     return { root, input, output, commands, archive, hash, env, repack, invoke, noTemporaryFiles };
 }
 
-function isolatedTooling(f) {
-    const directory = path.join(f.root, 'tools/libvlc-linux');
-    fs.mkdirSync(directory, { recursive: true });
-    for (const file of ['prepare.cjs', 'runtime.cjs', 'runtime.json']) {
-        fs.copyFileSync(path.join(path.dirname(script), file), path.join(directory, file));
-    }
-    return path.join(directory, 'prepare.cjs');
-}
-
-test('Linux libVLC installs a checked archive without apt, dpkg or Python', linux, t => {
+test('Linux libVLC installs a checked archive with only .NET available', linux, t => {
     const f = fixture(t);
     const result = f.invoke();
     assert.equal(result.status, 0, result.stderr);
@@ -75,25 +72,23 @@ test('Linux libVLC installs a checked archive without apt, dpkg or Python', linu
 
 test('Linux libVLC consumes the workflow artifact and reuses it offline', linux, t => {
     const f = fixture(t);
-    const entry = isolatedTooling(f);
     const artifact = path.join(f.root, 'artifacts/libvlc-runtime', runtime.asset);
     fs.mkdirSync(path.dirname(artifact), { recursive: true });
     fs.copyFileSync(f.archive, artifact);
     fs.writeFileSync(`${artifact}.sha256`, `${f.hash}  ${runtime.asset}\n`);
     const env = { POOKIE_LIBVLC_ARCHIVE: undefined, POOKIE_LIBVLC_SHA256: undefined };
-    const result = f.invoke(env, entry);
+    const result = f.invoke(env, f.root);
     assert.equal(result.status, 0, result.stderr);
     fs.rmSync(path.join(f.root, 'artifacts'), { recursive: true });
-    const cached = f.invoke(env, entry);
+    const cached = f.invoke(env, f.root);
     assert.equal(cached.status, 0, cached.stderr);
     assert.match(cached.stdout, /Using cached Linux libVLC/);
     f.noTemporaryFiles();
 });
 
-test('Linux libVLC rejects an altered archive before running tar and keeps the old cache', linux, t => {
+test('Linux libVLC rejects an altered archive before extraction and keeps the old cache', linux, t => {
     const f = fixture(t);
     fs.appendFileSync(f.archive, 'tampered');
-    fs.unlinkSync(path.join(f.commands, 'tar'));
     const result = f.invoke();
     assert.equal(result.status, 1);
     assert.match(result.stderr, /archive SHA-256 mismatch/);
@@ -112,7 +107,7 @@ test('Linux libVLC rejects a malformed adjacent checksum', linux, t => {
 
 test('Linux libVLC reports a missing CI artifact without requiring a published runtime', linux, t => {
     const f = fixture(t);
-    const result = f.invoke({ POOKIE_LIBVLC_ARCHIVE: undefined, POOKIE_LIBVLC_SHA256: undefined }, isolatedTooling(f));
+    const result = f.invoke({ POOKIE_LIBVLC_ARCHIVE: undefined, POOKIE_LIBVLC_SHA256: undefined }, f.root);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Download the libvlc-linux-x64 Actions artifact/);
     assert.doesNotMatch(result.stderr, /releases\/download|published/);
@@ -132,7 +127,7 @@ test('Linux libVLC preserves the cache if extraction fails', linux, t => {
     fs.writeFileSync(f.archive, 'not a gzip archive');
     const result = f.invoke({ POOKIE_LIBVLC_SHA256: sha256(fs.readFileSync(f.archive)) });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /tar failed/);
+    assert.match(result.stderr, /Could not extract Linux libVLC archive/);
     assert.equal(fs.readFileSync(path.join(f.output, 'keep.txt'), 'utf8'), 'previous runtime');
     f.noTemporaryFiles();
 });
@@ -159,6 +154,30 @@ test('Linux libVLC rejects links outside the extracted runtime', linux, t => {
     f.noTemporaryFiles();
 });
 
+test('Linux libVLC rejects traversal before writing outside staging', linux, t => {
+    const f = fixture(t);
+    const result = spawnSync('tar', ['-czf', f.archive, '-C', f.input,
+        '--transform=s|^libvlc.so.5$|../escaped.so|', 'libvlc.so.5'], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const install = f.invoke({ POOKIE_LIBVLC_SHA256: sha256(fs.readFileSync(f.archive)) });
+    assert.equal(install.status, 1);
+    assert.match(install.stderr, /Unsafe paths/);
+    assert.equal(fs.existsSync(path.join(f.root, 'escaped.so')), false);
+    assert.equal(fs.readFileSync(path.join(f.output, 'keep.txt'), 'utf8'), 'previous runtime');
+    f.noTemporaryFiles();
+});
+
+test('Linux libVLC rejects dangling links and link cycles', linux, t => {
+    const f = fixture(t);
+    fs.symlinkSync('cycle-b', path.join(f.input, 'cycle-a'));
+    fs.symlinkSync('cycle-a', path.join(f.input, 'cycle-b'));
+    const install = f.invoke({ POOKIE_LIBVLC_SHA256: f.repack() });
+    assert.equal(install.status, 1);
+    assert.match(install.stderr, /link must point to a regular runtime file/);
+    assert.equal(fs.readFileSync(path.join(f.output, 'keep.txt'), 'utf8'), 'previous runtime');
+    f.noTemporaryFiles();
+});
+
 test('Linux libVLC replaces a cached runtime when the expected hash changes', linux, t => {
     const f = fixture(t);
     assert.equal(f.invoke().status, 0);
@@ -174,7 +193,7 @@ test('Linux libVLC replaces a cached runtime when the expected hash changes', li
 test('concurrent Linux libVLC builds share a verified cache', linux, async t => {
     const f = fixture(t);
     const invoke = () => new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [script, '--output', f.output], { env: f.env });
+        const child = spawn(dotnet, [script, '--output', f.output, '--root', repository], { env: f.env });
         let stdout = '', stderr = '';
         child.stdout.on('data', chunk => { stdout += chunk; });
         child.stderr.on('data', chunk => { stderr += chunk; });

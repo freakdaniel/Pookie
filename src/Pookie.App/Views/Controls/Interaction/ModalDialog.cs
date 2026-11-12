@@ -5,12 +5,26 @@ using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
 
-// Only the small dialog is captured while it tips. The page stays live behind
-// the same animated black scrim used by the chat video preview.
-internal sealed class ModalDialog : Panel
+// Standard perspective/blur transition. Static cards reuse one native-DPI
+// capture while the pose changes; dynamic dialogs can refresh their content.
+internal sealed class ModalDialog : Panel, IVisualTreeHost
 {
+    private readonly LiveGlassBackdrop? glass;
+    private bool capturingBackdrop;
+    internal bool HasGlassBackdrop => glass?.Ready == true;
+    internal void CaptureLiveGlass(IGraphicsContext context) => glass?.CaptureLive(context);
     private readonly FrameworkElement content;
     private readonly Panel live;
+    private readonly bool cacheTransition;
+    private readonly Func<bool>? refreshTransition;
+    private readonly double? transitionMaximumHeight;
+    private long capturedBackdropVersion = -1;
+    internal bool UsesCachedTransition => cacheTransition;
+    internal int SnapshotCaptures { get; private set; }
+    internal int SnapshotAllocations { get; private set; }
+    internal long BackdropVersion => glass?.Version ?? 0;
+    internal long OpticalPaints => glass?.OpticalPaints ?? 0;
+    internal int OpticalAllocations => glass?.OpticalAllocations ?? 0;
     private readonly UIElement initialFocus;
     private readonly FrameworkElement? close;
     private readonly AnimationClock overlay = new(TimeSpan.FromMilliseconds(400), Easing.CubicBezier(.215, .61, .355, 1));
@@ -34,11 +48,25 @@ internal sealed class ModalDialog : Panel
     internal Action? Presented, Closed;
     internal Action? Opened;
 
-    internal ModalDialog(FrameworkElement content, UIElement initialFocus, FrameworkElement? close = null)
+    internal ModalDialog(FrameworkElement content, UIElement initialFocus, FrameworkElement? close = null,
+        bool staticBackdrop = false, bool cacheTransition = false, Color? backdropTint = null,
+        GlassCard? glassSurface = null, Func<bool>? refreshTransition = null,
+        double? glassMaximumHeight = null, double glassVerticalOffset = 0, double? transitionMaximumHeight = null)
     {
-        this.content = content; this.initialFocus = initialFocus; this.close = close;
+        this.content = content; this.initialFocus = initialFocus; this.close = close; this.cacheTransition = cacheTransition;
+        this.refreshTransition = refreshTransition;
+        this.transitionMaximumHeight = transitionMaximumHeight;
         live = new Grid().Columns("*").Rows("*").Children(content);
         Add(live); if (close != null) Add(close); IsVisible = IsHitTestVisible = false;
+        if ((glassSurface ?? content as GlassCard) is { } card)
+        {
+            Rect CaptureArea() => glassMaximumHeight is { } height
+                ? new(Bounds.Center.X - card.Bounds.Width / 2, Bounds.Center.Y + glassVerticalOffset - height / 2,
+                    card.Bounds.Width, height) : card.Bounds;
+            glass = new LiveGlassBackdrop(this, RenderBehind, tint: backdropTint, captureArea: CaptureArea,
+                staticBackdrop: staticBackdrop, resizing: card.ResizeInProgress);
+            card.UseLiveBackdrop(glass);
+        }
         MouseDown += args =>
         {
             if (!IsOpen || args.Handled) return;
@@ -54,11 +82,42 @@ internal sealed class ModalDialog : Panel
     private static double OpeningSpring(double t) =>
         (1 - 3 * Math.Exp(-6.5 * t) + 2 * Math.Exp(-9.75 * t)) / (1 - 3 * Math.Exp(-6.5) + 2 * Math.Exp(-9.75));
 
+    // Build fonts, decoration rasters, surfaces and the blur pipeline before
+    // the startup spinner begins. All graphics access remains on the UI thread.
+    internal async Task WarmTransitionAsync(CancellationToken token)
+    {
+        if (!cacheTransition || IsVisible || FindVisualRoot() is not Window owner) return;
+        var warmed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void InFirstFrame()
+        {
+            owner.FrameRendered -= InFirstFrame;
+            try { WarmTransition(owner.ClientSize); warmed.TrySetResult(); }
+            catch (Exception error) { warmed.TrySetException(error); }
+        }
+        owner.FrameRendered += InFirstFrame;
+        owner.InvalidateVisual();
+        try { await warmed.Task.WaitAsync(token); }
+        finally { owner.FrameRendered -= InFirstFrame; }
+    }
+
+    private void WarmTransition(Size viewport)
+    {
+        if (!cacheTransition || IsVisible || FindVisualRoot() is not Window owner) return;
+        window = owner;
+        var available = new Size(Math.Max(0, viewport.Width - 32), Math.Max(0, viewport.Height - 32));
+        content.Measure(available);
+        var width = Math.Min(content.DesiredSize.Width, available.Width);
+        var height = Math.Min(content.DesiredSize.Height, available.Height);
+        content.Arrange(new Rect((viewport.Width - width) / 2, (viewport.Height - height) / 2, width, height));
+        CaptureCard();
+    }
+
     internal void Show()
     {
         if (FindVisualRoot() is not Window source) return;
         if (IsOpen) return;
         window = source;
+        glass?.Attach(source);
         if (source.FocusManager.FocusedElement is { } focused && !IsAncestorOf(focused))
         {
             // A menu command may open the dialog before the menu detaches.
@@ -78,7 +137,7 @@ internal sealed class ModalDialog : Panel
     internal void Close(bool immediate = false)
     {
         if (!IsOpen && !immediate) return;
-        if (!immediate && stamp == null && contentAmount > 0 && content.Bounds.Width > 0) CaptureCard();
+        if (!immediate && (stamp == null || cacheTransition) && contentAmount > 0 && content.Bounds.Width > 0) CaptureCard(force: true);
         IsOpen = IsHitTestVisible = false;
         if (IsFocusWithin) window?.FocusManager.ClearFocus();
         // The exit image must be ready before hiding the live card.
@@ -109,7 +168,14 @@ internal sealed class ModalDialog : Panel
         {
             set(target);
             if (IsOpen && target == 1 && ReferenceEquals(clock, fade)) Presented?.Invoke();
-            if (IsOpen && pose == 1 && contentAmount == 1) { live.Opacity = 1; stamp?.Dispose(); stamp = null; Opened?.Invoke(); }
+            if (IsOpen && pose == 1 && contentAmount == 1)
+            {
+                live.Opacity = 1;
+                // Keep the prepared surface for closing; avoid a cold native
+                // allocation just as the loader is about to become visible.
+                if (!cacheTransition) { stamp?.Dispose(); stamp = null; }
+                Opened?.Invoke();
+            }
             if (!IsOpen && backgroundAmount == 0 && contentAmount == 0 && pose == 0) Detach(restoreFocus: true);
             InvalidateVisual();
         };
@@ -168,15 +234,36 @@ internal sealed class ModalDialog : Panel
         finally { preparing = false; }
     }
 
-    private void CaptureCard()
+    internal void InvalidateTransitionSnapshot() => capturedBackdropVersion = -1;
+
+    private void CaptureCard(bool force = false)
     {
         if (window == null) return;
-        var bounds = content.Bounds.Inflate(16, 16);
-        var dpi = Math.Min(window.DpiScale, 1400 / Math.Max(bounds.Width, bounds.Height));
-        if (stamp == null || stamp.Bounds != bounds || Math.Abs(stamp.Scale - dpi) > .001)
-        { stamp?.Dispose(); stamp = new(window.GraphicsFactory, bounds, dpi); }
-        stamp.Capture(content.Render, Color.Transparent);
-        stamp.Blur(12 * (1 - pose));
+        // Match the live text's physical pixel grid. Downsampling a snapshot
+        // or translating it by a fractional pixel shifts glyphs at the handoff.
+        var dpi = window.DpiScale;
+        var area = content.Bounds;
+        if (transitionMaximumHeight is { } height)
+            area = new Rect((window.ClientSize.Width - area.Width) / 2,
+                (window.ClientSize.Height - height) / 2, area.Width, height);
+        area = area.Inflate(16, 16);
+        var left = Math.Floor(area.X * dpi) / dpi;
+        var top = Math.Floor(area.Y * dpi) / dpi;
+        var bounds = new Rect(left, top, Math.Ceiling(area.Right * dpi) / dpi - left,
+            Math.Ceiling(area.Bottom * dpi) / dpi - top);
+        var recapture = stamp == null || stamp.Bounds != bounds || Math.Abs(stamp.Scale - dpi) > .001;
+        if (recapture) { stamp?.Dispose(); stamp = new(window.GraphicsFactory, bounds, dpi); SnapshotAllocations++; }
+        if (force || recapture || !cacheTransition || refreshTransition?.Invoke() == true || capturedBackdropVersion != BackdropVersion)
+        {
+            stamp!.Capture(content.Render, Color.Transparent);
+            capturedBackdropVersion = BackdropVersion;
+            SnapshotCaptures++;
+        }
+        var blur = 12 * (1 - pose);
+        // A cached transition only needs physical-pixel blur steps. Reusing
+        // equal kernels avoids a fresh full-card filter for fractional changes.
+        if (cacheTransition) blur = Math.Round(blur * dpi) / dpi;
+        stamp!.Blur(blur);
     }
 
     protected override Size MeasureContent(Size availableSize)
@@ -195,11 +282,11 @@ internal sealed class ModalDialog : Panel
     }
     protected override void OnRender(IGraphicsContext context)
     {
-        OverlayScrim.Draw(context, Bounds, backgroundAmount);
+        if (!capturingBackdrop) OverlayScrim.Draw(context, Bounds, backgroundAmount);
     }
     protected override void OnRenderOverlay(IGraphicsContext context)
     {
-        if (live.Opacity != 0 || stamp == null || contentAmount <= 0) return;
+        if (capturingBackdrop || live.Opacity != 0 || stamp == null || contentAmount <= 0) return;
         context.BeginOpacity(contentAmount);
         try
         {
@@ -210,6 +297,11 @@ internal sealed class ModalDialog : Panel
 
     internal static void DrawPerspective(IGraphicsContext context, IImage image, Rect bounds, Point center, double pose, Rect viewport)
     {
+        if (pose >= 1)
+        {
+            context.DrawImage(image, bounds);
+            return;
+        }
         var scale = .8 + .2 * pose; var angle = -Math.PI / 9 * (1 - pose);
         var sine = Math.Sin(angle); var cosine = Math.Cos(angle);
         var dpi = context.DpiScale;
@@ -254,9 +346,26 @@ internal sealed class ModalDialog : Panel
         if (close?.HitTest(point) is { } hit) return hit;
         return content.HitTest(Unproject(point)) ?? this;
     }
+    bool IVisualTreeHost.VisitChildren(Func<Element, bool> visitor)
+    {
+        if (capturingBackdrop) return true;
+        foreach (var child in Children)
+            if (!visitor(child)) return false;
+        return true;
+    }
+
+    private void RenderBehind(IGraphicsContext context, Element root)
+    {
+        // Replay the page without capturing this dialog into its own glass.
+        capturingBackdrop = true;
+        try { root.Render(context); }
+        finally { capturingBackdrop = false; }
+    }
+
     private void Detach(bool restoreFocus)
     {
         IsVisible = IsHitTestVisible = false;
+        glass?.Attach(null);
         if (watching && window != null) { window.FrameRendered -= Prepare; watching = false; }
         stamp?.Dispose(); stamp = null;
         Closed?.Invoke();
@@ -275,5 +384,5 @@ internal sealed class ModalDialog : Panel
         base.OnVisualRootChanged(oldRoot, newRoot);
         if (newRoot == null) Close(true);
     }
-    protected override void OnDispose() { Close(true); DismissRequested = Presented = Closed = Opened = null; base.OnDispose(); }
+    protected override void OnDispose() { Close(true); glass?.Dispose(); DismissRequested = Presented = Closed = Opened = null; base.OnDispose(); }
 }

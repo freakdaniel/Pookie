@@ -35,13 +35,13 @@ jobs:
         run: |
           (cd artifacts/libvlc-linux && sha256sum --check "$ASSET.sha256")
           node tools/libvlc-linux/runtime.cjs --checksum "artifacts/libvlc-linux/$ASSET.sha256" >> "$GITHUB_OUTPUT"
-      - name: Test runtime archive preparation
-        run: node --test tests/libvlc-linux.test.cjs
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
             10.0.x
+      - name: Test runtime archive preparation
+        run: node --test tests/libvlc-linux.test.cjs
       - name: Verify decoding from the packaged archive
         env:
           POOKIE_LIBVLC_ARCHIVE: ${{ github.workspace }}/artifacts/libvlc-linux/${{ steps.metadata.outputs.asset }}
