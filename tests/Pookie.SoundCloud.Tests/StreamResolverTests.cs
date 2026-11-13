@@ -98,7 +98,7 @@ public sealed class StreamResolverTests
     public async Task PreviewCannotBeReturnedAsFullPlayback(bool snipped, string policy)
     {
         var full = Track("auth");
-        var source = new Source(full with { Policy = policy, Media = new() { Transcodings = full.Media!.Transcodings.Select(t => t with { Snipped = snipped }).ToArray() } });
+        var source = new Source(full with { Duration = 30000, FullDuration = 114625, Policy = policy, Media = new() { Transcodings = full.Media!.Transcodings.Select(t => t with { Snipped = snipped }).ToArray() } });
         await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(source).ResolveAsync(42));
         Assert.Equal(0, source.StreamCalls);
     }

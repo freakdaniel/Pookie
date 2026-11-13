@@ -72,7 +72,16 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => !trackCoverMenu.IsVisible);
             }
             if (trackPlaybackUiSmoke)
-            { VerifyCommentTextPixels(); await VerifyTrackPlaybackVisibilityAsync(); return; }
+            {
+                if (Environment.GetEnvironmentVariable("POOKIE_TRACK_DURATION_ONLY") == "1")
+                {
+                    timer.Stop();
+                    var fixture = new BufferFixturePlayer(); player = fixture;
+                    await VerifyTrackPreviewDurationAsync(trackDetailState!.Track, fixture);
+                    return;
+                }
+                VerifyCommentTextPixels(); await VerifyTrackPlaybackVisibilityAsync(); return;
+            }
             if (waveformUiSmoke)
             {
                 await VerifyWaveformRevealAsync(trackDetailWaveform, "track");

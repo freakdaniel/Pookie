@@ -348,12 +348,15 @@ preserve every enclosing scroll offset while keyboard selection remains availabl
 and window deactivation/reactivation discard old destinations before the next input.
 
 `--track-playback-ui-smoke-test --no-audio` checks playback with 500 comments:
+restricted 30-second metadata uses the full duration for the card, waveform and
+comment timestamps, including a late preview response after playback resolves;
 the model and footer advance while the offscreen hero's label/waveform stay stable;
 scrolling back and closing the expanded player catch up from the retained position,
 including pause and a track change. It also runs pixel comparisons of cached comment
 text against TextBlock, including ellipsis, Unicode and repeated fractional widths.
 The same check verifies that a small avatar uses its DPI-dependent pixel budget,
 shares repeated requests and does not replace a full-size cover in the artwork cache.
+Set `POOKIE_TRACK_DURATION_ONLY=1` to run only the preview/full-duration regression.
 
 `--waveform-ui-smoke-test --no-audio` checks the 620ms left-to-right spring reveal
 in a list row and the track hero. Pixel readbacks verify intermediate frames,

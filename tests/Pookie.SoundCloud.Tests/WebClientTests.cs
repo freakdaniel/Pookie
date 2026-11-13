@@ -7,6 +7,16 @@ namespace Pookie.SoundCloud.Tests;
 
 public sealed class WebClientTests
 {
+    [Theory]
+    [InlineData(30000, 97000, 97)]
+    [InlineData(123456, 0, 123.456)]
+    public void TrackTimelineUsesFullDurationWhenAvailable(double duration, double fullDuration, double seconds)
+    {
+        var track = new SoundCloudTrack { Duration = duration, FullDuration = fullDuration };
+        Assert.Equal(seconds, track.DurationSeconds, 3);
+        Assert.Equal(duration, track.Duration);
+    }
+
     [Fact]
     public void WebsiteClientIdIsReadFromHydration()
     {

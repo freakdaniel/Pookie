@@ -501,6 +501,11 @@ internal sealed partial class MainWindow : IDisposable
             RefreshHomeShortcuts();
             RefreshOverviewSections();
             audioReady = true;
+            if (trackDetailState?.Track.Id == track.Id)
+            {
+                RenderTrackDetailHeader();
+                RenderTrackDetailComments();
+            }
             // The user can pause the selected track while it is still loading.
             if (paused) player.Pause(true);
             if (!IsLibrary(page.Value))

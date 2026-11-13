@@ -13,6 +13,7 @@ internal sealed partial class MainWindow
         {
             await VerifyTrackAvatarBudgetAsync();
             var track = trackDetailState!.Track;
+            await VerifyTrackPreviewDurationAsync(track, fixture);
             trackDetailState = trackDetailState with { Comments = new(Enumerable.Range(0, 500).Select(i => new SoundCloudComment
             {
                 Id = 10000 + i, User = new() { Username = "Слушатель " + i },
@@ -88,6 +89,46 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException($"Playback visibility snapshot: ready={shellPageScroll.IsReady}, dirty={shellPageScroll.IsMeasureDirty}/{shellPageScroll.IsArrangeDirty}, extent={extent}/{calculated}, visible={TrackTimelineInViewport()}, cached={trackTimelineVisible}, workspace={workspace.IsVisible}, text={trackDetailPosition.Text}, model={likedPlaybackPosition}, audio={audioReady}, wave={trackDetailWaveform.Bounds}, scroll={trackDetailScroll.Bounds}, shell={shellScroll.Bounds}, offset={shellScroll.VerticalOffset}.", error);
         }
         finally { timer.Stop(); player = original; }
+    }
+
+    private async Task VerifyTrackPreviewDurationAsync(SoundCloudTrack track, BufferFixturePlayer fixture)
+    {
+        var original = trackDetailState!;
+        var preview = track with { Duration = 30000, FullDuration = 97000, Policy = "SNIP" };
+        var comment = new SoundCloudComment { Id = 990101, Timestamp = 45000, Body = "После превью" };
+        current = null; audioReady = false;
+        trackDetailState = original with { Track = preview, Comments = new([comment], null) };
+        RenderTrackDetailHeader(); RenderTrackDetailComments();
+        if (trackDetailDuration.Text != "1:37" || ValidCommentTime(comment, preview) != 45000 ||
+            trackCommentMarkers.Count != 1 || Math.Abs(trackCommentMarkers[0].Fraction - 45d / 97) > .0001)
+            throw new InvalidOperationException("Preview metadata truncated the full track timeline or its comment markers.");
+
+        // Some primary responses omit full_duration entirely. Playback must
+        // supply it, including when primary metadata arrives after playback.
+        preview = preview with { FullDuration = 0 };
+        trackDetailState = trackDetailState with { Track = preview };
+        RenderTrackDetailHeader(); RenderTrackDetailComments();
+        var full = track with { Duration = 97000, FullDuration = 0 };
+        SetQueue(full); await PlayAsync(full);
+        await WaitForLikedLayoutAsync(() => TrackTimelineInViewport());
+        fixture.State = new(34, 97, true, false, false);
+        Poll();
+        await WaitForLikedLayoutAsync(() => !progressAnimation.IsRunning && trackDetailPosition.Text == "0:34");
+        if (trackDetailDuration.Text != "1:37" || totalTime.Value != "1:37" || trackDetailPosition.Text != "0:34" ||
+            Math.Abs(trackDetailWaveform.Progress - 34d / 97) > .0001 || trackCommentMarkers.Count != 1 ||
+            CurrentCommentTimestamp(trackDetailState.Track) != 34000)
+            throw new InvalidOperationException("Resolved playback left the track card, waveform or comment timestamp at the preview duration.");
+        trackDetailState = trackDetailState with { Track = preview };
+        RenderTrackDetailHeader(); RenderTrackDetailComments();
+        if (trackDetailDuration.Text != "1:37" || trackCommentMarkers.Count != 1)
+            throw new InvalidOperationException("Late preview metadata overwrote the resolved full duration.");
+        trackDetailState = trackDetailState with { Track = preview with { Id = 990102 } };
+        RenderTrackDetailHeader();
+        if (trackDetailDuration.Text != "0:30")
+            throw new InvalidOperationException("Playback duration leaked into another track's card.");
+        trackDetailState = original;
+        RenderTrackDetailHeader(); RenderTrackDetailComments();
+        Console.WriteLine("TRACK_PREVIEW_DURATION_OK: full_duration, resolved playback, late preview metadata, waveform and comment timestamps");
     }
 
     private async Task VerifyTrackAvatarBudgetAsync()

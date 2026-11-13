@@ -106,7 +106,7 @@ internal sealed partial class MainWindow
     }
 
     private double CurrentCommentTimestamp(SoundCloudTrack track) => current?.Id == track.Id
-        ? Math.Clamp(progress.Value * 1000, 0, Math.Max(0, track.Duration - 1)) : 0;
+        ? Math.Clamp(progress.Value * 1000, 0, Math.Max(0, track.DurationSeconds * 1000 - 1)) : 0;
 
     private bool CanPostTrackComment => !demo && me != null && api.Session is { } session && trackDetailState is { } state &&
         state.Track.Commentable != false && !pendingCommentPosts.Contains((session, state.Track.Id));

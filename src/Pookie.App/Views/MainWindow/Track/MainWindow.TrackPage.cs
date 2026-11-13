@@ -301,6 +301,13 @@ internal sealed partial class MainWindow
     {
         if (trackDetailState is not { } state) return;
         var track = state.Track;
+        // A late primary metadata response may still contain the preview length
+        // after playback has resolved the full track through a regional source.
+        if (audioReady && current is { } playing && playing.Id == track.Id && playing.DurationSeconds > track.DurationSeconds)
+        {
+            track = track with { Duration = playing.Duration, FullDuration = playing.FullDuration };
+            trackDetailState = state = state with { Track = track };
+        }
         RenderTrackCommentComposer();
         trackDetailTitle.Text = track.Title; trackDetailAuthor.Text = trackDetailAuthorName.Text = track.Author;
         trackDetailMeta.Text = "· " + string.Join(" · ", new[] { track.Genre, DetailAge(track.CreatedAt) }.Where(value => !string.IsNullOrWhiteSpace(value)));
@@ -390,13 +397,13 @@ internal sealed partial class MainWindow
         trackDetailCommentsStatus.Text = state.CommentsLoading ? "" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? "К этому треку ещё нет комментариев." : "";
         trackDetailCommentsStatus.IsVisible = trackDetailCommentsStatus.Text.Length > 0;
         var comments = state.Comments.Comments;
-        var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || !comments.SequenceEqual(renderedComments);
+        var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.DurationSeconds || !comments.SequenceEqual(renderedComments);
         if (stagedCommentRows != null && !ReferenceEquals(stagedCommentRows, comments)) FinishStagedComments();
-        if (renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.Duration || renderedCommentsViewer != (me?.Id ?? 0) ||
+        if (renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.DurationSeconds || renderedCommentsViewer != (me?.Id ?? 0) ||
             !comments.Take(renderedCommentCount).SequenceEqual(renderedComments.Take(renderedCommentCount)))
         {
             trackDetailComments.Clear(); renderedCommentCount = 0; renderedCommentsTrack = state.Track.Id;
-            renderedCommentsDuration = state.Track.Duration;
+            renderedCommentsDuration = state.Track.DurationSeconds;
             renderedCommentsViewer = me?.Id ?? 0;
         }
         // Keep existing rows and their decoded avatars when another page arrives.

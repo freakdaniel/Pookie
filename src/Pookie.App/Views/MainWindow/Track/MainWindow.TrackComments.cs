@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
         {
             top.Add(new CommentTextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
             var time = TrackButtons.Action(new CommentTextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
-                .Foreground(TrackButtons.OnCommentTime).IsHitTestVisible(false), () => Run(() => SeekLikedTrackAsync(track, timestamp / track.Duration)),
+                .Foreground(TrackButtons.OnCommentTime).IsHitTestVisible(false), () => Run(() => SeekLikedTrackAsync(track, timestamp / 1000 / track.DurationSeconds)),
                 TrackButtons.CommentTime, 24).Padding(6, 0);
             top.Add(time);
         }
@@ -107,7 +107,7 @@ internal sealed partial class MainWindow
     }
 
     private static double? ValidCommentTime(SoundCloudComment comment, SoundCloudTrack track) =>
-        comment.Timestamp is { } time && double.IsFinite(time) && time >= 0 && time < track.Duration ? time : null;
+        comment.Timestamp is { } time && double.IsFinite(time) && time >= 0 && time / 1000 < track.DurationSeconds ? time : null;
 
     private void LoadTrackDetailAvatar(Image image, string? url, long trackId, bool marker = false)
     {
@@ -136,13 +136,13 @@ internal sealed partial class MainWindow
         if (!preferences.ShowCommentMarkers) return;
         var timed = state.Comments.Comments.Where(c => ValidCommentTime(c, state.Track) != null).Take(50).ToArray();
         foreach (var old in trackCommentMarkers.Where(m => !timed.Any(c => c.Id == m.Comment.Id && c.Timestamp == m.Comment.Timestamp &&
-            c.Body == m.Comment.Body && c.User == m.Comment.User && c.Timestamp / state.Track.Duration == m.Fraction)).ToArray())
+            c.Body == m.Comment.Body && c.User == m.Comment.User && c.Timestamp / 1000 / state.Track.DurationSeconds == m.Fraction)).ToArray())
         { trackDetailMarkerLayer.Remove(old.Button); old.Avatar.Source = null; trackCommentMarkers.Remove(old); }
         foreach (var comment in timed)
         {
             if (trackCommentMarkers.FirstOrDefault(m => m.Comment.Id == comment.Id) is { } existing)
             { LoadTrackCommentMarkerAvatar(existing, state.Track.Id); continue; }
-            var fraction = comment.Timestamp!.Value / state.Track.Duration;
+            var fraction = comment.Timestamp!.Value / 1000 / state.Track.DurationSeconds;
             var image = new Image { VectorCacheMode = ImageVectorCacheMode.Direct, Opacity = 0 }.Width(24).Height(24).StretchMode(Stretch.UniformToFill);
             image.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
             image.Source = Icons.Source("user", MutedIcon);

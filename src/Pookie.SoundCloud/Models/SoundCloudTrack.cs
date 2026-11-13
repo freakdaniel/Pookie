@@ -31,7 +31,9 @@ public sealed record SoundCloudTrack
     public SoundCloudUser? User { get; init; }
     public TrackMedia? Media { get; init; }
     public PublisherMetadata? PublisherMetadata { get; init; }
-    public double DurationSeconds => Duration / 1000;
+    // Restricted metadata can describe a 30-second preview in duration.
+    // The track timeline still spans the full recording when it is known.
+    public double DurationSeconds => (FullDuration > 0 ? FullDuration : Duration) / 1000;
     public string Author => User?.Username ?? "Unknown artist";
 }
 
