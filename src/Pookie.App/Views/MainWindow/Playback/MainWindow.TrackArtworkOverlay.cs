@@ -18,14 +18,14 @@ internal sealed partial class MainWindow
         internal bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
         public TrackArtworkOverlay(CoverGlassBackdrop glass, Action? onPlay = null, double buttonSize = DefaultButtonSize,
-            bool scalingGlyphs = false, bool ownsGlass = false, int? glyphSize = null, Color? scrim = null)
+            bool scalingGlyphs = false, bool ownsGlass = false, int? glyphSize = null, Color? scrim = null, string? actionGlyph = null)
         {
             this.glass = glass;
             this.ownsGlass = ownsGlass;
             var scale = buttonSize / DefaultButtonSize;
             Image Glyph(string name, int size) => (scalingGlyphs ? Icons.ScalingView(name, size) :
                 Icons.View(name, size)).CenterHorizontal().CenterVertical();
-            play = Glyph("play-solid", glyphSize ?? (int)Math.Round(23 * scale));
+            play = Glyph(actionGlyph ?? "play-solid", glyphSize ?? (int)Math.Round(23 * scale));
             pause = Glyph("pause-solid", glyphSize ?? (int)Math.Round(22 * scale)).IsVisible(false);
             Background = scrim ?? Color.Transparent;
             Padding = new Thickness(0); BorderThickness = 0; CornerRadius = 0;

@@ -34,6 +34,13 @@ The direct-render opacity group also uses that viewport in surface coordinates,
 without applying the current transform a second time. This keeps translated,
 cropped captures of partially transparent menus and tooltips inside their target.
 
+Opacity changes invalidate retained composition as well as state. A child at
+zero opacity is omitted from its parent's plan and can be marked culled; a
+state-only repaint stops there, leaving hover overlays, confirmation buttons and
+incoming tab pages invisible until an unrelated layout. Composition invalidation
+brings the child back without remeasuring the window on every fade frame. The
+patch checks the pinned opacity branch and enum values before changing it.
+
 ## Windows resize and wheel input
 
 The main window can coalesce the first paint after a track-page resize with

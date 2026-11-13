@@ -6,8 +6,9 @@ namespace Pookie.App;
 
 internal sealed class PlaylistEditorFrame(FrameworkElement surface) : Panel
 {
-    internal const double PreferredWidth = 660, MaximumHeight = 680;
-    private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(280), Easing.CubicBezier(.2, 0, 0, 1));
+    internal const double PreferredWidth = 540, MaximumHeight = 680;
+    internal static readonly Func<double, double> MotionEasing = Easing.CubicBezier(.4, 0, .2, 1);
+    private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(300), MotionEasing);
     private double height = 360;
     internal double TargetHeight { get; private set; } = 360;
     internal bool Resizing => resize.IsRunning;

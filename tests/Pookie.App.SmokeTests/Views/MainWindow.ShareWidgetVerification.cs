@@ -15,13 +15,18 @@ internal sealed partial class MainWindow
 
     private async Task VerifyShareWidgetAsync(SoundCloudTrack track)
     {
-        await WaitForLikedLayoutAsync(() => shareWidgetPreview.NativeVisible && shareWidgetPreview.LogicalHeight == 450);
+        // Native visibility can precede the last resize frame now that fades
+        // participate in the retained scene instead of appearing at the end.
+        await WaitForLikedLayoutAsync(() => shareWidgetPreview.NativeVisible && shareWidgetPreview.LogicalHeight == 450 &&
+            !shareContent.Resizing && !sharePages.Animating && shareWidgetPreview.ActualHeight > 0);
+        var initialVisualHeight = shareWidgetPreview.ActualHeight;
         var browser = widgetBrowsers[^1];
         if (!browser.Page.Contains("api.js") || !browser.Page.Contains("auto_play=false") || !browser.Page.Contains("innerHeight/450") ||
             !shareWidgetPreview.PlayerUrl!.Contains("%2314abcd") || shareEmbedCopy.ActualWidth != 48 || shareEmbedCode.Focusable ||
-            shareContent.BodyBounds.Height <= PlaylistDialogContent.MaximumBodyHeight || shareWidgetPreview.ActualHeight != 450 ||
+            shareContent.BodyBounds.Height <= PlaylistDialogContent.MaximumBodyHeight || initialVisualHeight > 450 ||
             shareEmbedCode.Bounds.Y <= shareWidgetPreview.Bounds.Bottom)
             throw new InvalidOperationException("Widget lost its actual player page, responsive visual preview or single-line code/copy row.");
+        Console.WriteLine($"SHARE_WIDGET_VIEWPORT client={Window.ClientSize.Height:F0} logical=450 visual={initialVisualHeight:F0}");
         var inputFocus = Window.FocusManager.FocusedElement is TextBox or MultiLineTextBox;
         if (inputFocus) throw new InvalidOperationException("Opening Widget activated an input field.");
         await VerifyWidgetColorControlsAsync();
@@ -29,7 +34,7 @@ internal sealed partial class MainWindow
         try
         {
             Window.WindowSize = WindowSize.Resizable(1160, 680, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareWidgetPreview.ActualHeight < 450 && shareWidgetPreview.NativeVisible);
+            await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareWidgetPreview.ActualHeight < initialVisualHeight && shareWidgetPreview.NativeVisible);
             if (shareContent.BodyBounds.Y < 16 || shareContent.BodyBounds.Bottom > Window.ClientSize.Height - 16 ||
                 browser.Bounds.Bottom > shareEmbedCopy.Bounds.Y || shareWidgetPreview.LogicalHeight != 450)
                 throw new InvalidOperationException("Visual widget preview overlaps the code row or clips on a small window.");
@@ -38,7 +43,7 @@ internal sealed partial class MainWindow
         finally
         {
             Window.WindowSize = savedSize;
-            await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareWidgetPreview.ActualHeight == 450 && shareWidgetPreview.NativeVisible);
+            await WaitForLikedLayoutAsync(() => !shareContent.Resizing && Math.Abs(shareWidgetPreview.ActualHeight - initialVisualHeight) < 1 && shareWidgetPreview.NativeVisible);
         }
         SelectShareTab(1);
         await WaitForLikedLayoutAsync(() => !shareContent.Resizing);

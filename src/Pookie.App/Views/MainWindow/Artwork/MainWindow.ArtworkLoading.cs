@@ -130,11 +130,11 @@ internal sealed partial class MainWindow
         return root;
     }
 
-    private TrackArtworkOverlay CreateCoverPlayback(Image cover, Action play, double size = 46, int? glyphSize = null, Color? scrim = null)
+    private TrackArtworkOverlay CreateCoverPlayback(Image cover, Action play, double size = 46, int? glyphSize = null, Color? scrim = null, string? actionGlyph = null)
     {
         var glass = new CoverGlassBackdrop(cover, centeredSampleSize: size + 48);
         var overlay = new TrackArtworkOverlay(glass, play, size, ownsGlass: true, glyphSize: glyphSize,
-            scrim: scrim ?? Color.FromArgb(64, 0, 0, 0));
+            scrim: scrim ?? Color.FromArgb(64, 0, 0, 0), actionGlyph: actionGlyph);
         artworkPlayback.Add(cover, overlay);
         return overlay;
     }

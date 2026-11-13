@@ -17,9 +17,8 @@ internal sealed class PlaylistEditorChoice : ContentControl
         label = new TextBlock().FontSize(14).TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical();
         menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
         var button = TrackButtons.Action(new Grid().Columns("*,18").Spacing(10).Children(label, Icons.View("caret-down", 18).Column(1).CenterVertical()),
-            () => { }, TrackButtons.Glass, 44).Hint(name);
+            () => { }, TrackButtons.Text, 36).Padding(8, 4).Margin(-8, -4).CornerRadius(12).Hint(name);
         ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
-        ((MaterialTrackButton)button).UseLightGlassFinish();
         foreach (var option in options)
         {
             var command = new Command("pookie.playlist-editor." + name + "." + option.Value, option.Label);

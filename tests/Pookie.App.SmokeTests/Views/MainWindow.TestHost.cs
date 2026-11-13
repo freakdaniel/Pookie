@@ -31,6 +31,7 @@ internal sealed partial class MainWindow
     private string? livePlaylistUrl;
     private bool likesEditsUiSmoke, likesFilterUiSmoke, collectionsUiSmoke, commentsUiSmoke, homeUiSmoke, libraryMixesUiSmoke;
     private bool webPlaylistEditingOnly, shareUiSmoke, playlistDialogUiSmoke;
+    private bool playlistEditorLiveUi;
     private bool memoryUiSmoke, playbackMemoryUiSmoke;
     internal Exception? VerificationFailure { get; private set; }
     private DispatcherTimer? closeTimer;
@@ -74,6 +75,7 @@ internal sealed partial class MainWindow
         playlistDialogUiSmoke = args.Contains("--playlist-dialog-ui-smoke-test");
         collectionsUiSmoke = shareUiSmoke || playlistDialogUiSmoke || args.Contains("--collections-ui-smoke-test");
         webPlaylistEditingOnly = args.Contains("--web-playlist-editing-only");
+        playlistEditorLiveUi = args.Contains("--playlist-editor-live-ui-probe");
         likesEditsUiSmoke = args.Contains("--likes-edits-ui-smoke-test");
         likesFilterUiSmoke = args.Contains("--likes-filter-ui-smoke-test");
         commentsUiSmoke = args.Contains("--comments-ui-smoke-test");
@@ -129,6 +131,7 @@ internal sealed partial class MainWindow
         if (trackPageLiveUi) Run(VerifyTrackPageLiveUiAsync);
         if (livePlaylistUrl is { } playlistUrl) Run(() => VerifyPlaylistLiveUiAsync(playlistUrl));
         if (collectionsUiSmoke) Run(VerifyCollectionsUiAsync);
+        if (playlistEditorLiveUi) Run(VerifyPlaylistEditorLiveAsync);
         if (likesEditsUiSmoke) Run(VerifyLikesEditsUiAsync);
         if (likesFilterUiSmoke) Run(VerifyLikesFilterUiAsync);
         if (commentsUiSmoke) Run(VerifyCommentsUiAsync);

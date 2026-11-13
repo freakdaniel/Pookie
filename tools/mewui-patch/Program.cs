@@ -22,6 +22,21 @@ if (assembly.Name.Name == "Aprillz.MewUI")
     // Secondary surfaces have their own viewport. Culling there must not mark
     // a live window node offscreen or discard its cached resources.
     var visual = module.Types.Single(t => t.FullName == "Aprillz.MewUI.Controls.UIElement");
+    // A zero-alpha child is omitted from its parent's retained plan. State-only
+    // invalidation stops at that culled child and cannot bring it back. Opacity
+    // changes must also invalidate composition, without forcing a layout pass.
+    var changed = visual.Methods.Single(method => method.Name == "OnMewPropertyChanged");
+    var opacityBranch = changed.Body.Instructions.ToList().FindIndex(instruction =>
+        instruction.Operand is FieldReference { Name: "OpacityProperty" });
+    if (opacityBranch < 0) throw new InvalidOperationException("Unexpected opacity property IL.");
+    var opacityDirty = changed.Body.Instructions.Skip(opacityBranch).First(instruction =>
+        instruction.Operand is MethodReference { Name: "RaiseRenderDirty" });
+    var dirtyKind = module.GetType("Aprillz.MewUI.Rendering.Retained.RenderDirtyKind");
+    if (opacityDirty.Previous.OpCode != OpCodes.Ldc_I4_4 ||
+        Convert.ToInt32(dirtyKind.Fields.Single(field => field.Name == "State").Constant) != 4 ||
+        Convert.ToInt32(dirtyKind.Fields.Single(field => field.Name == "Composition").Constant) != 2)
+        throw new InvalidOperationException("Review retained opacity invalidation IL.");
+    opacityDirty.Previous.OpCode = OpCodes.Ldc_I4_6;
     var captureDepth = new FieldDefinition("PookieCaptureDepth", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Int32);
     captureDepth.CustomAttributes.Add(new CustomAttribute(module.ImportReference(typeof(ThreadStaticAttribute).GetConstructor(Type.EmptyTypes)!)));
     visual.Fields.Add(captureDepth);

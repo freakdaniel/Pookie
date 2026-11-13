@@ -12,7 +12,7 @@ internal sealed partial class MainWindow
     private PlaylistPrivacySelector playlistEditPrivacy = null!;
     private TextBlock playlistEditHeading = null!, playlistEditMessage = null!;
     private StackPanel playlistEditFields = null!;
-    private Button playlistEditSave = null!, playlistEditCancel = null!;
+    private Button playlistEditSave = null!, playlistEditDeleteConfirm = null!;
     private LibraryItem? playlistEditTarget;
     private WebSession? playlistEditSession;
     private bool playlistEditPrivate, playlistEditDeleting;
@@ -53,6 +53,7 @@ internal sealed partial class MainWindow
         playlistEditName.Text = playlist.Title; playlistEditDescription.Text = playlist.Description ?? "";
         playlistEditPrivate = playlist.Sharing == "private";
         playlistEditOriginalPermalink = playlist.Permalink ?? playlist.PermalinkUrl?.Split('/').LastOrDefault() ?? "";
+        playlistEditPermalink.Placeholder = playlistEditOriginalPermalink;
         playlistEditOriginalDate = PlaylistEditDateValue(playlist);
         playlistEditOriginalType = playlist.PlaylistType ?? (playlist.IsAlbum ? "album" : "playlist");
         playlistEditPermalink.Text = playlistEditOriginalPermalink; playlistEditDate.Text = playlistEditOriginalDate;
@@ -72,8 +73,9 @@ internal sealed partial class MainWindow
                 SetCollectionArtwork(playlistEditArtwork, artworkTarget, image, finished: true);
         });
         SetPlaylistEditMessage(""); playlistEditLoadingFields = false;
-        ((TextBlock)playlistEditSave.Content!).Text = deleting ? "Удалить" : "Сохранить";
-        RefreshPlaylistEditor(); playlistEditor.Show();
+        RefreshPlaylistEditor();
+        if (!deleting) PreparePlaylistEditAccess();
+        playlistEditor.Show();
     }
 
     private void RefreshPlaylistEditor()
@@ -82,12 +84,16 @@ internal sealed partial class MainWindow
         var target = playlistEditTarget?.Playlist;
         var busy = playlistEditChoosingArtwork || playlistEditSession is { } session && target != null && pendingPlaylistEdits.Contains((session, target.Id));
         playlistEditFields.IsEnabled = playlistEditTabs.IsEnabled = !busy;
-        playlistEditCancel.IsEnabled = playlistEditClose.IsEnabled = !busy;
+        playlistEditClose.IsEnabled = !busy;
         playlistEditPrivacy.Select(playlistEditPrivate);
         var request = target == null ? null : PlaylistEditorRequest(target);
         ValidatePlaylistEdit(request);
-        var valid = playlistEditDeleting || request?.IsValid() == true && PlaylistEditorDirty(target!, request);
-        TrackButtons.SetAvailability(playlistEditSave, valid && !busy && target != null && api.Session == playlistEditSession, busy);
+        var dirty = target != null && request != null && PlaylistEditorDirty(target, request);
+        playlistEditSaveReveal.Show(!playlistEditDeleting && dirty, animate: playlistEditor.IsOpen && !playlistEditor.Running);
+        playlistEditDeleteConfirm.IsVisible = playlistEditDeleting;
+        var available = !busy && target != null && api.Session == playlistEditSession;
+        TrackButtons.SetAvailability(playlistEditSave, !playlistEditDeleting && dirty && request?.IsValid() == true && available, busy);
+        TrackButtons.SetAvailability(playlistEditDeleteConfirm, playlistEditDeleting && available, busy);
         FitPlaylistEditor();
     }
 
@@ -106,7 +112,8 @@ internal sealed partial class MainWindow
 
     private async Task SavePlaylistEditorAsync()
     {
-        if (!playlistEditSave.IsEnabled || playlistEditTarget is not { Playlist: { } playlist } item || playlistEditSession is not { } session || api.Session != session || me is not { } user ||
+        var confirm = playlistEditDeleting ? playlistEditDeleteConfirm : playlistEditSave;
+        if (!confirm.IsEnabled || playlistEditTarget is not { Playlist: { } playlist } item || playlistEditSession is not { } session || api.Session != session || me is not { } user ||
             !pendingPlaylistEdits.Add((session, playlist.Id))) return;
         var deleting = playlistEditDeleting;
         var request = PlaylistEditorRequest(playlist);
@@ -128,6 +135,7 @@ internal sealed partial class MainWindow
                 // artwork upload fails. Retrying must not restore old metadata.
                 playlistEditTarget = item with { Playlist = updated };
                 playlistEditOriginalPermalink = updated.Permalink ?? updated.PermalinkUrl?.Split('/').LastOrDefault() ?? "";
+                playlistEditPermalink.Placeholder = playlistEditOriginalPermalink;
                 playlistEditOriginalDate = PlaylistEditDateValue(updated);
                 playlistEditOriginalType = updated.PlaylistType ?? (updated.IsAlbum ? "album" : "playlist");
                 if (artwork != null)

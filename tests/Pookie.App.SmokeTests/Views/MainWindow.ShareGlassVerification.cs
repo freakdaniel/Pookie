@@ -84,6 +84,7 @@ internal sealed partial class MainWindow
                 var intervals = new List<double>();
                 var sizes = new HashSet<double>();
                 var previous = Stopwatch.GetTimestamp();
+                var wasMoving = false;
                 var backdrop = shareDialog.BackdropVersion;
                 var reflections = bodyGlass.ReflectionRasterizations;
                 var texture = bodyGlass.OpticalImage;
@@ -94,8 +95,13 @@ internal sealed partial class MainWindow
                 {
                     if (sharePages.ContentOverlaps) throw new InvalidOperationException("Share painted two tab pages simultaneously.");
                     var now = Stopwatch.GetTimestamp();
-                    intervals.Add(Stopwatch.GetElapsedTime(previous, now).TotalMilliseconds); previous = now;
-                    sizes.Add(Math.Round(shareContent.BodyBounds.Height, 2));
+                    var moving = shareContent.Resizing || sharePages.Animating;
+                    if (moving || wasMoving)
+                    {
+                        intervals.Add(Stopwatch.GetElapsedTime(previous, now).TotalMilliseconds);
+                        sizes.Add(Math.Round(shareContent.BodyBounds.Height, 2));
+                    }
+                    previous = now; wasMoving = moving;
                     if (!shareDialog.HasGlassBackdrop) lostGlass = true;
                     if (texture != null && (!ReferenceEquals(texture, bodyGlass.OpticalImage) || !bodyGlass.IsOpticsCurrent))
                         lostGlass = true;

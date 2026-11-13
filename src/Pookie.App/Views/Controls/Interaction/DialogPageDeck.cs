@@ -15,8 +15,10 @@ internal class DialogPageDeck : Panel
     internal int SelectedIndex { get; private set; }
     internal bool Animating => motion.IsRunning;
     internal bool ContentOverlaps => pages.Count(page => page.Opacity > .001) > 1;
-    internal DialogPageDeck(params FrameworkElement[] content)
+    internal DialogPageDeck(params FrameworkElement[] content) : this(null, content) { }
+    internal DialogPageDeck(Func<double, double>? easing, params FrameworkElement[] content)
     {
+        if (easing != null) motion.EasingFunction = easing;
         pages = content.Select(child => new Page(child)).ToArray(); heights = new double[pages.Length];
         foreach (var page in pages) Add(page);
         ClipToBounds = true; Snap(0);

@@ -1308,11 +1308,24 @@ No real SoundCloud account or account mutation is used.
 `--collections-ui-smoke-test --web-playlist-editing-only --no-audio` checks the
 matte glass playlist editor and its four sliding tabs (Basic, Tracks, Release, Access),
 neutral initial focus, custom release-type popup/Escape, inline date validation,
-bounded small-window layout and changed-only saving. Basic contains artwork,
-title and description; Release groups the catalog/publishing settings; Access
-contains the permalink and privacy. The card measures each page and animates its
-height, including shrinking a track draft down to one row and interrupted tab
-changes, while retaining the glass backdrop. Complete lists have no count/help
+bounded small-window layout and changed-only saving. Fields use shared rounded
+groups, inline labels/values and inset separators. Basic places artwork beside
+the title and multiline description; hovering dims the artwork and reveals the
+same glass action as track covers, with an edit glyph. Release stacks release/category/publishing groups
+in one column; Access contains the permalink and privacy. Compact rows and a
+narrower card let Release fit a small window even with inline validation. A round
+cyan glass check appears in the top-right corner only when the draft changes;
+reverting fades it away without moving tabs or resizing the card. Invalid drafts retain
+a disabled check. Closing cancels the draft, and there are no editing footer buttons.
+Dropdown highlights extend beyond their text. Invalid permalinks smoothly tint
+the glass address field red without a validation footer or height change; other
+validation remains visible. Small Access glass surfaces are prepared before the
+modal animates, avoiding first-paint raster work during tab changes. All four tab
+transitions are timed in both directions, excluding idle waits after animation,
+checking frame cadence and retained glass textures/reflections. Deletion retains
+its explicit confirmation action. The card
+measures each page and animates its height, including shrinking a track draft down
+to one row and interrupted tab changes, while retaining the glass backdrop. Complete lists have no count/help
 heading. Extended settings include
 the permalink, genre/tags, release date/type, purchase URL, label and license.
 Reorder/removal stays in a cancelable draft until Save; incomplete snapshots can
@@ -1322,6 +1335,18 @@ deletion confirmation and library refresh without changing a real account.
 JavaScript and HTTP unit tests cover optional metadata/clear/type mapping, input
 validation, numeric web routes, multipart JPEG artwork, owner/source-order
 validation and no blind replay after an unconfirmed write.
+
+`--playlist-editor-live-ui-probe --no-audio` checks the editor on X11/Linux with
+the saved account, a separate browser profile and a real owned playlist/artwork.
+It only changes a local draft and closes it; it never saves or deletes a playlist.
+Native window pixels verify cover dimming and error-colour interpolation (including
+red label/input text and no brightness overshoot). Timing uses the native
+presentation event without pixel readbacks. A separate pass samples the painted
+card contour and confirms that tab text is already visible halfway through each
+fade. This avoids mistaking a frozen page with a final-frame pop for smooth motion.
+Editor resize and page motion use a softer shared easing curve; the standard
+modal opening animation is unchanged. `POOKIE_UI_PREVIEW` saves native captures
+for this live probe, instead of rendering a separate preview surface.
 
 The retained `--native-session-recovery-smoke-test` exercises the optional library
 HTTP transport and its standalone browser verifier against loopback fixtures. The
