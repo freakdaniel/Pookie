@@ -6,7 +6,7 @@ internal enum RepeatMode { Off, Context, Track }
 internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Radio }
 internal enum PlaybackEntryOrigin { Context, Manual, Recommendation }
 internal enum PlaybackPreparation { Preparing, Ready, Failed, Stopped }
-internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null);
+internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null, string? Filter = null);
 internal sealed record PlaybackEntry(long EntryId, SoundCloudTrack Track, PlaybackEntryOrigin Origin, int SourceIndex = -1);
 internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext? Context, PlaybackEntry? Current,
     IReadOnlyList<PlaybackEntry> Source, IReadOnlyList<PlaybackEntry> ManualUpcoming,
@@ -16,6 +16,7 @@ internal sealed record PlaybackQueueSnapshot(long SourceVersion, PlaybackContext
 {
     internal IEnumerable<PlaybackEntry> Upcoming => ManualUpcoming.Concat(Forward).Concat(ContextUpcoming).Concat(Recommendations);
     internal bool CanLoadRecommendations => (AutoContinue || Context?.Kind == PlaybackContextKind.Radio) && Context is { NextHref: null } &&
+        TrackFilter.Normalize(Context.Filter) == null &&
         Repeat == RepeatMode.Off && !RecommendationsExhausted && ContextUpcoming.Count <= 5 && Recommendations.Count < PlaybackQueue.RecommendationLimit;
     internal bool CanNext => ManualUpcoming.Count + Forward.Count + ContextUpcoming.Count > 0 ||
         (AutoContinue || Context?.Kind == PlaybackContextKind.Radio) && Repeat == RepeatMode.Off && Recommendations.Count > 0 ||
@@ -30,6 +31,8 @@ internal sealed class PlaybackQueue
     internal const int RecommendationLimit = 3;
     private readonly Random random;
     private readonly List<PlaybackEntry> source = [], upcoming = [], manual = [], history = [], forward = [], recommendations = [];
+    private readonly HashSet<string> loadedSourceCursors = [];
+    private int nextSourceIndex;
     private bool recommendationsExhausted;
     private long entrySequence;
     private PlaybackQueueSnapshot? snapshot;
@@ -51,10 +54,15 @@ internal sealed class PlaybackQueue
         var data = tracks.ToArray();
         if (selectedIndex < 0 || selectedIndex >= data.Length) throw new ArgumentOutOfRangeException(nameof(selectedIndex));
         var retainedManual = preserveManual ? manual.ToArray() : [];
-        Clear(); Context = context; manual.AddRange(retainedManual);
-        source.AddRange(data.Select((track, index) => NewEntry(track, PlaybackEntryOrigin.Context, index)));
-        Current = source[selectedIndex];
-        upcoming.AddRange(Shuffle ? source.Where(entry => entry != Current) : source.Skip(selectedIndex + 1));
+        Clear(); Context = context with { Filter = TrackFilter.Normalize(context.Filter) }; manual.AddRange(retainedManual);
+        // SourceIndex remains the occurrence's position in the original list,
+        // including gaps excluded by the filter and duplicate track IDs.
+        source.AddRange(data.Select((track, index) => (track, index))
+            .Where(item => item.index == selectedIndex || TrackFilter.Matches(item.track, Context.Filter))
+            .Select(item => NewEntry(item.track, PlaybackEntryOrigin.Context, item.index)));
+        nextSourceIndex = data.Length;
+        Current = source.Single(entry => entry.SourceIndex == selectedIndex);
+        upcoming.AddRange(Shuffle ? source.Where(entry => entry != Current) : source.Where(entry => entry.SourceIndex > selectedIndex));
         if (Shuffle) Mix(upcoming);
         Preparation = PlaybackPreparation.Preparing; Changed();
         return Current;
@@ -64,6 +72,7 @@ internal sealed class PlaybackQueue
     {
         ++SourceVersion; Context = null; Current = null;
         source.Clear(); upcoming.Clear(); manual.Clear(); history.Clear(); forward.Clear(); recommendations.Clear(); recommendationsExhausted = false;
+        loadedSourceCursors.Clear(); nextSourceIndex = 0;
         Preparation = PlaybackPreparation.Stopped; Changed();
     }
 
@@ -198,11 +207,15 @@ internal sealed class PlaybackQueue
     internal bool Append(long version, string cursor, TrackPage page)
     {
         if (version != SourceVersion || Context?.NextHref != cursor) return false;
-        var added = page.Tracks.Select((track, index) => NewEntry(track, PlaybackEntryOrigin.Context, source.Count + index)).ToList();
+        var added = page.Tracks.Select((track, index) => (track, index))
+            .Where(item => TrackFilter.Matches(item.track, Context.Filter))
+            .Select(item => NewEntry(item.track, PlaybackEntryOrigin.Context, nextSourceIndex + item.index)).ToList();
+        nextSourceIndex += page.Tracks.Length;
         source.AddRange(added);
         if (Shuffle) Mix(added);
         upcoming.AddRange(added);
-        Context = Context with { NextHref = page.NextHref == cursor ? null : page.NextHref };
+        loadedSourceCursors.Add(cursor);
+        Context = Context with { NextHref = page.NextHref is { } next && !loadedSourceCursors.Contains(next) ? next : null };
         Changed(); return true;
     }
     internal void SetPreparation(long entryId, PlaybackPreparation state, SoundCloudTrack? resolved = null)

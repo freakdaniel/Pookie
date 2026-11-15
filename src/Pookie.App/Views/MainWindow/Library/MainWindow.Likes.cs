@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
+using Pookie.App.Playback;
 
 namespace Pookie.App;
 
@@ -69,7 +70,7 @@ internal sealed partial class MainWindow
             tile.Title.Text = track.Title;
             tile.Author.Text = track.Author;
             tile.SetSize(likedArtworkSize);
-            tile.SetPlaying(current?.Id == track.Id, isPlaying.Value, animate: false);
+            tile.SetPlaying(LibraryTrackSelected(track), isPlaying.Value, animate: false);
             SetCardArtwork(tile.Cover, libraryCoverCache.GetValueOrDefault(track.Id), track.ArtworkUrl ?? track.User?.AvatarUrl);
             likedArtworkTracks[tile.Cover] = (track.Id, track.ArtworkUrl ?? track.User?.AvatarUrl);
             Run(() => LoadLikedArtworkAsync(tile.Cover, track));
@@ -155,9 +156,7 @@ internal sealed partial class MainWindow
     {
         if (page.Value != Page.LibraryTracks) return;
         var filter = likedFilterText.Trim();
-        var visible = tracks.Where(track => filter.Length == 0 ||
-            track.Title.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var visible = tracks.Where(track => TrackFilter.Matches(track, filter)).ToArray();
         SetPageItems(likedGrid, visible, LoadingRowStyle.Card);
         SetPageItems(likedList, visible, LoadingRowStyle.Waveform);
         SetPageItems(likedCompactList, visible, LoadingRowStyle.Compact);
@@ -219,12 +218,15 @@ internal sealed partial class MainWindow
 
     private void RefreshLikedPlayback()
     {
-        foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id, isPlaying.Value);
+        foreach (var tile in likedTiles.Values.Concat(libraryTiles.Values)) tile.SetPlaying(tile.Track != null && LibraryTrackSelected(tile.Track), isPlaying.Value);
         RefreshCollectionCardsPlayback();
         RefreshHomeMixPlayback();
         RefreshUserProfilePlayback();
         RefreshLikedRows();
     }
+
+    private bool LibraryTrackSelected(SoundCloudTrack track) => current?.Id == track.Id &&
+        (page.Value != Page.LibraryTracks || QueueMatchesPageFilter);
 
     private async Task LoadLikedArtworkAsync(Image image, SoundCloudTrack track)
     {

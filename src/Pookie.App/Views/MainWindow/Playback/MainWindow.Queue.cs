@@ -47,10 +47,13 @@ internal sealed partial class MainWindow
     {
         CaptureQueueOrigin();
         var route = navigationHistory[navigationIndex].Route;
+        var filter = PagePlaybackFilter;
         var data = page.Value is Page.Track or Page.Search ? [first] :
             page.Value == Page.LibraryCollection ? activeCollection?.Items.Where(item => item.Track != null).Select(item => item.Track!).ToArray() ?? [first] :
+            page.Value == Page.LibraryTracks ? tracks.ToArray() :
             page.Value is Page.Library or Page.LibraryTracks ? libraryLikes?.Tracks ?? tracks.ToArray() : tracks.ToArray();
         var cursor = page.Value is Page.Search or Page.Track ? null : page.Value == Page.LibraryCollection ? activeCollection?.NextHref :
+            page.Value == Page.LibraryTracks ? nextHref :
             page.Value is Page.Library or Page.LibraryTracks ? libraryLikes?.NextHref ?? nextHref : nextHref;
         if (!data.Any(track => track.Id == first.Id)) data = [.. data, first];
         var key = page.Value is Page.Search or Page.Track ? $"track:{first.Id}" : route.Item?.Key ?? (page.Value is Page.Library or Page.LibraryTracks ? "likes" : page.Value.ToString());
@@ -65,11 +68,20 @@ internal sealed partial class MainWindow
             _ => PlaybackContextKind.Track
         };
         if (page.Value is Page.Search or Page.Track) { queueOriginTitle = first.Title; queueOriginKind = "Сейчас играет отдельный трек"; }
+        if (filter != null) { queueOriginTitle += $" · «{filter}»"; queueOriginKind = "Сейчас играет из результатов фильтра"; }
         if (page.Value == Page.LibraryCollection && selectedIndex is { } cardIndex && activeCollection != null)
             selectedIndex = activeCollection.Items.Take(cardIndex).Count(item => item.Track != null);
         StartQueueContext(new(key, queueOriginTitle, queueOriginKind, cursor, Kind: kind,
-            ResourceUrn: page.Value == Page.LibraryCollection ? PlaybackHistoryContextUrn(route.Item) : null), data, first, selectedIndex);
+            ResourceUrn: page.Value == Page.LibraryCollection ? PlaybackHistoryContextUrn(route.Item) : null, Filter: filter), data, first, selectedIndex);
     }
+
+    private string? PagePlaybackFilter => TrackFilter.Normalize(page.Value switch
+    {
+        Page.LibraryTracks => likedFilterText,
+        Page.LibraryCollection => collectionFilterText,
+        _ => null
+    });
+    private bool QueueMatchesPageFilter => string.Equals(playbackQueue.Context?.Filter, PagePlaybackFilter, StringComparison.OrdinalIgnoreCase);
 
     private void StartQueueContext(PlaybackContext context, SoundCloudTrack[] data, SoundCloudTrack first, int? selectedIndex = null, bool preserveManual = false)
     {
@@ -168,7 +180,8 @@ internal sealed partial class MainWindow
         // context and survives navigation away from its originating screen.
         var sourceVersion = playbackQueue.SourceVersion;
         var selectionGeneration = playGeneration;
-        for (var attempt = 0; attempt < 4 && !playbackQueue.Snapshot.Upcoming.Any() && playbackQueue.Context?.NextHref != null; attempt++)
+        for (var attempt = 0; (attempt < 4 || playbackQueue.Context?.Filter != null) &&
+            !playbackQueue.Snapshot.Upcoming.Any() && playbackQueue.Context?.NextHref != null; attempt++)
         {
             if (naturalEnd && playbackQueue.Repeat == RepeatMode.Track) break;
             await queueLoader.EnsureAheadAsync(force: true);

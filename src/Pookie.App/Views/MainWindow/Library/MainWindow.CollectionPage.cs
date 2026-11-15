@@ -2,6 +2,7 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
 using Pookie.SoundCloud;
+using Pookie.App.Playback;
 
 namespace Pookie.App;
 
@@ -193,7 +194,7 @@ internal sealed partial class MainWindow
     private async Task PlayCollectionTrackAsync(SoundCloudTrack track, int sourceIndex)
     {
         if (!playlistCollectionVisible.Value || page.Value != Page.LibraryCollection) return;
-        if (playbackQueue.Context?.Key == displayedCollection?.Key && current?.Id == track.Id && playbackQueue.Current?.SourceIndex == sourceIndex)
+        if (playbackQueue.Context?.Key == displayedCollection?.Key && current?.Id == track.Id && playbackQueue.Current?.SourceIndex == sourceIndex && QueueMatchesPageFilter)
         { await ToggleAsync(); return; }
         SetQueue(track, sourceIndex); await PlayAsync(track);
     }
@@ -203,8 +204,7 @@ internal sealed partial class MainWindow
         if (!playlistCollectionVisible.Value) return;
         var filter = collectionFilterText.Trim();
         var entries = (activeCollection?.Items ?? []).Select((item, index) => (item.Track, index))
-            .Where(item => item.Track != null && (filter.Length == 0 || item.Track.Title.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                item.Track.Author.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+            .Where(item => item.Track != null && TrackFilter.Matches(item.Track, filter))
             .Select(item => new CollectionTrackEntry(item.Track!, item.index)).ToArray();
         SetPageItems(collectionTrackList, entries, LoadingRowStyle.Compact);
         SetPageItems(collectionTrackCards, entries, LoadingRowStyle.Card);
@@ -219,6 +219,8 @@ internal sealed partial class MainWindow
         collectionLoadingView.Skeleton.SetGeometry(collectionTrackArtworkSize, Math.Max(1, (int)(collectionTrackCards.ActualWidth / (collectionTrackArtworkSize + 24))), collectionMode.Value != TrackViewMode.Cards);
         collectionEmpty.Text = filter.Length > 0 ? "По этому фильтру ничего не найдено." : "Здесь пока нет треков.";
         collectionEmpty.IsVisible = entries.Length == 0;
+        collectionPlay.IsEnabled = entries.Length > 0;
+        RefreshCollectionPlayback();
     }
 
     private void RefreshCollectionDescription()
@@ -313,12 +315,12 @@ internal sealed partial class MainWindow
     private void RefreshCollectionPlayback()
     {
         if (collectionPlay == null || !playlistCollectionVisible.Value) return;
-        var playing = playbackQueue.Context?.Key == displayedCollection?.Key && isPlaying.Value;
+        var playing = playbackQueue.Context?.Key == displayedCollection?.Key && QueueMatchesPageFilter && isPlaying.Value;
         collectionPlayIcon.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         var label = IsSystemCollection(displayedCollection) ? "микс" : "плейлист";
         collectionPlay.Hint((playing ? "Приостановить " : "Воспроизвести ") + label);
-        collectionPlay.IsEnabled = activeCollection?.Items.Any(item => item.Track != null) == true;
-        collectionMixQueue.IsEnabled = collectionPlay.IsEnabled;
+        collectionPlay.IsEnabled = activeCollection?.Items.Any(item => item.Track != null && TrackFilter.Matches(item.Track, collectionFilterText)) == true;
+        collectionMixQueue.IsEnabled = activeCollection?.Items.Any(item => item.Track != null) == true;
         foreach (var (tile, position) in collectionTrackTiles.Values)
             RefreshCollectionTrackTile(tile, position);
     }
@@ -326,9 +328,11 @@ internal sealed partial class MainWindow
     private async Task PlayDisplayedCollectionAsync()
     {
         if (displayedCollection == null || page.Value != Page.LibraryCollection) return;
-        if (playbackQueue.Context?.Key == displayedCollection.Key && current != null) { await ToggleAsync(); return; }
-        if (activeCollection?.Items.FirstOrDefault(item => item.Track != null)?.Track is not { } first) return;
-        SetQueue(first, 0); await PlayAsync(first, queueAdvance: true);
+        if (playbackQueue.Context?.Key == displayedCollection.Key && current != null && QueueMatchesPageFilter) { await ToggleAsync(); return; }
+        var first = activeCollection?.Items.Select((item, index) => (item.Track, index))
+            .FirstOrDefault(item => item.Track != null && TrackFilter.Matches(item.Track, collectionFilterText));
+        if (first?.Track is not { } track) return;
+        SetQueue(track, first.Value.index); await PlayAsync(track, queueAdvance: true);
     }
 
     private static string RussianPlural(long count, string one, string few, string many) => count % 100 is >= 11 and <= 14

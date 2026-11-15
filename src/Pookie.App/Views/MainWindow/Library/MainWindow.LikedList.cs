@@ -83,9 +83,9 @@ internal sealed partial class MainWindow
         RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }
 
-    private bool LibraryRowSelected(LikedTrackRow row) => current?.Id == row.Track?.Id &&
+    private bool LibraryRowSelected(LikedTrackRow row) => row.Track is { } track && LibraryTrackSelected(track) &&
         (!collectionWaveRows.TryGetValue(row.Root, out var entry) ||
-            playbackQueue.Context?.Key == displayedCollection?.Key && playbackQueue.Current?.SourceIndex == entry.Position);
+            playbackQueue.Context?.Key == displayedCollection?.Key && playbackQueue.Current?.SourceIndex == entry.Position && QueueMatchesPageFilter);
 
     private void RefreshPlaybackPosition(double seconds)
     {
@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
 
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)
     {
-        if (current?.Id != track.Id)
+        if (!LibraryTrackSelected(track))
         {
             SetQueue(track);
             await PlayAsync(track);

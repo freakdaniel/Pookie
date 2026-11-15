@@ -394,7 +394,7 @@ internal sealed partial class MainWindow
     private void SelectLibraryTrack(SoundCloudTrack track)
     {
         likedActionError.Value = "";
-        if (current?.Id == track.Id) { Run(ToggleAsync); return; }
+        if (LibraryTrackSelected(track)) { Run(ToggleAsync); return; }
         SetQueue(track);
         Run(() => PlayAsync(track));
     }

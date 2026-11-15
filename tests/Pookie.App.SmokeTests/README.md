@@ -399,6 +399,16 @@ rate and channels), independently of the available playback transcodings.
 `--track-quality-network-probe URL` verifies these metadata through the saved
 session's browser and native transports, without playback or account writes.
 
+`POOKIE_FILTERED_QUEUE_ONLY=1 --scrolling-ui-smoke-test --no-audio` clicks playback
+in all three likes/playlist views with a local artist/title filter. It checks the
+filtered queue order, original duplicate positions, Next/Previous, waveform seek,
+repeat, clearing/changing the filter and the playlist's main play button. A queue
+retains its captured filter after navigation; seven nonmatching/matching pages
+exercise continuation past empty filtered pages. Filtered sources finish at their
+results, without automatic unrelated recommendations; manual queue additions remain
+available. `Pookie.Playback.Tests/FilteredQueueTests` also checks Shuffle, pagination
+indices, cursor cycles and stale-source rejection.
+
 `--track-playback-ui-smoke-test --no-audio` checks playback with 500 comments:
 restricted 30-second metadata uses the full duration for the card, waveform and
 comment timestamps, including a late preview response after playback resolves;

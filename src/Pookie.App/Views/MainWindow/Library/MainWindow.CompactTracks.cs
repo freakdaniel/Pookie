@@ -173,7 +173,8 @@ internal sealed partial class MainWindow
         if (row.RepostMenu != null) row.RepostMenu.Text = repostedIds.Contains(track.Id) ? "Убрать репост" : "Сделать репост";
         var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId :
             row.CollectionRow && playbackQueue.Context?.Key == displayedCollection?.Key
-                ? current?.Id == track.Id && playbackQueue.Current?.SourceIndex == row.SourceIndex : current?.Id == track.Id;
+                ? current?.Id == track.Id && playbackQueue.Current?.SourceIndex == row.SourceIndex && QueueMatchesPageFilter :
+                likedCompactList.IsAncestorOf(row.Root) ? LibraryTrackSelected(track) : current?.Id == track.Id;
         row.HoverFill.Strength = selected || hovered ? 1 : 0;
         row.Overlay.SetHovered(hovered, animate: !scrolling);
         row.Overlay.SetPlaying(selected, isPlaying.Value, animate: !scrolling);

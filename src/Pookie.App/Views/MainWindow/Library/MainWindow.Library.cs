@@ -337,7 +337,7 @@ internal sealed partial class MainWindow
         if (item.Track is { } track)
         {
             if (page.Value == Page.UserProfile) { await PlayUserTrackAsync(track); return; }
-            if (current?.Id == track.Id) { await ToggleAsync(); return; }
+            if (current?.Id == track.Id && (page.Value != Page.LibraryCollection || QueueMatchesPageFilter)) { await ToggleAsync(); return; }
             if (page.Value is Page.Search or Page.LibraryCollection) { SetQueue(track, selectedIndex); await PlayAsync(track); return; }
             CaptureQueueOrigin(recent: page.Value == Page.Library);
             var source = activeCollection ?? libraryPages.GetValueOrDefault(page.Value == Page.LibraryHistory ? "history" : "recent");

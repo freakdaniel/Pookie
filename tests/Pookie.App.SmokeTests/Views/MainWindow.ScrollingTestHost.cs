@@ -12,6 +12,8 @@ internal sealed partial class MainWindow
     {
         try
         {
+            if (Environment.GetEnvironmentVariable("POOKIE_FILTERED_QUEUE_ONLY") == "1")
+            { await VerifyFilteredQueueUiAsync(); return; }
             Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);
             await WaitForLikedLayoutAsync(() => Window.ClientSize.Width < 1001 && libraryColumns == 4);
             var fixtures = Enumerable.Range(1, 80).Select(id => new SoundCloudTrack

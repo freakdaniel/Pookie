@@ -56,7 +56,7 @@ internal sealed partial class MainWindow
 
     private void RefreshCollectionTrackTile(LikedTrackTile tile, int position, bool animate = true) =>
         tile.SetPlaying(tile.Track != null && tile.Track.Id == current?.Id && playbackQueue.Context?.Key == displayedCollection?.Key &&
-            playbackQueue.Current?.SourceIndex == position, isPlaying.Value, animate);
+            playbackQueue.Current?.SourceIndex == position && QueueMatchesPageFilter, isPlaying.Value, animate);
 
     private void ClearCollectionTrackViews()
     {
