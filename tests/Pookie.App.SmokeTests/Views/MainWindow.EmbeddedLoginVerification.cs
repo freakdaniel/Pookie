@@ -90,6 +90,7 @@ internal sealed partial class MainWindow
                     throw new InvalidOperationException("Login browser was not shown inside the main login screen.");
                 await Task.Delay(250, timeout.Token);
                 VerifyEmbeddedNativePixels();
+                await VerifyEmbeddedLiveRepaintAsync(timeout.Token);
                 if (openingFrames < 3 || embeddedLoginDialog.Pose != 1)
                     throw new InvalidOperationException($"Login did not animate through the existing modal spring: frames={openingFrames}, snapshot={embeddedLogin.HasSnapshot}, pose={embeddedLoginDialog.Pose}.");
                 if (revealFrames < 3 || embeddedLogin.HasSnapshot && pixelFadeFrames < 2 || embeddedLoginSurface!.Loading)
@@ -256,6 +257,33 @@ internal sealed partial class MainWindow
             if (pixel != 0x3355bb)
                 throw new InvalidOperationException($"The live browser is covered or misplaced in the actual X11 window: pixel=#{pixel:x6}, expected=#3355bb, bounds={bounds}.");
             Console.WriteLine("EMBEDDED_NATIVE_PIXELS_OK: actual application window displays the live page before closing");
+        }
+        finally { XCloseDisplay(display); }
+    }
+
+    private async Task VerifyEmbeddedLiveRepaintAsync(CancellationToken token)
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var display = XOpenDisplay(0);
+        if (display == 0) throw new InvalidOperationException("No X11 display for live WebKit repaint verification.");
+        try
+        {
+            foreach (var changed in new[] { true, false })
+            {
+                await embeddedLogin!.SetFixtureBackgroundForVerificationAsync(changed);
+                var expected = changed ? 0xbb5533u : 0x3355bbu;
+                var deadline = DateTime.UtcNow.AddSeconds(3);
+                while (true)
+                {
+                    var bounds = embeddedLogin.TranslateRect(new(0, 0, embeddedLogin.ActualWidth, embeddedLogin.ActualHeight), Window);
+                    var pixel = ReadNativeChatVideoPixel(display, new Point(bounds.Right - 40, bounds.Bottom - 40));
+                    if (pixel == expected) break;
+                    if (DateTime.UtcNow >= deadline)
+                        throw new InvalidOperationException($"Live WebKit repaint is missing: #{pixel:x6}, expected #{expected:x6}. A snapshot or blank surface is covering the page.");
+                    await Task.Delay(25, token);
+                }
+            }
+            Console.WriteLine("EMBEDDED_LIVE_REPAINT_OK: transformed page updates the actual X11 window while the overlay stays open; no snapshot recapture");
         }
         finally { XCloseDisplay(display); }
     }

@@ -1,5 +1,6 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
@@ -25,30 +26,37 @@ internal sealed partial class MainWindow
         var card = collectionCards.Keys.First(root => collectionGrid.IsAncestorOf(root) && collectionCards[root].Item.Key == mixes[0].Key);
         ClickHomeElement(card);
         await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryCollection && !collectionLoadingView.Skeleton.IsVisible &&
-            collectionCover.ActualWidth is >= 144 and <= 160 && collectionCover.Bounds.Right < collectionTitle.Bounds.X && collectionBackdrop.Opacity == 1);
-        if (libraryTabs.IsVisible || !collectionHero.HeroArtworkLeading || !collectionMixPlay.IsVisible ||
-            !collectionMixPlay.IsEnabled || collectionPlay.IsVisible || collectionSocialActions.IsVisible || collectionFollow.IsVisible ||
-            collectionMore.IsVisible || collectionTitle.FontSize != 48 || collectionMeta.Text.StartsWith("·") ||
-            VisualTree.Find(collectionHero, element => element is TextBlock { Text: "Микс для тебя" }) != null)
-            throw new InvalidOperationException("Mix detail retained library tabs, ordinary playlist actions or the old hero layout.");
-        if (collectionHero.ActualHeight > 224 ||
-            Math.Abs(collectionMixTags.Bounds.Y - collectionHero.Bounds.Y) > 1 ||
-            Math.Abs(collectionMixTags.Bounds.Right - collectionHero.Bounds.Right + 24) > 1 ||
-            collectionMixTags.Bounds.X < collectionTitle.Bounds.Right + 16 ||
-            collectionMixTags.Children.Count != 3 || Math.Abs(collectionMixPlay.Bounds.Bottom - collectionCover.Bounds.Bottom) > 1 ||
+            collectionCover.ActualWidth is >= 176 and <= 208 && collectionTitle.Bounds.Right < collectionCover.Bounds.X && collectionBackdrop.Opacity == 1);
+        if (libraryTabs.IsVisible || collectionHero.HeroArtworkLeading || collectionHero.HeroFitContent ||
+            !collectionPlay.IsVisible || !collectionPlay.IsEnabled || collectionSocialActions.IsVisible || collectionFollow.IsVisible ||
+            collectionMore.IsVisible || collectionTitle.FontSize != 28 || collectionTitle.Height != 36 || !collectionMixInfo.IsVisible)
+            throw new InvalidOperationException("Mix detail did not use the track page's shared header layout.");
+        if (Math.Abs(collectionHero.ActualHeight - collectionCover.ActualHeight - 48) > 1 ||
+            Math.Abs(collectionPlay.Bounds.Y - collectionCover.Bounds.Y) > 1 ||
+            collectionPlay.Bounds.Right >= collectionTitle.Bounds.X ||
+            collectionMixTags.Bounds.Right >= collectionCover.Bounds.X || collectionMixTags.Children.Count != 3 ||
+            Math.Abs(collectionShare.Bounds.Bottom - collectionCover.Bounds.Bottom) > 1 ||
             collectionMeta.Text != "Исполнитель 1, Исполнитель 2, Исполнитель 3" || collectionDescriptionHost.IsVisible ||
             !collectionMixStats.Text.Contains("6 треков") || !collectionMixStats.Text.Contains("18:00"))
-            throw new InvalidOperationException("Mix header retained empty vertical space, lost its tags or clipped the playback controls.");
-        VerifyMixNotchPaint();
-        if (collectionMixShape.NotchBottom - collectionHero.Bounds.Y > 40)
-            throw new InvalidOperationException("The mix tag cutout is deeper than the top-aligned badges require.");
+            throw new InvalidOperationException("Mix title/play, right-hand cover, centered metadata or bottom actions are misaligned.");
+        if (collectionPlay.ActualWidth != 64 || collectionPlay.ActualHeight != 64 ||
+            collectionPlay.StyleName != TrackButtons.Glass || ((MaterialTrackButton)collectionPlay).GlassAccentSurface != null)
+            throw new InvalidOperationException("Mix playback must use the shared neutral round glass button.");
+        VerifyMixActionAlignment();
         MoveActionPointer(new Point(2, 2));
-        await WaitForLikedLayoutAsync(() => ((MaterialTrackButton)collectionMixPlay).GlassAccentSurface == FixtureMixBadgeColor(1) &&
-            collectionMixPlay.Background == FixtureMixBadgeColor(1));
-        VerifyMixBadgeColors();
-        VerifyMixGlassPaint();
         if (Environment.GetEnvironmentVariable("POOKIE_GLASS_PERF") == "1") await ProbeMixGlassPerformanceAsync();
         CaptureUiPreview("mix-detail-narrow");
+        var originalMix = displayedCollection!;
+        var longMix = originalMix with { Title = "Музыка для долгих поездок, встреч с друзьями и тихих вечеров",
+            Playlist = originalMix.Playlist! with { Genre = "Очень длинное название жанра", Tags = ["Ещё одно длинное название", "Третий музыкальный жанр"] } };
+        SetCollectionPresentation(longMix);
+        await WaitForLikedLayoutAsync(() => collectionTitle.ActualHeight == 36 && shellPageScroll.IsReady && collectionTitle.Text == longMix.Title);
+        if (collectionMixTags.Bounds.Right >= collectionCover.Bounds.X ||
+            collectionMixTags.Bounds.Bottom > collectionShare.Bounds.Y - 8 || collectionHero.ActualHeight > 450)
+            throw new InvalidOperationException("Long mix title/tags overlap playback or overflow the narrow header.");
+        CaptureUiPreview("mix-detail-long-title");
+        SetCollectionPresentation(originalMix);
+        await WaitForLikedLayoutAsync(() => collectionTitle.ActualHeight < 60 && shellPageScroll.IsReady);
         ClickHomeElement(profileButton);
         await WaitForLikedLayoutAsync(() => profileOpen.Value &&
             shellMenus.Single(menu => ReferenceEquals(menu.State, profileOpen)).Layer.Reveal > .999);
@@ -58,36 +66,56 @@ internal sealed partial class MainWindow
         if (pageItems[collectionTrackList].DataCount != 1 || activeCollection?.Items.Length != transport.Recent.Length)
             throw new InvalidOperationException("Mix filtering changed its full source track list.");
         collectionFilter.Text = "";
-        ClickHomeElement(collectionMixPlay);
+        ClickHomeElement(collectionPlay);
         await WaitForLikedLayoutAsync(() => playbackQueue.Context?.Key == mixes[0].Key);
         if (playbackQueue.Snapshot.Source.Count != transport.Recent.Length)
             throw new InvalidOperationException("The mix playback button did not use the complete mix queue.");
-        await WaitForLikedLayoutAsync(() => collectionMixPlayLabel.Text == "Слушать");
-        var listenWidth = collectionMixPlay.ActualWidth;
+        var listenBounds = collectionPlay.Bounds;
         current = playbackQueue.Current!.Track; isPlaying.Value = true; RefreshCollectionPlayback();
-        if (collectionMixPlayLabel.Text != "Пауза") throw new InvalidOperationException("Mix playback feedback did not update.");
-        var widths = new List<double>();
-        for (var i = 0; i < 10; i++) { await Task.Delay(30, lifetime.Token); widths.Add(collectionMixPlay.ActualWidth); }
-        var pauseWidth = collectionMixPlay.ActualWidth;
-        if (pauseWidth >= listenWidth - 1 || !widths.Any(width => width < listenWidth - .5 && width > pauseWidth + .5))
-            throw new InvalidOperationException("The mix playback button snapped to its shorter label instead of animating its width.");
+        await WaitForLoginFrameAsync();
+        if (TooltipHints.TextFor(collectionPlay) != "Приостановить микс" || collectionPlay.Bounds != listenBounds)
+            throw new InvalidOperationException("Mix pause changed the button layout or lost its playback feedback.");
         CaptureUiPreview("mix-button-paused");
         isPlaying.Value = false; RefreshCollectionPlayback();
-        await Task.Delay(50, lifetime.Token);
-        isPlaying.Value = true; RefreshCollectionPlayback();
-        await WaitForLikedLayoutAsync(() => Math.Abs(collectionMixPlay.ActualWidth - pauseWidth) < .5);
-        if (((MaterialTrackButton)collectionMixPlay).GlassAccentSurface != FixtureMixBadgeColor(1))
-            throw new InvalidOperationException("The mix accent changed when switching between play and pause.");
+        await WaitForLoginFrameAsync();
+        if (TooltipHints.TextFor(collectionPlay) != "Воспроизвести микс" ||
+            ((MaterialTrackButton)collectionPlay).GlassAccentSurface != null || collectionPlay.Bounds != listenBounds)
+            throw new InvalidOperationException("Mix playback changed the shared neutral button style.");
         current = null; isPlaying.Value = false; playbackQueue.Clear(); RefreshCollectionPlayback();
 
         await MoveNavigationAsync(-1);
         await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryMixes && libraryTabs.IsVisible && collectionGrid.ItemsSource.Count == 9);
         Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
         await OpenLibraryItemAsync(mixes[0]);
-        await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 144 and <= 160 && collectionBackdrop.Opacity == 1 &&
+        await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 176 and <= 208 && collectionBackdrop.Opacity == 1 &&
             !collectionLoadingView.Skeleton.IsVisible && shellPageScroll.IsReady);
         await Task.Delay(260, lifetime.Token);
         CaptureUiPreview("mix-detail-wide");
+        VerifyMixActionAlignment();
+        foreach (var personal in mixes.Where(mix => mix.Playlist!.Urn.Contains(":new-for-you:") || mix.Playlist.Urn.Contains(":weekly:")))
+        {
+            await OpenLibraryItemAsync(personal);
+            await WaitForLikedLayoutAsync(() => collectionBackdrop.Opacity == 1 && !collectionLoadingView.Skeleton.IsVisible);
+            if (!collectionPlay.IsVisible || !collectionMixInfo.IsVisible || collectionHero.HeroArtworkLeading ||
+                ((MaterialTrackButton)collectionPlay).GlassAccentSurface != null)
+                throw new InvalidOperationException("Daily Drops/Weekly Wave did not share the neutral mix presentation.");
+        }
+        var regularTransport = new CollectionFixtureTransport();
+        var regular = LibraryData.FromPlaylist(regularTransport.Playlist);
+        collectionImages[CollectionArtworkUrl(regular)!] = collectionImages[HomeFixtureTransport.MixArtwork(1)];
+        api.BrowserTransport = regularTransport;
+        try
+        {
+            await OpenLibraryItemAsync(regular);
+            await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 176 and <= 208 && shellPageScroll.IsReady &&
+                !collectionLoadingView.Skeleton.IsVisible && collectionBackdrop.Opacity == 1);
+            if (collectionHero.HeroArtworkLeading || collectionTitle.FontSize != 28 || !collectionPlay.IsVisible ||
+                collectionMixInfo.IsVisible || collectionMixStats.IsVisible || collectionMixTags.IsVisible ||
+                collectionTitle.Bounds.Right >= collectionCover.Bounds.X)
+                throw new InvalidOperationException("Ordinary playlist retained the mix styling after navigation.");
+            CaptureUiPreview("playlist-after-mix");
+        }
+        finally { api.BrowserTransport = transport; }
         await NavigateAsync(Page.Library);
         await WaitForLikedLayoutAsync(() => libraryMixItems.Length == 9 && libraryMixShelf.Scroll.ViewportWidth > 100 && !libraryMixLoading.Loading);
         if (!libraryTabs.IsVisible || !libraryMixItems.Select(item => item.Key).SequenceEqual(mixes.Select(item => item.Key)))
@@ -109,6 +137,14 @@ internal sealed partial class MainWindow
         shellScroll.SetScrollOffsets(0, 0);
         await WaitForLoginFrameAsync();
         Console.WriteLine("LIBRARY_MIXES_OK: all personal mixes, overview shelf, detail actions, playback, filtering, back and retry");
+    }
+
+    private void VerifyMixActionAlignment()
+    {
+        if (Math.Abs(collectionShare.Bounds.X - collectionPlay.Bounds.X) > 1 ||
+            Math.Abs(collectionMixQueue.Bounds.X - collectionShare.Bounds.Right - TrackButtons.ActionSpacing) > 1 ||
+            Math.Abs(collectionMixQueue.Bounds.Y - collectionShare.Bounds.Y) > 1)
+            throw new InvalidOperationException("Mix bottom actions moved away from the leading edge of the content column.");
     }
 
     private async Task ProbeMixGlassPerformanceAsync()
@@ -167,71 +203,4 @@ internal sealed partial class MainWindow
         finally { Window.FrameRendered -= Sample; CloseShellMenus(true); collectionMode.Value = mode; }
     }
 
-    private void VerifyMixBadgeColors()
-    {
-        for (var index = 1; index <= 7; index++)
-        {
-            var source = collectionImages[HomeFixtureTransport.MixArtwork(index)];
-            var palette = MixBadgePalette.FromArtwork(source);
-            if (palette?.Surface != FixtureMixBadgeColor(index))
-                throw new InvalidOperationException("Mix button colour came from the artwork instead of the bottom MIX label.");
-            if (index == 4 && palette.Foreground != Color.White || index == 1 && palette.Foreground != Color.FromRgb(0, 0, 0))
-                throw new InvalidOperationException("Mix badge contrast did not adapt to light/dark label colours.");
-        }
-        if (Environment.GetEnvironmentVariable("POOKIE_MIX_BADGE_REFERENCE") is { Length: > 0 } file)
-        {
-            using var reference = ImageSource.FromFile(file);
-            var palette = MixBadgePalette.FromArtwork(reference);
-            if (palette == null || palette.Surface.B < palette.Surface.R + 70 || palette.Surface.G < palette.Surface.R + 25)
-                throw new InvalidOperationException("The supplied MIX label's blue background was not recovered.");
-        }
-        Console.WriteLine("MIX_BUTTON_OK: sampled MIX label colours, contrasting ink and interruptible width changes");
-    }
-
-    private void VerifyMixGlassPaint()
-    {
-        var bounds = collectionMixPlay.Bounds;
-        var scale = Window.DpiScale;
-        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(Aprillz.MewUI.Rendering.RenderSurfaceDescriptor.CpuPixels(
-            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
-        using var context = Window.GraphicsFactory.CreateContext(surface);
-        context.BeginFrame(surface); context.Clear(Color.Transparent); context.Translate(-bounds.X, -bounds.Y);
-        collectionMixPlay.Render(context);
-        context.EndFrame();
-        var cpu = (Aprillz.MewUI.Rendering.ICpuPixelSurface)surface;
-        var pixels = cpu.GetReadOnlyPixelSpan();
-        var x = (int)(bounds.Width / 2 * scale);
-        var body = (int)(9 * scale) * cpu.StrideBytes + x * 4;
-        var upperRim = (int)(.8 * scale) * cpu.StrideBytes + x * 4;
-        var lowerRim = (int)((bounds.Height - 1.4) * scale) * cpu.StrideBytes + x * 4;
-        var pigment = FixtureMixBadgeColor(1);
-        if (pixels[body + 3] != 255 || Math.Abs(pixels[body + 1] - pigment.G) > 3 ||
-            Math.Abs(pixels[body + 2] - pigment.R) > 3 ||
-            pixels[upperRim] < pixels[body] + 20 || pixels[lowerRim] < pixels[body] + 5)
-            throw new InvalidOperationException("Filled mix glass lost its opaque pigment or the distinct upper and lower rim reflections.");
-        Console.WriteLine("MIX_GLASS_OK: opaque MIX pigment with directional rim reflections");
-    }
-
-    private void VerifyMixNotchPaint()
-    {
-        var bounds = collectionHero.Bounds;
-        var scale = Window.DpiScale;
-        using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
-        using var surface = Window.GraphicsFactory.CreateSurface(Aprillz.MewUI.Rendering.RenderSurfaceDescriptor.CpuPixels(
-            (int)Math.Ceiling(bounds.Width * scale), (int)Math.Ceiling(bounds.Height * scale), scale));
-        using var context = Window.GraphicsFactory.CreateContext(surface);
-        context.BeginFrame(surface); context.Clear(Color.Transparent); context.Translate(-bounds.X, -bounds.Y);
-        collectionHeroFrame.Render(context);
-        context.EndFrame();
-        var cpu = (Aprillz.MewUI.Rendering.ICpuPixelSurface)surface;
-        var pixels = cpu.GetReadOnlyPixelSpan();
-        var outsideX = (int)((collectionMixTags.Bounds.X - 8 - bounds.X) * scale);
-        var outsideY = (int)((collectionMixTags.Bounds.Center.Y - bounds.Y) * scale);
-        var insideX = (int)((collectionMixTags.Bounds.Center.X - bounds.X) * scale);
-        var insideY = (int)((collectionMixShape.NotchBottom + 24 - bounds.Y) * scale);
-        if (pixels[outsideY * cpu.StrideBytes + outsideX * 4 + 3] != 0 ||
-            pixels[insideY * cpu.StrideBytes + insideX * 4 + 3] != 255 || collectionHeroShadow.DrawShadow)
-            throw new InvalidOperationException("Mix tags need a transparent cutout above the curved card background.");
-    }
 }

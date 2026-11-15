@@ -24,7 +24,7 @@ internal sealed partial class MainWindow
         {
             overlay = owner.CreateCoverPlayback(Cover, () => { if (Track is { } track) select(track); });
             var zoom = new ArtworkHoverZoom(owner.ArtworkLayer(Cover).Children(overlay));
-            artworkFrame = new Border().CornerRadius(6).ClipToBounds()
+            artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds()
                 .Child(zoom);
             Root = new Button().Background(Color.Transparent).BorderBrush(Color.Transparent).BorderThickness(0).Padding(0).Top()
                 .Content(new StackPanel().Vertical().Spacing(1).Children(

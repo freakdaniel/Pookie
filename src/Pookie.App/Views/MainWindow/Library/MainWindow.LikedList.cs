@@ -21,7 +21,7 @@ internal sealed partial class MainWindow
             .ItemPadding(new Thickness(0, 0, 0, TrackRowLayout.Gap));
         result.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var row = CreateLibraryTrackRow();
+            var row = CreateLibraryTrackRow(recycleBuffers: true);
             context.Register("row", row.Root);
             return CreateLikedItemMotion(row.Root, result, context);
         }, (_, track, _, context) =>
@@ -37,10 +37,10 @@ internal sealed partial class MainWindow
         return result;
     }
 
-    private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null)
+    private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null, bool recycleBuffers = false)
     {
         var row = new LikedTrackRow(select ?? SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack);
+            track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack, recycleBuffers: recycleBuffers);
         likedRows.Add(row.Root, row);
         AttachTrackQueueMenu(row.Root, () => row.Track);
         AttachTrackTitle(row.Title, () => row.Track);

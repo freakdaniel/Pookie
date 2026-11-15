@@ -22,6 +22,9 @@ internal sealed partial class MainWindow
     private Grid chatVideoHeader = null!;
     private Button chatVideoPrevious = null!, chatVideoNext = null!, chatVideoClose = null!;
     private (string Id, int Index)? chatVideoCurrent;
+    private bool chatVideoShowingImage;
+    private UIElement? chatVideoReturnFocus;
+    private bool chatVideoReturnFocusKeyboard;
     private List<(string Id, int Index)> ChatVideoEntries() => chatMessageItems.SelectMany(item =>
         (CachedChatMedia(item.Message)?.Attachments ?? []).Select((file, index) => (file, index))
             .Where(pair => !pair.file.AsFile && pair.file.MediaType.StartsWith("video/", StringComparison.Ordinal))
@@ -41,6 +44,8 @@ internal sealed partial class MainWindow
     {
         chatVideoTitle = new TextBlock().FontSize(16).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         chatVideoImage = new Image().StretchMode(Stretch.Uniform);
+        artworkPreviewMenu = AttachArtworkMenu(chatVideoImage, () => chatVideoShowingImage ? previewArtwork : null,
+            point => ChatVideoPictureBounds().Contains(point));
         chatVideoStatus = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Center();
         BuildChatVideoControls();
         chatVideoClose = TrackButtons.Icon(Icons.View("x", 22, Color.White), () => CloseChatVideo(), TrackButtons.Glass, 40).Right();
@@ -64,7 +69,7 @@ internal sealed partial class MainWindow
             if (e.Button != MouseButton.Left || e.Handled) return;
             var local = e.GetPosition(chatVideoSurface);
             var point = new Point(local.X + chatVideoSurface.Bounds.X, local.Y + chatVideoSurface.Bounds.Y);
-            if (chatVideoControls.Bounds.Contains(point) || chatVideoHeader.IsHitTestVisible && chatVideoClose.Bounds.Contains(point) ||
+            if (chatVideoControls.IsVisible && chatVideoControls.Bounds.Contains(point) || chatVideoHeader.IsHitTestVisible && chatVideoClose.Bounds.Contains(point) ||
                 chatVideoPrevious.IsVisible && chatVideoPrevious.Bounds.Contains(point) || chatVideoNext.IsVisible && chatVideoNext.Bounds.Contains(point) ||
                 chatVideoSpeedOpen && chatVideoSpeedMenu.Bounds.Contains(point)) return;
             e.Handled = true;
@@ -116,6 +121,8 @@ internal sealed partial class MainWindow
         if (poster == null && file.Video is { Valid: true } info) poster = ImageSource.FromBgraPixels(info.ThumbWidth, info.ThumbHeight, info.Pixels);
         var replacingVideo = chatVideoOpen.Value;
         CloseChatVideo(true, replacing: true);
+        chatVideoShowingImage = false; chatVideoReturnFocus = null;
+        chatVideoLayout.ImageMode = false; chatVideoControls.IsVisible = true;
         if (!replacingVideo) SetChatVideoExpanded(false, immediate: true);
         RevealChatVideoControls(); var generation = chatVideoGeneration;
         chatVideoImage.Source = poster;
@@ -163,6 +170,11 @@ internal sealed partial class MainWindow
     private void CloseChatVideo(bool immediate = false, bool replacing = false)
     {
         var wasOpen = chatVideoOpen.Value;
+        var wasImage = chatVideoShowingImage;
+        var returnFocus = chatVideoReturnFocus;
+        var returnFocusKeyboard = chatVideoReturnFocusKeyboard;
+        artworkPreviewMenu?.Close(true); previewArtwork = null;
+        chatVideoShowingImage = false; chatVideoReturnFocus = null; chatVideoReturnFocusKeyboard = false;
         var generation = ++chatVideoGeneration; chatVideoTimer.Stop(); chatVideoOpen.Value = false; chatVideoCurrent = null;
         var session = chatVideoSession; chatVideoSession = null;
         var bitmap = chatVideoBitmap; chatVideoBitmap = null; chatVideoVersion = 0;
@@ -171,17 +183,22 @@ internal sealed partial class MainWindow
         // Reopening during a close continues the current fade in the other direction.
         var hiding = replacing ? Task.CompletedTask : chatVideoSurface?.SetOpen(false, immediate || disposed || !wasOpen) ?? Task.CompletedTask;
         var releasing = session?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-        if (disposed) RestoreMusicAfterChatVideo();
+        if (disposed && !wasImage) RestoreMusicAfterChatVideo();
         async Task Finish()
         {
             await hiding;
             if (generation == chatVideoGeneration && chatVideoImage != null) chatVideoImage.Source = null;
             bitmap?.Dispose();
             await releasing;
-            if (!replacing && generation == chatVideoGeneration && !disposed) RestoreMusicAfterChatVideo();
+            if (!replacing && generation == chatVideoGeneration && !disposed && !wasImage) RestoreMusicAfterChatVideo();
         }
         chatVideoClosing = Task.WhenAll(chatVideoClosing, Finish());
         Run(() => chatVideoClosing);
-        if (wasOpen && !disposed) { Window.InvalidateVisual(); if (chatInput.IsEnabled) chatInput.Focus(); }
+        if (wasOpen && !disposed && !replacing)
+        {
+            Window.InvalidateVisual();
+            if (wasImage && returnFocus != null) KeyboardFocusFeedback.Restore(returnFocus, returnFocusKeyboard);
+            else if (chatInput.IsEnabled) chatInput.Focus();
+        }
     }
 }

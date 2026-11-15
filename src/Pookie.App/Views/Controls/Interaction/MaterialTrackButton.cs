@@ -39,6 +39,8 @@ internal sealed class MaterialTrackButton : Button
     private readonly AnimationClock surfaceClock = new(TimeSpan.FromMilliseconds(240), Easing.CubicBezier(.2, 0, 0, 1));
     private bool connected, groupStart;
     private bool glassFinish;
+    private bool cardGlassFallback;
+    internal bool RetainDecorationOnDetach { get; set; }
     private bool lightGlass, listStateLayer;
     internal bool BakeGlyphOpacity { get; set; }
     private readonly GlassSheenRaster sheen = new();
@@ -55,6 +57,7 @@ internal sealed class MaterialTrackButton : Button
         overlayBackdrop.Attach(FindVisualRoot() as Window);
     }
     internal void UseGlassFinish() => glassFinish = true;
+    internal void UseCardGlassFallback() => cardGlassFallback = true;
     internal void UseLightGlassFinish() { lightGlass = glassFinish = true; RefreshSurface(true); }
     internal void UseListStateLayer() { listStateLayer = true; surfaceClock.Duration = TimeSpan.FromMilliseconds(150); RefreshSurface(true); }
     internal void AttachGlassBackdrop(CoverGlassBackdrop? backdrop)
@@ -238,6 +241,14 @@ internal sealed class MaterialTrackButton : Button
             glassBackdrop.Draw(context, bounds, corners, shape, lens ??= new(), GetDpi() / 96d, InvalidateVisual);
             context.FillPath(shape, glassTint);
         }
+        else if (cardGlassFallback && StyleName == TrackButtons.Glass)
+        {
+            // Match the light control tint used over track-page backgrounds,
+            // including waveform rows with no custom background to sample.
+            var bounds = GetSnappedBorderBounds(Bounds);
+            var corners = connected ? ConnectedCorners : new CornerRadius(CornerRadius);
+            context.FillPath(geometry.Get(bounds, corners), glassTint);
+        }
         else if (connected)
             DrawBackgroundAndBorder(context, GetSnappedBorderBounds(Bounds), Background, BorderBrush, new Thickness(BorderThickness), ConnectedCorners);
         else base.OnRender(context);
@@ -254,7 +265,8 @@ internal sealed class MaterialTrackButton : Button
             surfaceClock.Stop(); shapeClock.Stop();
             if (target is { } color) Background = color;
             glassTint = glassTintTarget; innerCorner = shapeTarget;
-            lens?.Dispose(); sheen.Dispose(); tintedGlass?.Dispose();
+            lens?.Dispose();
+            if (!RetainDecorationOnDetach) { sheen.Dispose(); tintedGlass?.Dispose(); }
         }
     }
 
@@ -262,8 +274,11 @@ internal sealed class MaterialTrackButton : Button
     {
         surfaceClock.Stop(); shapeClock.Stop();
         overlayBackdrop?.Dispose(); overlayBackdrop = null;
-        lens?.Dispose(); sheen.Dispose(); tintedGlass?.Dispose();
+        ReleaseDecorationResources();
         if (glassBackdrop != null) glassBackdrop.Changed -= InvalidateVisual;
         base.OnDispose();
     }
+
+    internal void ReleaseDecorationResources()
+    { lens?.Dispose(); sheen.Dispose(); tintedGlass?.Dispose(); }
 }

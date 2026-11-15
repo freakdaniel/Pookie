@@ -15,6 +15,7 @@ internal static class BrowserRequestScript
             .Replace("__POOKIE_TRACK_COMMENTS__", JsonSerializer.Serialize(TrackReadQueries.Comments, Pookie.SoundCloud.SoundCloudJson.Default.String))
             .Replace("__POOKIE_TRACK_REPLIES__", JsonSerializer.Serialize(TrackReadQueries.Replies, Pookie.SoundCloud.SoundCloudJson.Default.String))
             .Replace("__POOKIE_TRACK_SIDEBAR__", JsonSerializer.Serialize(TrackReadQueries.Sidebar, Pookie.SoundCloud.SoundCloudJson.Default.String))
+            .Replace("__POOKIE_TRACK_QUALITY__", JsonSerializer.Serialize(TrackReadQueries.Quality, Pookie.SoundCloud.SoundCloudJson.Default.String))
             .Replace("__POOKIE_COMMENT_CREATE__", JsonSerializer.Serialize(CommentWriteQueries.Create, Pookie.SoundCloud.SoundCloudJson.Default.String))
             .Replace("__POOKIE_COMMENT_DELETE__", JsonSerializer.Serialize(CommentWriteQueries.Delete, Pookie.SoundCloud.SoundCloudJson.Default.String))
             .Replace("const graphOrigin = 'https://graph.soundcloud.com';", "const graphOrigin = " + JsonSerializer.Serialize(origin == "https://soundcloud.com" ? "https://graph.soundcloud.com" : origin, Pookie.SoundCloud.SoundCloudJson.Default.String) + ";")

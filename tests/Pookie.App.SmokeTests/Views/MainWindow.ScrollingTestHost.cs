@@ -38,6 +38,8 @@ internal sealed partial class MainWindow
             {
                 api.Session = new("fixture", "fixture-token", "Test");
                 ShowLibraryTracks();
+                if (Environment.GetEnvironmentVariable("POOKIE_LIBRARY_SCROLL_PERF") == "1")
+                { await ProbeLibraryScrollPerformanceAsync(fixtures.Take(32).ToArray()); return; }
                 foreach (var listView in new[] { false, true })
                 {
                     var transport = new PaginationBrowser(); api.BrowserTransport = transport;

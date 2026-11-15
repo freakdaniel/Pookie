@@ -6,6 +6,18 @@
 version = 1
 
 [[annotations]]
+path = ["src/Pookie.App/Assets/Branding/app-icon*", "packaging/flatpak/*.desktop", "packaging/flatpak/pookie"]
+precedence = "closest"
+SPDX-FileCopyrightText = ["2023 Richard Habitzreuter", "2026 Daniel Freak"]
+SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = "packaging/flatpak/*.metainfo.xml"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Daniel Freak"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
 path = "src/Pookie.App/Assets/Emoji/*.png"
 precedence = "closest"
 SPDX-FileCopyrightText = "Apple Inc."
@@ -53,7 +65,7 @@ SPDX-License-Identifier = "MIT"
 SPDX-FileComment = """
 Embedded SVGs from https://github.com/phosphor-icons/core at commit
 2b75f3ad12b420c9504ef05df8d2564a28f8500e; no runtime CDN dependency.
-Most icons are upstream duotone assets, including squares-four, list-bullets, copy,
+Most icons are upstream duotone assets, including squares-four, list-bullets, copy, link,
 chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
 Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
 clock-counter-clockwise, thumbs-down, paperclip, list, trash and gif use assets/regular/ variants;
@@ -253,7 +265,7 @@ Full upstream notice and permission: licenses/MIT.txt. No runtime CDN dependency
 """
 
 [[annotations]]
-path = ["src/Pookie.App/Assets/Icons/microphone.svg", "src/Pookie.App/Assets/Icons/plus.svg"]
+path = ["src/Pookie.App/Assets/Icons/microphone.svg", "src/Pookie.App/Assets/Icons/plus.svg", "src/Pookie.App/Assets/Icons/high-definition.svg"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Daniel Freak"
 SPDX-License-Identifier = "BSD-3-Clause"

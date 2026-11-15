@@ -36,6 +36,9 @@ internal sealed class TrackWaveform : Control
     private bool rasterDirty = true;
     private Size rasterSize;
     private double rasterScale;
+    // Virtualized rows reuse a bounded number of controls. Keep their pixel
+    // storage across detach/rebind; SetSamples invalidates all previous ink.
+    internal bool RetainRasterOnDetach { get; set; }
     public event Action<double>? SeekRequested;
     public bool HasSamples => samples.Length > 0;
     internal bool IsAnimating => colorMotion.IsRunning || revealMotion.IsRunning;
@@ -295,7 +298,7 @@ internal sealed class TrackWaveform : Control
         return alpha << 24 | red << 16 | green << 8 | blue;
     }
 
-    private void ReleaseRaster()
+    internal void ReleaseRaster()
     {
         image?.Dispose(); image = null;
         raster?.Dispose(); raster = null;
@@ -308,7 +311,8 @@ internal sealed class TrackWaveform : Control
         if (newRoot == null)
         {
             colorMotion.Stop(); revealMotion.Stop(); revealPending = false; reveal = 1; revealOnce = null;
-            hoverPosition = null; ReleaseRaster();
+            hoverPosition = null;
+            if (!RetainRasterOnDetach) ReleaseRaster();
         }
     }
     protected override void OnDispose() { colorMotion.Stop(); revealMotion.Stop(); revealOnce = null; ReleaseRaster(); base.OnDispose(); }

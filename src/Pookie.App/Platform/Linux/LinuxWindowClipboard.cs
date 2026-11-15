@@ -33,6 +33,7 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
     public bool TrySetText(string value)
     {
         if (display == 0 || window.Handle == 0) return reader?.TrySetText(value) == true;
+        image = null;
         selection = Atom(selectionName);
         text = value;
         selectionTime = ServerTime();
@@ -41,12 +42,12 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
         return XGetSelectionOwner(display, selection) == (nuint)window.Handle;
     }
 
-    public bool HasText() => OwnsSelection() ? text.Length > 0 : display != 0 &&
+    public bool HasText() => OwnsSelection() ? image == null && text.Length > 0 : display != 0 &&
         XGetSelectionOwner(display, Atom(selectionName)) != 0;
 
     public bool TryGetText(out string value)
     {
-        if (OwnsSelection()) { value = text; return true; }
+        if (OwnsSelection()) { value = image == null ? text : ""; return image == null; }
         if (display != 0 && ReadSelection("UTF8_STRING", out value)) return true;
         if (reader != null && reader.TryGetText(out value)) return true;
         if (display != 0 && ReadSelection("STRING", out value)) return true;
@@ -57,7 +58,7 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
     // the visible window's connection, or GTK, from a background thread.
     internal async Task<string?> ReadTextAsync(CancellationToken token)
     {
-        if (OwnsSelection()) return text;
+        if (OwnsSelection()) return image == null ? text : null;
         var result = await Task.Run(() =>
         {
             using var read = new LinuxWindowClipboard(window, null, selectionName);
@@ -85,11 +86,13 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
             while (timeout.ElapsedMilliseconds < 1500)
             {
                 token.ThrowIfCancellationRequested();
+                PumpImages();
                 while (XPending(display) > 0)
                 {
                     XNextEvent(display, buffer);
                     var type = Marshal.ReadInt32(buffer);
                     if (type == 30) Reply(Marshal.PtrToStructure<SelectionRequest>(buffer));
+                    if (type == 28) ImagePropertyChanged(Marshal.PtrToStructure<PropertyEvent>(buffer));
                     if (type != 31) continue;
                     var notify = Marshal.PtrToStructure<SelectionNotify>(buffer);
                     if (notify.Requestor != requestWindow || notify.Selection != requestedSelection || notify.Target != target) continue;
@@ -141,15 +144,20 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
 
     internal void Pump()
     {
-        if (display == 0 || XPending(display) == 0) return;
+        if (display == 0) return;
+        PumpImages();
+        if (XPending(display) == 0) return;
         var buffer = Marshal.AllocHGlobal(24 * IntPtr.Size);
         try
         {
             for (var count = 0; count < 32 && XPending(display) > 0; count++)
             {
                 XNextEvent(display, buffer);
-                if (Marshal.ReadInt32(buffer) == 30)
+                var type = Marshal.ReadInt32(buffer);
+                if (type == 30)
                     Reply(Marshal.PtrToStructure<SelectionRequest>(buffer));
+                else if (type == 28)
+                    ImagePropertyChanged(Marshal.PtrToStructure<PropertyEvent>(buffer));
             }
         }
         finally { Marshal.FreeHGlobal(buffer); }
@@ -162,20 +170,28 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
         var supported = true;
         if (request.Target == Atom("TARGETS"))
         {
-            nuint[] targets = [Atom("TARGETS"), Atom("TIMESTAMP"), Atom("UTF8_STRING"), Atom("text/plain;charset=utf-8"), Atom("text/plain"), Atom("TEXT"), Atom("STRING")];
+            nuint[] targets = image != null ? [Atom("TARGETS"), Atom("TIMESTAMP"), Atom("image/png")] :
+                [Atom("TARGETS"), Atom("TIMESTAMP"), Atom("UTF8_STRING"), Atom("text/plain;charset=utf-8"), Atom("text/plain"), Atom("TEXT"), Atom("STRING")];
             XChangeAtoms(display, request.Requestor, property, Atom("ATOM"), 32, 0, targets, targets.Length);
         }
         else if (request.Target == Atom("TIMESTAMP"))
             XChangeAtoms(display, request.Requestor, property, Atom("INTEGER"), 32, 0, [selectionTime], 1);
-        else if (request.Target == Atom("UTF8_STRING") || request.Target == Atom("text/plain;charset=utf-8") ||
-                 request.Target == Atom("text/plain") || request.Target == Atom("TEXT") || request.Target == Atom("STRING"))
+        else if (request.Target == Atom("image/png") && image != null)
+        { ReplyImage(request, image); return; }
+        else if (image == null && (request.Target == Atom("UTF8_STRING") || request.Target == Atom("text/plain;charset=utf-8") ||
+                 request.Target == Atom("text/plain") || request.Target == Atom("TEXT") || request.Target == Atom("STRING")))
         {
             var bytes = (request.Target == Atom("STRING") ? Encoding.Latin1 : Encoding.UTF8).GetBytes(text);
             XChangeBytes(display, request.Requestor, property, request.Target == Atom("TEXT") ? Atom("UTF8_STRING") : request.Target, 8, 0, bytes, bytes.Length);
         }
         else supported = false;
+        Notify(request, supported ? property : 0);
+    }
+
+    private void Notify(SelectionRequest request, nuint property)
+    {
         var notify = new SelectionNotify { Type = 31, Display = display, Requestor = request.Requestor,
-            Selection = request.Selection, Target = request.Target, Property = supported ? property : 0, Time = request.Time };
+            Selection = request.Selection, Target = request.Target, Property = property, Time = request.Time };
         var buffer = Marshal.AllocHGlobal(24 * IntPtr.Size);
         try
         {
@@ -190,8 +206,9 @@ internal sealed partial class LinuxWindowClipboard : IClipboardService, IDisposa
     {
         if (display != 0)
         {
+            DisposeImages();
             if (requestWindow != 0) { XDestroyWindow(display, requestWindow); requestWindow = 0; }
-            XCloseDisplay(display); display = 0;
+            XCloseDisplay(display); imageErrorDisplays.TryRemove(display, out _); display = 0;
         }
     }
 

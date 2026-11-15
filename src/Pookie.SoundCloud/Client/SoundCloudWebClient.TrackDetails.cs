@@ -4,6 +4,23 @@ namespace Pookie.SoundCloud;
 
 public sealed partial class SoundCloudWebClient
 {
+    public async Task<TrackUpload?> GetTrackUploadAsync(long trackId, CancellationToken token = default)
+    {
+        ValidateDetailTrackId(trackId);
+        using var graph = await ReadTrackDocumentAsync(new("quality", trackId), token).ConfigureAwait(false);
+        var data = GraphData(graph);
+        if (!data.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array) return null;
+        foreach (var track in tracks.EnumerateArray())
+        {
+            if (track.ValueKind != JsonValueKind.Object || GraphText(track, "urn") != $"soundcloud:tracks:{trackId}" ||
+                !track.TryGetProperty("mediaUpload", out var upload) || upload.ValueKind != JsonValueKind.Object) continue;
+            long? Positive(string name) => GraphNumber(upload, name) is > 0 and var value ? value : null;
+            return new(GraphText(upload, "codec"), GraphText(upload, "container"),
+                Positive("bitRate"), Positive("sampleRate"), Positive("channels"));
+        }
+        return null;
+    }
+
     public async Task<TrackCommentPage> GetTrackCommentsAsync(long trackId, CancellationToken token = default, string sort = "NEWEST")
     {
         ValidateDetailTrackId(trackId);
@@ -100,10 +117,10 @@ public sealed partial class SoundCloudWebClient
         using (var writer = new Utf8JsonWriter(output))
         {
             writer.WriteStartObject();
-            writer.WriteString("query", request.Kind switch { "comments" => TrackReadQueries.Comments, "replies" => TrackReadQueries.Replies, _ => TrackReadQueries.Sidebar });
+            writer.WriteString("query", request.Kind switch { "comments" => TrackReadQueries.Comments, "replies" => TrackReadQueries.Replies, "quality" => TrackReadQueries.Quality, _ => TrackReadQueries.Sidebar });
             writer.WriteStartObject("variables"); writer.WriteString("trackUrn", $"soundcloud:tracks:{request.TrackId}");
             if (request.Kind == "replies") writer.WriteString("commentUrn", $"soundcloud:comments:{request.CommentId}");
-            if (request.Kind != "sidebar")
+            if (request.Kind is "comments" or "replies")
             {
                 writer.WriteStartObject("options"); writer.WriteNumber("first", 30);
                 writer.WriteString("sort", request.Kind == "comments" ? request.Sort : "ASCENDING");

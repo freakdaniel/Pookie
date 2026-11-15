@@ -71,7 +71,14 @@ internal sealed partial class WebKitLoginWindow
         private void AddPage(nint view)
         {
             if (pages.Count > 0) Native.gtk_widget_hide(pages[^1]);
-            Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
+            var settings = Native.webkit_web_view_get_settings(view);
+            DisableMediaCapture(settings);
+            // This GtkPlug is hosted by a plain X11/GL window. Accelerated
+            // WebKit surfaces can stay white on NVIDIA under XWayland even
+            // though snapshots contain the loaded page. Paint this embedded
+            // child through GTK instead, including related provider popups.
+            Native.webkit_settings_set_hardware_acceleration_policy(settings, 2); // WEBKIT_HARDWARE_ACCELERATION_POLICY_NEVER
+            Native.webkit_settings_set_user_agent(settings, null);
             Native.gtk_box_pack_start(container, view, 1, 1, 0);
             Native.gtk_widget_set_size_request(view, width, height);
             pages.Add(view);
@@ -258,6 +265,7 @@ internal sealed partial class WebKitLoginWindow
 
     private static partial class Native
     {
+        [LibraryImport(WebKit)] public static partial void webkit_settings_set_hardware_acceleration_policy(nint settings, int policy);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate int PolicyCallback(nint view, nint decision, int kind, nint data);
         [LibraryImport(WebKit)] public static partial nint webkit_navigation_policy_decision_get_navigation_action(nint decision);
         [LibraryImport(WebKit)] public static partial nint webkit_navigation_action_get_request(nint action);

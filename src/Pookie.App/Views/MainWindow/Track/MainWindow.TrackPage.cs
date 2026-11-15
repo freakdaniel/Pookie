@@ -13,6 +13,7 @@ internal sealed partial class MainWindow
         public TrackSidebar? Sidebar { get; init; }
         public bool SidebarLoading { get; init; } = true;
         public bool MetadataLoading { get; init; } = true;
+        public TrackUpload? Upload { get; init; }
         public IReadOnlyDictionary<TrackSection, LibraryPage> Sections { get; init; } = new Dictionary<TrackSection, LibraryPage>();
         public bool SectionLoading { get; init; }
         public string SectionError { get; init; } = "";
@@ -23,6 +24,9 @@ internal sealed partial class MainWindow
     private TrackDetailState? trackDetailState;
     private ScrollViewer trackDetailScroll = null!;
     private Image trackDetailCover = null!, trackDetailBackdrop = null!, trackDetailAvatar = null!, trackDetailPlayIcon = null!, trackDetailHeart = null!;
+    private Image trackDetailHd = null!;
+    private StackPanel trackDetailHdGroup = null!;
+    private TrackMetadataLine trackDetailMetadataLine = null!;
     private Border trackDetailScrim = null!;
     private TextBlock trackDetailTitle = null!, trackDetailAuthor = null!, trackDetailMeta = null!, trackDetailStats = null!;
     private DescriptionTextBlock trackDetailDescription = null!;
@@ -185,11 +189,17 @@ internal sealed partial class MainWindow
         var commentsRevision = trackCommentCountRevision;
         try
         {
-            var track = await api.GetTrackAsync(id, token);
+            // Publish the whole byline once both independent responses are ready.
+            // A later quality response must not insert HD into an already visible row.
+            var metadata = api.GetTrackAsync(id, token);
+            var quality = LoadTrackDetailQualityAsync(id, token);
+            await Task.WhenAll(metadata, quality);
+            var track = await metadata;
+            var upload = await quality;
             await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation)) return;
             if (commentsRevision != trackCommentCountRevision) track = track with { CommentCount = trackDetailState!.Track.CommentCount };
-            trackDetailState = trackDetailState! with { Track = track, MetadataLoading = false };
+            trackDetailState = trackDetailState! with { Track = track, Upload = upload, MetadataLoading = false };
             RenderTrackDetailHeader();
             RenderTrackDetailComments();
             await LoadTrackDetailArtworkAsync(track, generation);
@@ -201,6 +211,38 @@ internal sealed partial class MainWindow
             trackDetailState = trackDetailState! with { MetadataError = FriendlyError(error), MetadataLoading = false };
             RenderTrackDetailHeader();
         }
+    }
+
+    private async Task<TrackUpload?> LoadTrackDetailQualityAsync(long id, CancellationToken token)
+    {
+        try
+        {
+            return await api.GetTrackUploadAsync(id, token);
+        }
+        catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)
+        {
+            // Quality is optional metadata. Unknown uploads have no badge.
+            Pookie.Logging.AppLog.Failure("Pookie.Track", "Не удалось получить формат исходного файла", error, Serilog.Events.LogEventLevel.Debug);
+            return null;
+        }
+    }
+
+    private void RenderTrackDetailQuality()
+    {
+        var upload = trackDetailState?.Upload;
+        var visible = trackDetailState is { MetadataLoading: false } && upload?.IsLossless == true;
+        trackDetailHdGroup.IsVisible = trackDetailHd.IsVisible = visible;
+        if (!visible || upload == null) { trackDetailHd.Hint(null); return; }
+        var codec = upload.Codec!.Trim().ToUpperInvariant();
+        if (codec.StartsWith("PCM_") && codec.Length > 5 && "SUF".Contains(codec[4]))
+        {
+            var bits = new string(codec.Skip(5).TakeWhile(char.IsAsciiDigit).ToArray());
+            if (bits.Length > 0) codec = $"PCM {bits} бит";
+        }
+        var details = new List<string> { codec };
+        if (upload.SampleRate is > 0) details.Add((upload.SampleRate.Value / 1000d).ToString("0.###", CultureInfo.GetCultureInfo("ru-RU")) + " кГц");
+        if (upload.Channels is > 0) details.Add(upload.Channels == 1 ? "моно" : upload.Channels == 2 ? "стерео" : $"{upload.Channels} кан.");
+        trackDetailHd.Hint("Загружено без потерь (lossless)\n" + string.Join(" · ", details));
     }
 
     private async Task LoadTrackDetailCommentsAsync(long id, long generation, CancellationToken token, string? cursor = null)
@@ -311,6 +353,8 @@ internal sealed partial class MainWindow
         RenderTrackCommentComposer();
         trackDetailTitle.Text = track.Title; trackDetailAuthor.Text = trackDetailAuthorName.Text = track.Author;
         trackDetailMeta.Text = "· " + string.Join(" · ", new[] { track.Genre, DetailAge(track.CreatedAt) }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        RenderTrackDetailQuality();
+        trackDetailMetadataLine.SetMetadataReady(track.Id, !state.MetadataLoading);
         trackDetailStats.Text = DetailCompactCount(track.PlaybackCount);
         trackDetailSidebarLikes.Text = DetailCompactCount(track.LikesCount);
         trackDetailSidebarReposts.Text = DetailCompactCount(track.RepostsCount);

@@ -8,6 +8,8 @@ internal sealed class ChatVideoLayout(FrameworkElement image, FrameworkElement s
 {
     internal void RenderMediaBackdrop(Aprillz.MewUI.Rendering.IGraphicsContext context) => image.Render(context);
     private double expansion;
+    private bool imageMode;
+    internal bool ImageMode { get => imageMode; set { imageMode = value; InvalidateArrange(); } }
     internal double Expansion { get => expansion; set { expansion = value; InvalidateArrange(); } }
     internal ChatVideoLayout Initialize() { Add(image); Add(status); Add(header); Add(previous); Add(next); Add(controls); Add(speed); return this; }
     protected override Size MeasureContent(Size availableSize)
@@ -21,7 +23,7 @@ internal sealed class ChatVideoLayout(FrameworkElement image, FrameworkElement s
     protected override Size ArrangeOverride(Size finalSize)
     {
         var b = Bounds; var t = expansion;
-        var normal = new Rect(b.X + 56, b.Y + 80, Math.Max(1, b.Width - 112), Math.Max(1, b.Height - 192));
+        var normal = new Rect(b.X + 56, b.Y + 80, Math.Max(1, b.Width - 112), Math.Max(1, b.Height - (imageMode ? 112 : 192)));
         var media = new Rect(normal.X + (b.X - normal.X) * t, normal.Y + (b.Y - normal.Y) * t,
             normal.Width + (b.Width - normal.Width) * t, normal.Height + (b.Height - normal.Height) * t);
         image.Arrange(media); status.Arrange(media);

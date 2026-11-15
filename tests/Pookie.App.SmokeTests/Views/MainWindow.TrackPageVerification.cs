@@ -53,6 +53,10 @@ internal sealed partial class MainWindow
                 trackDetailWaveform.ActualWidth > 100 && trackDetailMarkerLayer.ActualHeight > 0 && !trackDetailScroll.IsArrangeDirty);
             if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROBE") == "1")
             { await ProbeDetailScrollingAsync(); return; }
+            if (Environment.GetEnvironmentVariable("POOKIE_TRACK_QUALITY_ONLY") == "1")
+            { await VerifyTrackQualityUiAsync(browser); return; }
+            if (Environment.GetEnvironmentVariable("POOKIE_COVER_PREVIEW_PROBE") == "1")
+            { await VerifyArtworkPreviewUiAsync(); return; }
             if (trackDescriptionUiSmoke)
             { await VerifyDescriptionFocusScrollAsync(); return; }
             if (HasTrackCoverImage)
@@ -65,8 +69,8 @@ internal sealed partial class MainWindow
                 trackDetailCover.Source = actualCover;
                 RouteContextRightClick(SettingsCenter(trackDetailCover));
                 await WaitForLikedLayoutAsync(() => trackCoverMenu.Reveal > .999);
-                if (trackCoverMenu.Model.Items.OfType<MenuItem>().Count() != 2)
-                    throw new InvalidOperationException("Artwork menu must expose image and image-link copying.");
+                if (trackCoverMenu.Model.Items.OfType<MenuItem>().Count() != 3)
+                    throw new InvalidOperationException("Artwork menu must expose copying, image-link copying and saving.");
                 CaptureUiPreview("track-cover-menu", trackCoverMenu.Card);
                 trackCoverMenu.Close();
                 await WaitForLikedLayoutAsync(() => !trackCoverMenu.IsVisible);
@@ -303,8 +307,16 @@ internal sealed partial class MainWindow
         public bool DelayComments { get; set; }
         public TaskCompletionSource DelayedComments { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<SoundCloudTrack> Delayed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource? DelayedQuality { get; set; }
+        public bool FailQuality { get; set; }
         public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
         {
+            if (request.Kind == "quality")
+            {
+                if (DelayedQuality != null) await DelayedQuality.Task.WaitAsync(cancellationToken);
+                if (FailQuality) throw new SoundCloudException("Fixture quality unavailable", 503);
+                return JsonDocument.Parse($$$"""{"data":{"tracks":[{"urn":"soundcloud:tracks:{{{request.TrackId}}}","mediaUpload":{"codec":"pcm_s24le","container":"wav","sampleRate":44100,"bitRate":2116800,"channels":2}}]}}""");
+            }
             if (request.Kind == "sidebar") return JsonDocument.Parse("""
                 {"data":{"topFans":{"hasArtistOptedOut":false,"allTime":{"fans":[{"fan":{"urn":"soundcloud:users:8","username":"Слушатель"},"totalPlays":210}]}},
                 "playlists":[{"urn":"soundcloud:playlists:10","title":"Любимые треки","user":{"urn":"soundcloud:users:8","username":"Слушатель"}}, {"urn":"soundcloud:playlists:12","title":"Вторая подборка"}, {"urn":"soundcloud:playlists:13","title":"Третья подборка"}],

@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
         {
             LikedTrackRow row = null!;
             row = CreateLibraryTrackRow(track => Run(() => PlayCollectionTrackAsync(track, collectionWaveRows[row.Root].Position)),
-                (track, fraction) => Run(() => SeekCollectionTrackAsync(track, collectionWaveRows[row.Root].Position, fraction)));
+                (track, fraction) => Run(() => SeekCollectionTrackAsync(track, collectionWaveRows[row.Root].Position, fraction)), recycleBuffers: true);
             collectionWaveRows.Add(row.Root, (row, -1));
             AttachPlaylistTrackEdits(row.Root, () => row.Track, () => collectionWaveRows[row.Root].Position);
             context.Register("row", row.Root); return row.Root;

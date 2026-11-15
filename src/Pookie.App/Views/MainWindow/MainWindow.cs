@@ -142,7 +142,9 @@ internal sealed partial class MainWindow : IDisposable
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(PlaybackPollIntervalMs));
         timer.Tick += Poll;
 
-        Window = new Window().Title("Pookie").Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
+        Window = new Window().Title("Pookie")
+            .Icon(IconSource.FromResource(typeof(MainWindow).Assembly, "Pookie.App.Assets.Branding.app-icon.ico"))
+            .Resizable(DefaultWindowWidth, 840, minWidth: 1000, minHeight: 680).StartCenterScreen()
             .Padding(0).Background(Surface).StyleSheet(PopupAppearance.CreateStyles())
             .Content(Layout())
             .OnLoaded(OnWindowLoaded)
@@ -197,6 +199,10 @@ internal sealed partial class MainWindow : IDisposable
             if (HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
+            if (chatVideoOpen.Value && chatVideoShowingImage && e.Key == Key.Escape)
+            { e.Handled = true; CloseChatVideo(); return; }
+            if (chatVideoOpen.Value && chatVideoShowingImage && e.Key == Key.Tab)
+            { e.Handled = true; chatVideoClose.Focus(); return; }
             if (e.Key == Key.Escape && chatEmojiPopup.IsOpen) { e.Handled = true; CloseChatGifs(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && chatMessageMenu.IsOpen) { e.Handled = true; CloseChatMessageMenu(); chatInput.Focus(); return; }
             if (e.Key == Key.Escape && page.Value == Page.Chats && chatThreadSearchOpen) { e.Handled=true;CloseChatSearch();return; }
@@ -236,6 +242,7 @@ internal sealed partial class MainWindow : IDisposable
     private void OnWindowLoaded()
     {
         StartupLog.Event("app.window-loaded");
+        Pookie.App.Platform.LinuxDesktopIdentity.Apply(Window.Handle);
         if (enableSystemMedia && player != null) Run(InitializeSystemMediaAsync);
         var size = Window!.ClientSize;
         UpdateLibraryCardSize(size.Width);
@@ -816,7 +823,7 @@ internal sealed partial class MainWindow : IDisposable
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
         ResetTrackCommentPreview(); trackCommentPreviewTimer.Dispose(); trackCommentsLoadingView.Dispose();
         if (userHeaderGlass != null) { userHeader.BackgroundChanged -= userHeaderGlass.Invalidate; userHeaderGlass.Dispose(); }
-        foreach (var row in likedRows.Values) row.TrackArtGlass.Dispose();
+        foreach (var row in likedRows.Values) row.ReleaseRenderingResources();
         trackDescriptionLinks.Dispose(); userDescriptionLinks.Dispose(); userBioLinks.Dispose();
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();

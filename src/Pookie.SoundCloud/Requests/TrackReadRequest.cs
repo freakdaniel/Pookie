@@ -5,7 +5,7 @@ public sealed record TrackReadRequest(string Kind, long TrackId, long CommentId 
     public bool IsValid() => TrackId is > 0 and <= 9007199254740991 &&
         (Kind == "comments" ? Sort is "NEWEST" or "OLDEST" or "TIMESTAMP" : Sort == "NEWEST") &&
         (Cursor == null || Cursor.Length is > 0 and <= 2048 && !Cursor.Any(char.IsControl)) &&
-        (Kind is "comments" or "sidebar" ? CommentId == 0 && (Kind != "sidebar" || Cursor == null) :
+        (Kind is "comments" or "sidebar" or "quality" ? CommentId == 0 && (Kind == "comments" || Cursor == null) :
          Kind == "replies" && CommentId is > 0 and <= 9007199254740991);
 
     public override string ToString() => $"Track page read ({Kind}; cursor redacted)";
@@ -13,6 +13,13 @@ public sealed record TrackReadRequest(string Kind, long TrackId, long CommentId 
 
 public static class TrackReadQueries
 {
+    public const string Quality = """
+        query PookieTrackQuality($trackUrn: ID!) {
+          tracks(urns: [$trackUrn]) {
+            urn mediaUpload { codec container bitRate sampleRate channels }
+          }
+        }
+        """;
     public const string Comments = """
         query PookieTrackComments($trackUrn: ID!, $options: TrackCommentsOptionsInput) {
           trackComments(trackUrn: $trackUrn, options: $options) {

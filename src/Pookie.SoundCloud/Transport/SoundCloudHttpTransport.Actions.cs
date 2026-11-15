@@ -235,11 +235,11 @@ public sealed partial class SoundCloudHttpTransport
     public Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
         if (!request.IsValid()) throw new ArgumentException("Некорректный запрос страницы трека.");
-        return GraphAsync(request.Kind switch { "comments" => TrackReadQueries.Comments, "replies" => TrackReadQueries.Replies, _ => TrackReadQueries.Sidebar }, writer =>
+        return GraphAsync(request.Kind switch { "comments" => TrackReadQueries.Comments, "replies" => TrackReadQueries.Replies, "quality" => TrackReadQueries.Quality, _ => TrackReadQueries.Sidebar }, writer =>
         {
             writer.WriteString("trackUrn", $"soundcloud:tracks:{request.TrackId}");
             if (request.Kind == "replies") writer.WriteString("commentUrn", $"soundcloud:comments:{request.CommentId}");
-            if (request.Kind == "sidebar") return;
+            if (request.Kind is "sidebar" or "quality") return;
             writer.WriteStartObject("options"); writer.WriteNumber("first", 30);
             writer.WriteString("sort", request.Kind == "comments" ? request.Sort : "ASCENDING");
             if (request.Kind == "comments") { writer.WriteNumber("repliesFirst", 16); writer.WriteString("repliesSort", "ASCENDING"); }

@@ -44,6 +44,7 @@ internal sealed partial class MainWindow
         private readonly Grid heading, wave;
         private readonly string actionVariant;
         private readonly bool publication;
+        private readonly bool recycleBuffers;
         private double footerReserve;
         private readonly TextBlock collectionTrack = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical().IsVisible(false);
         private readonly Image repostIcon = Icons.View("repeat", 18, TrackButtons.OnSurface);
@@ -52,9 +53,11 @@ internal sealed partial class MainWindow
         public bool ShowsPause => pause.IsVisible && !play.IsVisible;
 
         public LikedTrackRow(Action<SoundCloudTrack> select, Action<SoundCloudTrack> open, Action<SoundCloudTrack> like,
-            Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false, bool publication = false, Func<TextBlock, FrameworkElement>? byline = null, Action<SoundCloudTrack>? share = null)
+            Action<SoundCloudTrack> repost, Action<SoundCloudTrack> playlist, Action<SoundCloudTrack, double> seek, Func<Image, Grid> artworkLayer, bool glass = false, bool publication = false, Func<TextBlock, FrameworkElement>? byline = null, Action<SoundCloudTrack>? share = null, bool recycleBuffers = false)
         {
             this.publication = publication;
+            this.recycleBuffers = recycleBuffers;
+            Waveform.RetainRasterOnDetach = recycleBuffers;
             actionVariant = glass ? TrackButtons.Glass : TrackButtons.Tonal;
             likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(heart.CenterVertical(), likeCount),
                 () => { if (Track is { } track) like(track); }, actionVariant, TrackRowLayout.ActionSize);
@@ -83,10 +86,11 @@ internal sealed partial class MainWindow
                 .IsHitTestVisible(false).IsVisible(false).Child(
                     new Grid().Columns("*").Rows("*").Children(TrackArt,
                         new Border().Background(ArtworkBackdrop.TrackArtScrim).IsHitTestVisible(false)));
-            TrackArtGlass = new(TrackArt, background: trackArtFrame);
-            PlayButton = new ExpandedGlassButton(TrackArtGlass).Initialize(new Grid().Columns("*").Rows("*").Children(play, pause))
-                .Width(TrackRowLayout.ActionSize).Height(TrackRowLayout.ActionSize).CornerRadius(TrackRowLayout.ActionSize / 2)
-                .OnClick(() => { if (Track is { } track) select(track); });
+            TrackArtGlass = new(TrackArt, background: trackArtFrame, deferRefraction: recycleBuffers, retainBuffers: recycleBuffers);
+            PlayButton = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(play, pause),
+                () => { if (Track is { } track) select(track); }, TrackButtons.Glass, TrackRowLayout.ActionSize);
+            ((MaterialTrackButton)PlayButton).UseCardGlassFallback();
+            ((MaterialTrackButton)PlayButton).RetainDecorationOnDetach = recycleBuffers;
             var artworkButton = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Column(0).CenterVertical()
                 .Content(artworkFrame).OnClick(() => { if (Track is { } track) open(track); });
             heading = new Grid().Columns("36,*,Auto").Rows("*").Spacing(10).Children(
@@ -98,7 +102,12 @@ internal sealed partial class MainWindow
             Root = new ViewportGrid().Columns($"{TrackRowLayout.CoverSize},*").Rows("*").Spacing(TrackRowLayout.ColumnGap).Height(TrackRowLayout.Height).Children(
                 artworkButton, new Grid().Columns("*").Rows("*").Column(1).Children(trackArtFrame,
                     details.Children(heading.Row(0), wave.Row(1), new Grid().Columns("*").Rows("*").Row(2).Children(actions, collectionTrack))));
-            zoom.Follow(Root);
+            zoom.Follow(artworkButton);
+            VisualTree.Visit(actionButtons, element =>
+            {
+                if (element is MaterialTrackButton button)
+                { button.UseCardGlassFallback(); button.RetainDecorationOnDetach = recycleBuffers; }
+            });
             if (publication) Root.SizeChanged += _ =>
             {
                 FitPublicationActions();
@@ -161,9 +170,15 @@ internal sealed partial class MainWindow
             commentsStat.IsVisible = width >= 480 && Track?.CommentCount != null;
         }
 
-        public void AddQueueAction(Action<SoundCloudTrack> enqueue) => actionButtons.Add(
-            TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface), () => { if (Track is { } track) enqueue(track); }, actionVariant,
-                embedded ? 40 : TrackRowLayout.ActionSize).Hint("Добавить в очередь"));
+        public void AddQueueAction(Action<SoundCloudTrack> enqueue)
+        {
+            var button = TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface),
+                () => { if (Track is { } track) enqueue(track); }, actionVariant,
+                embedded ? 40 : TrackRowLayout.ActionSize).Hint("Добавить в очередь");
+            ((MaterialTrackButton)button).UseCardGlassFallback();
+            ((MaterialTrackButton)button).RetainDecorationOnDetach = recycleBuffers;
+            actionButtons.Add(button);
+        }
 
         public void ReserveFooter(double width)
         {
@@ -242,6 +257,7 @@ internal sealed partial class MainWindow
             Waveform.OnArtwork = source != null;
             if (source == null) TrackArtGlass.Reset();
             else TrackArtGlass.RefreshArtwork();
+            ((MaterialTrackButton)PlayButton).AttachGlassBackdrop(source == null ? null : TrackArtGlass);
             VisualTree.Visit(actionButtons, element =>
             {
                 if (element is MaterialTrackButton button) button.AttachGlassBackdrop(source == null ? null : TrackArtGlass);
@@ -258,6 +274,16 @@ internal sealed partial class MainWindow
         }
 
         public void Reset() { ClearActionFocus(); Track = null; SetTrackArt(null); Waveform.SetSamples([]); Waveform.IsPlaying = false; Waveform.Progress = 0; positionLabel.IsVisible = false; }
+
+        public void ReleaseRenderingResources()
+        {
+            TrackArtGlass.Dispose();
+            Waveform.ReleaseRaster();
+            VisualTree.Visit(Root, element =>
+            {
+                if (element is MaterialTrackButton button) button.ReleaseDecorationResources();
+            });
+        }
 
         internal static string ShortCount(long value) => value switch {
             >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.InvariantCulture) + "M",

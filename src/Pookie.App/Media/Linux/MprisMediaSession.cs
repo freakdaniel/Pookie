@@ -46,6 +46,7 @@ internal sealed class MprisMediaSession : IMediaSession, IPathMethodHandler
         RootInterface => new()
         {
             ["CanQuit"] = false, ["CanRaise"] = true, ["HasTrackList"] = false, ["Identity"] = "Pookie",
+            ["DesktopEntry"] = Pookie.App.Platform.LinuxDesktopIdentity.AppId,
             ["SupportedUriSchemes"] = VariantValue.Array(System.Array.Empty<string>()),
             ["SupportedMimeTypes"] = VariantValue.Array(System.Array.Empty<string>())
         },
@@ -158,6 +159,7 @@ internal sealed class MprisMediaSession : IMediaSession, IPathMethodHandler
         <method name="Raise"/><method name="Quit"/>
         <property name="CanQuit" type="b" access="read"/><property name="CanRaise" type="b" access="read"/>
         <property name="HasTrackList" type="b" access="read"/><property name="Identity" type="s" access="read"/>
+        <property name="DesktopEntry" type="s" access="read"/>
         <property name="SupportedUriSchemes" type="as" access="read"/><property name="SupportedMimeTypes" type="as" access="read"/>
       </interface>
       <interface name="org.mpris.MediaPlayer2.Player">

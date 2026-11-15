@@ -6,7 +6,7 @@
   const apiOrigin = 'https://api-v2.soundcloud.com';
   const graphOrigin = 'https://graph.soundcloud.com';
   const sessionRefreshUrl = `${siteOrigin}/api/refresh-token`;
-  const trackQueries = { comments: __POOKIE_TRACK_COMMENTS__, replies: __POOKIE_TRACK_REPLIES__, sidebar: __POOKIE_TRACK_SIDEBAR__ };
+  const trackQueries = { comments: __POOKIE_TRACK_COMMENTS__, replies: __POOKIE_TRACK_REPLIES__, sidebar: __POOKIE_TRACK_SIDEBAR__, quality: __POOKIE_TRACK_QUALITY__ };
   const commentQueries = { create: __POOKIE_COMMENT_CREATE__, delete: __POOKIE_COMMENT_DELETE__ };
   if (location.origin !== siteOrigin || window !== window.top || window.__pookieBrowserRequests) return;
   window.__pookieBrowserRequests = true;
@@ -726,12 +726,12 @@
 
   function validTrackRead(command) {
     const d = command.detail;
-    return !command.url && !command.audio && d && ['comments', 'replies', 'sidebar'].includes(d.kind) &&
+    return !command.url && !command.audio && d && ['comments', 'replies', 'sidebar', 'quality'].includes(d.kind) &&
       Number.isSafeInteger(d.track_id) && d.track_id > 0 &&
       (d.kind === 'comments' ? ['NEWEST', 'OLDEST', 'TIMESTAMP'].includes(d.sort ?? 'NEWEST') : (d.sort ?? 'NEWEST') === 'NEWEST') &&
       (d.cursor == null || typeof d.cursor === 'string' && d.cursor.length > 0 && d.cursor.length <= 2048 && !/[\x00-\x1f\x7f]/.test(d.cursor)) &&
       (d.kind === 'replies' ? Number.isSafeInteger(d.comment_id) && d.comment_id > 0 :
-        !d.comment_id && (d.kind !== 'sidebar' || d.cursor == null));
+        !d.comment_id && (d.kind === 'comments' || d.cursor == null));
   }
 
   function validCommentWrite(command) {

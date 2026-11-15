@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -9,6 +10,19 @@ namespace Pookie.App.Diagnostics;
 
 internal static class EmbeddedLoginSmokeTest
 {
+    private const string CaptureProbeScript = """
+        {
+          const exposed=Object.entries({
+            mediaDevices:Boolean(navigator.mediaDevices),
+            getUserMedia:typeof navigator.getUserMedia==='function'||typeof navigator.webkitGetUserMedia==='function',
+            peerConnection:typeof RTCPeerConnection==='function'||typeof webkitRTCPeerConnection==='function'
+          }).filter(([,enabled])=>enabled).map(([name])=>name).join(',');
+          const playback=typeof (window.AudioContext||window.webkitAudioContext)==='function'&&
+            typeof document.createElement('audio').play==='function';
+          fetch('/capture-probe?exposed='+encodeURIComponent(exposed)+'&playback='+playback);
+        }
+        """;
+
     public static async Task RunAsync(bool preview = false)
     {
         var builder = WebApplication.CreateBuilder(); builder.Logging.ClearProviders(); builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -25,6 +39,15 @@ internal static class EmbeddedLoginSmokeTest
         var formContinue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var providerNavigation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var popupSeen = false;
+        var captureReports = new ConcurrentBag<(string Host, string Exposed, bool Playback)>();
+        Func<HttpContext, IResult> captureProbe = context =>
+        {
+            captureReports.Add((context.Request.Host.ToString(), context.Request.Query["exposed"].ToString(),
+                context.Request.Query["playback"] == "true"));
+            return Results.NoContent();
+        };
+        app.MapGet("/capture-probe", captureProbe);
+        provider.MapGet("/capture-probe", captureProbe);
         app.MapGet("/authorize", async (HttpContext context) =>
         {
             authorizationRequested.TrySetResult();
@@ -33,10 +56,11 @@ internal static class EmbeddedLoginSmokeTest
             var state = context.Request.Query["state"].ToString();
             return Results.Content($$"""
                 <!doctype html><meta charset="utf-8"><title>Embedded OAuth fixture</title>
-                <style>body{background:#3355bb;color:#eee;font:20px sans-serif;padding:60px}h1{font-size:32px}</style>
+                <style>html{background:white}body{background:#3355bb;color:#eee;font:20px sans-serif;padding:60px;margin:0;min-height:100vh;box-sizing:border-box;transform:translateZ(0);will-change:transform}h1{font-size:32px}</style>
                 <h1>Pookie — встроенный вход</h1><p>Loading the sign-in form, no real account.</p>
                 <div id="sign-in" style="opacity:0;transition:opacity 180ms"><button>Sign in with provider</button></div>
                 <script>
+                {{CaptureProbeScript}}
                 window.addEventListener('load',async()=>{
                   await fetch('/form-wait');
                   document.getElementById('sign-in').style.opacity='1';
@@ -58,9 +82,10 @@ internal static class EmbeddedLoginSmokeTest
             context.Response.Headers.ContentSecurityPolicy = "script-src 'nonce-fixture'; object-src 'none'";
             return Results.Content($$"""
                 <!doctype html><meta charset="utf-8"><title>Embedded external provider fixture</title>
-                <style>body{background:#3355bb;color:#eee;font:20px sans-serif;padding:60px}h1{font-size:32px}</style>
+                <style>html{background:white}body{background:#3355bb;color:#eee;font:20px sans-serif;padding:60px;margin:0;min-height:100vh;box-sizing:border-box;transform:translateZ(0);will-change:transform}h1{font-size:32px}</style>
                 <h1>Вход внутри Pookie</h1><p>Локальный тест провайдера: без личного аккаунта и пароля.</p>
                 <script nonce="fixture">
+                {{CaptureProbeScript}}
                 fetch('/waiting?bridge='+Boolean(window.__pookiePost)).then(()=>{
                   location.href={{JsonSerializer.Serialize(context.Request.Query["return_url"].ToString())}};
                 });
@@ -138,6 +163,14 @@ internal static class EmbeddedLoginSmokeTest
             });
             if (tested?.VerificationFailure is { } error) throw new InvalidOperationException("Embedded login verification failed.", error);
             if (!popupSeen) throw new InvalidOperationException("Embedded provider popup was not exercised.");
+            if (OperatingSystem.IsLinux())
+            {
+                if (captureReports.Select(report => report.Host).Distinct().Count() != 2 ||
+                    captureReports.Any(report => report.Exposed.Length > 0 || !report.Playback))
+                    throw new InvalidOperationException("WebKit exposed capture/device-enumeration APIs or disabled playback in the login/provider page: " +
+                        string.Join("; ", captureReports.Select(report => $"exposed={report.Exposed}, playback={report.Playback}")));
+                Console.WriteLine("EMBEDDED_CAPTURE_DISABLED_OK: device enumeration, camera/microphone capture and WebRTC unavailable in login and provider pages; WebAudio and media playback remain available");
+            }
         }
         finally
         {

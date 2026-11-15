@@ -2,6 +2,9 @@ namespace Pookie.App.Browser;
 
 internal sealed partial class EmbeddedLoginView
 {
+    internal Task SetFixtureBackgroundForVerificationAsync(bool changed) => browser!.ExecuteAsync(
+        changed ? "document.body.style.backgroundColor='#bb5533'" : "document.body.style.backgroundColor='#3355bb'");
+
     internal async Task OpenFixturePopupForVerificationAsync(CancellationToken token)
     {
         await ready.Task.WaitAsync(token);

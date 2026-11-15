@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Pookie
+GenericName=SoundCloud client
+GenericName[ru]=Клиент SoundCloud
+Comment=Listen to SoundCloud with Pookie
+Comment[ru]=Слушай SoundCloud в Pookie
+Exec=pookie
+Icon=io.github.freakdaniel.Pookie
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=SoundCloud;music;audio;player;
+StartupWMClass=io.github.freakdaniel.Pookie
+StartupNotify=true

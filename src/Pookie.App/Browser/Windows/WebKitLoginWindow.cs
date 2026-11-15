@@ -133,7 +133,9 @@ internal sealed partial class WebKitLoginWindow
     private nint AddWindow(nint view)
     {
         // Keep the UA aligned with this WebKitGTK version and platform, including related login popups.
-        Native.webkit_settings_set_user_agent(Native.webkit_web_view_get_settings(view), null);
+        var settings = Native.webkit_web_view_get_settings(view);
+        DisableMediaCapture(settings);
+        Native.webkit_settings_set_user_agent(settings, null);
         ConfigureView(view);
         var window = Native.gtk_window_new(0);
         Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
@@ -229,6 +231,16 @@ internal sealed partial class WebKitLoginWindow
         Native.gtk_label_set_text(item.Address, text);
     }
 
+    private static void DisableMediaCapture(nint settings)
+    {
+        // Device enumeration can ask the desktop camera portal before the
+        // permission-request handler can deny capture. Disable the web APIs
+        // before navigation, including background workers and related popups.
+        // Playback and the app's native voice recorder use separate APIs.
+        Native.webkit_settings_set_enable_webrtc(settings, 0);
+        Native.webkit_settings_set_enable_media_stream(settings, 0);
+    }
+
     partial void OnBrowserEvent(BrowserRequestEvent? message);
     partial void CustomizeScript(ref string scriptBody, bool login);
     partial void ConfigureView(nint view);
@@ -306,6 +318,8 @@ internal sealed partial class WebKitLoginWindow
         [LibraryImport(WebKit)] public static partial nint webkit_web_view_new_with_context(nint context);
         [LibraryImport(WebKit)] public static partial nint webkit_web_view_new_with_related_view(nint view);
         [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_settings(nint view);
+        [LibraryImport(WebKit)] public static partial void webkit_settings_set_enable_media_stream(nint settings, int enabled);
+        [LibraryImport(WebKit)] public static partial void webkit_settings_set_enable_webrtc(nint settings, int enabled);
         [LibraryImport(WebKit)] public static partial void webkit_settings_set_user_agent(nint settings, [MarshalAs(UnmanagedType.LPUTF8Str)] string? userAgent);
         [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_user_content_manager(nint view);
         [LibraryImport(WebKit)] public static partial nint webkit_web_view_get_uri(nint view);

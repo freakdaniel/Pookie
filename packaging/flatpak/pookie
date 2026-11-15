@@ -1,0 +1,6 @@
+#!/bin/sh
+# Select CPU-backed WebKit buffers before its transport mode is cached. Merely
+# disabling page compositing can still leave GBM buffer allocation enabled on
+# NVIDIA/XWayland, producing a white GtkPlug despite a valid page snapshot.
+export WEBKIT_DMABUF_RENDERER_FORCE_SHM="${WEBKIT_DMABUF_RENDERER_FORCE_SHM:-1}"
+exec /app/lib/pookie/Pookie "$@"

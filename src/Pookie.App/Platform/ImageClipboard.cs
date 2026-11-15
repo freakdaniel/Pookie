@@ -19,13 +19,7 @@ internal static partial class ImageClipboard
         if (width <= 0 || height <= 0 || (long)width * height > 16 * 1024 * 1024 || bgra.Length != (long)width * height * 4) return false;
         try
         {
-            var dib = new byte[40 + bgra.Length];
-            BinaryPrimitives.WriteInt32LittleEndian(dib, 40);
-            BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(4), width);
-            BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(8), -height);
-            BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(12), 1);
-            BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(14), 32);
-            bgra.CopyTo(dib, 40);
+            var dib = CreateDib(bgra, width, height);
             if (OperatingSystem.IsLinux()) return TrySetLinuxPng(ClipboardBitmap.PngFromDib(dib), "CLIPBOARD");
             if (OperatingSystem.IsWindows()) return SetWindows(dib);
             if (OperatingSystem.IsMacOS())
@@ -40,6 +34,22 @@ internal static partial class ImageClipboard
         }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or InvalidDataException) { }
         return false;
+    }
+
+    internal static byte[] EncodePng(byte[] bgra, int width, int height) => ClipboardBitmap.PngFromDib(CreateDib(bgra, width, height));
+
+    private static byte[] CreateDib(byte[] bgra, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height > 16 * 1024 * 1024 || bgra.Length != (long)width * height * 4)
+            throw new InvalidDataException("Некорректное изображение для копирования.");
+        var dib = new byte[40 + bgra.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(dib, 40);
+        BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(4), width);
+        BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(8), -height);
+        BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(12), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(dib.AsSpan(14), 32);
+        bgra.CopyTo(dib, 40);
+        return dib;
     }
 
     private static bool SetWindows(byte[] dib)

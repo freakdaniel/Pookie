@@ -4,7 +4,7 @@ namespace Pookie.App;
 internal static class TrackRowLayout
 {
     internal const double CoverSize = 184;
-    internal const double CornerRadius = 14;
+    internal const double CornerRadius = 6;
     internal const double ColumnGap = 16;
     internal const double ContentInset = 16;
     internal const double VerticalInset = 12;

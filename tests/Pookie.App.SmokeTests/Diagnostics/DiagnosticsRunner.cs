@@ -15,6 +15,10 @@ internal static class DiagnosticsRunner
     {
         if (args is ["--widevine-consent-ui-smoke-test"]) { await WidevineConsentUiSmokeTest.RunAsync(); return true; }
         if (args is ["--image-clipboard-smoke-test"]) { ImageClipboardSmokeTest.Run(null); return true; }
+        if (args is ["--window-image-clipboard-smoke-test"])
+        { await WindowImageClipboardSmokeTest.RunAsync(null); return true; }
+        if (args is ["--window-image-clipboard-smoke-test", var externalClipboard])
+        { await WindowImageClipboardSmokeTest.RunAsync(externalClipboard); return true; }
         if (args is ["--image-clipboard-smoke-test", var image]) { ImageClipboardSmokeTest.Run(image); return true; }
         if (args is ["--image-clipboard-read-fixture", var selection, var expected])
         { await ImageClipboardSmokeTest.ReadAsync(selection, expected); return true; }
@@ -40,6 +44,7 @@ internal static class DiagnosticsRunner
         if (args.Length is 2 or 3 && args[0] == "--playback-history-network-probe") { await PlaybackHistoryNetworkProbe.RunAsync(args[1], args.Length == 3 ? args[2] : null); return true; }
         if (args.Length == 2 && args[0] == "--playlist-page-network-probe") { await PlaylistPageNetworkProbe.RunAsync(args[1]); return true; }
         if (args.Length == 2 && args[0] == "--track-page-network-probe") { await TrackPageNetworkProbe.RunAsync(args[1]); return true; }
+        if (args is ["--track-quality-network-probe", var qualityUrl]) { await TrackQualityNetworkProbe.RunAsync(qualityUrl); return true; }
         if (args.Contains("--pagination-smoke-test")) { PaginationSmokeTest.Run(); return true; }
         if (args.Contains("--waveform-gain-smoke-test")) { await WaveformGainSmokeTest.RunAsync(); return true; }
         if (args.Contains("--browser-media-isolation-smoke-test")) { await BrowserMediaIsolationSmokeTest.RunAsync(); return true; }

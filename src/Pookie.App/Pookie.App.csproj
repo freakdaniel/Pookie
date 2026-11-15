@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>Pookie</AssemblyName>
+    <ApplicationIcon>Assets/Branding/app-icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="InfiniLore.InfiniFrame" Version="0.62.1" Condition="'$(PublishAot)' != 'true'" />

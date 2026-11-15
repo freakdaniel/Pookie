@@ -7,7 +7,7 @@ namespace Pookie.App;
 // Sample the fullscreen artwork, or the card's composited background layers.
 // Moving either retained surface only changes sampling coordinates.
 internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card = null, FrameworkElement? background = null,
-    double centeredSampleSize = 0, bool deferRefraction = false) : IDisposable
+    double centeredSampleSize = 0, bool deferRefraction = false, bool retainBuffers = false) : IDisposable
 {
     private const double BlurRadius = 12;
     private IRenderSurface? raster;
@@ -22,13 +22,14 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     private Size size, sampledArtworkSize;
     private double sampledOpacity;
     private bool dirty, preparing;
+    private bool invalidRetainedArtwork;
     private long revision;
     private IImageSource? observedSource;
     private double observedOpacity = double.NaN;
     private byte[] brightness = new byte[32 * 32];
     internal bool HasArtwork => artwork.Source != null;
     internal bool HasBitmapArtwork => artwork.Source is ImageSource;
-    internal bool HasBlurredArtwork => blurred is { Ready: true };
+    internal bool HasBlurredArtwork => !invalidRetainedArtwork && blurred is { Ready: true };
     internal bool IsBlending => outgoing != null;
     internal bool IsCurrent => HasBlurredArtwork && !preparing && !dirty && source == artwork.Source &&
         sampledOpacity == artwork.Opacity && sampledArtworkSize == ArtworkBounds.Size;
@@ -55,7 +56,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
         if (observedSource == artwork.Source && observedOpacity == artwork.Opacity) return;
         var changed = observedSource != artwork.Source;
         observedSource = artwork.Source; observedOpacity = artwork.Opacity;
-        if (changed && !keepCurrent) { Clear(); Changed?.Invoke(); }
+        if (changed && !keepCurrent) { ResetBuffers(); Changed?.Invoke(); }
         else dirty = true;
     }
 
@@ -117,6 +118,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
                     preparing = false;
                     if (captured != revision || !ReferenceEquals(blurred,target)) { Changed?.Invoke(); return; }
                     target.Upload();
+                    invalidRetainedArtwork = false;
                     resizeSample?.Dispose(); resizeSample = null;
                     var pixels = target.Pixels; var stride = width*4;
                     for(var y=0;y<32;y++)for(var x=0;x<32;x++)
@@ -182,6 +184,9 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     {
         var redrawLens = deferRefraction ? invalidate : null;
         var bounds = BackgroundBounds;
+        // A reused buffer still contains the outgoing track until its new
+        // capture is published. Never sample those pixels for another row.
+        if (invalidRetainedArtwork) return;
         var staleSize = deferRefraction && sampledArtworkSize != ArtworkBounds.Size;
         if (blurred is not { Ready: true } || factory == null || factory != Application.Current.GraphicsFactory)
         {
@@ -232,7 +237,7 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
 
     internal double Brightness(Rect region)
     {
-        if (blurred is not { Ready: true }) return 0;
+        if (!HasBlurredArtwork) return 0;
         var bounds = BackgroundBounds;
         var previousAmount = outgoingOpacity?.Invoke() ?? 0;
         var total = 0d;
@@ -252,8 +257,18 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
     {
         observedSource = null;
         observedOpacity = double.NaN;
-        Clear();
+        ResetBuffers();
         Changed?.Invoke();
+    }
+
+    private void ResetBuffers()
+    {
+        if (!retainBuffers) { Clear(); return; }
+        // A capture worker may still own these arrays. Keep preparing set until
+        // it finishes, and reject its publication through the revision check.
+        revision++;
+        source = null;
+        invalidRetainedArtwork = dirty = true;
     }
 
     private void Clear()
@@ -266,5 +281,9 @@ internal sealed class CoverGlassBackdrop(Image artwork, TrackPageColumns? card =
         source = null; factory = null;
     }
 
-    public void Dispose() => Reset();
+    public void Dispose()
+    {
+        observedSource = null; observedOpacity = double.NaN;
+        Clear(); Changed?.Invoke();
+    }
 }

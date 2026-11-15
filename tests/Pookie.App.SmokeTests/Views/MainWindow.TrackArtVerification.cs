@@ -24,6 +24,7 @@ internal sealed partial class MainWindow
     private async Task VerifyTrackArtRowAsync(LikedTrackRow row, SoundCloudTrack track, ImageSource source)
     {
         await WaitForLikedLayoutAsync(() => ReferenceEquals(row.TrackArt.Source, source) && row.Waveform.HasSamples && row.TrackArt.ActualWidth > 100);
+        await VerifyWaveformCoverHoverAsync(row);
         var cover = row.Cover.Source; var height = row.Root.ActualHeight;
         var actions = FindLikeAction(row.Root);
         // Nested grids round tracks and child edges separately at fractional DPI.
@@ -42,6 +43,7 @@ internal sealed partial class MainWindow
         if (((UIElement)Window.Content!).HitTest(point) != row.Waveform)
             throw new InvalidOperationException("Track Art intercepted waveform input.");
         await VerifyCardGlassSourceAsync(row.TrackArtGlass, row.Cover, row.TrackArt, actions);
+        await VerifyRecycledTrackArtBuffersAsync(row, source);
         CaptureUiPreview("track-art-list");
         const string lateUrl = "https://i1.sndcdn.com/track-art-late-row.jpg";
         var late = new TaskCompletionSource<ImageSource?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -59,6 +61,46 @@ internal sealed partial class MainWindow
         if (!ReferenceEquals(GetTrackArtAsync(track), GetTrackArtAsync(track)))
             throw new InvalidOperationException("Custom background requests were not shared.");
         Console.WriteLine("TRACK_ART_ROWS_OK: sharp separate image, unchanged layout, unobstructed waveform, shared loading and recycled-row protection");
+    }
+
+    private async Task VerifyRecycledTrackArtBuffersAsync(LikedTrackRow row, ImageSource source)
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var storage = typeof(CoverGlassBackdrop).GetField("blurred", flags)!;
+        var glass = row.TrackArtGlass;
+        await WaitForLikedLayoutAsync(() => { glass.Prepare(); return glass.IsCurrent; });
+        var before = storage.GetValue(glass);
+        row.SetTrackArt(null);
+        if (glass.HasBlurredArtwork || glass.IsCurrent)
+            throw new InvalidOperationException("Recycling exposed the previous track's prepared glass.");
+        row.SetTrackArt(ImageSource.FromBgraPixels(1, 1, [0, 0, 255, 255], hasAlpha: false));
+        // Replace the track while its blur worker still owns the reusable arrays.
+        glass.Prepare();
+        row.SetTrackArt(source);
+        if (glass.HasBlurredArtwork)
+            throw new InvalidOperationException("An unfinished recycled capture became visible for another track.");
+        await WaitForLikedLayoutAsync(() => { glass.Prepare(); return glass.IsCurrent; });
+        if (!ReferenceEquals(before, storage.GetValue(glass)))
+            throw new InvalidOperationException("A same-size recycled row rebuilt its backdrop buffers.");
+        Console.WriteLine("TRACK_ART_BUFFER_REUSE_OK: retained storage, hidden outgoing sample and stale worker publication rejected");
+    }
+
+    private async Task VerifyWaveformCoverHoverAsync(LikedTrackRow row)
+    {
+        var zoom = (TransformDecorator)row.Root.FindVisualChild<ArtworkHoverZoom>()!.FindVisualChild<TransformDecorator>()!;
+        foreach (var point in new[] { row.Title.Bounds.Center, row.Waveform.Bounds.Center, row.PlayButton.Bounds.Center })
+        {
+            RouteWaveformPointer(point);
+            await Task.Delay(250, lifetime.Token);
+            if (!zoom.Transform.IsIdentity)
+                throw new InvalidOperationException("Hovering waveform-card text, waveform or play zoomed its cover.");
+        }
+        RouteWaveformPointer(row.Cover.Bounds.Center);
+        await WaitForLikedLayoutAsync(() => zoom.Transform.M11 > 1.03f);
+        RouteWaveformPointer(row.Waveform.Bounds.Center);
+        await WaitForLikedLayoutAsync(() => zoom.Transform.IsIdentity);
+        RouteWaveformPointer(new Point(2, 2));
+        Console.WriteLine("WAVEFORM_COVER_HOVER_OK: only the cover zooms; text, waveform and controls leave it unchanged");
     }
 
     private async Task VerifyTrackArtHeroAsync(ImageSource source)

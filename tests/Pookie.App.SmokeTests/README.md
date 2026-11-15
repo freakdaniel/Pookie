@@ -5,9 +5,36 @@ private X selection: a separate process receives the exact PNG bytes and no JPEG
 alternative is advertised. It verifies colour channels before transport and never
 reads or overwrites the user's clipboard. The optional image can be PNG or JPEG.
 
+`--window-image-clipboard-smoke-test` checks the application's visible-window X11
+owner with a separate GTK reader on a private selection. It requests PNG before
+encoding finishes, compares exact payloads up to 4.5 MB, repeats copying, and
+replaces the image with Unicode text.
+
+For desktop interoperability, compile `tests/Fixtures/Clipboard/qt-image-consumer.cpp`
+against Qt 6 Widgets/Gui/Core, publish this smoke-test host, then run
+`python3 tests/Fixtures/Clipboard/run-isolated.py --producer /absolute/path/to/Pookie.App.SmokeTests --consumer /absolute/path/to/qt-image-consumer`.
+The runner starts its own D-Bus session, headless Mutter and Xwayland. A mapped Qt
+window takes focus before PNG encoding finishes and compares decoded pixels for
+3×3, 512×512 and 1024×1024 images. Run with `--backend xcb` for a Qt X11 consumer.
+The test uses only that private compositor's clipboard; it never opens Telegram
+or sends messages. Requires Mutter with the headless backend and Xwayland.
+
 `POOKIE_COMPACT_INTERACTION_PROBE=1` with `--collections-ui-smoke-test --no-audio`
 isolates compact row interactions. A delayed like response checks that leaving
 the button clears its hover while pending and after the request completes.
+
+`POOKIE_COVER_PREVIEW_PROBE=1` with `--track-page-ui-smoke-test --no-audio`
+checks track/playlist cover clicks in the shared media overlay: unchanged audio,
+hidden video controls, image fitting, placeholders, the right-click copy menu,
+Tab focus containment, Escape/close/backdrop dismissal and focus restoration.
+After closing it waits beyond the tooltip delay with a distant pointer, checks
+pointer/keyboard focus modality, and verifies that a fresh hover still shows a hint.
+It also opens a real video decoder after image mode and replaces video with a cover.
+Cover menus on the track/playlist page and in the preview share three actions.
+The probe copies the correct image URL to a private clipboard selection, drives
+Save as with a fixture file picker, compares saved PNG pixels and cancels a
+second save without changing the file or closing the preview.
+`POOKIE_UI_PREVIEW` optionally captures both cover previews.
 
 The normal application uses one embedded website session for authenticated web
 API operations, protection checks and browser audio. Login and the worker share
@@ -294,8 +321,10 @@ former Wave profile are imported into the account's radio settings.
 
 `--mixes-ui-smoke-test --no-audio` focuses on the library's personal mixes: all
 mixes, Daily Drops and Weekly Wave in one overview shelf and a dedicated tab,
-shared discovery caching, the mix header with leading artwork and playback/queue
-actions, hidden library tabs on detail pages, filtering, back navigation and
+shared discovery caching, the track-style header with right-hand artwork and
+playback beside the title, centered genre metadata and bottom glass actions,
+stable play/pause geometry, long-title trimming,
+Daily Drops/Weekly Wave presentation, hidden library tabs on detail pages, filtering, back navigation and
 retry after a failed load. It uses an isolated fixture account and metadata
 transport. `POOKIE_UI_PREVIEW=<directory>` saves wide/narrow detail and library
 previews.
@@ -347,6 +376,29 @@ preserve every enclosing scroll offset while keyboard selection remains availabl
 `--scrolling-ui-smoke-test --no-audio` additionally checks that a stalled spring
 and window deactivation/reactivation discard old destinations before the next input.
 
+`POOKIE_LIBRARY_SCROLL_PERF=1 --scrolling-ui-smoke-test --no-audio` compares square
+cards and waveform rows in the library and a playlist, with decoded 500px covers,
+cached waveforms and optional Track Art. It reports cold/warm traversal latency,
+UI-thread allocation and repeated mouse-wheel frame intervals. Add
+`POOKIE_SCROLL_PROFILE=1` for render timings. Run in an isolated compositor at the
+desired refresh rate, without screenshots or other concurrent UI benchmarks.
+It also checks that scrolling reuses waveform bitmaps in a bounded row pool.
+The waveform/track-page checks reject stale Track Art publication while a recycled
+row's blur worker is still running, and verify retained same-size backdrop buffers.
+
+`POOKIE_TRACK_QUALITY_ONLY=1 --track-page-ui-smoke-test --no-audio` checks equal
+14px author/genre/age text, the HD separator/icon and tooltip, ellipsis with long
+metadata, lossy/unknown uploads and a late response after switching tracks. It
+delays each metadata response in turn: the author remains immediately visible,
+while genre/age, separators and HD fade in together over 220ms after both responses
+are ready. Rendered intermediate frames check synchronized opacity, no animation
+restart on header refresh, and no leftover fade after switching tracks. A quality
+failure still reveals the byline without HD. Original-upload
+quality comes from GraphQL `tracks.mediaUpload` (codec, container, bitrate, sample
+rate and channels), independently of the available playback transcodings.
+`--track-quality-network-probe URL` verifies these metadata through the saved
+session's browser and native transports, without playback or account writes.
+
 `--track-playback-ui-smoke-test --no-audio` checks playback with 500 comments:
 restricted 30-second metadata uses the full duration for the card, waveform and
 comment timestamps, including a late preview response after playback resolves;
@@ -361,6 +413,8 @@ Set `POOKIE_TRACK_DURATION_ONLY=1` to run only the preview/full-duration regress
 `--waveform-ui-smoke-test --no-audio` checks the 620ms left-to-right spring reveal
 in a list row and the track hero. Pixel readbacks verify intermediate frames,
 unchanged layout, identical settled pixels and stopped recycled animations.
+Only hovering the cover may zoom it; text, waveform and playback controls must
+leave the cover at its original scale.
 It also checks first-paint reveal history through the real list loader, unchanged
 data without restart, and the existing hover/play/progress/seek color transitions.
 
@@ -1273,6 +1327,12 @@ loaded and repeated cancellation must restore the enabled idle login button.
 On Linux, X11 readback of the actual parent window must contain the fixture's
 blue page before closing, after resizing, and after reopening. Browser snapshots
 and `NativePresented` alone do not prove the child window was mapped onscreen.
+The transformed page also changes its background while the overlay stays open;
+native pixels must update without recapturing a snapshot. Embedded GTK views use
+software compositing to avoid blank accelerated child surfaces on NVIDIA/XWayland.
+Repeat the same native check with `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` in the
+Flatpak runtime to exercise the launcher's CPU-backed buffer transport. Page
+compositing policy alone does not disable GBM transport initialization.
 The GtkPlug host explicitly maps/unmaps its X11 child, and staging coordinates
 are clamped to X11's signed 16-bit range at HiDPI. X11 geometry must match the
 arranged viewport: GTK size hints constrain late page-driven size requests, and
@@ -1288,6 +1348,11 @@ Neither real credentials nor a SoundCloud account are used. Windows uses
 CoreWebView2, Linux uses WebKitGTK 4.1 in a GtkPlug inside MewUI's X11 window
 (also under XWayland), and macOS uses a WKWebView subview. Run this test on the
 target OS to verify its native implementation; cross-building is not runtime QA.
+On Linux the fixture also verifies that login and provider pages expose neither
+MediaDevices/device enumeration nor WebRTC, while WebAudio and media playback
+remain available. The probe only inspects API availability and never requests
+access to real capture hardware. Both GTK browser hosts disable capture before
+navigation so enumeration cannot trigger the desktop camera portal.
 
 `dotnet run --project tests/Pookie.App.SmokeTests -- --embedded-login-live-probe`
 opens the real SoundCloud page in a temporary signed-out profile, waits 15 seconds,
