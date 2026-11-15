@@ -279,7 +279,12 @@ responsive sidebar pinned below the shared chrome after scrolling, shared hover-
 history heading and cover alignment,
 deduplicated pagination, filtered playback-queue pagination,
 history/scroll restoration, retained content on refresh failure and stale replies.
+It also verifies reuse across track/playlist publication changes, retained action
+targets, stale avatar/playlist preview rejection and final pool/resource cleanup.
 Set `POOKIE_UI_PREVIEW` to capture wide/narrow layouts and playlist previews.
+Set `POOKIE_FEED_SCROLL_PERF=1 POOKIE_SCROLL_PROFILE=1` for cold/warm scroll and
+wheel frame/allocation measurements with cached 500px covers and Track Art,
+plus waveform-buffer identity and bounded-pool checks across the full feed.
 `--feed-network-probe` reads two pages using the saved account, reports event
 counts/shape without identities or credentials, and makes no account writes.
 
@@ -403,11 +408,44 @@ session's browser and native transports, without playback or account writes.
 in all three likes/playlist views with a local artist/title filter. It checks the
 filtered queue order, original duplicate positions, Next/Previous, waveform seek,
 repeat, clearing/changing the filter and the playlist's main play button. A queue
-retains its captured filter after navigation; seven nonmatching/matching pages
+retains its captured filter after navigation. The active recording stays selected
+in every view; pause/seek preserve its queue even after editing a filter. A
+different recording starts from the newly displayed results. Seven nonmatching/matching pages
 exercise continuation past empty filtered pages. Filtered sources finish at their
 results, without automatic unrelated recommendations; manual queue additions remain
 available. `Pookie.Playback.Tests/FilteredQueueTests` also checks Shuffle, pagination
 indices, cursor cycles and stale-source rejection.
+
+`POOKIE_UI_POOL_ONLY=1 --scrolling-ui-smoke-test --no-audio` traverses 1,000-track
+search/profile lists, mixed profile publications and full related/playlist sections.
+It checks bounded realized controls, same-size waveform-buffer retention, unchanged
+cover/row geometry, responsive collection columns, stable append anchors and
+rejection of late playlist previews after a publication slot is rebound.
+
+Add `POOKIE_UI_POOL_PERF=1` to run three warmup and twenty measured
+navigation/rebind/scroll cycles across search, profile tracks/publications and
+related tracks, using the same cached 1,000-item fixtures. Each page reports frame
+gap, layout and rendering percentiles; each cycle reports allocation, memory and
+bounded row/raster counts. Run separately at 60/144 Hz in an otherwise idle
+compositor. Software GPU timing is diagnostic and has no hardware-speed assertion.
+
+`POOKIE_SEARCH_QUEUE_ONLY=1 --scrolling-ui-smoke-test --no-audio` clicks the
+waveform, compact and best-result play buttons in track/all search results.
+It checks the merged track order (including lyric matches), source captions,
+captured query/category, deduplicated mixed-result pagination across eight pages,
+Next/Previous after navigation, recommendation priority, pause/resume and
+global pause/seek of the active recording without replacing its source, and
+selection of a different recording in another query/category. Editing the
+field, loading more visible results or opening a new search preserves playback's
+captured source and cursor.
+
+`POOKIE_GLOBAL_PLAYBACK_ONLY=1 --scrolling-ui-smoke-test --no-audio` verifies
+that the active recording shows pause in all three library views and remains
+active across search, feed and profiles independently of local filters/source.
+Pause/resume/seek retain the original source, cursor and occurrence. A different
+recording selects the current source. It also checks collection preview history
+attribution and atomic complete collection enqueue (pages, duplicates, empty
+results, cursor cycles and abandoned-source replies).
 
 `--track-playback-ui-smoke-test --no-audio` checks playback with 500 comments:
 restricted 30-second metadata uses the full duration for the card, waveform and
@@ -770,7 +808,7 @@ corners verified in rendered pixels and covers aligned to section headings.
 the new cover arrives, failed/missing covers fall back to neutral, and a one-level
 colour change produces at least 90 distinct dithered frames without a channel jump.
 `--ui-smoke-test` checks occurrence-specific active rows and queue menus, the
-three-second Previous rule, system command order, single-result search playback,
+three-second Previous rule, system command order, explicit single-track playback,
 all repeat modes, a finite source ending, and source pagination across navigation.
 A delayed Next cannot replace a newer selection.
 The queue fixture contains 1,000 tracks. Motion translates retained layers without
@@ -1482,3 +1520,53 @@ Run without `POOKIE_UI_PREVIEW` so screenshot readbacks do not affect timings.
 The performance run also reports the maximum spinner frame gap around card
 opening/closing, and verifies that hover does not rebuild the background sample
 or the blue button’s optical rim. Resize/reopen still refresh the sample.
+
+### Automated account-free UI checks
+
+`dotnet test` does not launch this executable's UI fixtures. The Linux CI job
+publishes it separately and runs:
+
+```bash
+node scripts/run-ui-smoke.cjs artifacts/ui-probe/Pookie.App.SmokeTests
+```
+
+The runner creates its own D-Bus, headless Mutter/Xwayland, clipboard and XDG
+storage. It exercises feed recycling, normal/filtered search queues, track pages,
+settings, chats and ownership/GC fixtures, requiring both a zero exit and the final
+scenario marker. `--case feed` (repeatable) selects a smaller set; `--logs PATH`
+keeps logs for diagnosis. CI uses software GL at 60 Hz for reproducible functional
+checks; physical GPU/driver performance and native Windows/macOS behavior still
+require their respective hosts. No saved user account is loaded and no real
+social/account writes are performed. Timing benchmarks run separately on an idle
+host instead of treating shared CI frame intervals as product performance.
+
+`--session-vault-smoke-test` verifies DPAPI on Windows and scoped Keychain storage
+on macOS, including a separate reload process, token rotation and deletion. On
+Linux it emits `SESSION_VAULT_SKIPPED`; Secret Service requires a separately
+prepared unlocked desktop fixture.
+
+macOS persistent browser profiles use WebKit identifier stores on macOS 14 and
+later, with a deterministic identifier per profile directory. On older macOS,
+WebKit only offers one persistent store: the canonical app profile uses it, while
+custom/isolated roots use nonpersistent storage and cannot promise browser-cookie
+durability across process restarts. This limitation does not affect scoped
+Keychain credential persistence. Forget-account awaits native website-data
+clearing before deleting profile files; canonical cleanup also removes the legacy
+default store left by older Pookie versions. Pure filesystem fixtures that never
+opened WebKit do not initialize a browser merely to clear their directories.
+
+Transport adapters advertise `SoundCloudTransportCapabilities`. Production HTTP
+and browser adapters declare their feature sets; follow signing is explicitly
+negotiated at the browser boundary. Optional default methods remain for compatible
+lightweight adapters, whose undeclared features are not advertised. Browser writes
+and cancellation use one `BrowserOperationPolicy` injected into JavaScript; adding
+a mutation requires updating that canonical policy and its contract tests.
+
+The chat fixture also holds a latest-page read while the user scrolls upward,
+resizes a media placeholder during the wheel animation, and checks fractional
+scroll destinations complete. Repeated clicks on the active inbox row animate
+to the latest messages, including from an older bounded cache window. A new
+wheel gesture cancels a pending jump. No separate new-messages button is used.
+Inbox selection spans the full width beneath the overlay scrollbar. Voice
+messages use glass playback controls and translucent neutral-white waveforms
+and durations; both inline and pinned dates use the shared matte glass finish.

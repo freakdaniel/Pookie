@@ -291,7 +291,7 @@ internal sealed partial class MainWindow
     private async Task VerifyHeaderActivationMotionAsync()
     {
         var targets = new[] { Page.Home, Page.Feed, Page.Library, Page.Chats, Page.Settings };
-        var buttons = topNavigation.Children.OfType<Button>().Take(4).Append(settingsButton).ToArray();
+        var buttons = topNavigation.Children.OfType<Button>().Take(3).Append(chatHeaderButton).Append(settingsButton).ToArray();
         for (var i = 0; i < targets.Length; i++)
         {
             var button = buttons[i];

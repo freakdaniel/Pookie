@@ -133,8 +133,9 @@ internal sealed partial class MainWindow
     }
     private async Task WithChatClipboardFixtureAsync(string selection, string format, string path, Func<Task> check)
     {
-        var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        start.ArgumentList.Add(typeof(MainWindow).Assembly.Location);
+        var start = new ProcessStartInfo(Environment.ProcessPath!) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet")
+            start.ArgumentList.Add(typeof(MainWindow).Assembly.Location);
         foreach (var value in new[] { "--chat-clipboard-fixture", selection, format, path }) start.ArgumentList.Add(value);
         using var owner = Process.Start(start)!;
         try

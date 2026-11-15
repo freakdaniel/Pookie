@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
+using Pookie.App.Storage;
 
 namespace Pookie.App;
 
@@ -18,6 +19,8 @@ internal sealed class ChatVideoFrame : Panel
     private readonly Func<bool> visible, autoPlay;
     private readonly Func<byte[]?> data;
     private readonly bool eligible;
+    private readonly Action<Task>? trackCleanup;
+    private readonly CancellationTokenSource lifetime = new();
     private ChatVideoSession? session;
     private WriteableBitmap? bitmap;
     private long version;
@@ -25,9 +28,11 @@ internal sealed class ChatVideoFrame : Panel
     internal bool PlayPromptVisible => play.IsVisible;
     internal bool Playing => session?.Snapshot().Playing == true;
     internal static bool CanAutoPlay(int bytes) => bytes is > 0 and <= AutoPlayBytes;
-    internal ChatVideoFrame(ChatVideoInfo? info, int bytes, Func<bool> visible, Func<byte[]?> data, Action activate, Func<bool>? autoPlay = null)
+    internal ChatVideoFrame(ChatVideoInfo? info, int bytes, Func<bool> visible, Func<byte[]?> data, Action activate, Func<bool>? autoPlay = null,
+        Action<Task>? trackCleanup = null)
     {
         this.visible = visible; this.data = data; this.autoPlay = autoPlay ?? (() => true);
+        this.trackCleanup = trackCleanup;
         intrinsic = info is { Valid: true } ? new(info.Width, info.Height) : new(240, 180);
         eligible = CanAutoPlay(bytes);
         ClipToBounds = true; Cursor = CursorType.Hand;
@@ -60,17 +65,9 @@ internal sealed class ChatVideoFrame : Panel
         if (session == null)
         {
             if (!slots.Wait(0)) return;
-            var bytes = data();
-            if (bytes == null) { slots.Release(); return; }
             starting = true;
-            try
-            {
-                var started = await ChatVideoSession.StartAsync(bytes, silent: true, preview: true);
-                if (disposed || !autoPlay() || !visible()) { await started.DisposeAsync(); slots.Release(); return; }
-                session = started;
-            }
-            catch { failed = true; play.IsVisible = true; slots.Release(); }
-            finally { starting = false; }
+            var opening = StartPlaybackAsync();
+            await opening;
         }
         if (session is not { } current) return;
         if (current.CopyFrame(ref bitmap, ref version)) { Picture.Source = bitmap; Picture.InvalidateVisual(); play.IsVisible = false; }
@@ -79,11 +76,45 @@ internal sealed class ChatVideoFrame : Panel
         else if (state.Ended) await current.SetPausedAsync(false);
         else if (state.Length > 0) duration.Text = VideoTime(Math.Max(0, state.Length - state.Time));
     }
+    private async Task StartPlaybackAsync()
+    {
+        var ownsSlot = true;
+        try
+        {
+            var bytes = data();
+            if (bytes == null) return;
+            using var startup = new AsyncResourceStartup<ChatVideoSession>(
+                () => ChatVideoSession.StartAsync(bytes, silent: true, preview: true), lifetime.Token);
+            ownsSlot = false;
+            var completion = ReleaseUnclaimedSlotAsync(startup);
+            TrackRelease(completion);
+            await startup.Ready;
+            if (disposed || !autoPlay() || !visible() || !startup.TryTake(out var started)) return;
+            session = started;
+        }
+        catch { failed = true; if (!disposed) play.IsVisible = true; }
+        finally { starting = false; if (ownsSlot) slots.Release(); }
+    }
+    private static async Task ReleaseUnclaimedSlotAsync(AsyncResourceStartup<ChatVideoSession> startup)
+    {
+        try { await startup.Completion.ConfigureAwait(false); }
+        finally { if (!startup.Taken) slots.Release(); }
+    }
     private void StopPlayback()
     {
         var old = session; session = null;
-        if (old != null) _ = ReleaseAsync(old);
-        static async Task ReleaseAsync(ChatVideoSession old) { try { await old.DisposeAsync(); } finally { slots.Release(); } }
+        if (old != null)
+        {
+            var closing = ReleaseAsync(old);
+            TrackRelease(closing);
+        }
+        static async Task ReleaseAsync(ChatVideoSession old) { try { await old.DisposeAsync().ConfigureAwait(false); } finally { slots.Release(); } }
+    }
+    private void TrackRelease(Task closing)
+    {
+        if (trackCleanup != null) trackCleanup(closing);
+        else _ = closing.ContinueWith(task => { _ = task.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
     internal void RefreshAutoPlay()
     {
@@ -92,7 +123,7 @@ internal sealed class ChatVideoFrame : Panel
     internal void Stop()
     {
         if (disposed) return;
-        disposed = true; timer.Dispose(); StopPlayback(); Picture.Source = null; bitmap?.Dispose(); bitmap = null;
+        disposed = true; lifetime.Cancel(); timer.Dispose(); StopPlayback(); Picture.Source = null; bitmap?.Dispose(); bitmap = null; lifetime.Dispose();
     }
     protected override Size MeasureContent(Size availableSize)
     {

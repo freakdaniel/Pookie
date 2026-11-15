@@ -12,6 +12,14 @@ internal sealed partial class MainWindow
     {
         try
         {
+            if (Environment.GetEnvironmentVariable("POOKIE_PLAYBACK_QUEUE_ONLY") == "1")
+            { await ShowWorkspaceAsync(); await VerifyPlaybackQueueAsync(); return; }
+            if (Environment.GetEnvironmentVariable("POOKIE_UI_POOL_ONLY") == "1")
+            { await VerifyPooledPageViewsAsync(); return; }
+            if (Environment.GetEnvironmentVariable("POOKIE_GLOBAL_PLAYBACK_ONLY") == "1")
+            { await VerifyGlobalPlaybackUiAsync(); return; }
+            if (Environment.GetEnvironmentVariable("POOKIE_SEARCH_QUEUE_ONLY") == "1")
+            { await VerifySearchQueueUiAsync(); return; }
             if (Environment.GetEnvironmentVariable("POOKIE_FILTERED_QUEUE_ONLY") == "1")
             { await VerifyFilteredQueueUiAsync(); return; }
             Window.WindowSize = WindowSize.Resizable(1000, 840, minWidth: 1000, minHeight: 680);

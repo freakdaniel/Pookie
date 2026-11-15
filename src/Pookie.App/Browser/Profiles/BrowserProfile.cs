@@ -7,11 +7,12 @@ internal sealed class BrowserProfile : IDisposable
 {
     public string Path { get; }
     private readonly bool temporary;
+    private readonly bool isolated;
     private readonly FileStream lease;
     private const string LeaseFile = ".pookie-profile.lock";
-    private BrowserProfile(string path, bool temporary)
+    private BrowserProfile(string path, bool temporary, bool isolated)
     {
-        Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); this.temporary = temporary;
+        Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); this.temporary = temporary; this.isolated = isolated;
         AppDataPaths.CreatePrivateDirectory(Path);
         try { lease = new FileStream(System.IO.Path.Combine(Path, LeaseFile), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
         catch (IOException error) { throw new InvalidOperationException("Профиль SoundCloud уже открыт другим окном Pookie. Закрой его и повтори действие.", error); }
@@ -19,13 +20,15 @@ internal sealed class BrowserProfile : IDisposable
 
     public static BrowserProfile Open(string? fixture = null, string? path = null) => new(
         path ?? (fixture != null ? Directory.CreateTempSubdirectory("pookie-browser-test-").FullName : DefaultPath()),
-        fixture != null && path == null);
+        fixture != null && path == null, fixture != null);
 
     public static string DefaultPath() => System.IO.Path.Combine(new AppDataPaths().Browser,
         OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable("POOKIE_LOGIN_ENGINE") != "infiniframe" ? "WebKit" : "InfiniFrame");
 
     public async Task ResetAsync(CancellationToken token)
     {
+        if (OperatingSystem.IsMacOS() && !isolated && MacEmbeddedBrowser.OwnsProfileData(Path))
+            await MacEmbeddedBrowser.ClearProfileAsync(Path, token).ConfigureAwait(false);
         // Hold the same lease through cleanup and login so another Pookie process cannot reuse this profile.
         for (var attempt = 0; ; attempt++)
         {
@@ -60,18 +63,33 @@ internal sealed class BrowserProfile : IDisposable
 
     internal static void Clear(AppDataPaths paths)
     {
-        foreach (var engine in new[] { "WebKit", "InfiniFrame" })
+        // The synchronous entry point is for filesystem fixtures/CLI callers.
+        // An owned macOS website store needs an asynchronous UI callback.
+        if (OperatingSystem.IsMacOS() && ProfilePaths(paths).Any(MacEmbeddedBrowser.OwnsProfileData))
+            throw new InvalidOperationException("Для очистки профиля WebKit используй ClearAsync.");
+        ClearAsync(paths).GetAwaiter().GetResult();
+    }
+
+    internal static async Task ClearAsync(AppDataPaths paths, CancellationToken token = default)
+    {
+        foreach (var path in ProfilePaths(paths))
         {
-            var path = System.IO.Path.Combine(paths.Browser, engine);
+            token.ThrowIfCancellationRequested();
             if (!Directory.Exists(path)) continue;
             using var profile = Open(path: path);
+            if (OperatingSystem.IsMacOS() && MacEmbeddedBrowser.OwnsProfileData(path))
+                await MacEmbeddedBrowser.ClearProfileAsync(path, token).ConfigureAwait(false);
             foreach (var entry in Directory.EnumerateFileSystemEntries(path))
             {
-                if (System.IO.Path.GetFileName(entry) == ".pookie-profile.lock") continue;
+                token.ThrowIfCancellationRequested();
+                if (System.IO.Path.GetFileName(entry) == LeaseFile) continue;
                 if (Directory.Exists(entry)) Directory.Delete(entry, recursive: true); else File.Delete(entry);
             }
         }
     }
+
+    private static IEnumerable<string> ProfilePaths(AppDataPaths paths) =>
+        new[] { "WebKit", "InfiniFrame" }.Select(engine => System.IO.Path.Combine(paths.Browser, engine));
 
     public void Dispose()
     {

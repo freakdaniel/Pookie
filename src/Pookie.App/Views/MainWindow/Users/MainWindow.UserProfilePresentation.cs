@@ -108,24 +108,18 @@ internal sealed partial class MainWindow
         var activity = state.Sections.GetValueOrDefault(UserSection.Overview)?.Items;
         if (activity is { Length: > 0 } && renderedUserId == state.User.Id && ReferenceEquals(activity, renderedUserActivity) && renderedUserPublicationGeneration == navigationGeneration) return;
         var items = (activity ?? []).Where(item => (item.Track != null || item.Playlist != null) && UserItemVisible(item)).ToArray();
-        var append = userPublications.Count > 0 && renderedUserId == state.User.Id && renderedUserPublicationGeneration == navigationGeneration &&
-            items.Length >= userPublications.Count && items.Take(userPublications.Count).Select(item => item.Key).SequenceEqual(userPublications.Select(entry => entry.Item.Key));
-        if (!append) ClearUserOverview();
+        if (renderedUserId != state.User.Id || renderedUserPublicationGeneration != navigationGeneration) ClearUserOverview();
         renderedUserId = state.User.Id; renderedUserActivity = activity; renderedUserPublicationGeneration = navigationGeneration;
-        foreach (var item in items.Skip(userPublications.Count)) userOverviewBody.Add(UserPublication(item, state.User.Id));
-        if (items.Length == 0 && !state.Loading.Contains(UserSection.Overview))
-            userOverviewBody.Add(new TextBlock().Text("Здесь появятся публикации и репосты пользователя").FontSize(14).Foreground(Muted));
+        SetPageItems(userPublicationList, items, LoadingRowStyle.Waveform);
+        userActivityEmpty.IsVisible = items.Length == 0 && !state.Loading.Contains(UserSection.Overview);
     }
 
     private void ClearUserOverview()
     {
-        foreach (var row in userPublicationRows) { ClearLibraryTrackRow(row); row.TrackArtGlass.Dispose(); likedRows.Remove(row.Root); }
-        userPublicationRows.Clear(); userPublications.Clear(); userPublicationLoads.Clear(); userPlaylistPlayIcons.Clear(); userPlaylistActionViews.Clear();
-        foreach (var row in userPreviewRows) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
-        userPreviewRows.Clear();
-        foreach (var cover in userPublicationCovers) StopCardArtwork(cover);
-        userPublicationCovers.Clear();
-        userOverviewBody.Clear(); renderedUserActivity = null; renderedUserId = 0;
+        SetPageItems(userPublicationList, Array.Empty<LibraryItem>(), LoadingRowStyle.Waveform);
+        foreach (var host in userPublicationViews.Keys) ClearUserPublication(host);
+        userActivityEmpty.IsVisible = false;
+        renderedUserActivity = null; renderedUserId = 0;
     }
     private void RenderUserLinks(UserProfileState state)
     {

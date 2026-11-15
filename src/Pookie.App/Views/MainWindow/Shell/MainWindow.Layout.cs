@@ -175,11 +175,11 @@ internal sealed partial class MainWindow
     private ShellHeader Header()
     {
         var searchTrigger = Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch);
-        topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto,*,Auto").Rows("*")
+        topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto").Rows("*")
             .Width(ShellHeader.NavigationWidth).Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
                 Nav("house-simple", "Главная", Page.Home).Column(0), Nav("broadcast", "Лента", Page.Feed).Column(2),
-                Nav("books", "Библиотека", Page.Library).Column(4), Nav("chat-circle", "Чаты", Page.Chats).Column(6),
-                searchTrigger.Column(8));
+                Nav("books", "Библиотека", Page.Library).Column(4),
+                searchTrigger.Column(6));
         topNavigationMotion = new TransformDecorator { Child = topNavigation };
         topSearchInput = new TextBox().BindText(query).Placeholder(TopSearchPlaceholder)
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(false)
@@ -213,7 +213,7 @@ internal sealed partial class MainWindow
                 NavigationPill()),
             new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Children(
                 topNavigationMotion.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
-            new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(settingsButton, profileButton),
+            new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(ChatHeaderButton(), settingsButton, profileButton),
             () => OperatingSystem.IsWindows() && page.Value == Page.Track,
             () => OperatingSystem.IsWindows() && page.Value == Page.Track && TrackScrollInMotion());
     }
@@ -369,7 +369,7 @@ internal sealed partial class MainWindow
     private void RefreshLibraryCards()
     {
         hasLibraryTracks.Value = tracks.Count > 0;
-        libraryGrid.Items(tracks.Take(6).ToArray(), track => track.Title);
+        SetPageItems(libraryGrid, tracks.Take(6), LoadingRowStyle.Card);
         libraryGrid.Height = Math.Max(1, Math.Ceiling(Math.Min(6, tracks.Count) / (double)libraryColumns)) * (likedArtworkSize + 90);
     }
 
@@ -394,7 +394,7 @@ internal sealed partial class MainWindow
     private void SelectLibraryTrack(SoundCloudTrack track)
     {
         likedActionError.Value = "";
-        if (LibraryTrackSelected(track)) { Run(ToggleAsync); return; }
+        if (IsCurrentTrack(track)) { Run(ToggleAsync); return; }
         SetQueue(track);
         Run(() => PlayAsync(track));
     }

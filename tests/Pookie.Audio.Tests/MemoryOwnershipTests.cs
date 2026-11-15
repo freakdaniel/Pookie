@@ -111,6 +111,35 @@ public sealed class MemoryOwnershipTests
         var saves=Enumerable.Range(1,1000).Select(writer.SaveAsync).ToArray();var flush=writer.FlushAsync();Assert.False(flush.IsCompleted);
         release.Set();await Task.WhenAll(saves.Append(first).Append(flush));Assert.Equal(new[]{0,1000},writes);
     }
+    [Fact] public async Task WriterFlushReportsFailedSaveAndRecoversAfterALaterSnapshot()
+    {
+        var writer = new SnapshotWriter<int>(value => { if (value == 1) throw new IOException("Full disk"); });
+        await Assert.ThrowsAsync<IOException>(() => writer.SaveAsync(1));
+        await Assert.ThrowsAsync<IOException>(() => writer.FlushAsync());
+        await writer.SaveAsync(2);
+        await writer.FlushAsync();
+    }
+    [Fact] public async Task WriterFlushCapturedBeforeLaterSaveObservesItsOwnFailedSnapshot()
+    {
+        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        var writer = new SnapshotWriter<int>(value =>
+        {
+            if (value == 1) { entered.Set(); release.Wait(); throw new IOException("Write failed"); }
+        });
+        var failed = writer.SaveAsync(1);
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        var earlierFlush = writer.FlushAsync();
+        var newer = writer.SaveAsync(2);
+        var latestFlush = writer.FlushAsync();
+        try
+        {
+            release.Set();
+            await Assert.ThrowsAsync<IOException>(() => failed);
+            await Assert.ThrowsAsync<IOException>(() => earlierFlush);
+            await newer; await latestFlush;
+        }
+        finally { release.Set(); }
+    }
     [Fact] public async Task DurableDraftsAndPendingSendsAreNotSilentlyTruncated()
     {
         var root=Path.Combine(Path.GetTempPath(),"pookie-draft-retention-"+Guid.NewGuid().ToString("N"));

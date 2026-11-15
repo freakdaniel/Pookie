@@ -15,6 +15,7 @@ internal sealed partial class MainWindow
     private Exception? shutdownCheckFailure;
     private readonly List<Action<BrowserRequestEvent>> lateBrowserCallbacks = [];
     private int closedBrowserWorkers;
+    private Task<Messages.ChatVideoSession>? closingNativeStartup;
 
     private async Task StartBrowserShutdownCheckAsync()
     {
@@ -57,6 +58,27 @@ internal sealed partial class MainWindow
             // Emulate a worker that captured its subscriber just before unsubscription.
             // Queue its notification while the UI thread is held, then close immediately.
             Task.Run(() => lateBrowserCallbacks[1](new("checking"))).GetAwaiter().GetResult();
+            // Close the actual window while a non-cancelable native factory is
+            // held. Its late result must be disposed without requiring a UI post.
+            var releaseNative = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            chatSessionFactory = (bytes, _) =>
+            {
+                var owned = bytes.ToArray();
+                return closingNativeStartup = Task.Run(async () =>
+                {
+                    await releaseNative.Task;
+                    try { return await Messages.ChatVideoSession.StartAsync(owned, silent: true); }
+                    finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(owned); }
+                });
+            };
+            videoMusicGain = 0;
+            Run(() => PlayChatVoiceBytesAsync(Messages.ChatVoicePcm.Encode(new float[16000], preferOpus: false).Data));
+            await WaitForLikedLayoutAsync(() => closingNativeStartup != null);
+            _ = Task.Run(async () =>
+            {
+                while (!Volatile.Read(ref chatClosing)) await Task.Delay(5);
+                await Task.Delay(50); releaseNative.TrySetResult();
+            });
         }
         catch (Exception error) { shutdownCheckFailure = error; }
         finally { Window.Close(); }
@@ -71,6 +93,10 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("UI shutdown did not release its browser subscription.");
             if (Volatile.Read(ref closedBrowserWorkers) != 1)
                 throw new InvalidOperationException("Browser worker did not finish during application shutdown.");
+            if (closingNativeStartup is not { IsCompletedSuccessfully: true } started ||
+                !(bool)typeof(Messages.ChatVideoSession).GetField("disposed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(await started)!)
+                throw new InvalidOperationException("Closing the actual window abandoned a held native startup or its late decoder.");
+            Console.WriteLine("CHAT_NATIVE_CLOSE_OK: actual Window.Close canceled UI admission and drained a held native startup/late decoder");
             var finalStatus = status.Value;
             await Task.Run(() =>
             {

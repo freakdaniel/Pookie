@@ -40,11 +40,14 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Chat music rows lost track/playlist identity or the playlist count.");
         var glassActions = 0;
         var actionsBottom = 0d;
-        VisualTree.Visit(track.Row.Root, child => { if (child is Button { StyleName: TrackButtons.Glass } button) { glassActions++; actionsBottom = Math.Max(actionsBottom, button.Bounds.Bottom); } });
+        // Count the row's material actions, independently of the current
+        // liked/reposted variant; selection changes tint, not available actions.
+        VisualTree.Visit(track.Row.Root, child => { if (child is MaterialTrackButton { IsVisible: true } button) { glassActions++; actionsBottom = Math.Max(actionsBottom, button.Bounds.Bottom); } });
         if (Math.Abs(track.Row.PlayButton.Bounds.Y - track.Row.Cover.Bounds.Y) > 1 ||
             Math.Abs(actionsBottom - track.Row.Cover.Bounds.Bottom) > 1 || track.Row.Waveform.ActualHeight > 57)
             throw new InvalidOperationException("Music controls no longer align with the top/bottom of the artwork or the embedded waveform is too tall.");
-        if (glassActions != 4 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
+        // The embedded row exposes Play, Like, Repost, Share and Add to playlist.
+        if (glassActions != 5 || trackBubble.Bubble.Background != Raised || playlistBubble.Bubble.Background != Raised ||
             trackBubble.Content.CaptionBackground != ChatOutgoingColor || playlistBubble.Content.CaptionBackground != Color.Transparent ||
             trackBubble.Footer.Bounds.Bottom > trackBubble.Body.Bounds.Bottom + 1.1 ||
             playlistBubble.Footer.Bounds.Bottom > playlistBubble.Attachments.Bounds.Bottom ||

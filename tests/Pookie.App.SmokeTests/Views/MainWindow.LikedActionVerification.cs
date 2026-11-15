@@ -11,7 +11,10 @@ internal sealed partial class MainWindow
         var buttons = new List<Button>();
         VisualTree.Visit(row.Root, element =>
         {
-            if (element is Button button && button.StyleName is TrackButtons.Glass or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
+            // The header Play action now shares the footer's glass style.
+            // This scenario checks the four footer actions and connected pair.
+            if (element is Button button && !ReferenceEquals(button, row.PlayButton) &&
+                button.StyleName is TrackButtons.Glass or TrackButtons.Selected or TrackButtons.Reposted) buttons.Add(button);
         });
         if (buttons.Count != 4) throw new InvalidOperationException("Like/repost/share/playlist actions are missing.");
         if (buttons[0] is not MaterialTrackButton { IsConnected: true } || buttons[1] is not MaterialTrackButton { IsConnected: true } ||

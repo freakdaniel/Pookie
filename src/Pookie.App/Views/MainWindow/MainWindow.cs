@@ -157,10 +157,10 @@ internal sealed partial class MainWindow : IDisposable
         Window.Closing += args =>
         {
             var deferral=args.GetDeferral();
-            Run(async()=>{try{await FinishChatVoiceBeforeCloseAsync(); RememberChatThread(); await FlushChatPersistenceAsync();}finally{deferral.Complete();}});
+            Run(async()=>{try{await FinishChatBeforeCloseAsync();}finally{deferral.Complete();}});
         };
-        Window.FrameRendered += ArrangeChatScroll;
-        Window.FrameRendered += QueueChatLibraryPreviews;
+        WindowPresentation.FramePresented(Window) += ArrangeChatScroll;
+        WindowPresentation.FramePresented(Window) += QueueChatLibraryPreviews;
         Window.FrameRendered += ObservePageScrolling;
         Window.FrameRendered += UpdateLyricsFrame;
         Window.FrameRendered += DismissUnfocusedShellMenus;
@@ -657,6 +657,7 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task DisconnectSoundCloudAsync(bool forgetAccount)
     {
+        if (disposed || chatClosing) return;
         workspace.IsEnabled = false;
         workspace.IsHitTestVisible = false;
         loginBusy.Value = true;
@@ -703,22 +704,23 @@ internal sealed partial class MainWindow : IDisposable
             loginError.IsVisible = !forgetAccount;
             await ShowLoginScreenAsync();
             if (closedBrowser != null) await closedBrowser.DisposeAsync();
-            if (!forgetAccount) return;
-            await Task.Run(() => BrowserProfile.Clear(dataPaths), lifetime.Token);
+            if (disposed || !forgetAccount) return;
+            await BrowserProfile.ClearAsync(dataPaths, lifetime.Token);
+            if (disposed) return;
             if (vault != null)
             {
                 await sessionWrites.WaitAsync(lifetime.Token);
                 try { await Task.Run(vault.Delete, lifetime.Token); }
                 catch (InvalidOperationException)
                 {
-                    status.Value = "Выход выполнен в Pookie, но сохранённую сессию удалить не удалось: после перезапуска аккаунт может подключиться снова.";
+                    if (!disposed) status.Value = "Выход выполнен в Pookie, но сохранённую сессию удалить не удалось: после перезапуска аккаунт может подключиться снова.";
                     return;
                 }
                 finally { sessionWrites.Release(); }
             }
-            status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
+            if (!disposed) status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
         }
-        finally { loginBusy.Value = false; }
+        finally { if (!disposed) loginBusy.Value = false; }
     }
 
     private void Poll()
@@ -779,15 +781,21 @@ internal sealed partial class MainWindow : IDisposable
     private async void Run(Func<Task> action)
     {
         var startedBrowser = browser;
+        var startedSession = api?.Session;
         try { await action(); }
         catch (OperationCanceledException) { AppLog.For("Pookie.UI").Debug("Операция отменена"); }
         catch (SoundCloudException error) when (error.SessionRejected && signedIn.Value)
         {
-            if (browser != startedBrowser) return;
+            if (disposed || chatClosing || browser != startedBrowser || api?.Session != startedSession) return;
             AppLog.For("Pookie.Session").Warning("SoundCloud не подтвердил восстановление входа");
             try { await DisconnectSoundCloudAsync(forgetAccount: false); }
-            catch (Exception disconnectError) when (!disposed)
-            { AppLog.Failure("Pookie.Session", "Не удалось отключить сессию SoundCloud", disconnectError); status.Value = FriendlyError(disconnectError); }
+            catch (OperationCanceledException) when (disposed || lifetime.IsCancellationRequested)
+            { AppLog.For("Pookie.Session").Debug("Отключение сессии отменено при закрытии"); }
+            catch (Exception disconnectError)
+            {
+                AppLog.Failure("Pookie.Session", "Не удалось отключить сессию SoundCloud", disconnectError);
+                if (!disposed) status.Value = FriendlyError(disconnectError);
+            }
         }
         catch (Exception error)
         {
@@ -820,6 +828,7 @@ internal sealed partial class MainWindow : IDisposable
         tooltipLayer.Dispose();
         ResetExpandedPlayer();
         DisposeFeed();
+        DisposeUserPublicationViews(); DisposeTrackSectionViews();
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
         ResetTrackCommentPreview(); trackCommentPreviewTimer.Dispose(); trackCommentsLoadingView.Dispose();
         if (userHeaderGlass != null) { userHeader.BackgroundChanged -= userHeaderGlass.Invalidate; userHeaderGlass.Dispose(); }
@@ -876,15 +885,20 @@ internal sealed partial class MainWindow : IDisposable
     internal async Task FinishShutdownAsync()
     {
         Dispose();
-        if (shareWidgetPreview != null) await shareWidgetPreview.Shutdown.ConfigureAwait(false);
-        await FlushChatPersistenceAsync().ConfigureAwait(false);
-        await configuration.FlushAsync().ConfigureAwait(false);
-        foreach (var session in browserSessions) await session.DisposeAsync().ConfigureAwait(false);
-        await browserClosing.ConfigureAwait(false);
-        if (player != null) await player.DisposeAsync().ConfigureAwait(false);
-        foreach (var file in demoFiles)
-            try { File.Delete(file); }
-            catch (IOException error) { AppLog.Failure("Pookie.Storage", "Не удалось удалить временное аудио", error, LogEventLevel.Debug); }
+        // Admit every teardown before awaiting one: a failed settings write must
+        // not abandon browser/audio/chat ownership or temporary-file cleanup.
+        var closing = new List<Task> { FlushChatPersistenceAsync(), configuration.FlushAsync(), browserClosing };
+        if (shareWidgetPreview != null) closing.Add(shareWidgetPreview.Shutdown);
+        foreach (var session in browserSessions) closing.Add(session.DisposeAsync().AsTask());
+        if (player != null) closing.Add(player.DisposeAsync().AsTask());
+        try { await Task.WhenAll(closing).ConfigureAwait(false); }
+        finally
+        {
+            chatNativeStarts?.Dispose(); chatNativeStarts = null;
+            foreach (var file in demoFiles)
+                try { File.Delete(file); }
+                catch (IOException error) { AppLog.Failure("Pookie.Storage", "Не удалось удалить временное аудио", error, LogEventLevel.Debug); }
+        }
     }
 
     internal void CleanupIsolatedData()

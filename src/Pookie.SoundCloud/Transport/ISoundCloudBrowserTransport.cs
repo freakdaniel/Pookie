@@ -2,8 +2,21 @@ using System.Text.Json;
 
 namespace Pookie.SoundCloud;
 
+[Flags]
+public enum SoundCloudTransportCapabilities
+{
+    None = 0, Read = 1, TrackLikes = 2, TrackDetails = 4, Comments = 8,
+    Chats = 16, Playlists = 32, Following = 64, History = 128, FollowSigning = 256,
+    All = Read | TrackLikes | TrackDetails | Comments | Chats | Playlists | Following | History | FollowSigning
+}
+
 public interface ISoundCloudTransport
 {
+    // Legacy/fake adapters retain their optional default methods. Production
+    // adapters explicitly advertise supported capabilities so callers can
+    // negotiate features before presenting an action, rather than catching an
+    // unexpected NotSupportedException after a user invokes it.
+    SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.Read | SoundCloudTransportCapabilities.TrackLikes;
     Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support playlist editing.");
     Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default) =>
@@ -30,6 +43,17 @@ public interface ISoundCloudTransport
         throw new NotSupportedException("This transport does not support track page reads.");
     Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support comments.");
+}
+
+public static class SoundCloudTransportFeatures
+{
+    public static bool Supports(this ISoundCloudTransport transport, SoundCloudTransportCapabilities capabilities) =>
+        (transport.Capabilities & capabilities) == capabilities;
+
+    public static void Require(this ISoundCloudTransport transport, SoundCloudTransportCapabilities capabilities)
+    {
+        if (!transport.Supports(capabilities)) throw new SoundCloudException("Подключённый транспорт SoundCloud не поддерживает это действие.");
+    }
 }
 
 // Browser adapters remain available for session verification and compatibility.

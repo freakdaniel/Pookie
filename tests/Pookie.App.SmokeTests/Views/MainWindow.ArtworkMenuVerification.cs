@@ -6,7 +6,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private async Task VerifyArtworkMenuActionsAsync(AnimatedContextMenu menu, Point point, ImageSource source, Uri link)
+    private async Task VerifyArtworkMenuActionsAsync(AnimatedContextMenu menu, Point point, ImageSource source, Uri? link)
     {
         var directory = Directory.CreateTempSubdirectory("pookie-artwork-save-").FullName;
         var destination = Path.Combine(directory, "cover.png");
@@ -27,7 +27,7 @@ internal sealed partial class MainWindow
             RouteContextRightClick(point);
             await WaitForLikedLayoutAsync(() => menu.Reveal > .999);
             if (menu.Model.Items.OfType<MenuItem>().Count() != 3 ||
-                !Row("Скопировать изображение").IsEffectivelyEnabled || !Row("Скопировать ссылку").IsEffectivelyEnabled ||
+                !Row("Скопировать изображение").IsEffectivelyEnabled || Row("Скопировать ссылку").IsEffectivelyEnabled != (link != null) ||
                 !Row("Сохранить как").IsEffectivelyEnabled)
                 throw new InvalidOperationException("Artwork menu is missing one of its three enabled actions.");
         }
@@ -35,7 +35,7 @@ internal sealed partial class MainWindow
         {
             await Show();
             CaptureUiPreview("artwork-menu-" + (chatVideoShowingImage ? "preview" : "page"), menu.Card);
-            if (clipboard != null)
+            if (clipboard != null && link != null)
             {
                 RouteWaveformClick(Row("Скопировать ссылку").Bounds.Center);
                 await WaitForLikedLayoutAsync(() => !menu.IsVisible);

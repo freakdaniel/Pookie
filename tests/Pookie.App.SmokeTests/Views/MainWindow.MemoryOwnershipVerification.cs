@@ -37,6 +37,8 @@ internal sealed partial class MainWindow
         timer.Stop();
         using var ready=new ManualResetEventSlim();using var release=new ManualResetEventSlim();
         var players=new List<ChatVideoSession>();
+        var starts=new List<Task<ChatVideoSession>>(); var originalFactory=chatSessionFactory;
+        chatSessionFactory=(bytes,silent)=>{var task=originalFactory(bytes,silent);starts.Add(task);return task;};
         var nativeGate=typeof(ChatVideoSession).GetField("initialization",BindingFlags.NonPublic|BindingFlags.Static)!.GetValue(null)!;
         var blocker=Task.Run(()=>{lock(nativeGate){ready.Set();release.Wait();}});
         try
@@ -46,20 +48,12 @@ internal sealed partial class MainWindow
             var pcm=ChatVoicePcm.Encode(new float[16000*3],preferOpus:false).Data;
             var one=PlayChatVoiceBytesAsync(pcm.ToArray(),"audit:one");
             var two=PlayChatVoiceBytesAsync(pcm.ToArray(),"audit:two");
-            Task<ChatVideoSession> Pending(Task operation)
-            {
-                var machine=operation.GetType().GetField("StateMachine",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic)!.GetValue(operation)!;
-                foreach(var field in machine.GetType().GetFields(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic)){
-                    var value=field.GetValue(machine);if(value==null)continue;
-                    var taskField=value.GetType().GetField("m_task",BindingFlags.Instance|BindingFlags.NonPublic);
-                    if(taskField?.GetValue(value) is Task<ChatVideoSession> pending)return pending;
-                }
-                throw new InvalidOperationException("Startup awaiter not found");
-            }
-            var startOne=Pending(one);var startTwo=Pending(two);
+            await WaitForLikedLayoutAsync(()=>starts.Count==2);
+            var startOne=starts[0];var startTwo=starts[1];
             Console.WriteLine($"VOICE_RACE_PENDING: first={one.IsCompleted}; second={two.IsCompleted}; generation={chatVoiceGeneration}");
             release.Set();await blocker;
             await Task.WhenAll(one,two).WaitAsync(TimeSpan.FromSeconds(20));
+            await chatCleanup.DrainAsync();
             players.Add(await startOne);players.Add(await startTwo);
             var isDisposed=typeof(ChatVideoSession).GetField("disposed",BindingFlags.Instance|BindingFlags.NonPublic)!;
             var active=players.Count(p=>!(bool)isDisposed.GetValue(p)!);
@@ -71,8 +65,10 @@ internal sealed partial class MainWindow
             var stoppingBlocker=Task.Run(()=>{lock(nativeGate){ready.Set();release.Wait();}});
             if(!ready.Wait(3000))throw new InvalidOperationException("Stop blocker unavailable");
             var stoppedStart=PlayChatVoiceBytesAsync(pcm.ToArray(),"audit:stopped");
-            var stoppedPlayer=Pending(stoppedStart);
+            await WaitForLikedLayoutAsync(()=>starts.Count==3);
+            var stoppedPlayer=starts[^1];
             await StopChatVoicePlaybackAsync();release.Set();await stoppingBlocker;await stoppedStart;
+            await chatCleanup.DrainAsync();
             var late=await stoppedPlayer;players.Add(late);
             if(chatVoicePlayer!=null || !(bool)isDisposed.GetValue(late)!)throw new InvalidOperationException("Stop did not invalidate a pending voice start.");
             Console.WriteLine("VOICE_OWNERSHIP_OK: superseded and stopped starts disposed; no orphan players");
@@ -80,7 +76,7 @@ internal sealed partial class MainWindow
         catch { throw; }
         finally
         {
-            release.Set();await blocker;chatVoiceTimer.Stop();chatVoicePlayer=null;
+            release.Set();await blocker;chatVoiceTimer.Stop();chatVoicePlayer=null;chatSessionFactory=originalFactory;
             foreach(var p in players.Distinct())await p.DisposeAsync();
             chatVoicePlayingId=null;chatVoiceAudioActive=false;RestoreMusicAfterChatVideo();
         }

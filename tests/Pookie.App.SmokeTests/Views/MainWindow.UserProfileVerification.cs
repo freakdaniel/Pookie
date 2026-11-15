@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => page.Value == Page.UserProfile && userProfileState is { MetadataLoading: false } &&
                 userHero.ActualHeight > 200 && userArtworkReady && !navigationHistory[navigationIndex].Pending);
             if (userName.Text != fixture.User.Username || userPublicationRows.Count != 2 || userPublications.Count != 3 || userSidebarRows.Count != 1 || userSidebarFollowers.Children.Count != 7 || !userBioLinks.Links.Any() || !userVerified.IsVisible || current?.Id != original || userFollowerCount.Text != "321")
-                throw new InvalidOperationException("Profile metadata, overview rows, counts, verification or navigation without playback failed.");
+                throw new InvalidOperationException($"Profile metadata, overview rows, counts, verification or navigation without playback failed: name={userName.Text}, tracks={userPublicationRows.Count}, publications={userPublications.Count}, sidebar={userSidebarRows.Count}, followers={userSidebarFollowers.Children.Count}, verified={userVerified.IsVisible}, followerCount={userFollowerCount.Text}, offset={shellScroll.VerticalOffset}, innerOffset={userOverviewScroll.VerticalOffset}, hostReady={userPublicationHost.IsReady}.");
             if (userPublications.Any(entry => entry.Root is not Grid) || userPublications.Any(entry => entry.Item.Playlist is { TrackCount: 0 }))
                 throw new InvalidOperationException("Activity kept a card background or an empty playlist");
             await VerifyUserHeaderGlassAsync();
@@ -172,7 +172,8 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => collectionCards.Values.Any(card => card.Item.User?.Id == 8 && card.Cover.ActualWidth > 100));
             var follower = collectionCards.Single(pair => pair.Value.Item.User?.Id == 8).Key;
             RouteWaveformClick(SettingsCenter(follower));
-            await WaitForLikedLayoutAsync(() => userProfileState?.User.Id == 8 && !navigationHistory[navigationIndex].Pending);
+            await WaitForLikedLayoutAsync(() => userProfileState?.User.Id == 8 && !navigationHistory[navigationIndex].Pending &&
+                userPublicationRows.Count == 1 && userPublicationRows[0].Root.ActualHeight > 0);
             if (userSidebarAboutSection.IsVisible || !string.IsNullOrWhiteSpace(userSidebarBiography.Text) || userSidebarLinks.Children.Count != 1)
                 throw new InvalidOperationException("A missing biography left a description block or hid valid external links");
             if (userProfileState!.User.TrackCount != 0 || userPublicationRows.Count != 1 || userTracksCounter.IsVisible || userCounters.ColumnDefinitions.Count != 2)

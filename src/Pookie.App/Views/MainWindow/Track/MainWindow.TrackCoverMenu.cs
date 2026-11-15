@@ -48,7 +48,7 @@ internal sealed partial class MainWindow
         var name = new string(artwork.Title.Select(c => char.IsControl(c) || "/\\:*?\"<>|".Contains(c) ? '_' : c).Take(120).ToArray()).Trim(' ', '.');
         var destination = await artworkSaveDialog(new SaveFileDialogOptions
         {
-            Owner = Window, Title = "Сохранить обложку", FileName = (name.Length == 0 ? "Обложка" : name) + ".png",
+            Owner = Window, Title = "Сохранить изображение", FileName = (name.Length == 0 ? "Обложка" : name) + ".png",
             DefaultExtension = "png", Filters = [new FileFilter("Изображение PNG", "*.png")]
         }, lifetime.Token);
         if (destination == null || disposed) return;

@@ -38,15 +38,8 @@ internal sealed partial class MainWindow
     }
 
     private LikedTrackRow CreateLibraryTrackRow(Action<SoundCloudTrack>? select = null, Action<SoundCloudTrack, double>? seek = null, bool recycleBuffers = false)
-    {
-        var row = new LikedTrackRow(select ?? SelectLibraryTrack, track => Run(() => OpenTrackPageAsync(track)), track => Run(() => ToggleTrackLikeAsync(track)),
-            track => Run(() => ToggleTrackRepostAsync(track)), track => Run(() => OpenPlaylistPickerAsync(track)), seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))), ArtworkLayer, glass: true, share: ShareTrack, recycleBuffers: recycleBuffers);
-        likedRows.Add(row.Root, row);
-        AttachTrackQueueMenu(row.Root, () => row.Track);
-        AttachTrackTitle(row.Title, () => row.Track);
-        AttachUserLink(row.Author, () => row.Track?.User);
-        return row;
-    }
+        => CreateTrackRow(select ?? SelectLibraryTrack, seek ?? ((track, fraction) => Run(() => SeekLikedTrackAsync(track, fraction))),
+            TrackRowAppearance.Library, recycleBuffers);
 
     private void BindLibraryTrackRow(LikedTrackRow row, SoundCloudTrack track)
     {
@@ -83,9 +76,7 @@ internal sealed partial class MainWindow
         RefreshTrackDetailPlayback(); RefreshCollectionPlayback();
     }
 
-    private bool LibraryRowSelected(LikedTrackRow row) => row.Track is { } track && LibraryTrackSelected(track) &&
-        (!collectionWaveRows.TryGetValue(row.Root, out var entry) ||
-            playbackQueue.Context?.Key == displayedCollection?.Key && playbackQueue.Current?.SourceIndex == entry.Position && QueueMatchesPageFilter);
+    private bool LibraryRowSelected(LikedTrackRow row) => IsCurrentTrack(row.Track);
 
     private void RefreshPlaybackPosition(double seconds)
     {
@@ -102,7 +93,7 @@ internal sealed partial class MainWindow
 
     private async Task SeekLikedTrackAsync(SoundCloudTrack track, double fraction)
     {
-        if (!LibraryTrackSelected(track))
+        if (!IsCurrentTrack(track))
         {
             SetQueue(track);
             await PlayAsync(track);

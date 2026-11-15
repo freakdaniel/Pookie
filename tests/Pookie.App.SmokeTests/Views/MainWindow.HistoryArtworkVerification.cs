@@ -95,6 +95,12 @@ internal sealed partial class MainWindow
         if (history.Item.ArtworkUrl != null || history.Item.Track!.ArtworkUrl != null ||
             !ReferenceEquals(history.Cover.Source, likes.Cover.Source) || ArtworkSkeleton(history.Cover).IsVisible)
             throw new InvalidOperationException("Sparse history metadata lost the same track's cached likes cover");
+        if (current?.Id == track.Id)
+        {
+            if (history.Playback.ShowsPause != isPlaying.Value)
+                throw new InvalidOperationException("History lost the active recording while preparing its cached cover glass");
+            await WaitForLikedLayoutAsync(() => history.Playback.Opacity > .999);
+        }
         await Task.Delay(300, lifetime.Token);
         history = collectionCards.Values.Single(card => collectionGrid.IsAncestorOf(card.Frame) && card.Item.Track?.Id == track.Id);
         if (!ReferenceEquals(history.Cover.Source, source))

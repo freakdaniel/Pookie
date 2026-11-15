@@ -16,6 +16,16 @@ public sealed record SoundCloudRecoveryObservation(string Method, string Path, S
 public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSession> session,
     ISoundCloudBrowserTransport? verification = null, TimeProvider? timeProvider = null) : ISoundCloudTransport, IDisposable
 {
+    public SoundCloudTransportCapabilities Capabilities =>
+        (SoundCloudTransportCapabilities.All & ~(SoundCloudTransportCapabilities.FollowSigning | SoundCloudTransportCapabilities.Following)) |
+        (verification?.Supports(SoundCloudTransportCapabilities.FollowSigning) == true
+            ? SoundCloudTransportCapabilities.FollowSigning | SoundCloudTransportCapabilities.Following : SoundCloudTransportCapabilities.None);
+    public Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default)
+    {
+        if (verification == null) throw new SoundCloudException("Для подтверждения подписки нужно браузерное соединение SoundCloud.");
+        verification.Require(SoundCloudTransportCapabilities.FollowSigning);
+        return verification.GetFollowSignatureAsync(userId, artistId, cancellationToken);
+    }
     private const int MaxResponseBytes = 2 * 1024 * 1024;
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     private readonly SemaphoreSlim concurrency = new(4, 4);

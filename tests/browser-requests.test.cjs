@@ -4,11 +4,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const querySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/Requests/TrackReadRequest.cs'), 'utf8');
 let script = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.App/Browser/Scripts/browser-requests.js'), 'utf8');
-for (const name of ['Comments', 'Replies', 'Sidebar'])
-  script = script.replace(`__POOKIE_TRACK_${name.toUpperCase()}__`, JSON.stringify(querySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
+for (const [, name, query] of querySource.matchAll(/public const string (\w+) = """([\s\S]*?)"""/g))
+  script = script.replace(`__POOKIE_TRACK_${name.toUpperCase()}__`, JSON.stringify(query));
 const commentQuerySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/Requests/CommentWriteRequest.cs'), 'utf8');
-for (const name of ['Create', 'Delete'])
-  script = script.replace(`__POOKIE_COMMENT_${name.toUpperCase()}__`, JSON.stringify(commentQuerySource.match(new RegExp(`const string ${name} = """([\\s\\S]*?)"""`))[1]));
+for (const [, name, query] of commentQuerySource.matchAll(/public const string (\w+) = """([\s\S]*?)"""/g))
+  script = script.replace(`__POOKIE_COMMENT_${name.toUpperCase()}__`, JSON.stringify(query));
+const policySource = fs.readFileSync(require('node:path').join(__dirname, '../src/Pookie.SoundCloud/Protocol/BrowserOperationPolicy.cs'), 'utf8');
+script = script.replace('__POOKIE_WRITE_OPERATIONS__', JSON.stringify(policySource.match(/const string WriteOperations = "([^"]+)"/)[1]));
+assert.deepEqual([...new Set(script.match(/__POOKIE_[A-Z_]+__/g))], ['__POOKIE_ACCOUNT__'], 'Every production template value must be supplied by this harness');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const command = (n, operation = 'like', liked = true) => ({id:n.toString(16).padStart(32,'0'), operation, user_id:42, track_id:90, liked});
 function harness(fetch, origin = 'https://soundcloud.com', frame = false, loaded = true, stored = true, prepared = true, extraAccount = {}, resources = []) {
@@ -1035,4 +1038,20 @@ test('ordinary 403 has a response trace and no challenge retry', async () => {
   assert.deepEqual(events.map(m=>m.trace.stage),['send','response']);
   assert.equal(events[1].trace.generation,0);
   assert.equal(events[1].trace.challenge_active,false);
+});
+
+test('playlist edits share the host-owned write cancellation policy; reads still abort in place', async () => {
+  for (const write of [false, true]) {
+    let signal;
+    const h = harness((_, options) => { signal = options.signal; return new Promise(() => {}); });
+    const id = (write ? 'ad' : 'ae').repeat(16);
+    h.window.__pookieRequest(write
+      ? { id, operation: 'playlist-edit', edit: { kind: 'delete', user_id: 42, playlist_id: 77 } }
+      : { id, operation: 'api-get', url: 'https://api-v2.soundcloud.com/tracks/42' });
+    await tick();
+    h.window.__pookieRequest({ id, operation: 'cancel' });
+    await tick();
+    assert.ok(signal, 'request reached the fixture fetch');
+    assert.equal(signal.aborted, !write, 'writes require host worker teardown; reads cancel their own fetch');
+  }
 });

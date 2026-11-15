@@ -9,12 +9,10 @@ internal sealed partial class MainWindow
     private enum TrackSection { Overview, Reposts, Albums, Playlists, Related }
     private readonly ObservableValue<TrackSection> trackDetailSection = new(TrackSection.Overview);
     private FrameworkElement trackDetailOverview = null!, trackDetailSectionContent = null!;
-    private StackPanel trackDetailSectionTracks = null!;
-    private TrackCollectionGrid trackDetailSectionCards = null!;
+    private FrameworkElement trackDetailSectionTracks = null!;
+    private FrameworkElement trackDetailSectionCards = null!;
     private TextBlock trackDetailSectionEmpty = null!;
     private LibrarySkeleton trackDetailSectionSkeleton = null!;
-    private (long Track, TrackSection Section) renderedTrackSection;
-    private LibraryItem[] renderedTrackSectionItems = [];
     private readonly List<LikedTrackRow> trackSectionRows = [];
     private string? failedTrackSectionCursor;
 
@@ -24,8 +22,8 @@ internal sealed partial class MainWindow
 
     private FrameworkElement TrackDetailSectionContentView()
     {
-        trackDetailSectionTracks = new StackPanel().Vertical();
-        trackDetailSectionCards = new TrackCollectionGrid();
+        trackDetailSectionTracks = TrackSectionTracksView();
+        trackDetailSectionCards = TrackSectionCardsView();
         trackDetailSectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).Margin(0, 12);
         trackDetailSectionSkeleton = new LibrarySkeleton();
         return trackDetailSectionContent = new StackPanel().Vertical().Spacing(16).Margin(24, 0, 24, 0)
@@ -113,26 +111,16 @@ internal sealed partial class MainWindow
             TrackSection.Playlists => "Этот трек пока не добавлен в плейлисты.", _ => "Похожих треков пока нет."
         };
         trackDetailSectionEmpty.IsVisible = !state.SectionLoading && items.Length == 0;
-        if (renderedTrackSection != (state.Track.Id, section) || !items.Take(renderedTrackSectionItems.Length).SequenceEqual(renderedTrackSectionItems))
-        {
-            foreach (var row in trackSectionRows) { ClearLibraryTrackRow(row); likedRows.Remove(row.Root); }
-            trackSectionRows.Clear(); trackDetailSectionTracks.Clear(); trackDetailSectionCards.Clear();
-            renderedTrackSectionItems = []; renderedTrackSection = (state.Track.Id, section);
-        }
-        foreach (var item in items.Skip(renderedTrackSectionItems.Length))
-            if (item.Track is { } track)
-            {
-                var row = CreateLibraryTrackRow(); row.Root.Margin = new Thickness(0, 0, 0, TrackRowLayout.Gap);
-                BindLibraryTrackRow(row, track); trackSectionRows.Add(row); trackDetailSectionTracks.Add(row.Root);
-            }
-            else trackDetailSectionCards.Add(TrackCollectionCard(item, state.Track.Id));
-        renderedTrackSectionItems = items;
+        SetPageItems(trackSectionTrackList, related ? items.Select(item => item.Track).OfType<SoundCloudTrack>() : [], LoadingRowStyle.Waveform);
+        SetTrackSectionCardItems(related ? [] : items);
     }
 
     private void CheckTrackSectionEnd()
     {
         if (page.Value != Page.Track || trackDetailSection.Value == TrackSection.Overview ||
             trackDetailState is not { SectionLoading: false } state || navigationHistory[navigationIndex].Pending) return;
+        var host = trackDetailSection.Value == TrackSection.Related ? trackDetailSectionTracks : trackDetailSectionCards;
+        if (host is ViewportItemsHost { IsReady: false }) return;
         var cursor = state.Sections.GetValueOrDefault(trackDetailSection.Value)?.NextHref;
         if (cursor == null || cursor == failedTrackSectionCursor || trackDetailScroll.ViewportHeight <= 0) return;
         if (SmoothScroll.Maximum(trackDetailScroll) - trackDetailScroll.VerticalOffset > Math.Max(160, trackDetailScroll.ViewportHeight * .5)) return;

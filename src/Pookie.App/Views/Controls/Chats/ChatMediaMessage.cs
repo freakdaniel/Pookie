@@ -21,12 +21,13 @@ internal sealed class ChatBubbleContent(FrameworkElement attachments, TextBlock 
     private bool resizePending;
     private Point resizeFooterFrom;
     internal bool IsResizing => resizePending || resize.IsRunning;
+    internal bool ResizeAnimationRunning => resize.IsRunning;
     internal Action? ResizeTick;
     internal void AnimateMediaChange()
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         resizeFooterFrom = new(footer.Bounds.X - Bounds.X, footer.Bounds.Y - Bounds.Y);
-        resizeFrom = new(ActualWidth, ActualHeight); resizePending = true;
+        resizeFrom = new(ActualWidth, ActualHeight); resizePending = true; InvalidateMeasure();
     }
     internal void StopResize() { resize.Stop(); resizePending = false; resizeAmount = 1; }
     private Size AnimateSize(Size natural)

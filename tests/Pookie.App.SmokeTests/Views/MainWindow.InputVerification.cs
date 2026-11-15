@@ -14,7 +14,8 @@ internal sealed partial class MainWindow
         if (!OperatingSystem.IsLinux()) return;
         if (searchInput == null) throw new InvalidOperationException("Native search input is unavailable");
         var selection = "POOKIE_TEST_" + Guid.NewGuid().ToString("N");
-        using var clipboard = windowClipboard!.ForSelection(null, selection);
+        var originalClipboard = windowClipboard!;
+        using var clipboard = originalClipboard.ForSelection(null, selection);
         var start = new ProcessStartInfo(Environment.ProcessPath!)
         { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
         if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet") start.ArgumentList.Add(typeof(MainWindow).Assembly.Location);
@@ -31,6 +32,10 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("External clipboard fixture failed to start");
             if (!clipboard.TryGetText(out var received) || received != ClipboardFixture.Text)
                 throw new InvalidOperationException("Cross-process Unicode clipboard transport failed");
+            // Linux registers an async Paste command that reads the window's
+            // selection owner. Route it to this fixture's isolated selection as
+            // well as the fields' synchronous clipboard/undo commands.
+            windowClipboard = clipboard;
             topSearchInput.ClipboardService = clipboard;
             likedFilter.ClipboardService = clipboard;
             foreach (var field in new[] { topSearchInput, likedFilter })
@@ -38,7 +43,10 @@ internal sealed partial class MainWindow
                 if (field == topSearchInput) OpenTopSearch();
                 else { CloseTopSearch(true); ShowLibraryTracks(); }
                 await Task.Delay(300, lifetime.Token);
+                Window.Activate();
+                await WaitForLikedLayoutAsync(() => Window.IsActive);
                 field.Focus();
+                await WaitForLikedLayoutAsync(() => field.IsFocused);
                 SetInputFixtureText(field, "prefix to replace");
                 field.SelectAll();
                 SendCharacter(display, 'v', 4);
@@ -71,8 +79,9 @@ internal sealed partial class MainWindow
         }
         finally
         {
-            topSearchInput.ClipboardService = windowClipboard;
-            likedFilter.ClipboardService = windowClipboard;
+            windowClipboard = originalClipboard;
+            topSearchInput.ClipboardService = originalClipboard;
+            likedFilter.ClipboardService = originalClipboard;
             CloseTopSearch(true);
             Window.FocusManager.ClearFocus();
             await NavigateAsync(Page.Home);
@@ -98,7 +107,7 @@ internal sealed partial class MainWindow
             if (field.Text == expected) return;
             await Task.Delay(25, lifetime.Token);
         }
-        throw new InvalidOperationException($"Search input mismatch: expected '{expected}', got '{field.Text}'");
+        throw new InvalidOperationException($"Search input mismatch: expected '{expected}', got '{field.Text}', active={Window.IsActive}, focused={field.IsFocused}");
     }
 
     private void SendCharacter(nint display, char character, uint extraModifiers = 0)

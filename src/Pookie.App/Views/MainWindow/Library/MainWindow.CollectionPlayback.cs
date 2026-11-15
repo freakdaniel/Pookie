@@ -53,17 +53,18 @@ internal sealed partial class MainWindow
     private async Task EnqueueLibraryCollectionAsync(LibraryItem item)
     {
         if (!CanUseWorkspace || api.Session is not { } session) return;
+        var sourceVersion = playbackQueue.SourceVersion;
         var detail = collectionDetails.GetValueOrDefault(item.Key) ?? await api.GetCollectionDetailAsync(item, lifetime.Token);
-        if (disposed || api.Session != session) return;
-        collectionDetails.TryAdd(item.Key, detail);
-        var page = collectionDetails[item.Key].Tracks;
+        if (disposed || api.Session != session || playbackQueue.SourceVersion != sourceVersion) return;
+        collectionDetails[item.Key] = detail;
+        var page = detail.Tracks;
         var tracks = new List<SoundCloudTrack>(page.Tracks);
         var cursors = new HashSet<string>(StringComparer.Ordinal);
         while (page.NextHref is { } cursor)
         {
             if (!cursors.Add(cursor)) throw new SoundCloudException("Не удалось загрузить все треки подборки.");
             page = await api.GetNextPageAsync(cursor, lifetime.Token);
-            if (disposed || api.Session != session) return;
+            if (disposed || api.Session != session || playbackQueue.SourceVersion != sourceVersion) return;
             tracks.AddRange(page.Tracks);
         }
         EnqueueCollectionTracks(tracks);
@@ -89,10 +90,12 @@ internal sealed partial class MainWindow
         collectionDetails[item.Key] = detail;
         var tracks = detail.Tracks.Tracks;
         if (tracks.Length == 0) { status.Value = "В этом плейлисте пока нет треков."; return; }
-        StartQueueContext(new(item.Key, detail.Item.Title,
-            item.IsAlbum ? "Сейчас играет альбом" : "Сейчас играет плейлист", detail.Tracks.NextHref,
-            Kind: item.IsAlbum ? PlaybackContextKind.Album : PlaybackContextKind.Playlist,
-            ResourceUrn: PlaybackHistoryContextUrn(detail.Item)), tracks, tracks[0], 0);
+        StartQueueContext(CollectionPlaybackContext(detail), tracks, tracks[0], 0);
         await PlayAsync(tracks[0], queueAdvance: true);
     }
+
+    private static PlaybackContext CollectionPlaybackContext(CollectionDetail detail) => new(detail.Item.Key, detail.Item.Title,
+        detail.Item.IsAlbum ? "Сейчас играет альбом" : "Сейчас играет плейлист", detail.Tracks.NextHref,
+        Kind: detail.Item.IsAlbum ? PlaybackContextKind.Album : PlaybackContextKind.Playlist,
+        ResourceUrn: PlaybackHistoryContextUrn(detail.Item));
 }

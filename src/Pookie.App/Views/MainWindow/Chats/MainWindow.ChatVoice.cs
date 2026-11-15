@@ -75,16 +75,19 @@ internal sealed partial class MainWindow
     private bool ChatVoiceCurrent(long generation, long account, long peer) => !disposed && generation == chatVoiceGeneration && account == chatAccountId && chatRecipient?.Id == peer;
     private async Task ContinueChatVoiceAsync()
     {
-        if (chatSending || chatVoiceBusy || chatRecipient == null || chatPending.ContainsKey(chatRecipient.Id)) return;
+        if (disposed || chatClosing || chatSending || chatVoiceBusy || chatRecipient == null || chatPending.ContainsKey(chatRecipient.Id)) return;
         chatVoiceBusy = true;
         var idle = chatVoiceIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = TrackChatOperation(idle.Task);
         var generation = ++chatVoiceGeneration; var account = chatAccountId; var peer = chatRecipient.Id;
         var token = chatAccountLifetime?.Token ?? lifetime.Token;
         try
         {
             await StopChatVoicePlaybackAsync();
             if (!ChatVoiceCurrent(generation, account, peer)) return;
-            CloseChatVideo(true); chatVoiceAudioActive = true; await SuspendMusicForChatVideo();
+            CloseChatVideo(true); await chatVideoClosing;
+            if (!ChatVoiceCurrent(generation, account, peer)) return;
+            chatVoiceAudioActive = true; await SuspendMusicForChatVideo();
             if (!ChatVoiceCurrent(generation, account, peer)) return;
             if (chatVoiceRecorder == null)
             {
@@ -125,6 +128,7 @@ internal sealed partial class MainWindow
         if (chatVoiceRecorder is not { Recording: true } recorder || chatVoiceBusy || chatRecipient == null) return;
         chatVoiceBusy = true;
         var idle = chatVoiceIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = TrackChatOperation(idle.Task);
         var peer = chatRecipient.Id; var account = chatAccountId; var generation = chatVoiceGeneration;
         var token = chatAccountLifetime?.Token ?? lifetime.Token;
         try
@@ -183,19 +187,26 @@ internal sealed partial class MainWindow
         if (!ChatVoiceCurrent(generation,account,peer) || playback != chatVoicePlaybackGeneration) { System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); return; }
         await PlayChatVoiceBytesAsync(bytes);
     }
-    private async Task PlayChatVoiceBytesAsync(byte[] bytes, string? messageKey = null)
+    private Task PlayChatVoiceBytesAsync(byte[] bytes, string? messageKey = null) =>
+        TrackChatOperation(PlayChatVoiceBytesCoreAsync(bytes, messageKey));
+
+    private async Task PlayChatVoiceBytesCoreAsync(byte[] bytes, string? messageKey)
     {
         var request = ++chatVoicePlaybackGeneration;
         var generation = chatVoiceGeneration;
         try
         {
+            if (disposed || chatClosing) return;
             await StopChatVoicePlaybackAsync(invalidate: false);
             if (disposed || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration) return;
-            CloseChatVideo(true); chatVoiceAudioActive = true;
+            CloseChatVideo(true); await chatVideoClosing;
+            if (disposed || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration) return;
+            chatVoiceAudioActive = true;
             await SuspendMusicForChatVideo();
             if (disposed || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration) return;
-            var player = await ChatVideoSession.StartAsync(bytes);
-            if (disposed || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration) { await player.DisposeAsync(); return; }
+            using var startup = StartOwnedChatSession(bytes);
+            await startup.Ready;
+            if (disposed || chatClosing || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration || !startup.TryTake(out var player)) return;
             chatVoicePlayer = player; chatVoicePlayingId = messageKey; chatVoiceTimer.Start();
         }
         catch { if (request == chatVoicePlaybackGeneration) { chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); chatThreadStatus.Value = "Не удалось воспроизвести голосовое сообщение."; } }
@@ -211,7 +222,7 @@ internal sealed partial class MainWindow
         chatVoiceDraftPlay.IsVisible = true; chatVoiceDraftPause.IsVisible = false; chatVoiceWave.Progress = 0;
         foreach (var row in ChatRows.Where(r => r.Bound))
             VisualTree.Visit(row.Attachments, child => { if (child is ChatVoiceCard card) card.Update(0,false); });
-        if (player != null) await player.DisposeAsync();
+        if (player != null) await DisposeChatResourceAsync(player);
         if (request == chatVoicePlaybackGeneration) { chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); }
     }
     private FrameworkElement CreateChatVoiceCard(string messageId, int index, ChatVoiceMetadata metadata)
@@ -233,7 +244,7 @@ internal sealed partial class MainWindow
     }
     private async Task DeleteChatVoiceAsync()
     {
-        ++chatVoiceGeneration; await StopChatVoicePlaybackAsync(); if (chatVoiceRecorder != null) { await chatVoiceRecorder.DisposeAsync(); chatVoiceRecorder = null; }
+        ++chatVoiceGeneration; await StopChatVoicePlaybackAsync(); await RetireChatRecorderAsync();
         if (chatVoiceDraft is { } draft) TryDeleteChatVoice(draft.Path); chatVoiceDraft = null; chatVoiceWave.ResetLive(); chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); ClearChatAttachments();
         if (chatRecipient != null) chatWorkspace.Drafts?.Remove(chatRecipient.Id); SaveChatWorkspace(); RefreshChatVoice(); RefreshChatComposer();
     }
@@ -269,7 +280,8 @@ internal sealed partial class MainWindow
         ++chatVoiceGeneration; ++chatVoicePlaybackGeneration; var recorder = chatVoiceRecorder; var player = chatVoicePlayer;
         chatVoiceRecorder = null; chatVoicePlayer = null; chatVoiceDraft = null; chatVoiceAudioActive = false; chatVoiceBusy = false;
         chatVoiceIdle = null; chatVoiceTimer?.Stop(); chatVoiceWave?.ResetLive(); chatComposerLayout?.SetVoiceMode(false,snap:true);
-        if (recorder != null) _ = recorder.DisposeAsync(); if (player != null) _ = player.DisposeAsync();
+        if (recorder != null) _ = DisposeChatResourceAsync(recorder);
+        if (player != null) _ = DisposeChatResourceAsync(player);
         RestoreMusicAfterChatVideo();
     }
     private static void TryDeleteChatVoice(string path) { try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { } }

@@ -114,7 +114,10 @@ internal sealed class GlassRimRaster : IDisposable
                     if (coverage == 0) { words[offset] = 0; continue; }
                     var ambient = position < .45 ? 4 * (1 - position / .45) + position / .45
                         : 1 - .5 * (position - .45) / .55;
-                    var alpha = (uint)Math.Clamp(Math.Round((value >> 24) + ambient * coverage / 255), 0, 255);
+                    // Keep the fractional broad sheen when quantizing alpha.
+                    // Stable one-level dither avoids long flat bands without
+                    // adding animation work or rerasterizing retained controls.
+                    var alpha = (uint)Math.Clamp((value >> 24) + ambient * coverage / 255 + PlayerGradient.Noise(x, y), 0, 255);
                     words[offset] = alpha << 24 | 0x00ffffff;
                 }
             }

@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
 
     private async Task SeekCollectionTrackAsync(SoundCloudTrack track, int position, double fraction)
     {
-        if (current?.Id != track.Id || playbackQueue.Context?.Key != displayedCollection?.Key || playbackQueue.Current?.SourceIndex != position || !QueueMatchesPageFilter)
+        if (!IsCurrentTrack(track))
         { SetQueue(track, position); await PlayAsync(track); }
         if (current?.Id == track.Id) await SeekLikedTrackAsync(track, fraction);
     }

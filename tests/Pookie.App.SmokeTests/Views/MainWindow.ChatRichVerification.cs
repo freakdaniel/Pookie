@@ -190,6 +190,7 @@ internal sealed partial class MainWindow
         if (media.Downloads != downloadsBeforeOpen) throw new InvalidOperationException("Reopening cached video downloaded the media again.");
         if (chatVideoSession != null || chatVideoImage.Source != null || chatVideoBitmap != null) throw new InvalidOperationException("Closing video retained decoder/frame resources.");
         await VerifyChatVideoMusicAsync(videoRow.Message!.Id);
+        await VerifyChatImagePreviewAsync(transport, media);
         VerifyChatVideoDirtyClip();
         if (Environment.GetEnvironmentVariable("POOKIE_CHAT_VIDEO_FIXTURE") is { Length: > 0 } playbackFixture)
             await VerifyChatVideoPlaybackBackdropAsync(playbackFixture);

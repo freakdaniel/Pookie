@@ -13,13 +13,13 @@ internal sealed partial class MainWindow
     private ChatViewport chatViewport = null!;
     private ChatComposerLayout chatComposerLayout = null!;
     private TextBlock chatName = null!, chatAttachmentLabel = null!, chatFloatingDateText = null!;
-    private Border chatFloatingDate = null!;
+    private GlassCard chatFloatingDate = null!;
     private ChatDateLayer chatDateLayer = null!;
     private Image chatAttachmentPreview = null!, chatHeaderAvatar = null!;
     private ChatLoadingView chatInboxLoading = null!, chatThreadLoading = null!;
     private MultiLineTextBox chatInput = null!;
     private TextBox chatSearch = null!;
-    private Button chatSend = null!, chatAttach = null!, chatGif = null!, chatMore = null!, chatBack = null!, chatNewMessages = null!;
+    private Button chatSend = null!, chatAttach = null!, chatGif = null!, chatMore = null!, chatBack = null!;
     private GlassCard chatComposer = null!, chatIdentityCard = null!;
     private readonly ChatComposerGlyph chatSendGlyph = new();
     private Button chatOptions = null!;
@@ -48,7 +48,7 @@ internal sealed partial class MainWindow
     private FrameworkElement ChatsPage()
     {
         chatInbox = new ItemsControl().Items(Array.Empty<ChatConversation>(), c => c.Id).ItemHeight(82).FixedHeightPresenter()
-            .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 8, 6));
+            .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 6));
         chatInbox.ItemTemplate = ChatConversationTemplate();
         chatInbox.ItemsSource = ItemsView.Create(chatInboxItems, c => c.Recipient.Username, c => c.Id);
         chatInboxLoading = new(chatInbox, inbox: true);
@@ -63,7 +63,7 @@ internal sealed partial class MainWindow
         chatMore = TrackButtons.Action(new TextBlock().Text("Ещё диалоги").FontSize(12), () => Run(LoadMoreChatsAsync), TrackButtons.Text, 34).IsVisible(false);
         var searchModes = ChatGlobalSearchModes();
         chatSidebarNormal = new DockPanel().LastChildFill().Spacing(10).Children(ChatFolderView().DockTop(), chatInboxLoading.Root);
-        var people = new ItemsControl().ItemHeight(82).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0,0,8,6));
+        var people = new ItemsControl().ItemHeight(82).FixedHeightPresenter().Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0,0,0,6));
         people.ItemTemplate = ChatConversationTemplate(); people.ItemsSource = ItemsView.Create(chatInboxItems, c => c.Recipient.Username, c => c.Id);
         chatPeopleSearch = people; chatSearchLanding = new Border().BorderThickness(0).Background(Color.Transparent).IsVisible(false);
         chatSidebarSearch = new DockPanel().LastChildFill().Spacing(10).Children(searchModes.DockTop(),
@@ -86,20 +86,19 @@ internal sealed partial class MainWindow
 
         chatName = new TextBlock().Text("Твои сообщения").FontSize(16).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         chatBack = TrackButtons.Icon(Icons.View("arrow-left", 20), () => { SaveChatDraft(); chatColumns.Selected = false; }, TrackButtons.Text, 36).IsVisible(false);
-        chatNewMessages = TrackButtons.Action(new TextBlock().Text("Новые сообщения ↓").FontSize(12), ()=>Run(ShowLatestChatAsync), TrackButtons.Tonal, 32).IsVisible(false).CenterHorizontal();
         chatMessagesView = new ItemsControl().Items(Array.Empty<ChatMessageItem>(), m => m.Key).ItemHeight(84).VariableHeightPresenter()
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 0));
         chatMessagesView.MouseWheel += _ => BeginChatUserScroll();
         chatMessagesView.ItemTemplate = ChatMessageTemplate();
         chatMessagesView.ItemsSource = ItemsView.Create(chatMessageItems, m => m.Body, m => m.Key);
         chatFloatingDateText = new TextBlock().FontSize(12).SemiBold();
-        chatFloatingDate = new Border().Background(Color.FromRgb(48, 53, 59)).CornerRadius(14).Padding(12, 5)
+        chatFloatingDate = new GlassCard { HoverEnabled = false, ShadowEnabled = false }.Background(Color.FromArgb(222,48,51,56)).CornerRadius(14).Padding(12, 5)
             .Child(chatFloatingDateText).CenterHorizontal().IsVisible(false);
         chatFloatingDate.VerticalAlignment = VerticalAlignment.Top; chatFloatingDate.IsHitTestVisible = false;
         chatDateLayer = new(chatFloatingDate);
         chatViewport = new ChatViewport(chatMessagesView, Surface).Initialize();
         chatViewport.SynchronizeScroll = SynchronizeChatScroll;
-        chatViewport.Restoring=()=>chatRestoreOffset!=null || chatScrollBottom || chatFollowLayout;
+        chatViewport.Restoring=()=>chatRestoreOffset!=null || chatScrollBottom && !chatAnimateBottom || chatFollowLayout && !chatAnimateBottom;
         chatViewport.ComposerResizing = () => chatComposerSurface is { IsResizing: true };
         chatThreadLoading = new(new Grid().Columns("*").Rows("*").Children(chatViewport, chatDateLayer), inbox: false);
         chatConversationView = chatThreadLoading.Root;
@@ -179,7 +178,7 @@ internal sealed partial class MainWindow
         var thread = new DockPanel().LastChildFill().Spacing(12).Children(
             ReadingChrome(chatIdentityCard).DockTop(),
             ReadingChrome(threadStatus).DockTop(),
-            ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), ReadingChrome(chatNewMessages).DockBottom(), historyArea);
+            ReadingChrome(ChatSelectionView()).DockTop(), ReadingChrome(chatComposer).DockBottom(), historyArea);
         var threadSurface = new ChatStage(new Grid().Columns("*").Rows("*").Children(thread, new ChatStage(ChatThreadSearchResults(), rightInset: () => chatColumns.ScrollGutter).Initialize()), centerReadingColumn: false).Initialize();
         chatColumns = new ChatColumns(new GlassCard(Surface).Background(ChatGlassSurface).CornerRadius(24).Padding(12).Margin(0, 0, 0, 16).Child(inbox), threadSurface, compact => chatBack.IsVisible = compact).Initialize();
         chatColumns.GeometryChanged = chatViewport.InvalidateArrange;

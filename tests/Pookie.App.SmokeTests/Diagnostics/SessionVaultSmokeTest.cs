@@ -10,15 +10,16 @@ internal static class SessionVaultSmokeTest
 {
     public static async Task RunAsync()
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("This check verifies Windows DPAPI.");
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+        { Console.WriteLine("SESSION_VAULT_SKIPPED: native persistence check requires Windows DPAPI or macOS Keychain; Linux Secret Service requires an unlocked desktop fixture."); return; }
         var root = Directory.CreateTempSubdirectory("pookie-vault-test-").FullName;
         try
         {
             var paths = new AppDataPaths(root);
             using (var saved = SessionVault.Open(paths)) saved.Save(FixtureSession());
             var file = Path.Combine(paths.Config, "soundcloud-session.bin");
-            var bytes = File.ReadAllBytes(file);
-            if (Encoding.UTF8.GetString(bytes).Contains("fixture-private-token", StringComparison.Ordinal))
+            var bytes = OperatingSystem.IsWindows() ? File.ReadAllBytes(file) : [];
+            if (OperatingSystem.IsWindows() && Encoding.UTF8.GetString(bytes).Contains("fixture-private-token", StringComparison.Ordinal))
                 throw new InvalidOperationException("Session was saved as plaintext.");
             var start = new ProcessStartInfo(Environment.ProcessPath!)
             { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -34,18 +35,26 @@ internal static class SessionVaultSmokeTest
                 throw new InvalidOperationException("Session reload was not confirmed.");
             using var reopened = SessionVault.Open(paths);
             if (reopened.Load()?.DataDomeClientId != "fixture-rotated") throw new InvalidOperationException("Session rotation was not persisted.");
-            bytes = File.ReadAllBytes(file);
-            bytes[^1] ^= 1;
-            File.WriteAllBytes(file, bytes);
-            ExpectRejected(reopened);
-            File.WriteAllBytes(file, new byte[WindowsSessionVault.MaxSize + 1]);
-            ExpectRejected(reopened);
+            if (OperatingSystem.IsWindows())
+            {
+                bytes = File.ReadAllBytes(file);
+                bytes[^1] ^= 1;
+                File.WriteAllBytes(file, bytes);
+                ExpectRejected(reopened);
+                File.WriteAllBytes(file, new byte[WindowsSessionVault.MaxSize + 1]);
+                ExpectRejected(reopened);
+            }
             reopened.Save(FixtureSession());
             reopened.Delete();
             if (reopened.Load() != null || File.Exists(file)) throw new InvalidOperationException("Logout retained the saved session.");
-            Console.WriteLine("SESSION_VAULT_OK: encrypted Windows storage, reload in a new process, rotation, tampering/size rejection and logout deletion");
+            Console.WriteLine("SESSION_VAULT_OK: native encrypted storage, scoped reload in a new process, rotation, Windows tampering/size rejection and logout deletion");
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally
+        {
+            // A failed macOS test must not leave an orphan fixture Keychain entry.
+            if (OperatingSystem.IsMacOS()) { using var cleanup = SessionVault.Open(new(root)); cleanup.Delete(); }
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     public static void RunChild(string root)

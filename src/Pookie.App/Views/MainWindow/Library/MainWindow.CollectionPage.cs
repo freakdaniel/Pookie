@@ -194,7 +194,7 @@ internal sealed partial class MainWindow
     private async Task PlayCollectionTrackAsync(SoundCloudTrack track, int sourceIndex)
     {
         if (!playlistCollectionVisible.Value || page.Value != Page.LibraryCollection) return;
-        if (playbackQueue.Context?.Key == displayedCollection?.Key && current?.Id == track.Id && playbackQueue.Current?.SourceIndex == sourceIndex && QueueMatchesPageFilter)
+        if (IsCurrentTrack(track))
         { await ToggleAsync(); return; }
         SetQueue(track, sourceIndex); await PlayAsync(track);
     }

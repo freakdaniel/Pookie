@@ -31,7 +31,8 @@ internal sealed partial class MainWindow
             var picture = ChatVideoPictureBounds();
             Click(new Point(picture.X + picture.Width / 2, picture.Y + picture.Height / 2));
             if (!chatVideoOpen.Value) throw new InvalidOperationException("Clicking the video picture closed the viewer.");
-            Click(new Point(chatVideoImage.Bounds.X + 4, picture.Y + picture.Height / 2));
+            // Mixed photo/video galleries also have arrows at the vertical centre.
+            Click(new Point(chatVideoImage.Bounds.X + 4, picture.Y + 16));
             if (chatVideoOpen.Value) throw new InvalidOperationException("Clicking video letterboxing did not close the viewer.");
             await WaitForLikedLayoutAsync(() => fixture.Level is > 0 and < 63);
             if (fixture.Paused) throw new InvalidOperationException("Music did not resume during the fade in.");

@@ -58,7 +58,7 @@ internal sealed partial class MainWindow
         }
         CaptureUiPreview("track-sections-overview");
         await OpenTrackSectionAsync(TrackSection.Playlists);
-        await WaitForLikedLayoutAsync(() => trackDetailSectionCards.Children.Count >= 3 && trackDetailSectionCards.ActualHeight > 100);
+        await WaitForLikedLayoutAsync(() => BoundTrackSectionCards.Count() >= 3 && trackDetailSectionCards.ActualHeight > 100);
         if (trackDetailOverview.IsVisible || !trackDetailSectionContent.IsVisible)
             throw new InvalidOperationException("Track tabs do not switch the body below the hero.");
         var generation = navigationGeneration;
@@ -70,8 +70,8 @@ internal sealed partial class MainWindow
         await OpenTrackSectionAsync(TrackSection.Reposts);
         if (trackDetailState!.Sections[TrackSection.Reposts].Items.Single().User?.Username != "Репостер")
             throw new InvalidOperationException("Reposts do not display the reposting users.");
-        await WaitForLikedLayoutAsync(() => ((FrameworkElement)trackDetailSectionCards.Children[0]).ActualHeight > 100);
-        var profile = (Button)trackDetailSectionCards.Children[0];
+        await WaitForLikedLayoutAsync(() => BoundTrackSectionCards.Any(card => card.Item?.User?.Username == "Репостер" && card.Root.ActualHeight > 100));
+        var profile = BoundTrackSectionCards.Single(card => card.Item?.User?.Username == "Репостер").Root;
         var profileName = FindTrackDetailText(profile, "Репостер");
         if (profileName.TextAlignment != TextAlignment.Center || profile.Background.A != 0)
             throw new InvalidOperationException("Reposts did not reuse the library profile card style.");

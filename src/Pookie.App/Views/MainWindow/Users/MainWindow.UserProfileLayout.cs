@@ -102,7 +102,8 @@ internal sealed partial class MainWindow
         userRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), RetryUserProfile, TrackButtons.Tonal, 32).Left();
         userEmpty = new TextBlock().FontSize(14).Foreground(Muted).Margin(8, 16).TextWrapping(TextWrapping.Wrap);
         userTrackList = CreateUserTrackList(); userCardGrid = CreateCollectionGrid(false);
-        userOverviewBody = new ViewportStackPanel { Viewport = () => userOverviewScroll.Bounds }.Vertical().Spacing(36);
+        userActivityEmpty = new TextBlock().Text("Здесь появятся публикации и репосты пользователя").FontSize(14).Foreground(Muted).IsVisible(false);
+        userOverviewBody = new StackPanel().Vertical().Children(UserPublicationListView(), userActivityEmpty);
         userOverviewLoading = CreateLibraryLoadingView(userOverviewBody, preview: true);
         userOverviewLoading.Skeleton.Preview = false;
         var activity = new StackPanel().Vertical().Spacing(36).Children(
@@ -160,7 +161,7 @@ internal sealed partial class MainWindow
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, TrackRowLayout.Gap));
         list.ItemTemplate = new DelegateTemplate<SoundCloudTrack>(context =>
         {
-            var row = CreateUserTrackRow();
+            var row = CreateUserTrackRow(pooled: true);
             context.Register("row", row.Root); return row.Root;
         }, (_, track, _, context) => BindLibraryTrackRow(likedRows[context.Get<Grid>("row")], track),
         (_, _, _, context) => ClearLibraryTrackRow(likedRows[context.Get<Grid>("row")]));

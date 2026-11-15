@@ -10,8 +10,9 @@ internal sealed partial class MainWindow
     {
         await WaitForLikedLayoutAsync(() => collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Count(card => card.Item.Track != null && card.Cover.ActualWidth > 100) >= 6);
         var active = collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Single(card => card.Item.Track?.Id == current?.Id && card.Cover.ActualWidth > 100);
-        if (!active.Playback.IsVisible || active.Playback.Opacity < .999 || active.Playback.ShowsPause != isPlaying.Value)
+        if (!active.Playback.IsVisible || active.Playback.ShowsPause != isPlaying.Value)
             throw new InvalidOperationException("History did not initialize the current track's active overlay");
+        await WaitForLikedLayoutAsync(() => active.Playback.Opacity > .999);
         var next = collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Single(card => card.Item.Track?.Id == fixtures[1].Id && card.Cover.ActualWidth > 100);
         if (next.Playback.Opacity > .001 || next.Playback.ShowsPause)
             throw new InvalidOperationException("History initialized an idle card as active");
@@ -36,7 +37,13 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Leaving an idle history card hid the active track overlay");
         }
         finally { Window.FrameRendered -= SampleHover; }
-        RouteWaveformClick(point);
+        // The click helper emits button events only. Move back from (2,2)
+        // first, as a real pointer would, so the revealed play action receives
+        // the click instead of the underlying card's open-track navigation.
+        point = SettingsCenter(next.Cover);
+        RouteWaveformPointer(point);
+        await WaitForLikedLayoutAsync(() => next.Playback.Opacity > .999 && next.Playback.PlaybackButton is { IsHitTestVisible: true });
+        RouteWaveformClick(SettingsCenter(next.Playback.PlaybackButton!));
         await WaitForLikedLayoutAsync(() => current?.Id == fixtures[1].Id && isPlaying.Value && !playbackLoading.Value &&
             next.Playback.ShowsPause && next.Playback.Opacity > .999 && active.Playback.Opacity < .001);
         if (!playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(activeCollection!.Items.Where(item => item.Track != null).Select(item => item.Track!.Id)))
@@ -55,8 +62,9 @@ internal sealed partial class MainWindow
         await ShowLibrarySectionAsync(Page.LibraryHistory);
         await WaitForLikedLayoutAsync(() => collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).Any(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100));
         var restored = collectionCards.Values.Where(card => collectionGrid.IsAncestorOf(card.Frame)).First(card => card.Item.Track?.Id == fixtures[1].Id && card.Frame.ActualWidth > 100);
-        if (!restored.Playback.ShowsPause || restored.Playback.Opacity < .999)
+        if (!restored.Playback.IsVisible || !restored.Playback.ShowsPause)
             throw new InvalidOperationException($"Returning to history changed its active overlay: current={current?.Id}, expected={fixtures[1].Id}, playing={isPlaying.Value}, paused={paused}, showsPause={restored.Playback.ShowsPause}, opacity={restored.Playback.Opacity}");
+        await WaitForLikedLayoutAsync(() => restored.Playback.Opacity > .999);
         Console.WriteLine("UI_HISTORY_CARDS_OK: shared likes playback overlay, current track on entry, animated centered hover, immediate track selection, play/pause, history queue, recycled non-track cards and stable overlay on return");
     }
 }

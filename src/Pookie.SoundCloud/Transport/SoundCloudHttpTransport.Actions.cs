@@ -70,7 +70,7 @@ public sealed partial class SoundCloudHttpTransport
             if (verification == null) throw new SoundCloudException("Подпись подписки SoundCloud ещё не подключена.");
             // The site's signing helper is an authorization operation. The actual
             // follow request remains native and carries the current session.
-            var signature = await verification.GetFollowSignatureAsync(userId, artistId, cancellationToken).ConfigureAwait(false);
+            var signature = await GetFollowSignatureAsync(userId, artistId, cancellationToken).ConfigureAwait(false);
             if (signature is not { Length: > 0 and <= 4096 } || signature.Any(char.IsControl))
                 throw new SoundCloudException("SoundCloud не предоставил подпись подписки.");
             path += "?signature=" + Uri.EscapeDataString(signature);

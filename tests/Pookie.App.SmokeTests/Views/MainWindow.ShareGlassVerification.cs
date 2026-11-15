@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyShareGlassAsync(SoundCloudTrack track)
     {
-        shareWidgetPreview.BrowserFactory = events => { var browser = new WidgetBrowserFixture(events); widgetBrowsers.Add(browser); return browser; };
+        PrepareShareWidgetFixture();
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var intervals = new List<double>();

@@ -15,7 +15,7 @@ internal interface ISessionVault : IDisposable
 internal static class SessionVault
 {
     public static ISessionVault Open(AppDataPaths paths) => OperatingSystem.IsWindows()
-        ? new WindowsSessionVault(paths) : new LinuxSessionVault(Scope(paths));
+        ? new WindowsSessionVault(paths) : OperatingSystem.IsMacOS() ? new MacSessionVault(Scope(paths)) : new LinuxSessionVault(Scope(paths));
 
     internal static string Scope(AppDataPaths paths) => paths.Root == Path.GetFullPath(AppDataPaths.DefaultRoot()) ? "pookie" :
         "pookie-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(paths.Root)))[..16];

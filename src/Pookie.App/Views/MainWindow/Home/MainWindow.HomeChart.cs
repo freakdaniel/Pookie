@@ -251,7 +251,7 @@ internal sealed partial class MainWindow
     private async Task PlayHomeChartTrackAsync(SoundCloudTrack track)
     {
         if (homeChartDetail is not { } chart || !HomeRecommendations.Playable(track)) return;
-        if (current?.Id == track.Id && playbackQueue.Context?.Key == chart.Item.Key) { await ToggleAsync(); return; }
+        if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         var tracks = chart.Tracks.Tracks.Where(HomeRecommendations.Playable).ToArray();
         StartQueueContext(new(chart.Item.Key, chart.Item.Title, "Чарт SoundCloud", chart.Tracks.NextHref,
             Kind: PlaybackContextKind.Playlist, ResourceUrn: PlaybackHistoryContextUrn(chart.Item)), tracks, track, preserveManual: true);

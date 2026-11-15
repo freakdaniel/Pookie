@@ -12,6 +12,9 @@ internal sealed partial class MainWindow
 {
     private async Task VerifySharePanelAsync(SoundCloudTrack track, LibraryItem playlist)
     {
+        // This helper also runs from the full collections suite, independently
+        // of the Share benchmark. Always install its local browser fixture.
+        PrepareShareWidgetFixture();
         var previous = shareClipboard;
         var clipboard = new ShareClipboard(); shareClipboard = clipboard;
         try

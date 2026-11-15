@@ -7,7 +7,7 @@ internal sealed class SnapshotWriter<T>(Action<T> write)
 {
     private readonly object sync = new();
     private (T Value, TaskCompletionSource Completion)? pending;
-    private Task draining = Task.CompletedTask;
+    private Task lastSave = Task.CompletedTask;
     private bool running;
 
     internal Task SaveAsync(T snapshot)
@@ -16,11 +16,14 @@ internal sealed class SnapshotWriter<T>(Action<T> write)
         {
             var completion = pending?.Completion ?? new(TaskCreationOptions.RunContinuationsAsynchronously);
             pending = (snapshot, completion);
-            if (!running) { running = true; draining = Task.Run(Drain); }
-            return completion.Task;
+            lastSave = completion.Task;
+            if (!running) { running = true; _ = Task.Run(Drain); }
+            return lastSave;
         }
     }
-    internal Task FlushAsync() { lock (sync) return draining; }
+    // The latest admitted snapshot is the durability barrier. The worker itself
+    // remains healthy after a failed write, so awaiting it would hide that error.
+    internal Task FlushAsync() { lock (sync) return lastSave; }
     private void Drain()
     {
         while (true)

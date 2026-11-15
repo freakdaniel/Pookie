@@ -56,7 +56,7 @@ internal sealed partial class MainWindow
         }
         catch (OperationCanceledException) { }
         catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or InvalidOperationException)
-        { if (chatHistory == store) { chatHistory = null; _ = store.DisposeAsync(); } chatsStatus.Value = "Кеш истории недоступен. Переписка загрузится из SoundCloud."; }
+        { if (chatHistory == store) RetireChatHistory(); chatsStatus.Value = "Кеш истории недоступен. Переписка загрузится из SoundCloud."; }
     }
     private async Task RestoreChatWindowAsync(SoundCloudUser peer)
     {
@@ -94,7 +94,7 @@ internal sealed partial class MainWindow
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or InvalidOperationException)
-        { if (chatHistory == store) { chatHistory = null; _ = store.DisposeAsync(); } chatThreadStatus.Value = "Кеш истории недоступен."; }
+        { if (chatHistory == store) RetireChatHistory(); chatThreadStatus.Value = "Кеш истории недоступен."; }
     }
     private (string Id, double Y, double Offset)? ReadChatReadingAnchor(ScrollViewer? viewer)
     {
@@ -122,11 +122,15 @@ internal sealed partial class MainWindow
         if (chatThreadBusy || chatWindowBusy || chatRecipient == null || chatMessages.Count == 0) return;
         var store = chatHistory; var revision = chatRevision; var peer = chatRecipient.Id; chatWindowBusy = true;
         var first = chatMessages[0].Id; var count = chatMessages.Count; var cursor = chatMessageCursor;
+        var navigation = chatTimelineNavigation;
+        var idle = chatWindowIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var windowRead = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
+        chatWindowRead = windowRead;
         try
         {
             var segment = store == null || older && chatOlderCacheBoundary == first ? [] :
-                older ? await store.BeforeAsync(peer, chatMessages[0], 100, ChatReadToken()) : await store.AfterAsync(peer, chatMessages[^1], 100, ChatReadToken());
-            if (revision != chatRevision || chatHistory != store) return;
+                older ? await store.BeforeAsync(peer, chatMessages[0], 100, windowRead.Token) : await store.AfterAsync(peer, chatMessages[^1], 100, windowRead.Token);
+            if (revision != chatRevision || chatHistory != store || navigation != chatTimelineNavigation) return;
             if (segment.Length == 0)
             {
                 if (older) { chatOlderCacheBoundary = first; await RefreshChatThreadAsync(older: true); }
@@ -140,26 +144,23 @@ internal sealed partial class MainWindow
             var start = older ? 0 : Math.Max(0, combined.Length - 200);
             if (anchorIndex >= 0) start = Math.Clamp(start, Math.Max(0, anchorIndex - 180), anchorIndex);
             var window = combined.Skip(start).Take(200).ToArray();
-            var newer = (await store!.AfterAsync(peer, window[^1], 1, ChatReadToken())).Length > 0;
-            if (revision != chatRevision || chatHistory != store) return;
+            var newer = (await store!.AfterAsync(peer, window[^1], 1, windowRead.Token)).Length > 0;
+            if (revision != chatRevision || chatHistory != store || navigation != chatTimelineNavigation) return;
             // A background search may have filled the remaining server ranges.
             // Keep paging from the cache instead of reusing the old network cursor.
-            var coverage = await store.LoadWindowAsync(peer, limit: 1, token: ChatReadToken());
-            if (revision != chatRevision || chatHistory != store) return;
-            var reactions = await store.ReactionsAsync(peer, ChatReadToken(), window.Select(m => m.Id));
-            if (revision != chatRevision || chatHistory != store) return;
+            var coverage = await store.LoadWindowAsync(peer, limit: 1, token: windowRead.Token);
+            if (revision != chatRevision || chatHistory != store || navigation != chatTimelineNavigation) return;
+            var reactions = await store.ReactionsAsync(peer, windowRead.Token, window.Select(m => m.Id));
+            if (revision != chatRevision || chatHistory != store || navigation != chatTimelineNavigation) return;
             // Do not start restoring against the old item source while the
             // metadata reads are still in flight: painted frames would finish
             // that restoration before the new window had even been installed.
-            if (chatMessages.Count != count || chatMessages[0].Id != first) return;
+            if (navigation != chatTimelineNavigation || chatMessages.Count != count || chatMessages[0].Id != first) return;
             anchor = ReadChatReadingAnchor(viewer) ?? anchor;
             if (anchor is { } currentAnchor && !window.Any(message => message.Id == currentAnchor.Id)) return;
-            var follow = older && (chatFollowLayout || chatScrollBottom || ChatIsAtBottom());
-            if (follow && window[^1].Id != chatMessages[^1].Id) return;
             chatMessages.Clear(); chatMessages.AddRange(window);
             chatWindowHasNewer = newer; chatMessageCursor = coverage.Cursor; chatReactions = reactions;
-            if (follow) RequestChatBottom();
-            else if (anchor is { } reading) RestoreChatReadingAnchor(reading);
+            if (anchor is { } reading) RestoreChatReadingAnchor(reading);
             RefreshChatTimeline();
             if (chatRestoreAnchor != null) { var index = chatMessageItems.ToList().FindIndex(m => m.Id == chatRestoreAnchor); if (index >= 0) chatMessagesView.ScrollIntoView(index); }
             Window.PerformLayout(); RememberChatThread();
@@ -167,6 +168,9 @@ internal sealed partial class MainWindow
         catch (OperationCanceledException) { }
         finally
         {
+            if (ReferenceEquals(chatWindowRead, windowRead)) chatWindowRead = null;
+            idle.TrySetResult();
+            if (ReferenceEquals(chatWindowIdle, idle)) chatWindowIdle = null;
             if (revision == chatRevision)
             {
                 chatWindowBusy = false;
@@ -178,13 +182,34 @@ internal sealed partial class MainWindow
     }
     private async Task ShowLatestChatAsync()
     {
-        if (chatHistory != null && chatRecipient != null)
+        var navigation = ++chatTimelineNavigation;
+        var interaction = chatScrollInteraction;
+        var revision = chatRevision;
+        var peer = chatRecipient?.Id;
+        chatJumpingLatest = true;
+        chatTimelineRead?.Cancel(); chatWindowRead?.Cancel();
+        bool Current() => !disposed && chatRevision == revision && chatRecipient?.Id == peer &&
+            chatTimelineNavigation == navigation && chatScrollInteraction == interaction;
+        try
         {
-            var revision = chatRevision; var window = await chatHistory.LoadWindowAsync(chatRecipient.Id, token: ChatReadToken());
-            if (revision != chatRevision) return;
-            chatMessages.Clear(); chatMessages.AddRange(window.Messages); chatWindowHasNewer = false;
-            chatRestoreAnchor = null; chatRestoreOffset = null; chatReactions = await chatHistory.ReactionsAsync(chatRecipient.Id, ChatReadToken(), chatMessages.Select(m => m.Id)); if (revision != chatRevision) return; RefreshChatTimeline();
+            if (!chatWindowHasNewer) RequestChatBottom(animate: true);
+            // Let an older read retire without applying its stale window. Do not
+            // overlap two mutations of the bounded 200-message source.
+            await Task.WhenAll(chatThreadIdle?.Task ?? Task.CompletedTask, chatWindowIdle?.Task ?? Task.CompletedTask);
+            if (!Current()) return;
+            if (chatWindowHasNewer && chatHistory is { } store && peer is { } recipient)
+            {
+                var window = await store.LoadWindowAsync(recipient, token: ChatReadToken());
+                var reactions = await store.ReactionsAsync(recipient, ChatReadToken(), window.Messages.Select(m => m.Id));
+                if (!Current()) return;
+                CancelChatScrollRestoration();
+                chatMessages.Clear(); chatMessages.AddRange(window.Messages); chatWindowHasNewer = false;
+                chatMessageCursor = window.Cursor; chatReactions = reactions; RefreshChatTimeline();
+                Window.PerformLayout();
+            }
+            RequestChatBottom(animate: true);
+            await RefreshChatThreadAsync();
         }
-        RequestChatBottom(); await RefreshChatThreadAsync();
+        finally { if (navigation == chatTimelineNavigation) chatJumpingLatest = false; }
     }
 }

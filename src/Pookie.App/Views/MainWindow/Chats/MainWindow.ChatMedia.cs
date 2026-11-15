@@ -139,7 +139,7 @@ internal sealed partial class MainWindow
             early.Files.Select(f => new ChatAttachment(f.Name, f.Type, [], f.AsFile, f.Video, f.Voice)).ToArray(), early.GifUrl);
         AddChatMediaSummary(cacheId, new(ChatPresentation.MediaLabel(description), first?.Source, first?.Size, early.Caption, photos, early.Files,early.Reply));
         foreach (var row in ChatRows.Where(r => r.Bound && r.Message != null && ChatMediaCacheId(r.Message, chatRecipient?.Id ?? 0) == cacheId).ToArray())
-        { row.FollowMediaResize = ChatIsAtBottom(); row.Content.AnimateMediaChange(); StopChatAnimations(row.Attachments); row.Attachments.Clear(); BindChatMediaPreview(row);row.RefreshExtensions(); }
+        { row.FollowMediaResize = ChatIsAtBottom(); CaptureChatPanelAnchor(); row.Content.AnimateMediaChange(); StopChatAnimations(row.Attachments); row.Attachments.Clear(); BindChatMediaPreview(row);row.RefreshExtensions(); }
         foreach (var binding in chatInboxBindings) RefreshChatInboxPreview(binding.Key, binding.Value);
         if (chatHistory is { } history) await history.SaveMediaMetadataAsync(peer, message.Id, early.Files, early.Caption, token);
     }
@@ -278,7 +278,7 @@ internal sealed partial class MainWindow
     {
         if (row.Message is not { } message) return;
         var files = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0)?.Files;
-        row.FollowMediaResize = ChatIsAtBottom(); row.Content.AnimateMediaChange();
+        row.FollowMediaResize = ChatIsAtBottom(); CaptureChatPanelAnchor(); row.Content.AnimateMediaChange();
         StopChatAnimations(row.Attachments); row.Attachments.Clear(); row.Attachments.IsVisible = true;
         row.ResetMediaLayout(); row.Open.IsVisible = false; row.MediaResolved = false;
         var descriptions = files is { Length: > 0 } ? files : [new MediaFile("Вложение", "application/octet-stream", 0)];
@@ -315,13 +315,6 @@ internal sealed partial class MainWindow
         var size = summary?.ImageSize ?? local?.ImageSize ?? new Size(240, 180);
         var source = summary?.Thumbnail ?? local?.Thumbnail;
         row.MediaLoading = summary == null && source == null;
-        void OpenFrame(ChatPhotoFrame frame)
-        {
-            frame.MouseDown += args =>
-            {
-                if (args.Button == MouseButton.Left && local == null && chatRecipient != null) Run(() => OpenChatMediaAsync(row));
-            };
-        }
         var allPhotos = summary?.Photos is { Length: > 0 } photos && photos.All(p => p != null);
         var descriptions = summary?.Files ?? (local?.Files.Any(path => local.Documents.Contains(path) || ChatMediaType(path).StartsWith("video/", StringComparison.Ordinal)) == true
             ? local.Files.Select(path => new MediaFile(Path.GetFileName(path), ChatMediaType(path), 0, local.Documents.Contains(path))).ToArray() : null);
@@ -341,7 +334,8 @@ internal sealed partial class MainWindow
                     if (!allPhotos) photoFrame.Width = ChatImagePreview.Fit(photo.Size).Width;
                     if (ChatDecoded(row.MediaKey!, index) is { } decoded) photoFrame.ShowImmediate(decoded.Source, decoded.Backdrop);
                     else photoFrame.ShowPreview(photo.Blurred, ArtworkBackdrop.Create(photo.Source, .6));
-                    row.Attachments.Add(photoFrame); OpenFrame(photoFrame);
+                    row.Attachments.Add(photoFrame);
+                    if (local == null) BindChatPhotoInteraction(row, photoFrame, index);
                 }
                 else
                 {
@@ -356,7 +350,8 @@ internal sealed partial class MainWindow
         {
             var frame = CreateChatPhoto(size);
             if (source is ImageSource pixels) frame.ShowPreview(ArtworkBackdrop.Create(pixels, 1) ?? pixels, ArtworkBackdrop.Create(pixels, .6));
-            row.Attachments.Add(frame); OpenFrame(frame);
+            row.Attachments.Add(frame);
+            if (local == null) BindChatPhotoInteraction(row, frame, 0);
         }
         row.Body.Text = local?.Draft ?? summary?.Caption ?? "";
         if (ChatMediaReference.Parse(row.Body.Text) != null) row.Body.Text = "";
@@ -376,13 +371,34 @@ internal sealed partial class MainWindow
                 row.Bubble.Bounds.Bottom > chatViewport.Bounds.Y && row.Bubble.Bounds.Y < chatViewport.Bounds.Bottom,
             () => row.Message is { } current ? CachedChatMedia(current)?.Attachments.ElementAtOrDefault(index)?.Data : null,
             () => { if (row.Message is { } current) Run(() => ActivateChatAttachmentAsync(current.Id, index)); },
-            () => preferences.ChatAutoPlayVideo);
+            () => !chatClosing && preferences.ChatAutoPlayVideo, TrackChatCleanup);
         if (ChatMediaSummaryFor(message, peer ?? 0)?.Photos?.ElementAtOrDefault(index) is { } photo)
             frame.ShowPoster(photo.Source, photo.Blurred);
         return frame;
     }
     private ChatPhotoFrame CreateChatPhoto(Size size) => new(size,
         () => !disposed && Window.IsActive && page.Value == Page.Chats);
+
+    private void BindChatPhotoInteraction(ChatBubbleRow row, ChatPhotoFrame frame, int index)
+    {
+        var id = row.Message!.Id; var peer = chatRecipient?.Id; var generation = row.MediaGeneration;
+        frame.Focusable = true; frame.Cursor = CursorType.Hand;
+        void Open()
+        {
+            if (row.Bound && row.Message?.Id == id && row.MediaGeneration == generation && chatRecipient?.Id == peer)
+                Run(() => ActivateChatAttachmentAsync(id, index));
+        }
+        frame.MouseDown += args =>
+        {
+            if (args.Handled || args.Button != MouseButton.Left) return;
+            args.Handled = true; Open();
+        };
+        frame.KeyDown += args =>
+        {
+            if (args.Handled || args.Key is not (Key.Enter or Key.Space)) return;
+            args.Handled = true; Open();
+        };
+    }
 
     private void RenderChatMedia(ChatBubbleRow row, ChatMediaPackage package)
     {
@@ -393,7 +409,7 @@ internal sealed partial class MainWindow
             !AllowAutomaticChatMedia(row.Message!) && !chatManualMediaRequests.Contains(mediaKey) && ChatDecoded(mediaKey, 0) == null)
         { RenderChatMediaAction(row, "Автозагрузка отключена · загрузить"); return; }
         var follow = ChatIsAtBottom();
-        row.FollowMediaResize = follow; if (row.MediaKey != null) row.Content.AnimateMediaChange();
+        row.FollowMediaResize = follow; if (row.MediaKey != null) { CaptureChatPanelAnchor(); row.Content.AnimateMediaChange(); }
         row.MediaKey = mediaKey; row.MediaResolved = true; ++row.MediaGeneration;
         row.Load?.Cancel(); row.Load?.Dispose(); row.Load = null;
         StopChatAnimations(row.Attachments); row.Attachments.Clear(); row.Attachments.IsVisible = true;
@@ -427,9 +443,10 @@ internal sealed partial class MainWindow
                     frame.ShowPreview(ArtworkBackdrop.Create(thumbnail, 1) ?? thumbnail, ArtworkBackdrop.Create(thumbnail, .6));
                 if (!allPhotos) frame.Width = ChatImagePreview.Fit(original).Width;
                 body.Add(frame);
+                BindChatPhotoInteraction(row, frame, index);
                 LoadChatImage(row, frame, attachment.Data, index, attachment.MediaType == "image/gif", () =>
                 {
-                    row.FollowMediaResize = ChatIsAtBottom(); row.Content.AnimateMediaChange();
+                    row.FollowMediaResize = ChatIsAtBottom(); CaptureChatPanelAnchor(); row.Content.AnimateMediaChange();
                     frame.Stop(); body.Clear(); body.Add(FileCard()); row.ResetMediaLayout(); row.Root.InvalidateMeasure();
                 });
             }
@@ -539,7 +556,7 @@ internal sealed partial class MainWindow
             {
                 if (source == null) throw new InvalidDataException("GIF could not be decoded.");
                 row.FollowMediaResize = chatScrollBottom || chatWasAtBottom || ChatIsAtBottom();
-                row.Content.AnimateMediaChange();
+                CaptureChatPanelAnchor(); row.Content.AnimateMediaChange();
                 frame.IntrinsicSize = size ?? new(source.PixelWidth, source.PixelHeight);
                 if (row.Content.PhotoMode) row.SetPhotoLayout(frame.IntrinsicSize);
                 CacheChatDecoded(row.MediaKey ?? mediaKey, 0, new(source, backdrop, ChatGifAnimation.CanAnimate(bytes) ? bytes.ToArray() : null));

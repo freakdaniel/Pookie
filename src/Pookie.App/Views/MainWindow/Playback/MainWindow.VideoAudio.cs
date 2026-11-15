@@ -43,7 +43,7 @@ internal sealed partial class MainWindow
 
     private void RestoreMusicAfterChatVideo()
     {
-        if (disposed)
+        if (disposed || chatClosing)
         {
             videoMusicFade.Stop(); videoMusicFadeCompletion?.TrySetResult();
             videoMusicGeneration = null; videoMusicPaused = false; return;

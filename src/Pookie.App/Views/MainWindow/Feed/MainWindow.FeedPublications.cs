@@ -9,97 +9,92 @@ internal sealed partial class MainWindow
     private sealed class FeedPublicationView(FeedEntry entry)
     {
         internal FeedEntry Entry = entry;
+        internal bool Bound;
+        internal long Revision;
+        internal LibraryItem? CurrentItem => Bound ? Entry.Item : null;
+        internal SoundCloudUser? Actor => Bound ? Entry.Actor ?? Entry.Item.Track?.User ?? Entry.Item.Playlist?.User : null;
+        internal Image Avatar = null!, Repost = null!;
+        internal TextBlock Name = null!, Publication = null!, Date = null!;
         internal LikedTrackRow? Track;
+        internal FrameworkElement? PlaylistRoot;
+        internal TextBlock PlaylistAuthor = null!, PlaylistTitle = null!, PlaylistCount = null!;
         internal readonly List<CompactTrackRow> Preview = [];
         internal readonly List<Image> Covers = [];
         internal readonly List<UserPlaylistActionView> Actions = [];
         internal Image? Play;
     }
+    // The presenter recycles hosts. Keep their controls and render buffers too;
+    // only the active dictionary participates in playback updates and async loads.
+    private readonly Dictionary<StackPanel, FeedPublicationView> feedPublicationPool = [];
     private readonly Dictionary<StackPanel, FeedPublicationView> feedViews = [];
     private readonly List<UserPlaylistActionView> feedPlaylistActions = [];
     private readonly List<CompactTrackRow> feedSidebarRows = [];
     private FeedEntry[]? renderedFeedSidebar;
 
+    private FeedPublicationView CreateFeedPublication(StackPanel host, FeedEntry entry)
+    {
+        var view = new FeedPublicationView(entry);
+        view.Avatar = new Image().Width(28).Height(28).StretchMode(Stretch.UniformToFill);
+        var avatar = new Border().Width(28).Height(28).CornerRadius(14).ClipToBounds().Child(view.Avatar);
+        AttachUserLink(avatar, () => view.Actor);
+        view.Name = new TextBlock().FontSize(12).SemiBold().MaxWidth(280).TextTrimming(TextTrimming.CharacterEllipsis);
+        AttachUserLink(view.Name, () => view.Actor);
+        view.Repost = Icons.View("repeat", 13, MutedIcon).CenterVertical();
+        view.Publication = new TextBlock().FontSize(12).Foreground(Muted).CenterVertical();
+        view.Date = new TextBlock().FontSize(11).Foreground(Muted).CenterVertical();
+        var byline = new StackPanel().Horizontal().Spacing(7).CenterVertical().Children(view.Name, view.Repost, view.Publication);
+        host.Add(new Grid().Columns("28,*,Auto").Rows("28").Spacing(10).Children(avatar.Column(0), byline.Column(1), view.Date.Column(2)));
+        feedPublicationPool.Add(host, view);
+        return view;
+    }
+
     private void BindFeedPublication(StackPanel host, FeedEntry entry)
     {
         ClearFeedPublication(host);
-        var view = new FeedPublicationView(entry); feedViews[host] = view;
-        bool Current() => !disposed && feedViews.GetValueOrDefault(host) == view;
-        var actor = entry.Actor ?? entry.Item.Track?.User ?? entry.Item.Playlist?.User;
-        var avatar = FeedAvatar(actor, 28, Current);
-        var name = new TextBlock().Text(actor?.Username ?? entry.Item.Subtitle).FontSize(12).SemiBold().MaxWidth(280).TextTrimming(TextTrimming.CharacterEllipsis);
-        AttachUserLink(name, () => actor);
-        var byline = new StackPanel().Horizontal().Spacing(7).CenterVertical().Children(name);
-        if (entry.IsRepost) byline.Add(Icons.View("repeat", 13, MutedIcon).CenterVertical());
-        byline.Add(new TextBlock().Text(entry.IsRepost ? "сделал репост" : "опубликовал").FontSize(12).Foreground(Muted).CenterVertical());
-        host.Add(new Grid().Columns("28,*,Auto").Rows("28").Spacing(10).Children(avatar.Column(0), byline.Column(1),
-            new TextBlock().Text(FeedDate(entry.CreatedAt)).FontSize(11).Foreground(Muted).Column(2).CenterVertical()));
+        var view = feedPublicationPool.GetValueOrDefault(host) ?? CreateFeedPublication(host, entry);
+        view.Entry = entry; view.Bound = true; var revision = ++view.Revision;
+        feedViews[host] = view;
+        bool Current() => !disposed && view.Bound && view.Revision == revision;
+        var actor = view.Actor;
+        view.Avatar.Source = Icons.Source("user-circle", MutedIcon);
+        if (actor?.AvatarUrl != null) Run(async () =>
+        {
+            var source = await GetCollectionArtworkAsync(UserItem(actor));
+            if (Current() && source != null) view.Avatar.Source = source;
+        });
+        view.Name.Text = actor?.Username ?? entry.Item.Subtitle;
+        view.Repost.IsVisible = entry.IsRepost;
+        view.Publication.Text = entry.IsRepost ? "сделал репост" : "опубликовал";
+        view.Date.Text = FeedDate(entry.CreatedAt);
+        FrameworkElement? body = null;
         if (entry.Item.Track is { } track)
         {
-            var row = new LikedTrackRow(value => Run(() => PlayFeedTrackAsync(value)), value => Run(() => OpenTrackPageAsync(value)),
-                value => Run(() => ToggleTrackLikeAsync(value)), value => Run(() => ToggleTrackRepostAsync(value)),
-                value => Run(() => OpenPlaylistPickerAsync(value)), (value, fraction) => Run(() => SeekFeedTrackAsync(value, fraction)),
-                ArtworkLayer, glass: true, publication: true, share: ShareTrack);
-            view.Track = row; likedRows.Add(row.Root, row);
-            row.AddQueueAction(value => EnqueueTrack(value, false));
-            AttachTrackQueueMenu(row.Root, () => row.Track); AttachTrackTitle(row.Title, () => row.Track); AttachUserLink(row.Author, () => row.Track?.User);
-            BindLibraryTrackRow(row, track); host.Add(row.Root);
-        }
-        else if (entry.Item.Playlist != null) host.Add(FeedPlaylistPublication(view, Current));
-    }
-
-    private FrameworkElement FeedPlaylistPublication(FeedPublicationView view, Func<bool> currentView)
-    {
-        var item = view.Entry.Item; var playlist = item.Playlist!;
-        var cover = new Image().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).StretchMode(Stretch.UniformToFill);
-        view.Covers.Add(cover); SetCollectionArtwork(cover, item);
-        Run(async () => { var source = await GetCollectionArtworkAsync(item); if (currentView()) SetCollectionArtwork(cover, item, source, finished: true); });
-        var artwork = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).OnClick(() => Run(() => OpenLibraryItemAsync(item)))
-            .Content(new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Child(ArtworkLayer(cover)));
-        var author = new TextBlock().Text(playlist.User?.Username ?? item.Subtitle).FontSize(11.5).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
-        AttachUserLink(author, () => playlist.User);
-        var title = new TextBlock().Text(item.Title).FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
-        title.Cursor = CursorType.Hand; title.MouseDown += args => { if (args.Button == MouseButton.Left) { args.Handled = true; Run(() => OpenLibraryItemAsync(item)); } };
-        view.Play = Icons.View("play-solid", 19, TrackButtons.OnPrimary).Center();
-        var play = TrackButtons.Icon(view.Play, () => Run(() => PlayLibraryCollectionAsync(item)), TrackButtons.Filled, 36);
-        var preview = new StackPanel().Vertical().Spacing(0);
-        void Preview(SoundCloudTrack[] tracks)
-        {
-            foreach (var track in tracks.Where(track => !string.IsNullOrWhiteSpace(track.Title)).Take(3))
+            if (view.Track == null)
             {
-                var row = CreateCompactTrackRow(value => Run(() => PlayUserPlaylistTrackAsync(item, value)), dense: true, miniature: true);
-                BindCompactTrackRow(row, track); view.Preview.Add(row); preview.Add(row.Root);
+                view.Track = CreateTrackRow(value => Run(() => PlayFeedTrackAsync(value)),
+                    (value, fraction) => Run(() => SeekFeedTrackAsync(value, fraction)), TrackRowAppearance.Publication, pooled: true);
             }
+            BindLibraryTrackRow(view.Track, track); body = view.Track.Root;
         }
-        Preview(playlist.Tracks ?? []);
-        if (view.Preview.Count == 0) Run(async () =>
+        else if (entry.Item.Playlist != null)
         {
-            var detail = collectionDetails.GetValueOrDefault(item.Key) ?? await api.GetCollectionDetailAsync(item, lifetime.Token);
-            if (!currentView()) return;
-            collectionDetails[item.Key] = detail; Preview(detail.Tracks.Tracks);
-        });
-        var actions = UserPlaylistActions(item, view.Actions, 36);
-        feedPlaylistActions.AddRange(view.Actions);
-        RefreshUserPlaylistActions();
-        var more = TrackButtons.Action(new TextBlock().Text($"{UserPlaylistTrackCount(playlist)} {RussianPlural(UserPlaylistTrackCount(playlist), "трек", "трека", "треков")}").FontSize(11).Foreground(Muted),
-            () => Run(() => OpenLibraryItemAsync(item)), TrackButtons.Text, 28).Padding(0).Left();
-        return new Grid().Columns($"{TrackRowLayout.CoverSize},*").Rows("*").Height(TrackRowLayout.Height).Spacing(TrackRowLayout.ColumnGap).Children(artwork.Column(0),
-            new Grid().Columns("*").Rows("36,72,36").Spacing(8).Padding(TrackRowLayout.ContentInset, 12).Column(1).Children(
-                new Grid().Columns("36,*,Auto").Rows("36").Spacing(10).Row(0).Children(play.Column(0),
-                    new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(author, title), more.Column(2).CenterVertical()),
-                preview.Row(1), actions.Row(2)));
+            view.PlaylistRoot ??= CreateFeedPlaylistPublication(view);
+            BindFeedPlaylistPublication(view, Current);
+            body = view.PlaylistRoot;
+        }
+        if (host.Children.Count > 1 && !ReferenceEquals(host.Children[1], body)) host.Remove(host.Children[1]);
+        if (body != null && host.Children.Count == 1) host.Add(body);
     }
 
     private void ClearFeedPublication(StackPanel host)
     {
-        if (feedViews.Remove(host, out var view))
-        {
-            if (view.Track is { } trackRow) { ClearLibraryTrackRow(trackRow); likedRows.Remove(trackRow.Root); trackRow.TrackArtGlass.Dispose(); }
-            foreach (var row in view.Preview) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
-            foreach (var cover in view.Covers) StopCardArtwork(cover);
-            foreach (var actions in view.Actions) feedPlaylistActions.Remove(actions);
-        }
-        host.Clear();
+        if (!feedViews.Remove(host, out var view)) return;
+        view.Bound = false; ++view.Revision;
+        view.Avatar.Source = null;
+        if (view.Track?.Track != null) ClearLibraryTrackRow(view.Track);
+        foreach (var row in view.Preview) BindCompactTrackRow(row, null);
+        foreach (var cover in view.Covers) ClearCardArtwork(cover);
+        foreach (var actions in view.Actions) feedPlaylistActions.Remove(actions);
     }
 
     private FrameworkElement FeedAvatar(SoundCloudUser? user, int size, Func<bool> currentView)
@@ -146,7 +141,7 @@ internal sealed partial class MainWindow
             {
                 var row = CreateCompactTrackRow(value => Run(async () =>
                 {
-                    if (current?.Id == value.Id && playbackQueue.Context?.Key == "recent") { await ToggleAsync(); return; }
+                    if (IsCurrentTrack(value)) { await ToggleAsync(); return; }
                     StartQueueContext(new("recent", "Недавно прослушанное", "Сейчас играет из истории", Kind: Playback.PlaybackContextKind.Recent), history, value);
                     await PlayAsync(value);
                 }), dense: true);
@@ -168,13 +163,24 @@ internal sealed partial class MainWindow
     private void RefreshFeedPlayback()
     {
         foreach (var view in feedViews.Values)
-            if (view.Play != null) view.Play.Source = Icons.Source(playbackQueue.Context?.Key == view.Entry.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
+            if (view.Entry.Item.Playlist != null && view.Play != null) view.Play.Source = Icons.Source(playbackQueue.Context?.Key == view.Entry.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
     }
 
     private void DisposeFeed()
     {
         feedSkeleton.SetActive(false);
-        foreach (var host in feedViews.Keys.ToArray()) ClearFeedPublication(host);
+        foreach (var (host, view) in feedPublicationPool)
+        {
+            ClearFeedPublication(host);
+            if (view.Track is { } row) { row.ReleaseRenderingResources(); likedRows.Remove(row.Root); }
+            foreach (var preview in view.Preview) compactTrackRows.Remove(preview);
+            if (view.PlaylistRoot != null) VisualTree.Visit(view.PlaylistRoot, element =>
+            {
+                if (element is MaterialTrackButton button) button.ReleaseDecorationResources();
+            });
+            host.Clear();
+        }
+        feedPublicationPool.Clear();
         foreach (var row in feedSidebarRows) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
         feedSidebarRows.Clear();
     }

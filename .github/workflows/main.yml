@@ -22,6 +22,42 @@ jobs:
       contents: read
     uses: ./.github/workflows/libvlc-linux.yml
 
+  ui-fixtures:
+    needs: [reuse, libvlc]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      POOKIE_LIBVLC_ARCHIVE: ${{ github.workspace }}/artifacts/libvlc-runtime/libvlc-linux-x64.tar.gz
+      POOKIE_LIBVLC_SHA256: ${{ needs.libvlc.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: libvlc-linux-x64
+          path: artifacts/libvlc-runtime
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install isolated UI runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mutter xwayland dbus-x11 libgtk-3-0t64 libwebkit2gtk-4.1-0 libsecret-1-0 libgl1-mesa-dri
+      - name: Publish the production-source fixture host
+        run: dotnet publish tests/Pookie.App.SmokeTests -c Release -r linux-x64 --self-contained true -o artifacts/ui-probe
+      - name: Verify account-free UI, queues and resource ownership
+        run: node scripts/run-ui-smoke.cjs artifacts/ui-probe/Pookie.App.SmokeTests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-fixture-logs-linux-x64
+          path: artifacts/ui-smoke
+          if-no-files-found: warn
+
   build:
     needs: [reuse, libvlc]
     env:
@@ -75,6 +111,9 @@ jobs:
         run: npm test
       - name: Check JavaScript
         run: npm run lint
+      - name: Verify native session storage across processes
+        if: runner.os == 'Windows' || runner.os == 'macOS'
+        run: dotnet run --project tests/Pookie.App.SmokeTests -c Release -- --session-vault-smoke-test
       - name: Verify development video runtime
         if: matrix.rid == 'linux-x64' || startsWith(matrix.rid, 'osx-')
         run: env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH -u VLC_PLUGIN_PATH dotnet run --project tests/Pookie.App.SmokeTests -c Release -- --chat-video-smoke-test

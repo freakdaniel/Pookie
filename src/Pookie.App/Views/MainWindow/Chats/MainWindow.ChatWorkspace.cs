@@ -99,7 +99,7 @@ internal sealed partial class MainWindow
     }
     private void CaptureChatPanelAnchor()
     {
-        if (page.Value == Page.Chats && (chatWasAtBottom || chatScrollBottom || ChatIsAtBottom())) chatFollowLayout = true;
+        if (page.Value == Page.Chats && (chatWasAtBottom || chatScrollBottom || ChatIsAtBottom())) { chatFollowLayout = true; return; }
         if (page.Value != Page.Chats || chatScrollBottom || chatRestoreOffset != null || chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return;
         var row = ChatRows.Where(r => r.Bound && r.Message != null && r.Root.Bounds.Bottom > viewer.Bounds.Y + 1 && r.Root.Bounds.Y < viewer.Bounds.Bottom).OrderBy(r => r.Root.Bounds.Y).FirstOrDefault();
         if (row == null) return;

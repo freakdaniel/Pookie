@@ -109,7 +109,7 @@ internal sealed class ChatVoiceWave : Control
     }
     protected override void OnRender(IGraphicsContext context)
     {
-        var active = FadeBrush(Color.FromRgb(128,196,249));
+        var active = FadeBrush(Color.FromArgb(225,255,255,255));
         if (IsLive)
         {
             position.Advance(Now);
@@ -122,8 +122,8 @@ internal sealed class ChatVoiceWave : Control
             }
             return;
         }
-        var idleColor = Color.FromArgb(150,186,206,223);
-        var activeColor = Color.FromRgb(128,196,249);
+        var idleColor = Color.FromArgb(110,255,255,255);
+        var activeColor = Color.FromArgb(225,255,255,255);
         var maximum = peaks.Length == 0 ? 1d : Math.Max(1d,peaks.Max());
         var count = Math.Max(1,(int)(Bounds.Width/4));
         if (emphasis.Length != count) emphasis = Enumerable.Range(0,count).Select(i=>Math.Clamp(displayedProgress*count-i,0,1)).ToArray();

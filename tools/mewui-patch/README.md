@@ -4,7 +4,12 @@ Pookie builds MewUI from commit `6cda4f9872f7fce8fc980b34f6f9322f5e5a2c39`.
 The package bootstrap is in [`../mewui-source`](../mewui-source/Program.cs).
 Normal `dotnet restore`, `build` and `run` commands prepare the pinned local
 packages automatically on the first restore, using .NET 10 and Git. Subsequent
-restores reuse them. Concurrent restores serialize package preparation through
+restores reuse them. The cache stamp fingerprints all bootstrap/packing inputs
+and records each local package's SHA512. Changing packing policy invalidates the
+feed even when the upstream revision stays unchanged. Under the bootstrap lock,
+only stale extracted copies of the exact private package IDs/version are removed
+from NuGet's configured global package directory, so restore cannot select an
+older same-version assembly. Concurrent restores serialize package preparation through
 a lock in the source cache. The PowerShell entry point used by CI invokes the
 same bootstrap.
 

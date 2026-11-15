@@ -1,5 +1,7 @@
 node_modules/
 artifacts/
+__pycache__/
+*.pyc
 build/
 **/.DS_Store
 **/bin/

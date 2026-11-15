@@ -23,7 +23,8 @@ internal sealed partial class MainWindow
 
     private FrameworkElement FeedPageView()
     {
-        feedList = new ItemsControl().Items(Array.Empty<FeedEntry>(), entry => entry.Key).ItemHeight(256).VariableHeightPresenter()
+        // Both publication types have a 28px byline, 12px gap and 184px body.
+        feedList = new ItemsControl().Items(Array.Empty<FeedEntry>(), entry => entry.Key).ItemHeight(256).FixedHeightPresenter()
             .Background(Color.Transparent).BorderThickness(0).Padding(0).ItemPadding(new Thickness(0, 0, 0, 32));
         feedList.ItemTemplate = new DelegateTemplate<FeedEntry>(context =>
         {
@@ -110,7 +111,7 @@ internal sealed partial class MainWindow
     private async Task PlayFeedTrackAsync(SoundCloudTrack track)
     {
         var key = feedReposts.Value ? "feed" : "feed:originals";
-        if (current?.Id == track.Id && playbackQueue.Context?.Key == key) { await ToggleAsync(); return; }
+        if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         CaptureQueueOrigin();
         var data = VisibleFeedEntries.Select(entry => entry.Item.Track).OfType<SoundCloudTrack>().DistinctBy(value => value.Id).ToArray();
         StartQueueContext(new(key, "Лента", "Сейчас играет из ленты", feedState?.Cursor,

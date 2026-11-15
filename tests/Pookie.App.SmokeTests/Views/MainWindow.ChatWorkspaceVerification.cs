@@ -364,6 +364,9 @@ internal sealed partial class MainWindow
         var voiceMessage=chatMessages.Last(m=>ChatMediaReference.Parse(m.Body)!=null);
         var voiceRow = ChatRows.Single(r=>r.Bound && r.Message?.Id == voiceMessage.Id);
         var voiceCard = (ChatVoiceCard)voiceRow.Attachments.FindVisualChild<ChatVoiceCard>()!;
+        if (voiceCard.FindVisualChild<Button>() is not Button { StyleName: TrackButtons.Glass } ||
+            voiceCard.DurationLabel.Foreground is not { R: 255, G: 255, B: 255, A: < 255 })
+            throw new InvalidOperationException("Voice message lost its glass playback button or translucent white duration.");
         if (Math.Abs(voiceRow.Time.Bounds.Bottom-voiceCard.DurationLabel.Bounds.Bottom)>2/Window.DpiScale ||
             voiceCard.DurationLabel.Bounds.Right>voiceRow.Footer.Bounds.X-4)
             throw new InvalidOperationException("Voice duration and sent time do not share a row or overlap each other.");

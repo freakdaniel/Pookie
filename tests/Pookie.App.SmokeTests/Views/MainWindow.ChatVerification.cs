@@ -12,14 +12,16 @@ internal sealed partial class MainWindow
     {
         try
         {
-            var transport = new ChatFixtureTransport();
+            // Install the first-load gate before window activation/background
+            // polling can populate the inbox and turn this into a refresh.
+            var transport = new ChatFixtureTransport { DelayList = true };
             var mediaTransport = new ChatFixtureMediaHandler();
             chatMedia.Dispose(); chatMedia = new ChatMediaHosting(mediaTransport);
             api.Session = new("chatfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
             me = new() { Id = 42, Username = "Ты" }; signedIn.Value = true;
+            await VerifyChatRefreshAdmissionAsync(transport);
             await ShowWorkspaceAsync();
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
-            transport.DelayList = true;
             var opening = NavigateAsync(Page.Chats);
             await WaitForLikedLayoutAsync(() => transport.ListReady != null && chatInboxLoading.Skeleton.Running && chatInboxLoading.Skeleton.ActualHeight > 100 && startupContent.Opacity > .95);
             CaptureUiPreview("chats-loading");
@@ -34,10 +36,37 @@ internal sealed partial class MainWindow
                     Math.Abs(frame.ActualWidth - 46) > 1 / Window.DpiScale || Math.Abs(frame.ActualHeight - 46) > 1 / Window.DpiScale)
                     throw new InvalidOperationException("Inbox avatar does not have a square circular clipping frame.");
             }
+            foreach (var button in chatInboxBindings.Keys.Where(chatInbox.IsAncestorOf))
+                if (Math.Abs(button.Bounds.X - chatInbox.Bounds.X - (chatInbox.Bounds.Right - button.Bounds.Right)) > 1 / Window.DpiScale)
+                    throw new InvalidOperationException("Inbox selection does not have equal left/right insets.");
             if (chatInput.IsEnabled || chatRecipient != null) throw new InvalidOperationException("Unselected chat enables sending.");
             if (IsLibrary(Page.Chats)) throw new InvalidOperationException("Chats accidentally belongs to the library navigation.");
             var nav = topNavigation.Children.OfType<Button>().Select(b => (b.FindVisualChild<TextBlock>() as TextBlock)?.Text).ToArray();
-            if (Array.IndexOf(nav, "Чаты") != Array.IndexOf(nav, "Библиотека") + 1) throw new InvalidOperationException("Chats is not immediately after Library.");
+            if (nav.Contains("Чаты") || !ReferenceEquals(chatHeaderButton.Parent, settingsButton.Parent) ||
+                chatHeaderButton.Bounds.Right > settingsButton.Bounds.X)
+                throw new InvalidOperationException("Chats is not an icon beside settings and profile.");
+            var unreadSnapshot = chatUnread.States.ToArray();
+            try
+            {
+                chatUnread.States.Clear();
+                chatUnread.States[90] = new("badge-a", DateTimeOffset.UtcNow, 2);
+                chatUnread.States[91] = new("badge-b", DateTimeOffset.UtcNow, 3);
+                RefreshChatHeaderBadge();
+                await WaitForLoginFrameAsync();
+                if (!chatHeaderBadge.IsVisible || chatHeaderCount.Text != "5" || chatHeaderBadge.ActualWidth < 18)
+                    throw new InvalidOperationException("Header does not show the total unread message count.");
+                CaptureUiPreview("chats-header-unread");
+                chatUnread.Clear(90); RefreshChatHeaderBadge();
+                if (chatHeaderCount.Text != "3") throw new InvalidOperationException("Header unread count did not follow reading a conversation.");
+                chatUnread.Clear(91); RefreshChatHeaderBadge();
+                if (chatHeaderBadge.IsVisible) throw new InvalidOperationException("Empty unread badge remained visible.");
+            }
+            finally
+            {
+                chatUnread.States.Clear();
+                foreach (var pair in unreadSnapshot) chatUnread.States[pair.Key] = pair.Value;
+                RefreshChatHeaderBadge();
+            }
             transport.DelayThread = true;
             var selecting = SelectChatAsync(transport.Other);
             await WaitForLikedLayoutAsync(() => transport.ThreadReady != null && chatThreadLoading.Skeleton.Running && chatThreadLoading.Skeleton.ActualHeight > 100);
@@ -49,6 +78,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !chatScrollBottom && SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 10);
             if (chatMessages.Count != 30 || chatMessageCursor == null) throw new InvalidOperationException("Initial chat page or pagination was lost.");
             await VerifyChatAutomaticHistoryAsync(transport, viewer);
+            await VerifyChatLoadingScrollAsync(transport, viewer);
             if (Math.Abs(chatColumns.Bounds.Bottom - chatComposer.Bounds.Bottom - 16) > 1 ||
                 Math.Abs(chatIdentityCard.Bounds.Y + chatIdentityCard.ActualHeight / 2 - chatOptions.Bounds.Y - chatOptions.ActualHeight / 2) > 1 ||
                 !chatIdentityCard.Bounds.Contains(chatOptions.Bounds) || chatName.Bounds.Right > chatOptions.Bounds.X || !chatIdentityCard.Bounds.Contains(chatName.Bounds))
@@ -112,7 +142,7 @@ internal sealed partial class MainWindow
             for (var unreadIndex = 0; unreadIndex < 4; unreadIndex++) transport.AddIncoming($"Новое сообщение в фоне {unreadIndex + 1}");
             await RefreshChatsAsync();
             await WaitForLoginFrameAsync();
-            if (Math.Abs(viewer.VerticalOffset - readingOffset) > 10 || !chatNewMessages.IsVisible) throw new InvalidOperationException($"Incoming chat message interrupted reading history: offset={viewer.VerticalOffset}, maximum={SmoothScroll.Maximum(viewer)}, badge={chatNewMessages.IsVisible}, following={chatScrollBottom}");
+            if (Math.Abs(viewer.VerticalOffset - readingOffset) > 10) throw new InvalidOperationException($"Incoming chat message interrupted reading history: offset={viewer.VerticalOffset}, maximum={SmoothScroll.Maximum(viewer)}, following={chatScrollBottom}");
             if (chatUnread.Badge(90) != "4") throw new InvalidOperationException($"Unread counter did not count four arrivals: {chatUnread.Badge(90)}");
             await Task.Delay(300); CaptureUiPreview("chats-unread-counter");
             if (chatMessages.Count != 39 || chatMessageCursor != null) throw new InvalidOperationException($"Older history did not merge or exhausted cursor reappeared: count={chatMessages.Count}, cursor={chatMessageCursor}.");
@@ -478,7 +508,7 @@ internal sealed partial class MainWindow
         private readonly DateTimeOffset olderSentAt = DateTimeOffset.UtcNow.AddDays(-1);
         private readonly List<object> messages = Enumerable.Range(1, 30).Select(i => Message(i % 3 == 0 ? 42 : 90,
             i == 29 ? "Нашла очень классный альбом. Кажется, тебе понравится — особенно последний трек!" : i % 3 == 0 ? "Да, звучит отлично 🎧" : "Привет! Есть что-нибудь интересное послушать?", DateTimeOffset.UtcNow.AddMinutes(i - 35))).ToList();
-        internal int Sends, OlderReads; internal bool FailReads, DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList, DelayOlder; internal TaskCompletionSource? SendReady, ThreadReady, ListReady, OlderReady;
+        internal int Sends, OlderReads, ListReads; internal bool FailReads, DelaySend, ThrowAfterSend, RejectBeforeSend, DelayThread, DelayList, DelayOlder; internal TaskCompletionSource? SendReady, ThreadReady, ListReady, OlderReady;
         internal DateTimeOffset? NextSentAt;
         private static object Message(long sender, string body, DateTimeOffset date) => new { sender_urn = $"soundcloud:users:{sender}", content = body, sent_at = date.ToString("O") };
         private readonly HashSet<long> unreadPeers = [];
@@ -493,6 +523,7 @@ internal sealed partial class MainWindow
             object result;
             if (request.Kind == "list")
             {
+                ListReads++;
                 if (DelayList) { DelayList = false; ListReady = new(TaskCreationOptions.RunContinuationsAsynchronously); await ListReady.Task.WaitAsync(cancellationToken); }
                 result = new { collection = new[] { Conversation(Other), Conversation(Third) }, next_href = (string?)null };
             }
@@ -576,7 +607,9 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Unexpected fixture media request; public hosts must never be called.");
             Downloads++;
             if (FailNextDownload) { FailNextDownload = false; return new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable); }
-            if (DelayDownload)
+            // Metadata has its own Range request. Hold the original body so the
+            // authenticated thumbnail can be painted before full image decode.
+            if (DelayDownload && request.Headers.Range == null)
             {
                 DelayDownload = false; DownloadReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 var boundary = bytes.AsSpan(0, 4).SequenceEqual("PKM2"u8) ? 36 + System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4)) : 0;

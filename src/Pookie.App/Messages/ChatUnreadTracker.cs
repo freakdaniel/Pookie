@@ -11,6 +11,17 @@ internal sealed class ChatUnreadTracker
     internal Dictionary<long, ChatUnreadState> States { get; } = [];
     internal string Badge(long peer) => States.GetValueOrDefault(peer) is { Count: > 0 } state
         ? state.Count >= 100 ? "99+" : state.Count + (state.AtLeast ? "+" : "") : "";
+    internal string TotalBadge
+    {
+        get
+        {
+            long count = 0;
+            var uncertain = false;
+            foreach (var state in States.Values)
+                if (state.Count > 0) { count += state.Count; uncertain |= state.AtLeast; }
+            return count == 0 ? "" : count >= 100 ? "99+" : count + (uncertain ? "+" : "");
+        }
+    }
     internal bool NeedsMessages(ChatConversation conversation) => !conversation.Read && conversation.LastMessage is { } last &&
         States.GetValueOrDefault(conversation.Recipient.Id)?.LastId != last.Id;
     internal bool Observe(ChatConversation conversation, long account, ChatMessage[]? recent = null)

@@ -9,4 +9,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
   <Import Project="Pookie.App.Shared.props" />
+  <PropertyGroup Condition="('$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win-'))) or ('$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows')))">
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
 </Project>

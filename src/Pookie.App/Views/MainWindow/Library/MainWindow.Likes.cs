@@ -225,8 +225,9 @@ internal sealed partial class MainWindow
         RefreshLikedRows();
     }
 
-    private bool LibraryTrackSelected(SoundCloudTrack track) => current?.Id == track.Id &&
-        (page.Value != Page.LibraryTracks || QueueMatchesPageFilter);
+    // Content pages reflect the recording, independently of its queue origin.
+    private bool IsCurrentTrack(SoundCloudTrack? track) => track != null && current?.Id == track.Id;
+    private bool LibraryTrackSelected(SoundCloudTrack track) => IsCurrentTrack(track);
 
     private async Task LoadLikedArtworkAsync(Image image, SoundCloudTrack track)
     {

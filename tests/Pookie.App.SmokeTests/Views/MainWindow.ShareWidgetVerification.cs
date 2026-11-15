@@ -13,6 +13,11 @@ internal sealed partial class MainWindow
 {
     private readonly List<WidgetBrowserFixture> widgetBrowsers = [];
 
+    private void PrepareShareWidgetFixture() => shareWidgetPreview.BrowserFactory = events =>
+    {
+        var browser = new WidgetBrowserFixture(events); widgetBrowsers.Add(browser); return browser;
+    };
+
     private async Task VerifyShareWidgetAsync(SoundCloudTrack track)
     {
         // Native visibility can precede the last resize frame now that fades

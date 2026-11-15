@@ -12,6 +12,7 @@ namespace Pookie.App.Browser;
 // One live website per account. Secrets travel through stdin, never through argv or logs.
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, ISoundCloudSessionVerifier, IBrowserAudioSession
 {
+    public SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.All;
     // A token rotation must preserve the identity used by in-flight UI operations.
     private WebSession account = account.SessionId == null ? account with { SessionId = Guid.NewGuid().ToString("N") } : account;
     private readonly BrowserRequestLog requestLog = new();
@@ -208,7 +209,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             }
             // Writes cannot survive cancellation and replay later. Reads cancel only
             // their fetch, preserving the website and its device-check state.
-            var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-create" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
+            var write = BrowserOperationPolicy.IsWrite(command);
             using var cancellation = write ? timeout.Token.Register(current.Abort) : default;
             try
             {
@@ -259,7 +260,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
         var ordered = command.Operation != "audio";
         if (ordered) await requests.WaitAsync(timeout.Token).ConfigureAwait(false);
-        var write = command.Chat?.IsWrite == true || command.Operation is "like" or "repost" or "follow" or "playlist-add" or "playlist-create" or "playlist-edit" or "playlist-like" or "playlist-repost" or "comment-write" or "play-history";
+        var write = BrowserOperationPolicy.IsWrite(command);
         try
         {
             using var cancellation = timeout.Token.Register(() =>

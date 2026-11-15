@@ -17,6 +17,7 @@ internal sealed class SmoothScroll : IDisposable
     internal bool IsRunning => running;
     private bool precision;
     internal Action? UserScrolling;
+    internal Action? DirectUserScrolling;
     internal Action<double>? Advanced;
     internal Func<bool>? RestoringAnchor;
     internal bool Enabled
@@ -36,6 +37,7 @@ internal sealed class SmoothScroll : IDisposable
         viewer.MouseWheel += OnWheel;
         viewer.ScrollChanged += OnChanged;
         viewer.MouseDown += OnPointerDown;
+        viewer.KeyDown += OnKeyDown;
     }
 
     internal static double Maximum(ScrollViewer viewer)
@@ -123,7 +125,12 @@ internal sealed class SmoothScroll : IDisposable
         var decay = Math.Exp(-frequency * dt);
         var position = target + (distance + tangent * dt) * decay;
         velocity = (velocity - frequency * tangent * dt) * decay;
-        if (Math.Abs(position - target) < .01 && Math.Abs(velocity) < 1)
+        // ScrollViewer rounds positions to physical pixels. A fractional
+        // destination can otherwise leave the spring ticking forever against
+        // an offset which the native viewport can never represent.
+        var pixel = 1 / (viewer.FindVisualRoot() is Window window ? window.DpiScale : 1);
+        if (Math.Abs(position - target) < .01 && Math.Abs(velocity) < 1 ||
+            Math.Abs(viewer.VerticalOffset - target) <= pixel && Math.Abs(velocity) <= frequency * pixel)
         { position = target; Stop(); }
         applying = true;
         try
@@ -155,7 +162,13 @@ internal sealed class SmoothScroll : IDisposable
             args.Handled = true;
     }
 
-    private void OnPointerDown(MouseEventArgs _) => Stop();
+    private void OnPointerDown(MouseEventArgs _)
+    { Stop(); UserScrolling?.Invoke(); DirectUserScrolling?.Invoke(); }
+    private void OnKeyDown(KeyEventArgs args)
+    {
+        if (args.Handled || args.Key is not (Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End)) return;
+        Stop(); UserScrolling?.Invoke(); DirectUserScrolling?.Invoke();
+    }
     private void OnChanged()
     {
         // Scrollbar dragging, keyboard movement and history restoration stay immediate.
@@ -173,6 +186,6 @@ internal sealed class SmoothScroll : IDisposable
     { motion.Stop(); running = precision = false; velocity = 0; target = last = viewer.VerticalOffset; timestamp = precisionTimestamp = 0; }
     public void Dispose()
     {
-        Stop(); viewer.MouseWheel -= OnWheel; viewer.ScrollChanged -= OnChanged; viewer.MouseDown -= OnPointerDown;
+        Stop(); viewer.MouseWheel -= OnWheel; viewer.ScrollChanged -= OnChanged; viewer.MouseDown -= OnPointerDown; viewer.KeyDown -= OnKeyDown;
     }
 }

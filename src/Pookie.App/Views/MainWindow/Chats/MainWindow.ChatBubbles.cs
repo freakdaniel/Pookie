@@ -16,7 +16,7 @@ internal sealed partial class MainWindow
     {
         internal Border Root { get; }
         internal readonly Border Bubble;
-        internal readonly Border DateBadge;
+        internal readonly GlassCard DateBadge;
         private readonly TextBlock date = new TextBlock().FontSize(12).SemiBold();
         internal readonly ChatMessageMotion Motion = new();
         internal ChatMessage? Message;
@@ -65,12 +65,12 @@ internal sealed partial class MainWindow
             Footer = new Border().BorderThickness(0).Child(footer).IsHitTestVisible(false);
             Content = new ChatBubbleContent(Attachments, Body, Open, Footer, Reactions).Initialize();
             Reactions.Changing = () => { owner.CaptureChatPanelAnchor(); Content.AnimateMediaChange(); };
-            Content.ResizeTick = () => { if (Bound && FollowMediaResize && owner.page.Value == Page.Chats) owner.RequestChatBottom(); };
+            Content.ResizeTick = () => { if (Bound && FollowMediaResize && owner.page.Value == Page.Chats) owner.RequestChatBottom(owner.chatAnimateBottom); };
             Bubble = new Border().BorderThickness(0).CornerRadius(18).Padding(10, 6).Child(Content).MaxWidth(520).Left();
             Footer.Transitions = [Transition.Create(UIElement.OpacityProperty, 140)];
             Bubble.MouseEnter += () => UpdateMediaHover(true);
             Bubble.MouseLeave += () => UpdateMediaHover(false);
-            DateBadge = new Border().Background(Color.FromRgb(48, 53, 59)).CornerRadius(14).Padding(12, 5)
+            DateBadge = new GlassCard { HoverEnabled = false, ShadowEnabled = false }.Background(Color.FromArgb(222,48,51,56)).CornerRadius(14).Padding(12, 5)
                 .Margin(0, 8, 0, 12).Child(date).CenterHorizontal();
             quote=TrackButtons.Action(Quote,()=>
             {if(ReplyReference() is {} reply)owner.Run(()=>owner.JumpChatMessageAsync(reply.PeerId,reply.MessageId));},TrackButtons.Text,42).Padding(0).CornerRadius(4).MaxWidth(520).IsVisible(false);

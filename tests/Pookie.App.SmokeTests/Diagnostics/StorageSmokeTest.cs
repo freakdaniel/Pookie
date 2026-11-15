@@ -22,7 +22,16 @@ internal static class StorageSmokeTest
             var store = new ConfigurationStore(paths);
             var saved = new AppConfiguration(34, 86, false, true, true, RepeatMode.Track);
             store.Save(saved);
-            if (new ConfigurationStore(paths).Load() != saved) throw new InvalidOperationException("Settings did not survive reopening");
+            var reopened = new ConfigurationStore(paths).Load();
+            if (reopened != saved.Normalize() || reopened.Volume != 34 || reopened.PreviousVolume != 86 || reopened.DiscordEnabled ||
+                !reopened.Shuffle || !reopened.LikesAsList || reopened.LikesView != TrackViewMode.Waveform || reopened.Repeat != RepeatMode.Track)
+                throw new InvalidOperationException("Settings did not survive reopening and normalization");
+            var asynchronous = saved with { Volume = 48, LikesView = TrackViewMode.Cards, LikesAsList = false };
+            await store.SaveAsync(asynchronous);
+            await store.FlushAsync();
+            var afterFlush = new ConfigurationStore(paths).Load();
+            if (afterFlush != asynchronous.Normalize() || afterFlush.Volume != 48 || afterFlush.LikesAsList || afterFlush.LikesView != TrackViewMode.Cards)
+                throw new InvalidOperationException("Async settings save/flush did not persist the new snapshot");
             store.Save(saved with { Repeat = (RepeatMode)999 });
             if (store.Load().Repeat != RepeatMode.Off) throw new InvalidOperationException("Invalid repeat mode survived normalization");
             File.WriteAllText(Path.Combine(paths.Config, "settings.json"), "invalid-json");

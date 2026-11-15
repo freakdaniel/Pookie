@@ -3,7 +3,7 @@ using Pookie.SoundCloud;
 namespace Pookie.App.Playback;
 
 internal enum RepeatMode { Off, Context, Track }
-internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Radio }
+internal enum PlaybackContextKind { Track, Likes, Playlist, Album, Artist, Feed, Recommendations, History, Recent, Radio, Search }
 internal enum PlaybackEntryOrigin { Context, Manual, Recommendation }
 internal enum PlaybackPreparation { Preparing, Ready, Failed, Stopped }
 internal sealed record PlaybackContext(string Key, string Title, string Subtitle, string? NextHref = null, bool LibraryCursor = false, PlaybackContextKind Kind = PlaybackContextKind.Track, string? ResourceUrn = null, string? Filter = null);

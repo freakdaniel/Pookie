@@ -334,11 +334,28 @@ internal sealed partial class MainWindow
             page.Value = Page.Library; RefreshLibraryCards();
             await WaitForLikedLayoutAsync(() => libraryTiles.Values.Any(tile => tile.Track?.Id == fixtures[0].Id && tile.Cover.ActualWidth > 100));
             var overviewActive = libraryTiles.Values.Single(tile => tile.Track?.Id == fixtures[0].Id);
-            if (overviewActive.OverlayOpacity < .999) throw new InvalidOperationException("Overview restarted active-card fade");
+            if (!overviewActive.ShowsPause) throw new InvalidOperationException("Overview lost the globally active recording while preparing artwork glass");
+            // Detachment retires owned artwork glass. Its next visible frame
+            // rebuilds the blurred sample asynchronously before revealing the
+            // action; the playing state must already be correct during that work.
+            await WaitForLikedLayoutAsync(() => overviewActive.OverlayOpacity > .999);
+            var overviewSource = libraryGrid.ItemsSource;
+            var overviewSlots = libraryTiles.Count;
+            var changes = 0;
+            void Changed(ItemsChange _) => changes++;
+            overviewSource.Changed += Changed;
+            try { for (var refresh = 0; refresh < 3; refresh++) RefreshLibraryCards(); }
+            finally { overviewSource.Changed -= Changed; }
+            await WaitForLoginFrameAsync(); await WaitForLoginFrameAsync();
+            if (!ReferenceEquals(overviewSource, libraryGrid.ItemsSource) || changes != 0 || libraryTiles.Count != overviewSlots ||
+                !ReferenceEquals(overviewActive, libraryTiles.Values.Single(tile => tile.Track?.Id == fixtures[0].Id)) ||
+                overviewActive.OverlayOpacity < .999 || !overviewActive.ShowsPause)
+                throw new InvalidOperationException("Unchanged overview refresh replaced/rebound its source or restarted the prepared active action");
             ShowLibraryTracks();
             await WaitForLikedLayoutAsync(() => likedTiles.Values.Any(tile => tile.Track?.Id == fixtures[0].Id && tile.Cover.ActualWidth > 100));
-            if (likedTiles.Values.Single(tile => tile.Track?.Id == fixtures[0].Id).OverlayOpacity < .999)
-                throw new InvalidOperationException("Likes restarted active-card fade");
+            var likedActive = likedTiles.Values.Single(tile => tile.Track?.Id == fixtures[0].Id);
+            if (!likedActive.ShowsPause) throw new InvalidOperationException("Likes lost the globally active recording while preparing artwork glass");
+            await WaitForLikedLayoutAsync(() => likedActive.OverlayOpacity > .999);
         }
         libraryPages["collections"] = new([
             new("playlist:one", "Плейлист", "Исполнитель", null, Playlist: new() { Id = 91, Title = "Плейлист", Tracks = [] }),

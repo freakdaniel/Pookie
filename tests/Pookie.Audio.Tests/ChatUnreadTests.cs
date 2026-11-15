@@ -6,6 +6,23 @@ namespace Pookie.Audio.Tests;
 
 public sealed class ChatUnreadTests
 {
+    [Fact]
+    public void HeaderBadgeTotalsMessagesAndTracksReadResetAndUncertainCounts()
+    {
+        var tracker = new ChatUnreadTracker();
+        Assert.Equal("", tracker.TotalBadge);
+        tracker.States[90] = new("a", Now, 2);
+        tracker.States[91] = new("b", Now, 3);
+        Assert.Equal("5", tracker.TotalBadge);
+        tracker.Clear(90);
+        Assert.Equal("3", tracker.TotalBadge);
+        tracker.States[92] = new("c", Now, 1, true);
+        Assert.Equal("4+", tracker.TotalBadge);
+        tracker.States[93] = new("d", Now, 100);
+        Assert.Equal("99+", tracker.TotalBadge);
+        tracker.States.Clear();
+        Assert.Equal("", tracker.TotalBadge);
+    }
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-18T12:00:00Z");
     private static ChatMessage Message(string id, int sender = 90, int seconds = 0) => new(id, sender, id, Now.AddSeconds(seconds));
     private static ChatConversation Conversation(ChatMessage last, bool read = false) => new("42:90", new() { Id = 90, Username = "Peer" }, last, read);

@@ -335,6 +335,7 @@ public sealed class HttpTransportTests
 
     private sealed class Verification : ISoundCloudBrowserTransport
     {
+        public SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.Read | SoundCloudTransportCapabilities.TrackLikes | SoundCloudTransportCapabilities.FollowSigning;
         public int Calls;
         public int Signatures;
         public WebSession? Account;

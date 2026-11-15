@@ -30,12 +30,21 @@ internal sealed partial class MainWindow
     private double chatViewportWidth, chatViewportHeight;
     private bool chatWasAtBottom;
     private bool chatRestoreBubbleAnchor;
+    private bool chatAnimateBottom, chatJumpingLatest, chatScrollReconcileQueued;
+    private int chatAnchorPassesThisFrame;
+    private long chatTimelineNavigation, chatScrollInteraction;
+    private TaskCompletionSource? chatThreadIdle, chatWindowIdle;
+    private CancellationTokenSource? chatTimelineRead, chatWindowRead;
     private ScrollViewer? chatDateViewer;
     private double chatDateOffset;
     private bool ChatIsAtBottom()
     {
         if (chatRestoreOffset != null) return false;
         if (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer viewer) return true;
+        // The first spring frame has not moved the viewport yet. Geometry alone
+        // still says "bottom", but a wheel gesture has already revoked follow
+        // intent. Async media/layout must not stop that gesture and snap back.
+        if (!chatAnimateBottom && smoothScrolls.TryGetValue(viewer, out var motion) && motion.IsRunning) return false;
         var maximum = SmoothScroll.Maximum(viewer);
         // A newly realized row can refine the extent before the pre-scene pass
         // reconciles the offset. Paging must retain the last presented bottom
@@ -80,16 +89,18 @@ internal sealed partial class MainWindow
         if (!preferences.ChatSaveDrafts) chatWorkspace = chatWorkspace with { Drafts = null };
         RefreshChatFavoriteMedia(); CleanupChatVoiceFiles(); chatDiskRestored = false; RefreshChatFolders();
         if (saved.Local.Unread != null) foreach (var pair in saved.Local.Unread) chatUnread.States[pair.Key] = pair.Value;
+        RefreshChatHeaderBadge();
         if (preferences.ChatSaveDrafts) foreach (var pair in saved.Local.Drafts) chatDrafts[pair.Key] = pair.Value;
         foreach (var pending in saved.Local.Pending) chatPending[pending.RecipientId] = pending with { Uncertain = true };
         RestoreChatOutbox();
         if (!preferences.ChatSaveDrafts) SaveChatState();
     }
-    private Task FlushChatPersistenceAsync() => Task.WhenAll(chatPersistenceClosing,
+    private Task FlushChatPersistenceAsync() => Task.WhenAll(chatPersistenceClosing, chatCleanup.DrainAsync(),
         chatLocalStore?.FlushAsync() ?? Task.CompletedTask, chatWorkspaceStore?.FlushAsync() ?? Task.CompletedTask);
 
     private void ResetChats()
     {
+        CancelChatNativeStarts(renew: true);
         chatEnvelopes=new();
         chatReplyLookups.Clear();
         chatReplyQuote.BeginBinding(); chatReplyQuote.Set("","",null); chatComposerSurface.SnapNextLayout();
@@ -108,18 +119,20 @@ internal sealed partial class MainWindow
         CancelChatPolling();
         chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose(); chatAccountLifetime = null; chatSending = false;
         ++chatRevision; ++chatSearchRevision;
-        if (chatHistory != null) { _ = chatHistory.DisposeAsync(); chatHistory = null; }
+        RetireChatHistory();
         ++chatAvatarGeneration;
         if(chatHeaderAvatar!=null)chatHeaderAvatar.Source=Icons.Source("user",MutedIcon);
-        chatPersistenceClosing = FlushChatPersistenceAsync();
+        var persistenceClosing = FlushChatPersistenceAsync();
         chatMedia.DiskCache=null; chatGifMedia = null; chatWorkspaceStore = null; chatWorkspace = ChatWorkspaceStore.Empty; chatReactions.Clear();
         chatAccountReady = false;
         chatAccountId = 0; chatLocalStore = null; chatRecipient = null;
         chatDrafts.Clear(); chatPending.Clear(); chatOutgoing.Clear(); chatMessageEntrances.Clear(); chatMessageOrder.Clear(); chatConversations.Clear(); chatMessages.Clear();
         chatThreadLoaded = false; chatWindowHasNewer=chatWindowBusy=false; ClearChatVisualCache();
-        chatMessageItems.Clear(); chatInboxItems.Clear(); chatFolder=null; RefreshChatFolders(); chatReadWrites.Clear(); chatUnread.States.Clear(); chatReadRetryAfter.Clear();
+        chatMessageItems.Clear(); chatInboxItems.Clear(); chatFolder=null; RefreshChatFolders(); chatReadWrites.Clear(); chatUnread.States.Clear(); chatReadRetryAfter.Clear(); RefreshChatHeaderBadge();
         ClearChatMediaCache(clearSummaries: true); ClearChatAttachments();
+        chatPersistenceClosing = Task.WhenAll(persistenceClosing, chatCleanup.DrainAsync());
         chatListCursor = chatMessageCursor = chatLatestCursor = null; chatPrependAnchor = null; chatScrollBottom = false;
+        ++chatTimelineNavigation; ++chatScrollInteraction; chatAnimateBottom = chatJumpingLatest = false;
         chatsBusy = chatThreadBusy = false; chatThreadRefreshRequested = false; chatSearchMode = false; chatListLoaded = false;
         if (chatName != null)
         {
@@ -127,7 +140,7 @@ internal sealed partial class MainWindow
             chatName.InvalidateMeasure(); chatColumns.Selected = false;
             chatRenderingDraft = true; chatInput.Text = ""; chatRenderingDraft = false;
             chatsStatus.Value = chatThreadStatus.Value = "";
-            chatMore.IsVisible = chatNewMessages.IsVisible = false;
+            chatMore.IsVisible = false;
             RefreshChatLoading();
             RefreshChatComposer();
         }
@@ -148,12 +161,15 @@ internal sealed partial class MainWindow
         chatDateLayer?.ResetOverlay();
         foreach (var row in ChatRows) VisualTree.Visit(row.Attachments, child => { if (child is ChatPhotoFrame frame) frame.Stop(); });
     }
-    private bool ChatCurrent(WebSession session, long account, long revision) => !disposed && api.Session == session && me?.Id == account && chatAccountId == account && chatRevision == revision;
+    private bool ChatCurrent(WebSession session, long account, long revision) => !disposed && !chatClosing && api.Session == session && me?.Id == account && chatAccountId == account && chatRevision == revision;
 
     private async Task RefreshChatsAsync()
     {
-        if (disposed || chatsBusy || !AllowChatRefresh) return;
-        await EnsureChatAccountAsync();
+        if (disposed || chatClosing || chatsBusy || !AllowChatRefresh) return;
+        var startedUser = me; var startedSession = api.Session;
+        var restoring = EnsureChatAccountAsync(); var restoreRevision = chatRevision;
+        await restoring;
+        if (disposed || chatClosing || chatsBusy || !AllowChatRefresh || me != startedUser || api.Session != startedSession || chatRevision != restoreRevision) return;
         if (demo || me == null || api.Session == null)
         { chatsStatus.Value = "Войди в SoundCloud, чтобы открыть переписку."; RefreshChatComposer(); return; }
         chatsBusy = true; RefreshChatLoading();
@@ -203,6 +219,7 @@ internal sealed partial class MainWindow
 
     private void RenderChatInbox()
     {
+        RefreshChatHeaderBadge();
         RefreshChatSaved(); RefreshChatGlobalSearchSurface();
         if (chatSearchMode) return;
         var folderPeers=chatWorkspace.Folders.FirstOrDefault(f=>f.Id==chatFolder)?.Peers;
@@ -265,7 +282,7 @@ internal sealed partial class MainWindow
     {
         if (me == null || api.Session == null || recipient.Id == me.Id || recipient.Id <= 0) return;
         await EnsureChatAccountAsync();
-        if (chatRecipient?.Id == recipient.Id) { chatColumns.Selected = true; return; }
+        if (chatRecipient?.Id == recipient.Id) { chatColumns.Selected = true; await ShowLatestChatAsync(); return; }
         ChatThreadSnapshot? snapshot;var selectingAccount=chatAccountId;var selectingSession=api.Session;long selectedRevision;
         await chatSelectionGate.WaitAsync(lifetime.Token);
         try
@@ -275,7 +292,7 @@ internal sealed partial class MainWindow
         ++chatVoiceGeneration;
         await StopChatVoiceAsync();
         await StopChatVoicePlaybackAsync();
-        if(chatVoiceRecorder!=null){await chatVoiceRecorder.DisposeAsync();chatVoiceRecorder=null;}
+        await RetireChatRecorderAsync();
         if(me?.Id!=selectingAccount||api.Session!=selectingSession||chatAccountId!=selectingAccount)return;
         SaveChatDraft(); ClearChatSelection(); chatReply=null; RefreshChatReply(); CloseChatDetails(); CloseChatSearch(); chatMessageSearch.Text = ""; chatFavoritesOpen = false;
         chatWorkspace = chatWorkspace with { SavedOpen = false }; chatSavedView.IsVisible = false; chatConversationView.IsVisible = true; RefreshChatSaved();
@@ -303,7 +320,6 @@ internal sealed partial class MainWindow
         if (chatRecipient?.Id != recipient.Id||me?.Id!=selectingAccount||api.Session!=selectingSession||chatRevision!=selectedRevision) return;
         chatWorkspace = chatWorkspace with { LastPeer = recipient.Id }; SaveChatWorkspace();
         chatThreadLoading.Reset();
-        chatNewMessages.IsVisible = false;
         chatThreadStatus.Value = "";
         chatRenderingDraft = true;
         try { chatInput.Text = chatDrafts.GetValueOrDefault(recipient.Id, ""); }
@@ -336,9 +352,10 @@ internal sealed partial class MainWindow
         var cursor = older ? chatMessageCursor : null;
         chatThreadBusy = true; chatThreadRefreshRequested = false; RefreshChatLoading(); RefreshChatComposer();
         var viewer = chatMessagesView.FindVisualChild<ScrollViewer>() as ScrollViewer;
-        var nearBottom = chatRestoreOffset == null && (chatScrollBottom || viewer == null || SmoothScroll.Maximum(viewer) - viewer.VerticalOffset < 90);
-        var before = viewer == null ? ((double, double)?)null : (SmoothScroll.Maximum(viewer), viewer.VerticalOffset);
+        var navigation = chatTimelineNavigation;
+        var idle = chatThreadIdle = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using var read = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken(), ChatPollingToken());
+        chatTimelineRead = read;
         try
         {
             var result = await GetChatMessagesAsync(user.Id, recipient.Id, cursor, read.Token);
@@ -362,6 +379,11 @@ internal sealed partial class MainWindow
                 }
                 result=result with {Messages=newer.DistinctBy(m=>m.Id).OrderBy(m=>m.SentAt).ToArray()};
             }
+            if (navigation != chatTimelineNavigation) return;
+            // Read the current viewport after every network/cache await. The
+            // user can leave the bottom while that work is pending.
+            var nearBottom = chatScrollBottom || ChatIsAtBottom();
+            var before = viewer == null ? ((double, double)?)null : (SmoothScroll.Maximum(viewer), viewer.VerticalOffset);
             var added = result.Messages.Where(m => !oldIds.Contains(m.Id)).ToArray();
             foreach(var resolved in result.Messages.Where(m=>m.ClientContent!=null))
             {
@@ -369,11 +391,10 @@ internal sealed partial class MainWindow
                 if(existing>=0)chatMessages[existing]=resolved;
             }
             var addedVisible=added.Any(m=>!ChatProtocol.Project(m,user.Id,recipient.Id).IsReaction);
-            var unseenNewer=!older&&!nearBottom&&(chatWindowHasNewer||chatMessages.Count+added.Length>200);
-            var followOlder = older && (chatFollowLayout || chatScrollBottom || ChatIsAtBottom());
-            var anchoredOlder = older && added.Length > 0 && !followOlder && CaptureChatReadingAnchor(viewer);
+            var unseenNewer = !older && (chatWindowHasNewer || !nearBottom && chatMessages.Count + added.Length > 200);
+            var anchoredOlder = older && added.Length > 0 && CaptureChatReadingAnchor(viewer);
             if(!unseenNewer)chatMessages.AddRange(added);
-            else {chatWindowHasNewer=true;if(addedVisible)chatNewMessages.IsVisible=true;}
+            else chatWindowHasNewer = true;
             if (initial || older || chatMessageCursor == null && chatMessages.Count == added.Length) chatMessageCursor = result.NextHref == cursor ? null : result.NextHref;
             if (!initial && !older) foreach (var message in added.TakeLast(20)) chatMessageEntrances.Add(message.Id);
             if (chatMessageEntrances.Count > 128) chatMessageEntrances.Clear();
@@ -388,17 +409,16 @@ internal sealed partial class MainWindow
                 chatOutgoing.Remove(recipient.Id);
             }
             var ordered = chatMessages.OrderBy(ChatOrder).ToArray(); chatMessages.Clear();
-            if (older && !followOlder && ordered.Length > 200) chatWindowHasNewer = true;
-            chatMessages.AddRange(ordered.Length>200 ? (older && !followOlder ? ordered.Take(200) : ordered.TakeLast(200)) : ordered);
+            if (older && ordered.Length > 200) chatWindowHasNewer = true;
+            chatMessages.AddRange(ordered.Length>200 ? (older ? ordered.Take(200) : ordered.TakeLast(200)) : ordered);
             RefreshChatTimeline();
             if (anchoredOlder && chatRestoreAnchor != null)
             {
                 var anchorIndex = chatMessageItems.ToList().FindIndex(item => item.Id == chatRestoreAnchor);
                 if (anchorIndex >= 0) chatMessagesView.ScrollIntoView(anchorIndex);
             }
-            if (initial || followOlder || !older && nearBottom) RequestChatBottom();
+            if (initial || !older && nearBottom) RequestChatBottom(chatAnimateBottom);
             else if (older && added.Length > 0 && !anchoredOlder && before.HasValue) chatPrependAnchor = before;
-            else if (!older && addedVisible) chatNewMessages.IsVisible = true;
             chatThreadStatus.Value = chatMessages.Count==0?"Напиши первое сообщение":chatMessageItems.Count==0?"Загрузи предыдущие сообщения, чтобы увидеть переписку.":"";
             if ((unseenNewer?result.Messages.LastOrDefault():chatMessages.LastOrDefault()) is { } latest)
             {
@@ -412,7 +432,7 @@ internal sealed partial class MainWindow
             }
             Window.PerformLayout();
             RememberChatThread(); ReconcilePendingChat(); await ConfirmCachedPendingChatAsync(); RefreshChatComposer();
-            if (nearBottom || initial) await MarkSelectedChatReadAsync(session, user.Id, recipient.Id, revision);
+            if ((nearBottom || initial) && ChatIsAtBottom()) await MarkSelectedChatReadAsync(session, user.Id, recipient.Id, revision);
         }
         catch (OperationCanceledException) { }
         catch (SoundCloudException error) when (error.StatusCode == 404 && ChatCurrent(session, user.Id, revision))
@@ -424,6 +444,9 @@ internal sealed partial class MainWindow
         }
         finally
         {
+            if (ReferenceEquals(chatTimelineRead, read)) chatTimelineRead = null;
+            idle.TrySetResult();
+            if (ReferenceEquals(chatThreadIdle, idle)) chatThreadIdle = null;
             if (chatRevision == revision)
             {
                 chatThreadBusy = false; chatPresentationDirty = true;
@@ -453,15 +476,19 @@ internal sealed partial class MainWindow
         finally { chatReadWrites.Remove(recipient); }
     }
 
-    private void RequestChatBottom()
+    private void RequestChatBottom(bool animate = false)
     {
-        StopChatScrolling();
+        if (!animate) StopChatScrolling();
+        chatAnimateBottom = animate;
         chatRestoreOffset = null; chatRestoreAnchor = null; chatRestoreBubbleAnchor = false;
-        chatPrependAnchor = null; chatScrollBottom = chatWasAtBottom = true; chatLastBottomExtent = -1; chatViewport.InvalidateArrange(); chatViewport.InvalidateVisual();
+        chatPrependAnchor = null; chatScrollBottom = true; chatWasAtBottom = !animate; chatLastBottomExtent = -1; chatViewport.InvalidateArrange(); chatViewport.InvalidateVisual();
     }
 
     private void ArrangeChatScroll()
     {
+        // Only presentation replenishes this budget. Reposting layout to the
+        // dispatcher does not yield to native input or advance animation clocks.
+        chatAnchorPassesThisFrame = 0;
         if (disposed || !workspace.IsVisible || page.Value != Page.Chats || Window.WindowState == WindowState.Minimized) return;
         if (chatMessagesView.FindVisualChild<ScrollViewer>() is not ScrollViewer currentViewer) return;
         foreach (var control in new FrameworkElement[] { chatInbox, chatMessagesView, chatPeopleSearch, chatSavedMessages })
@@ -471,9 +498,26 @@ internal sealed partial class MainWindow
                 if (!smoothScrolls.ContainsKey(scroll))
                     smoothScrolls[scroll] = new SmoothScroll(scroll) { Enabled = preferences.SmoothScrolling,
                         UserScrolling = control == chatMessagesView ? BeginChatUserScroll : null,
-                        RestoringAnchor = control == chatMessagesView ? () => chatRestoreBubbleAnchor && chatRestoreOffset != null : null,
-                        Advanced = control == chatMessagesView ? delta => { if (chatRestoreBubbleAnchor && chatRestoreOffset != null) chatRestoreAnchorY -= delta; } : null };
+                        DirectUserScrolling = control == chatMessagesView ? CancelChatScrollRestoration : null,
+                        // The virtual presenter also corrects offsets when media
+                        // heights refine outside an explicit anchor restoration.
+                        // Direct input cancels the motion via its own callback.
+                        RestoringAnchor = control == chatMessagesView ? () => true : null,
+                        Advanced = control == chatMessagesView ? delta => { if (chatRestoreOffset != null) chatRestoreAnchorY -= delta; } : null };
             }
+        // Animated layer roots can bypass FrameRendered. At actual presentation
+        // keep pending anchor/bottom corrections alive until they settle, even
+        // when a final child layout invalidation was consumed by its ancestor.
+        if ((chatRestoreOffset != null || chatScrollBottom) && !chatScrollReconcileQueued)
+        {
+            chatScrollReconcileQueued = true;
+            Application.Current.Dispatcher!.BeginInvoke(() =>
+            {
+                chatScrollReconcileQueued = false;
+                if (disposed || page.Value != Page.Chats) return;
+                chatViewport.InvalidateArrange(); Window.InvalidateVisual();
+            });
+        }
         var geometry = (currentViewer.Bounds, currentViewer.VerticalOffset, SmoothScroll.Maximum(currentViewer), chatMediaLoads.Count);
         if (!chatPresentationDirty && chatPresentationGeometry == geometry && !chatColumns.Animating && !chatComposerSurface.IsResizing) return;
         chatPresentationDirty = false; chatPresentationGeometry = geometry;
@@ -489,7 +533,7 @@ internal sealed partial class MainWindow
         if(chatRecipient!=null)
             foreach(var row in ChatRows.Where(r=>r.Bound&&r.Message!=null&&r.Root.Bounds.Bottom>viewer.Bounds.Y&&r.Root.Bounds.Y<viewer.Bounds.Bottom).OrderBy(r=>r.Root.Bounds.Y))
                 QueueChatMediaPreview(row.Message!,chatRecipient.Id);
-        if(chatRestoreOffset==null&&!chatScrollBottom&&!chatWindowBusy&&!chatThreadBusy&&chatMessages.Count>0)
+        if(!chatJumpingLatest&&chatRestoreOffset==null&&!chatScrollBottom&&!chatWindowBusy&&!chatThreadBusy&&chatMessages.Count>0)
         {
             var prefetch = Math.Clamp(viewer.ActualHeight * .5, 96, 400);
             if(viewer.VerticalOffset<prefetch && DateTimeOffset.UtcNow >= chatOlderRetryAfter &&
@@ -497,7 +541,7 @@ internal sealed partial class MainWindow
                 Run(()=>ShiftChatWindowAsync(true));
             else if(chatWindowHasNewer&&SmoothScroll.Maximum(viewer)-viewer.VerticalOffset<48)Run(()=>ShiftChatWindowAsync(false));
         }
-        if (Window.IsActive && chatWasAtBottom && chatThreadLoaded && !chatThreadBusy && me != null && api.Session != null && chatRecipient != null && chatUnread.States.GetValueOrDefault(chatRecipient.Id) is { Count: > 0 })
+        if (Window.IsActive && !chatAnimateBottom && !chatWindowHasNewer && !chatWindowBusy && ChatIsAtBottom() && chatWasAtBottom && chatThreadLoaded && !chatThreadBusy && me != null && api.Session != null && chatRecipient != null && chatUnread.States.GetValueOrDefault(chatRecipient.Id) is { Count: > 0 })
             Run(() => MarkSelectedChatReadAsync(api.Session, me.Id, chatRecipient.Id, chatRevision));
     }
 
@@ -511,8 +555,20 @@ internal sealed partial class MainWindow
 
     private void BeginChatUserScroll()
     {
-        chatScrollBottom = chatWasAtBottom = chatFollowLayout = false;
+        ++chatScrollInteraction;
+        if (chatAnimateBottom) StopChatScrolling();
+        if (chatJumpingLatest)
+        {
+            chatJumpingLatest = false; ++chatTimelineNavigation;
+            chatTimelineRead?.Cancel(); chatWindowRead?.Cancel();
+        }
+        chatAnimateBottom = chatScrollBottom = chatWasAtBottom = chatFollowLayout = false;
         foreach (var row in ChatRows) row.FollowMediaResize = false;
+    }
+
+    private void CancelChatScrollRestoration()
+    {
+        chatRestoreOffset = null; chatRestoreAnchor = null; chatRestoreBubbleAnchor = false; chatPrependAnchor = null;
     }
 
     private bool SynchronizeChatScroll()
@@ -524,21 +580,28 @@ internal sealed partial class MainWindow
         chatViewportMaximum = maximum;
         if (chatRestoreOffset is { } restore)
         {
+            // Variable-height rows can keep invalidating their own anchor while
+            // a resize is running. Let that frame present before refining again;
+            // otherwise layout starves the very clock it is waiting to finish.
+            if (chatAnchorPassesThisFrame++ >= 16) return false;
             var anchor = chatRestoreAnchor == null ? null : ChatRows.FirstOrDefault(r => r.Bound && r.Message?.Id == chatRestoreAnchor && r.Root.ActualHeight > 0);
             var anchorY = anchor == null ? 0 : chatRestoreBubbleAnchor ? anchor.Bubble.Bounds.Y : anchor.Root.Bounds.Y;
             var requested = anchor != null ? viewer.VerticalOffset + anchorY - viewer.Bounds.Y - chatRestoreAnchorY : restore;
             var target = Math.Clamp(requested, 0, maximum);
-            if (Math.Abs(target - viewer.VerticalOffset) > .1)
+            var tolerance = .5 / Window.DpiScale + .01;
+            if (Math.Abs(target - viewer.VerticalOffset) > tolerance)
             {
-                if (chatRestoreBubbleAnchor && smoothScrolls.TryGetValue(viewer, out var motion))
+                var before = viewer.VerticalOffset;
+                if (smoothScrolls.TryGetValue(viewer, out var motion))
                     motion.CorrectLayoutOffset(target - viewer.VerticalOffset);
                 else { StopChatScrolling(); viewer.SetScrollOffsets(0, target); }
-                changed = true;
+                changed = Math.Abs(viewer.VerticalOffset - before) > .01;
             }
-            if (anchor != null && Math.Abs(anchorY - viewer.Bounds.Y - chatRestoreAnchorY) > .5) changed = true;
+            // A rounded or clamped offset may be the closest representable
+            // position. Its residual anchor error is not another layout change.
             // A larger window can make the old anchor unreachable at the end of
             // history. Accept the nearest edge after bounded extent refinement.
-            var animating = chatColumns.Animating || ChatRows.Any(row => row.Bound && (row.Reactions.Animating || row.Content.IsResizing));
+            var animating = chatColumns.Animating || ChatRows.Any(row => row.Bound && (row.Reactions.Animating || row.Content.ResizeAnimationRunning));
             if (++chatRestorePasses >= 3 && !animating && (!changed || chatRestorePasses >= 16)) { chatRestoreOffset = null; chatRestoreAnchor = null; chatRestoreBubbleAnchor = false; }
             // Keep the anchor through the drawer animation, but only request
             // another layout when its offset actually needs correcting. The
@@ -553,12 +616,20 @@ internal sealed partial class MainWindow
         if (chatFollowLayout) chatScrollBottom = true;
         if (chatScrollBottom)
         {
-            var settled = Math.Abs(maximum - chatLastBottomExtent) < .1 && Math.Abs(maximum - viewer.VerticalOffset) < .1;
+            var settled = Math.Abs(maximum - chatLastBottomExtent) < .1 && Math.Abs(maximum - viewer.VerticalOffset) <= 1;
+            var previousMaximum = chatLastBottomExtent;
             chatLastBottomExtent = maximum;
-            chatNewMessages.IsVisible = false;
-            if (Math.Abs(maximum - viewer.VerticalOffset) > .1) { StopChatScrolling(); viewer.SetScrollOffsets(0, maximum); }
-            if (settled) { chatScrollBottom = false; chatLastBottomExtent = -1; if (!chatComposerSurface.IsResizing && !chatColumns.Animating) chatFollowLayout = false; }
-            else changed = true;
+            if (chatAnimateBottom && smoothScrolls.TryGetValue(viewer, out var motion) && motion.Enabled)
+            {
+                if (!settled && (!motion.IsRunning || Math.Abs(previousMaximum - maximum) > .1)) motion.ScrollTo(maximum);
+                settled &= !motion.IsRunning;
+            }
+            else
+            {
+                if (Math.Abs(maximum - viewer.VerticalOffset) > .1) { StopChatScrolling(); viewer.SetScrollOffsets(0, maximum); changed = true; }
+                if (!settled) changed = true;
+            }
+            if (settled) { chatAnimateBottom = chatScrollBottom = false; chatLastBottomExtent = -1; if (!chatComposerSurface.IsResizing && !chatColumns.Animating) chatFollowLayout = false; }
         }
         else if (chatPrependAnchor is { } anchor)
         {
@@ -617,6 +688,7 @@ internal sealed partial class MainWindow
     }
     private void SaveChatState()
     {
+        RefreshChatHeaderBadge();
         var store = chatLocalStore;
         if (!chatAccountReady || store == null) return;
         var snapshot = new ChatLocalState(chatDrafts.Where(p => p.Value.Length > 0).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary());
@@ -653,21 +725,22 @@ internal sealed partial class MainWindow
 
     private void DisposeChats()
     {
+        chatClosing = true; CancelChatNativeStarts(renew: false);
         chatEmojiEditor?.Dispose();
         chatEmojiLeaveTimer?.Dispose();
         chatEmojiSearchTimer?.Stop(); CloseChatMessageMenu(true); chatEmojiPopup?.Close(true); ChatEmojiArtwork.Clear();
-        SaveChatDraft(); CleanupChatVoiceFiles(); RememberChatThread(); if(chatHistory!=null){_=chatHistory.DisposeAsync();chatHistory=null;} chatHistorySearch?.Cancel(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatMessageSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
+        SaveChatDraft(); CleanupChatVoiceFiles(); RememberChatThread(); RetireChatHistory(); chatHistorySearch?.Cancel(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatMessageSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
         chatMusicRecognizeTimer.Dispose(); chatMusicEditor?.Dispose();
         chatAttachInteraction.Dispose(); chatMusicSearchTimer.Dispose(); chatVideoTimer.Dispose(); chatVideoExpansionClock.Stop(); chatVideoSpeedClock.Stop();
-        Window.FrameRendered -= ArrangeChatScroll; CloseChatGifs();
-        Window.FrameRendered -= QueueChatLibraryPreviews; ClearChatLibraryPreviews();
+        WindowPresentation.FramePresented(Window) -= ArrangeChatScroll; CloseChatGifs();
+        WindowPresentation.FramePresented(Window) -= QueueChatLibraryPreviews; ClearChatLibraryPreviews();
         if (chatDateViewer != null) chatDateViewer.ScrollChanged -= OnChatDateScroll;
-        chatDateLayer.Dispose(); chatVoiceTimer.Dispose(); ++chatVoiceGeneration; if(chatVoiceRecorder!=null)_=chatVoiceRecorder.DisposeAsync(); if(chatVoicePlayer!=null)_=chatVoicePlayer.DisposeAsync();
+        chatDateLayer.Dispose(); ResetChatVoice(); chatVoiceTimer.Dispose();
         chatAttachmentPreviewLoad?.Cancel(); chatAttachmentPreviewLoad?.Dispose();
         chatAttachmentStaging.Dispose();
         foreach (var row in ChatRows) row.Clear();
         CancelChatPolling();
-        chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose();
+        chatAccountLifetime?.Cancel(); chatAccountLifetime?.Dispose(); chatAccountLifetime = null;
         chatInfoBody.Dispose();
         chatInboxLoading.Dispose(); chatThreadLoading.Dispose(); ClearChatMediaCache(clearSummaries: true); ClearChatVisualCache(); chatMedia.Dispose(); klipy.Dispose();
     }

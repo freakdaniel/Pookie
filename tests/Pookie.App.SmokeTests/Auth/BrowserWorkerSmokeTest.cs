@@ -266,7 +266,7 @@ internal static class BrowserWorkerSmokeTest
         for (var attempt = 0; attempt < 2; attempt++)
         {
             try { await blocked.SetLikedAsync(42, 93, true, timeout.Token); throw new InvalidOperationException("Hard block did not reject action"); }
-            catch (SoundCloudException error) when (error.StatusCode == 403 && error.Message.Contains("Капча не предложена")) { }
+            catch (SoundCloudException error) when (error.StatusCode == 403 && error.ChallengeKind == SoundCloudChallengeKind.HardBlock) { }
         }
         if (hardBlockedRequests != 1) throw new InvalidOperationException("Hard block was retried");
         Console.WriteLine("BROWSER_WORKER_BLOCK_OK: hard-block page revealed, action failed immediately, subsequent write suppressed");

@@ -31,10 +31,9 @@ internal sealed unsafe partial class MacEmbeddedBrowser(EmbeddedBrowserEvents ev
             try { SendVoid(content, Sel("addUserScript:"), userScript); }
             finally { Release(userScript); }
             SendVoid(configuration, Sel("setUserContentController:"), content);
-            // Match the existing macOS browser worker's persistent WK store. Fixtures
-            // use a non-persistent store so tests never read or alter a real login.
-            SendVoid(configuration, Sel("setWebsiteDataStore:"), Send(Class("WKWebsiteDataStore"), Sel(isolated ? "nonPersistentDataStore" : "defaultDataStore")));
+            SendVoid(configuration, Sel("setWebsiteDataStore:"), WebsiteDataStore(profile, isolated));
             AddPage(configuration);
+            MarkProfile(profile, isolated);
         }
         finally { Release(configuration); }
         return Task.CompletedTask;
@@ -77,22 +76,8 @@ internal sealed unsafe partial class MacEmbeddedBrowser(EmbeddedBrowserEvents ev
     }
     public Task<byte[]> CaptureAsync()
     {
-        if (snapshotDescriptor == 0)
-        {
-            stackBlockClass = NativeLibrary.GetExport(NativeLibrary.Load("/usr/lib/libSystem.B.dylib"), "_NSConcreteStackBlock");
-            var descriptor = (BlockDescriptor*)NativeMemory.AllocZeroed((nuint)sizeof(BlockDescriptor));
-            descriptor->Size = (nuint)sizeof(SnapshotBlock);
-            descriptor->Copy = (nint)(delegate* unmanaged<nint, nint, void>)&CopySnapshotBlock;
-            descriptor->Dispose = (nint)(delegate* unmanaged<nint, void>)&DisposeSnapshotBlock;
-            snapshotDescriptor = (nint)descriptor;
-        }
         var result = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var block = (SnapshotBlock*)NativeMemory.AllocZeroed((nuint)sizeof(SnapshotBlock));
-        block->Isa = stackBlockClass; block->Flags = 1 << 25; // BLOCK_HAS_COPY_DISPOSE
-        block->Invoke = (nint)(delegate* unmanaged<nint, nint, nint, void>)&SnapshotCompleted;
-        block->Descriptor = snapshotDescriptor; block->Context = GCHandle.ToIntPtr(GCHandle.Alloc(result));
-        var copied = BlockCopy((nint)block);
-        NativeMemory.Free(block);
+        var copied = CompletionBlock(result, (nint)(delegate* unmanaged<nint, nint, nint, void>)&SnapshotCompleted);
         var configuration = New(Class("WKSnapshotConfiguration"));
         try
         {

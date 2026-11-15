@@ -9,7 +9,6 @@ internal sealed partial class MainWindow
     private enum LoginButtonState { Idle, Waiting, Connecting }
     private readonly string brandFontFamily;
     private readonly ObservableValue<bool> loginBusy = new(false);
-    private readonly ObservableValue<Color> loginButtonColor = new(LoginOrange);
     private Grid workspace = null!;
     private Border loginScreen = null!;
     private StackPanel loginContent = null!;
@@ -21,7 +20,6 @@ internal sealed partial class MainWindow
     private PathShape loginButtonGlyph = null!;
     private TextBlock loginError = null!;
     private LoginButtonState loginButtonState;
-    private static readonly Color LoginOrange = Color.FromRgb(255, 85, 0);
     private static readonly Color LoginPaper = Color.FromRgb(239, 239, 239);
 
     private bool CanUseWorkspace => signedIn.Value || (demo && !requireSignIn);
@@ -39,17 +37,12 @@ internal sealed partial class MainWindow
             Transition = ContentTransition.CreateSlide(SlideDirection.Up, durationMs: 220)
         };
         var labelViewport = new Border().Height(22).CenterVertical().ClipToBounds().Child(loginLabelHost);
-        loginButton = new Button().Width(352).Height(58).Padding(16, 10).CornerRadius(18)
-            .Bind(Control.BackgroundProperty, loginButtonColor).Foreground(LoginPaper).BorderThickness(0)
-            .BindIsEnabled(loginBusy, busy => !busy)
-            .Content(new Grid().Columns("36,*,36").Rows("*").Spacing(6).Children(
+        loginButton = TrackButtons.Action(new Grid().Columns("36,*,36").Rows("*").Spacing(6).Children(
                 Icons.SoundCloudMark(36).CenterVertical().Column(0),
                 labelViewport.Column(1),
-                new Grid().Columns("*").Rows("*").Column(2).Children(loginButtonGlyph, loginSpinner)))
-            .OnMouseEnter(() => { if (!loginBusy.Value) loginButtonColor.Value = Color.FromRgb(255, 105, 30); })
-            .OnMouseLeave(() => { if (!loginBusy.Value) loginButtonColor.Value = LoginOrange; })
-            .OnClick(() => Run(LoginAsync));
-        loginButton.Transitions = [Transition.Create(Control.BackgroundProperty, 200, Easing.CubicBezier(0.2, 0, 0, 1))];
+                new Grid().Columns("*").Rows("*").Column(2).Children(loginButtonGlyph, loginSpinner)),
+                () => Run(LoginAsync), TrackButtons.Glass, 58)
+            .Width(352).Padding(16, 10).BindIsEnabled(loginBusy, busy => !busy);
         SetLoginButtonState(LoginButtonState.Idle);
         loginBusy.Changed += RefreshLoginButtonActivity;
 
@@ -89,7 +82,6 @@ internal sealed partial class MainWindow
             .CenterHorizontal().CenterVertical();
         loginLabelHost.Content = loginButtonLabel;
         loginButtonGlyph.Data("M 2 16 L 16 2 M 4 2 L 16 2 L 16 14");
-        loginButtonColor.Value = state != LoginButtonState.Idle ? Color.FromRgb(230, 76, 0) : LoginOrange;
         RefreshLoginButtonActivity();
     }
 

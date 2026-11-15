@@ -660,7 +660,7 @@
       window.__pookieAudioCancel?.(command.id);
       const context = active.get(command.id);
       // Writes are cancelled by terminating the worker, never replayed later.
-      if (context && !context.chatWrite && !['like', 'repost', 'follow', 'playlist-add', 'playlist-create', 'playlist-like', 'playlist-repost', 'comment-write', 'play-history'].includes(context.operation)) {
+      if (context && !context.chatWrite && !__POOKIE_WRITE_OPERATIONS__.split(' ').includes(context.operation)) {
         context.controller.abort(); context.rejectCancel(new Error('cancelled'));
       }
       return;

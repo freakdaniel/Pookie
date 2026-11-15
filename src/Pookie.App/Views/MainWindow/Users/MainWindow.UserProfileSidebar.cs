@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
     {
         if (userProfileState is not { } state) return;
         var key = $"user:{state.User.Id}:likes";
-        if (current?.Id == track.Id && playbackQueue.Context?.Key == key) { await ToggleAsync(); return; }
+        if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         var data = state.Sections.GetValueOrDefault(UserSection.Likes);
         StartQueueContext(new(key, state.User.Username, "Понравившееся из профиля", data?.NextHref, LibraryCursor: true,
             Kind: Playback.PlaybackContextKind.Artist), data?.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() ?? [track], track);

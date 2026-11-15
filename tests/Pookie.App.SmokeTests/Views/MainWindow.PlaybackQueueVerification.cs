@@ -77,11 +77,12 @@ internal sealed partial class MainWindow
             await NavigateAsync(Page.Feed);
             if (sourceVersion != playbackQueue.SourceVersion) throw new InvalidOperationException("Page navigation replaced the playback source.");
 
-            // A single search result stops at its end; natural Repeat Track and
+            // An explicit single-track source stops at its end; natural Repeat Track and
             // manual Next have separate behavior, both using the same model.
-            page.Value = Page.Search; SetQueue(data[0]); await PlayAsync(data[0]);
+            StartQueueContext(new("track:" + data[0].Id, data[0].Title, "Сейчас играет отдельный трек"), [data[0]], data[0]);
+            await PlayAsync(data[0]);
             if (playbackQueue.Snapshot.Source.Count != 1 || playbackQueue.Snapshot.CanNext)
-                throw new InvalidOperationException("Search selection included unrelated loaded results.");
+                throw new InvalidOperationException("Explicit single-track playback included unrelated loaded results.");
             await SkipAsync(1, naturalEnd: true);
             if (isPlaying.Value || audioReady || playbackQueue.Preparation != PlaybackPreparation.Stopped)
                 throw new InvalidOperationException("Source wrapped instead of stopping with Repeat off.");
@@ -117,7 +118,7 @@ internal sealed partial class MainWindow
             await SkipAsync(1);
             if (current?.Id != data[1].Id || playbackQueue.Context?.Title != "Плейлист")
                 throw new InvalidOperationException("Pagination followed the visible page rather than the playback context.");
-            Console.WriteLine("UI_PLAYBACK_QUEUE_OK: duplicate occurrence state and editing menus, manual priority, three-second Previous, actual back/forward history, stable Shuffle, displayed/system next parity, isolated search playback, repeat modes, finite end and source pagination across navigation");
+            Console.WriteLine("UI_PLAYBACK_QUEUE_OK: duplicate occurrence state and editing menus, manual priority, three-second Previous, actual back/forward history, stable Shuffle, displayed/system next parity, explicit single-track playback, repeat modes, finite end and source pagination across navigation");
         }
         finally { player = originalPlayer; queueLoader = originalLoader; }
     }

@@ -74,25 +74,37 @@ internal sealed partial class MainWindow
             var tile = likedTiles.Values.Where(item => item.Track != null && item.Cover.Bounds.Y > 200 &&
                 item.Cover.Bounds.Y < playerChrome.Bounds.Y).OrderByDescending(item => item.Cover.Bounds.Y).First();
             var fadeTrackId = tile.Track!.Id;
-            // Realizing a new grid row refines its height estimate. Position the
-            // pixel sample from that row's current geometry after each frame.
+            // Every pixel sample must lie over actual artwork. Exact cover/fade
+            // center equality is unnecessary and can oscillate with independently
+            // rounded grid/scroll positions even when the whole fade is covered.
+            bool CoversFade(LikedTrackTile candidate) =>
+                candidate.Cover.Bounds.Y + 1 / Window.DpiScale <= contentBottomFade.Bounds.Y &&
+                candidate.Cover.Bounds.Bottom - 1 / Window.DpiScale >= contentBottomFade.Bounds.Bottom;
             for (var alignment = 0; alignment < 8; alignment++)
             {
                 tile = likedTiles.Values.Single(item => item.Track?.Id == fadeTrackId);
                 var correction = tile.Cover.Bounds.Y + tile.Cover.ActualHeight / 2 -
                     (playerChrome.Bounds.Y - ContentEdgeFade.BottomHeight / 2);
-                if (shellPageScroll.IsReady && Math.Abs(correction) < 1) break;
+                if (shellPageScroll.IsReady && CoversFade(tile)) break;
                 shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + correction);
+                // The outer document and the virtualized grid reconcile their
+                // offsets on separate layout passes. Do not apply another
+                // correction to the previous frame's cover geometry.
+                await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady &&
+                    !native.IsMeasureDirty && !native.IsArrangeDirty);
                 await WaitForLoginFrameAsync();
             }
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady &&
-                likedTiles.Values.Any(item => item.Track?.Id == fadeTrackId && Math.Abs(item.Cover.Bounds.Y + item.Cover.ActualHeight / 2 -
-                    (playerChrome.Bounds.Y - ContentEdgeFade.BottomHeight / 2)) < 1));
+                likedTiles.Values.Any(item => item.Track?.Id == fadeTrackId && CoversFade(item)));
             tile = likedTiles.Values.Single(item => item.Track?.Id == fadeTrackId);
             VerifyBottomFadePixels(tile.Cover.Bounds.X + tile.Cover.ActualWidth / 2);
             CaptureUiPreview("shell-chrome-fade-library");
             shellScroll.SetScrollOffsets(0, SmoothScroll.Maximum(shellScroll));
-            await WaitForLikedLayoutAsync(() => Math.Abs(native.VerticalOffset - SmoothScroll.Maximum(native)) < 1 &&
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady &&
+                Math.Abs(shellScroll.VerticalOffset - SmoothScroll.Maximum(shellScroll)) <= 1 / Window.DpiScale + .001 &&
+                // ShellPageScroll deliberately tolerates one physical pixel
+                // between independently rounded document/list offsets.
+                Math.Abs(native.VerticalOffset - SmoothScroll.Maximum(native)) <= 1 / Window.DpiScale + .001 &&
                 likedTiles.Values.Any(tile => tile.Track?.Id == 80));
             if (likedTiles.Values.Single(item => item.Track?.Id == 80).Root.Bounds.Bottom > contentBottomFade.Bounds.Y + 1)
                 throw new InvalidOperationException("The last track cannot scroll clear of the player-edge fade.");
@@ -171,7 +183,7 @@ internal sealed partial class MainWindow
         {
             VerificationFailure = error; Environment.ExitCode = 1;
             CaptureUiPreview("shell-chrome-failure");
-            Console.Error.WriteLine($"UI_SHELL_CHROME_FAILED: offset={shellScroll.VerticalOffset}, max={SmoothScroll.Maximum(shellScroll)}, frame={contentFrame.Bounds}, inner={PageContentScroll()?.Bounds}, innerOffset={PageContentScroll()?.VerticalOffset}: " + error);
+            Console.Error.WriteLine($"UI_SHELL_CHROME_FAILED: offset={shellScroll.VerticalOffset}, max={SmoothScroll.Maximum(shellScroll)}, frame={contentFrame.Bounds}, inner={PageContentScroll()?.Bounds}, innerOffset={PageContentScroll()?.VerticalOffset}, innerMax={(PageContentScroll() is { } failedInner ? SmoothScroll.Maximum(failedInner) : 0)}: " + error);
         }
         finally { Window.Close(); }
     }
@@ -382,11 +394,13 @@ internal sealed partial class MainWindow
         var firstNav = ShellHeader.StateLayerBounds((Button)topNavigation.Children[0], Window.DpiScale);
         var lastNav = ShellHeader.StateLayerBounds((Button)topNavigation.Children[^1], Window.DpiScale);
         var forward = ShellHeader.StateLayerBounds(forwardButton, Window.DpiScale);
-        var settings = ShellHeader.StateLayerBounds(settingsButton, Window.DpiScale);
+        var chats = ShellHeader.StateLayerBounds(chatHeaderButton, Window.DpiScale);
+        var profile = ShellHeader.StateLayerBounds(profileButton, Window.DpiScale);
         VerifyHeaderInset(history, forward, history.Right - forward.Right);
         VerifyHeaderInset(nav, firstNav, firstNav.X - nav.X);
         VerifyHeaderInset(nav, lastNav, nav.Right - lastNav.Right);
-        VerifyHeaderInset(account, settings, settings.X - account.X);
+        VerifyHeaderInset(account, chats, chats.X - account.X);
+        VerifyHeaderInset(account, profile, account.Right - profile.Right);
     }
 
     private static void VerifyHeaderInset(Rect card, Rect item, double side)
@@ -503,7 +517,7 @@ internal sealed partial class MainWindow
         var navigation = startupHeader.NavigationCard.Bounds;
         if (Math.Abs(backButton.ActualWidth - 36) > 1 / Window.DpiScale || Math.Abs(forwardButton.ActualHeight - 36) > 1 / Window.DpiScale ||
             Math.Abs(forwardButton.Bounds.X - backButton.Bounds.Right - 2) > 1 ||
-            topSearchBar.Bounds.X <= forwardButton.Bounds.Right || topSearchBar.Bounds.Right >= settingsButton.Bounds.X ||
+            topSearchBar.Bounds.X <= forwardButton.Bounds.Right || topSearchBar.Bounds.Right >= chatHeaderButton.Bounds.X ||
             Math.Abs(topSearchInput.Bounds.Y + topSearchInput.ActualHeight / 2 - (navigation.Y + navigation.Height / 2)) > 1 ||
             topSearchInput.Text != query.Value)
             throw new InvalidOperationException("The glass search field overlaps the header actions or lost native input alignment/binding.");

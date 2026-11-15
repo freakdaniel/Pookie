@@ -12,6 +12,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> searchLoading = new(false), searchEmpty = new(false);
     private readonly ObservableValue<bool> searchLyricsCredit = new(false);
     private LibraryPage? searchResults;
+    private string SearchPlaybackKey => $"search:{(int)navigationHistory[navigationIndex].Route.Section}:{navigationHistory[navigationIndex].Route.Search ?? query.Value}";
     private ItemsControl searchList = null!;
     private const double SearchShadowGutter = 14;
     private LibraryLoadingView searchLoadingView = null!;

@@ -134,10 +134,10 @@ internal sealed partial class MainWindow
         ? OpenUserProfileAsync(state.User, section) : Task.CompletedTask;
     private void CheckUserProfileEnd()
     {
-        LoadVisibleUserPublications();
         if (page.Value == Page.UserProfile && userSection.Value == UserSection.Overview) RefreshUserBiographyOverflow();
         if (page.Value != Page.UserProfile || userSection.Value is UserSection.About ||
             userProfileState is not { } state || navigationHistory[navigationIndex].Pending || state.Loading.Contains(userSection.Value)) return;
+        if (userSection.Value == UserSection.Overview && !userPublicationHost.IsReady) return;
         var cursor = userSection.Value == UserSection.Comments ? state.Comments?.NextHref : state.Sections.GetValueOrDefault(userSection.Value)?.NextHref;
         if (cursor == null || cursor == failedUserCursor || UserProfileScroll is not { ViewportHeight: > 0 } scroll ||
             SmoothScroll.Maximum(scroll) - scroll.VerticalOffset > Math.Max(160, scroll.ViewportHeight * .5)) return;
@@ -158,7 +158,7 @@ internal sealed partial class MainWindow
     {
         if (page.Value != Page.UserProfile || userProfileState is not { } state) return;
         var source = userSection.Value; var key = $"user:{state.User.Id}:{UserSectionApi(source)}";
-        if (current?.Id == track.Id && playbackQueue.Context?.Key == key) { await ToggleAsync(); return; }
+        if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         var items = UserMusicPage;
         StartQueueContext(new(key, state.User.Username, "Сейчас играет из профиля", items?.NextHref,
             LibraryCursor: true, Kind: PlaybackContextKind.Artist), items?.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() ?? [track], track);

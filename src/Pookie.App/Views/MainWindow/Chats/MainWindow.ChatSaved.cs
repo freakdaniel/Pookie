@@ -53,7 +53,7 @@ internal sealed partial class MainWindow
         chatWorkspace = chatWorkspace with { SavedOpen = true }; SaveChatWorkspace();
         chatName.Text = "Избранное"; chatHeaderAvatar.Source = Icons.Source("bookmark-simple", ChatAccent);
         chatConversationView.IsVisible = false; chatSavedView.IsVisible = true; chatFloatingDate.IsVisible = false; chatThreadStatus.Value = "";
-        chatNewMessages.IsVisible = false; chatReply = null; RefreshChatReply(); RefreshChatComposer(); RefreshChatSaved();
+        chatReply = null; RefreshChatReply(); RefreshChatComposer(); RefreshChatSaved();
     }
     private void OpenChatSavedInfo()
     {

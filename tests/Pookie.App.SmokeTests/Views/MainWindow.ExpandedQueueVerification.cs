@@ -222,16 +222,29 @@ internal sealed partial class MainWindow
         var pixelMismatch = 0;
         var nativeStages = new HashSet<int>();
         string? nativeMismatch = null;
+        var nativeSupported = OperatingSystem.IsLinux() || OperatingSystem.IsWindows();
+        var interruptedTarget = new PlayerPalette(Color.FromRgb(20, 35, 65), Color.FromRgb(20, 28, 50), Color.FromRgb(18, 25, 36));
+        var settledReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Color[] settled = [];
+        var waitingForSettled = false;
         void Sample()
         {
-            if (!expandedBackdrop.Running) return;
+            if (!expandedBackdrop.Running)
+            {
+                if (waitingForSettled && expandedBackdrop.Target == interruptedTarget)
+                {
+                    settled = nativeSupported ? SamplePresentedBackdropPixels() : [];
+                    settledReady.TrySetResult();
+                }
+                return;
+            }
             rendered.Add(expandedQueueFade.RenderedPalette);
             if (expandedQueueFade.RenderedGradient != expandedBackdrop.CurrentGradient) stale++;
             lastRaster = baseField.GetValue(expandedBackdrop);
             if (lastRaster is { } texture) backdropTextures.Add(texture);
             if (fadeField.GetValue(expandedQueueFade) is { } fade) fadeTextures.Add(fade);
             var stage = (int)(expandedBackdrop.BlendAmount * 8);
-            if (nativeStages.Add(stage))
+            if (nativeSupported && nativeStages.Add(stage))
             {
                 var native = SamplePresentedBackdropPixels();
                 for (var i = 0; i < native.Length; i++)
@@ -257,15 +270,19 @@ internal sealed partial class MainWindow
                     pixelMismatch++;
             }
         }
-        Window.FrameRendered += Sample;
+        // FrameRendered may describe the kept underlay before frequently
+        // changing roots are drawn above it. Observe the completed native frame.
+        WindowPresentation.FramePresented(Window) += Sample;
         try
         {
+            if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
+                throw new InvalidOperationException("Could not expose the native palette probe window.");
+            Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             expandedBackdrop.SetPalette(new(Color.FromRgb(65, 22, 30), Color.FromRgb(50, 18, 35), Color.FromRgb(32, 18, 28)));
-            await WaitForLikedLayoutAsync(() => rendered.Count >= 4 && expandedBackdrop.CurrentGradient != PlayerGradient.FromPalette(original));
-            expandedBackdrop.SetPalette(new(Color.FromRgb(20, 35, 65), Color.FromRgb(20, 28, 50), Color.FromRgb(18, 25, 36)));
+            await WaitForLikedLayoutAsync(() => rendered.Count >= 4 && expandedBackdrop.BlendAmount > .2 && expandedBackdrop.CurrentGradient != PlayerGradient.FromPalette(original));
             nativeStages.Clear();
-            await WaitForLikedLayoutAsync(() => !expandedBackdrop.Running);
-            await WaitForLoginFrameAsync();
+            waitingForSettled = true; expandedBackdrop.SetPalette(interruptedTarget);
+            await settledReady.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
             if (rendered.Count < 4 || stale != 0 || expandedQueueFade.RenderedPalette != expandedBackdrop.Target)
                 throw new InvalidOperationException($"Queue edge fades did not follow the live background palette: intermediate={rendered.Count}, stale={stale}");
             if (backdropTextures.Count != 1)
@@ -274,43 +291,65 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException($"Queue edge fades replaced their texture {fadeTextures.Count} times during color animation.");
             if (lastRaster == null || !ReferenceEquals(lastRaster, baseField.GetValue(expandedBackdrop)))
                 throw new InvalidOperationException("Completing the color transition replaced the displayed raster.");
-            var settled = SamplePresentedBackdropPixels();
             for (var i = 0; i < settled.Length; i++)
             {
                 var expected = PlayerGradient.FromPalette(expandedBackdrop.Target).Sample((i + .5) / settled.Length);
                 if (Math.Abs(settled[i].R - expected.X) > 2 || Math.Abs(settled[i].G - expected.Y) > 2 || Math.Abs(settled[i].B - expected.Z) > 2)
-                    throw new InvalidOperationException("Settled backdrop pixels differ from the transition target.");
+                    throw new InvalidOperationException($"Settled backdrop pixels differ from the transition target: sample={i}, expected={expected}, presented={settled[i]}, current={expandedBackdrop.CurrentGradient}, target={expandedBackdrop.Target}, bounds={expandedBackdrop.Bounds}, queue={expandedQueueFade.Bounds}.");
             }
             if (pixelMismatch != 0)
                 throw new InvalidOperationException($"Rendered backdrop pixels disagreed with the displayed transition in {pixelMismatch} samples.");
             if (nativeMismatch != null)
                 throw new InvalidOperationException("Presented background differed from the animation: " + nativeMismatch);
+            if (nativeSupported && nativeStages.Count < 3)
+                throw new InvalidOperationException("Native palette probe did not capture multiple intermediate frames after the interruption.");
         }
         finally
         {
-            Window.FrameRendered -= Sample;
+            WindowPresentation.FramePresented(Window) -= Sample;
             expandedBackdrop.SetPalette(original);
             await WaitForLikedLayoutAsync(() => !expandedBackdrop.Running);
             await WaitForLoginFrameAsync();
         }
-        Console.WriteLine($"EXPANDED_QUEUE_PALETTE_OK: presented and GPU-rendered backdrop/edge pixels match intermediate/settled colors and an interrupted transition; retained images: backdrop={backdropTextures.Count}, edges={fadeTextures.Count}, color frames={rendered.Count}");
+        Console.WriteLine($"EXPANDED_QUEUE_PALETTE_OK: presented and GPU-rendered backdrop/edge pixels match intermediate/settled colors and an interrupted transition; native={nativeSupported}, retained images: backdrop={backdropTextures.Count}, edges={fadeTextures.Count}, color frames={rendered.Count}");
     }
 
     private Color[] SamplePresentedBackdropPixels()
     {
-        var surface = typeof(Window).GetField("_retainedFrameSurface", System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.NonPublic)!.GetValue(Window) as IRenderSurface
-            ?? throw new InvalidOperationException("The fullscreen window has no retained frame surface.");
-        var pixels = new byte[surface.PixelWidth * surface.PixelHeight * 4];
-        if (!Window.GraphicsFactory.TryReadPixels(surface, pixels, surface.PixelWidth * 4))
-            throw new InvalidOperationException("Could not read the presented fullscreen frame.");
         var result = new Color[5];
-        for (var i = 0; i < result.Length; i++)
+        var bounds = expandedBackdrop.Bounds;
+        var y = Math.Min(bounds.Bottom, Window.ClientSize.Height) - 8 / Window.DpiScale;
+        if (OperatingSystem.IsLinux())
         {
-            var x = Math.Min(surface.PixelWidth - 1, (int)((i + .5) / result.Length * surface.PixelWidth));
-            var offset = ((surface.PixelHeight - 8) * surface.PixelWidth + x) * 4;
-            result[i] = Color.FromRgb(pixels[offset + 2], pixels[offset + 1], pixels[offset]);
+            var display = XOpenDisplay(0);
+            if (display == 0) throw new InvalidOperationException("No X11 display for presented palette verification.");
+            try
+            {
+                for (var i = 0; i < result.Length; i++)
+                {
+                    var pixel = ReadNativeChatVideoPixel(display, new Point(bounds.X + (i + .5) / result.Length * bounds.Width, y));
+                    result[i] = Color.FromRgb((byte)(pixel >> 16), (byte)(pixel >> 8), (byte)pixel);
+                }
+            }
+            finally { XCloseDisplay(display); }
         }
+        else if (OperatingSystem.IsWindows())
+        {
+            if (ProbeDwmFlush() < 0) throw new InvalidOperationException("Could not synchronize the presented palette frame.");
+            var dc = ProbeGetDC(0);
+            try
+            {
+                for (var i = 0; i < result.Length; i++)
+                {
+                    var point = Window.ClientToScreen(new Point(bounds.X + (i + .5) / result.Length * bounds.Width, y));
+                    var pixel = ProbeGetPixel(dc, (int)Math.Round(point.X), (int)Math.Round(point.Y));
+                    if (pixel == uint.MaxValue) throw new InvalidOperationException("The presented palette sample is outside the visible window.");
+                    result[i] = Color.FromRgb((byte)pixel, (byte)(pixel >> 8), (byte)(pixel >> 16));
+                }
+            }
+            finally { ProbeReleaseDC(0, dc); }
+        }
+        else throw new PlatformNotSupportedException("Native palette readback is implemented for X11 and Windows; GPU color checks remain available on other platforms.");
         return result;
     }
 
@@ -320,6 +359,7 @@ internal sealed partial class MainWindow
         var width = (int)Math.Ceiling(bounds.Width * Window.DpiScale);
         using var rendering = Window.GraphicsFactory.AcquireBackgroundRenderScope();
         using var surface = Window.GraphicsFactory.CreateSurface(RenderSurfaceDescriptor.Offscreen(width, 1, Window.DpiScale));
+        using var viewport = WindowPresentation.CaptureViewport(surface);
         using var context = Window.GraphicsFactory.CreateContext(surface);
         context.BeginFrame(surface);
         context.Translate(-bounds.X, -bounds.Y);

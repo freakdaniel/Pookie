@@ -36,7 +36,7 @@ internal sealed partial class MainWindow
                 }
                 if (Environment.GetEnvironmentVariable("POOKIE_WIDGET_REAL_ONLY") == "1") { await VerifyShareWidgetNativeAsync(transport.Playlist.Tracks[0]); return; }
                 if (Environment.GetEnvironmentVariable("POOKIE_SHARE_FUNCTIONAL_ONLY") == "1")
-                    shareWidgetPreview.BrowserFactory = events => { var browser = new WidgetBrowserFixture(events); widgetBrowsers.Add(browser); return browser; };
+                    PrepareShareWidgetFixture();
                 else await VerifyShareGlassAsync(transport.Playlist.Tracks[0]);
                 await VerifySharePanelAsync(transport.Playlist.Tracks[0], LibraryData.FromPlaylist(transport.Playlist));
                 return;
@@ -74,8 +74,8 @@ internal sealed partial class MainWindow
             if (pageItems[collectionTrackList].DataCount != 1 || activeCollection?.Items.Length != 12)
                 throw new InvalidOperationException("Playlist filter changed source tracks.");
             SetQueue(activeCollection!.Items[9].Track!, 9);
-            if (playbackQueue.Snapshot.Source.Count != 12 || playbackQueue.Current?.Track.Id != 9009)
-                throw new InvalidOperationException("Filtered track did not retain the full playlist queue.");
+            if (playbackQueue.Snapshot.Source.Count != 1 || playbackQueue.Current?.Track.Id != 9009 || playbackQueue.Current.SourceIndex != 9)
+                throw new InvalidOperationException("Filtered playlist playback did not keep the displayed result and its original occurrence.");
             collectionFilter.Text = "";
             await LoadFollowingAsync();
             var follow = artistFollowButtons.Single(entry => entry.User()?.Id == 7 && entry.Button.FindVisualRoot() == Window).Button;

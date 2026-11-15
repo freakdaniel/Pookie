@@ -8,12 +8,12 @@ namespace Pookie.App;
 // separator at the same horizontal position when it reaches the viewport edge.
 internal sealed class ChatDateLayer : Panel
 {
-    private readonly Border badge;
+    private readonly GlassCard badge;
     private readonly DispatcherTimer idle = new(TimeSpan.FromMilliseconds(1100));
     private readonly AnimationClock fade = new(TimeSpan.FromMilliseconds(180), Easing.Linear);
     private bool active, pinned;
     private double from, target, center, top;
-    internal ChatDateLayer(Border badge)
+    internal ChatDateLayer(GlassCard badge)
     {
         this.badge = badge; Add(badge); IsHitTestVisible = false;
         badge.Opacity = 0; badge.IsVisible = false;

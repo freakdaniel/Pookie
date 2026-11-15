@@ -32,6 +32,7 @@ internal sealed class ChatProfileBackdrop : GlassCard
         }
     }
     internal bool Animating => reveal.IsRunning;
+    internal int Rasterizations { get; private set; }
     internal PlayerPalette Target => target.ToPalette();
 
     internal ChatProfileBackdrop(Color surface) : base(surface)
@@ -61,6 +62,7 @@ internal sealed class ChatProfileBackdrop : GlassCard
         {
             ClearRaster(); factory = graphics;
             raster = new WriteableBitmap(width, Rows, clear: false, hasAlpha: true);
+            Rasterizations++;
             image = OperatingSystem.IsWindows() ? BitmapImage.CreatePremultipliedView(graphics, raster) : BitmapImage.Create(graphics, raster);
             noise = new float[width * Rows];
             alpha = new byte[width * Rows];

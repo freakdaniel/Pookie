@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
         {
             if (view.LibraryTrack == null)
             {
-                view.LibraryTrack = CreateLibraryTrackRow();
+                view.LibraryTrack = CreatePooledLibraryTrackRow();
                 view.LibraryTrackHost.Children(view.LibraryTrack.Root);
             }
             BindLibraryTrackRow(view.LibraryTrack, libraryTrack);

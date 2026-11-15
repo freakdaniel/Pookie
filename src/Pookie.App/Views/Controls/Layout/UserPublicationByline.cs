@@ -8,7 +8,7 @@ internal sealed class UserPublicationByline : Panel
 {
     private readonly TextBlock author, actor, date;
     private readonly Image repeat;
-    private readonly bool repost;
+    private bool repost;
     private double authorWidth, actorWidth, dateWidth;
 
     internal UserPublicationByline(TextBlock author, TextBlock actor, TextBlock date, bool repost)
@@ -18,6 +18,13 @@ internal sealed class UserPublicationByline : Panel
         Height = 18; ClipToBounds = true;
         Add(author); Add(repeat); Add(actor); Add(date);
         repeat.IsVisible = actor.IsVisible = repost;
+    }
+
+    internal void Bind(string actorName, string eventDate, bool isRepost)
+    {
+        actor.Text = actorName; date.Text = eventDate; repost = isRepost;
+        repeat.IsVisible = actor.IsVisible = repost;
+        InvalidateMeasure();
     }
 
     protected override Size MeasureContent(Size availableSize)

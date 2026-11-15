@@ -37,9 +37,13 @@ internal sealed partial class MainWindow
                 if (version != playbackQueue.SourceVersion) throw new InvalidOperationException("Editing the filter replaced a playing queue.");
                 AssertSource([2, 4, 5], 3);
                 await ClickFilteredTrackAsync(mode, collection: false, 4);
-                await WaitForLikedLayoutAsync(() => playbackQueue.SourceVersion != version && audioReady);
-                AssertSource([1, 2, 3, 4, 5], 3);
-                if (playbackQueue.Context?.Filter != null) throw new InvalidOperationException("Cleared library filter was retained on reselection.");
+                await WaitForLikedLayoutAsync(() => !isPlaying.Value);
+                if (version != playbackQueue.SourceVersion) throw new InvalidOperationException("Pausing the active recording after a filter edit replaced its queue.");
+                AssertSource([2, 4, 5], 3);
+                await ClickFilteredTrackAsync(mode, collection: false, 5);
+                await WaitForLikedLayoutAsync(() => current?.Id == 5 && audioReady);
+                AssertSource([1, 2, 3, 4, 5], 4);
+                if (playbackQueue.Context?.Filter != null) throw new InvalidOperationException("A different track kept the previous filter.");
                 if (mode == TrackViewMode.Waveform)
                 {
                     likedFilter.Text = "T-Fest";
@@ -69,7 +73,7 @@ internal sealed partial class MainWindow
                 if (mode == TrackViewMode.Waveform)
                 {
                     await SeekCollectionTrackAsync(data[1], 4, .25);
-                    AssertSource([2, 4, 2], 4);
+                    AssertSource([2, 4, 2], 1);
                 }
                 playbackQueue.SetRepeat(RepeatMode.Off);
                 var version = playbackQueue.SourceVersion;
@@ -101,7 +105,7 @@ internal sealed partial class MainWindow
             await SkipAsync(1);
             if (calls != 7 || current?.Id != 4 || playbackQueue.Current?.SourceIndex != 7 || playbackQueue.Context?.Filter != "T-Fest")
                 throw new InvalidOperationException("Filtered pagination stopped early or followed the newly visible page/filter.");
-            Console.WriteLine("FILTERED_QUEUE_UI_OK: real play clicks in all three library/playlist views, original duplicate positions, next/previous, seek, changed/empty filters, repeat, and seven-page continuation after navigation");
+            Console.WriteLine("FILTERED_QUEUE_UI_OK: all three views, filtered source for a different recording, global pause/seek without source changes, original duplicate positions, next/previous, changed/empty filters, repeat and seven-page continuation after navigation");
         }
         finally { player = previousPlayer; queueLoader = previousLoader; }
 

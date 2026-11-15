@@ -6,21 +6,26 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private sealed record UserPlaylistActionView(LibraryItem Item, StackPanel Root, Button Like, Button Repost,
-        Image Heart, Image Repeat, Button Queue);
+    private sealed record UserPlaylistActionView(StackPanel Root, Button Like, Button Repost,
+        Image Heart, Image Repeat, Button Queue)
+    {
+        internal required LibraryItem Item { get; set; }
+    }
     private readonly List<UserPlaylistActionView> userPlaylistActionViews = [];
 
-    private FrameworkElement UserPlaylistActions(LibraryItem item, List<UserPlaylistActionView>? views = null, int size = 40)
+    private FrameworkElement UserPlaylistActions(LibraryItem item, List<UserPlaylistActionView>? views = null, int size = 40,
+        Func<LibraryItem?>? currentItem = null)
     {
+        LibraryItem? Current() => currentItem == null ? item : currentItem();
         var heart = Icons.View("heart", 18, TrackButtons.OnSurface);
         var repeat = Icons.View("repeat", 20, TrackButtons.OnSurface);
-        var like = TrackButtons.Icon(heart, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, false)), TrackButtons.Glass, size);
-        var repost = TrackButtons.Icon(repeat, () => Run(() => TogglePlaylistActionAsync(item.Playlist!, true)), TrackButtons.Glass, size);
+        var like = TrackButtons.Icon(heart, () => { if (Current() is { Playlist: { } playlist }) Run(() => TogglePlaylistActionAsync(playlist, false)); }, TrackButtons.Glass, size);
+        var repost = TrackButtons.Icon(repeat, () => { if (Current() is { Playlist: { } playlist }) Run(() => TogglePlaylistActionAsync(playlist, true)); }, TrackButtons.Glass, size);
         var queue = TrackButtons.Icon(Icons.View("queue", 20, TrackButtons.OnSurface),
-            () => Run(() => EnqueueUserPlaylistAsync(item)), TrackButtons.Glass, size).Hint("Добавить в очередь");
+            () => { if (Current() is { } value) Run(() => EnqueueUserPlaylistAsync(value)); }, TrackButtons.Glass, size).Hint("Добавить в очередь");
         var root = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Height(size).Left()
-            .Children(TrackButtons.Connected(like, repost), TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => OpenShare(item), TrackButtons.Glass, size).Hint("Поделиться"), queue);
-        (views ?? userPlaylistActionViews).Add(new(item, root, like, repost, heart, repeat, queue));
+            .Children(TrackButtons.Connected(like, repost), TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (Current() is { } value) OpenShare(value); }, TrackButtons.Glass, size).Hint("Поделиться"), queue);
+        (views ?? userPlaylistActionViews).Add(new(root, like, repost, heart, repeat, queue) { Item = item });
         RefreshUserPlaylistActions();
         return root;
     }
@@ -45,13 +50,5 @@ internal sealed partial class MainWindow
         }
     }
 
-    private async Task EnqueueUserPlaylistAsync(LibraryItem item)
-    {
-        var session = api.Session;
-        var detail = collectionDetails.GetValueOrDefault(item.Key) ?? await api.GetCollectionDetailAsync(item, lifetime.Token);
-        if (disposed || api.Session != session) return;
-        collectionDetails[item.Key] = detail;
-        foreach (var track in detail.Tracks.Tracks) playbackQueue.Enqueue(track, false);
-        RefreshQueue(); status.Value = "Треки добавлены в очередь";
-    }
+    private Task EnqueueUserPlaylistAsync(LibraryItem item) => EnqueueLibraryCollectionAsync(item);
 }

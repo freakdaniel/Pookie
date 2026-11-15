@@ -79,6 +79,8 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Login screen did not cover the client area");
             if (loginButton.ActualWidth < 300 || loginButton.ActualHeight < 50)
                 throw new InvalidOperationException("Login action was not arranged at its intended size");
+            if (loginButton.StyleName != TrackButtons.Glass || loginButton.CornerRadius != loginButton.Height / 2)
+                throw new InvalidOperationException("Login action lost its pill glass styling.");
             VerifyLoginComposition();
             await VerifyLoadingSpinnerAsync();
             CaptureUiPreview("login");

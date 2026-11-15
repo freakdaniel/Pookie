@@ -13,12 +13,15 @@ internal sealed partial class MainWindow
         {
             timer.Stop();
             var fixture = new FeedFixture(); api.Session = new("fixture", "fixture-token", "Test"); api.BrowserTransport = fixture;
+            var performance = Environment.GetEnvironmentVariable("POOKIE_FEED_SCROLL_PERF") == "1";
+            if (performance) fixture.Tracks = fixture.Tracks.Select(track => track with
+            { Visuals = new(true, [new("https://i1.sndcdn.com/feed-fixture-art.jpg")]) }).ToArray();
             me = new() { Id = 42, Username = "Мой профиль" }; signedIn.Value = true;
             var art = TrackArtFixture();
             collectionImages["https://i1.sndcdn.com/feed-playlist.jpg"] = ImageSource.FromBytes(ArtworkFixtureBitmap(184));
             foreach (var track in fixture.Tracks)
             {
-                libraryCoverCache[track.Id] = ImageSource.FromBytes(ArtworkFixtureBitmap(184));
+                libraryCoverCache[track.Id] = performance ? await Task.Run(() => PrepareImage(ArtworkFixtureBitmap(500), 500)) : ImageSource.FromBytes(ArtworkFixtureBitmap(184));
                 if (track.WaveformUrl != null) waveformRequests[track.WaveformUrl] = Task.FromResult<float[]?>(Enumerable.Range(0, 240).Select(i => (float)(.3 + .6 * Math.Abs(Math.Sin(i * .3)))).ToArray());
                 if (track.TrackArtUrl != null) trackArtRequests[track.TrackArtUrl] = Task.FromResult<ImageSource?>(art);
             }
@@ -27,6 +30,12 @@ internal sealed partial class MainWindow
             await ShowWorkspaceAsync();
             await OpenFeedAsync();
             await WaitForLikedLayoutAsync(() => feedState?.Entries.Length == 30 && feedViews.Values.Any(view => view.Track?.Cover.ActualWidth > 100) && shellPageScroll.IsReady);
+            if (performance)
+            {
+                await MeasureScrollCaseAsync("feed-Waveform-art");
+                await VerifyScrollRasterReuseAsync(shellScroll, 0, SmoothScroll.Maximum(shellScroll) - 1);
+                Console.WriteLine("FEED_SCROLL_PERF_OK"); return;
+            }
             if (feedViews.Count > 15 || !feedSidebar.IsVisible || !feedViews.Values.Any(view => view.Entry.IsRepost) || feedSidebarRows.Count != 1)
                 throw new InvalidOperationException("Feed did not virtualize publications or show the responsive sidebar.");
             var recentSection = feedSidebar.Children.OfType<StackPanel>().Last();
@@ -84,6 +93,7 @@ internal sealed partial class MainWindow
             shellScroll.SetScrollOffsets(0, 0);
             await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && shellScroll.VerticalOffset < .5 && feedFilters.Bounds.Y > ShellHeader.HeaderHeight);
             await WaitForLoginFrameAsync(); CaptureUiPreview("feed-narrow");
+            await VerifyFeedRecyclingAsync(fixture);
             // No new page can overwrite a route selected while a refresh is pending.
             fixture.Hold = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var retained = feedState;
@@ -100,6 +110,14 @@ internal sealed partial class MainWindow
             fixture.Fail = false; await OpenFeedAsync(true);
             SetFeedReposts(false); feedState = feedState! with { Entries = feedState.Entries.Where(entry => entry.IsRepost).ToArray(), Cursor = null }; RenderFeed();
             if (!feedEmpty.IsVisible) throw new InvalidOperationException("Filtered empty feed has no explanation.");
+            var retainedRows = feedPublicationPool.Values.Select(view => view.Track).OfType<LikedTrackRow>().ToArray();
+            var retainedPreviews = feedPublicationPool.Values.SelectMany(view => view.Preview).ToArray();
+            DisposeFeed();
+            var raster = typeof(TrackWaveform).GetField("raster", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            if (feedViews.Count != 0 || feedPublicationPool.Count != 0 || feedPlaylistActions.Count != 0 ||
+                retainedRows.Any(row => likedRows.ContainsKey(row.Root) || raster.GetValue(row.Waveform) != null) ||
+                retainedPreviews.Any(compactTrackRows.Contains))
+                throw new InvalidOperationException("Disposing the feed retained pooled controls/render resources.");
             Console.WriteLine("FEED_UI_OK: virtualized shared track/playlist publications, actor/repost/date, custom art, sidebar, responsive widths, filtering, pagination/dedup, history scroll and stale response isolation");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; CaptureUiPreview("feed-failure"); Console.Error.WriteLine("FEED_UI_FAILED: " + error); }
@@ -111,6 +129,8 @@ internal sealed partial class MainWindow
         private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
         internal TaskCompletionSource? Hold;
         internal bool Fail;
+        internal readonly Dictionary<long, Task<SoundCloudPlaylist>> Details = [];
+        internal int DetailReads;
         internal SoundCloudTrack[] Tracks = Enumerable.Range(0, 40).Select(i => new SoundCloudTrack
         {
             Id = 64000 + i, Title = i % 2 == 0 ? "Всё ещё звучит — " + (i + 1) : "Где-то между ночью и утром", Duration = 174000,
@@ -121,6 +141,8 @@ internal sealed partial class MainWindow
         }).ToArray();
         public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken token = default)
         {
+            if (uri.AbsolutePath.StartsWith("/playlists/") && long.TryParse(uri.AbsolutePath.Split('/')[^1], out var id) && Details.TryGetValue(id, out var detail))
+            { DetailReads++; return JsonSerializer.SerializeToDocument(await detail, Json); }
             if (uri.AbsolutePath == "/stream")
             {
                 if (Fail) throw new SoundCloudException("Не удалось обновить ленту");

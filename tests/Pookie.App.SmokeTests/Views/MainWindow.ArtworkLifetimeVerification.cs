@@ -49,6 +49,7 @@ internal sealed partial class MainWindow
             VerifyOffscreenTextGpuLifetime();
             await VerifyGlassGpuLifetimeAsync();
             await VerifyAnimatedIconLifetimeAsync();
+            await VerifyChatShutdownOwnershipAsync();
             Console.WriteLine("ARTWORK_LIFETIME_OK: removed sidebar cards/pixels collect; live skeletons remain registered");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("ARTWORK_LIFETIME_FAILED: " + error); }

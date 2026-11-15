@@ -6,10 +6,12 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    // A new foreground decoder waits only for the previous viewer close; the
+    // account cleanup owner separately retains every older close/start operation.
+    private Task chatVideoClosing = Task.CompletedTask;
     private readonly ObservableValue<bool> chatVideoOpen = new(false);
     private readonly DispatcherTimer chatVideoTimer = new(TimeSpan.FromMilliseconds(33));
     private ChatVideoSession? chatVideoSession;
-    private Task chatVideoClosing = Task.CompletedTask;
     private WriteableBitmap? chatVideoBitmap;
     private long chatVideoVersion, chatVideoGeneration;
     private Image chatVideoImage = null!, chatVideoPlayIcon = null!, chatVideoMuteIcon = null!;
@@ -25,13 +27,16 @@ internal sealed partial class MainWindow
     private bool chatVideoShowingImage;
     private UIElement? chatVideoReturnFocus;
     private bool chatVideoReturnFocusKeyboard;
-    private List<(string Id, int Index)> ChatVideoEntries() => chatMessageItems.SelectMany(item =>
+    private long chatImagePreviewRequest;
+    private readonly SemaphoreSlim chatImagePreviewGate = new(1, 1);
+    private List<(string Id, int Index)> ChatViewerEntries() => chatMessageItems.SelectMany(item =>
         (CachedChatMedia(item.Message)?.Attachments ?? []).Select((file, index) => (file, index))
-            .Where(pair => !pair.file.AsFile && pair.file.MediaType.StartsWith("video/", StringComparison.Ordinal))
+            .Where(pair => !pair.file.AsFile && (pair.file.MediaType.StartsWith("video/", StringComparison.Ordinal) ||
+                pair.file.MediaType.StartsWith("image/", StringComparison.Ordinal)))
             .Select(pair => (item.Id, pair.index))).ToList();
     private async Task NavigateChatVideoAsync(int direction)
     {
-        var entries = ChatVideoEntries(); var index = chatVideoCurrent is { } current ? entries.IndexOf(current) : -1;
+        var entries = ChatViewerEntries(); var index = chatVideoCurrent is { } current ? entries.IndexOf(current) : -1;
         if (index >= 0 && index + direction >= 0 && index + direction < entries.Count)
         { var entry = entries[index + direction]; await ActivateChatAttachmentAsync(entry.Id, entry.Index); }
     }
@@ -95,20 +100,61 @@ internal sealed partial class MainWindow
 
     private async Task ActivateChatAttachmentAsync(string messageId, int index)
     {
+        var revision = chatRevision;
         var message = chatMessageItems.FirstOrDefault(m => m.Id == messageId)?.Message; var peer = chatRecipient?.Id;
         if (message == null || peer == null) return;
         if (CachedChatMedia(message) == null && !await EnsureChatMediaAsync(message, peer.Value)) return;
-        if (chatRecipient?.Id != peer || CachedChatMedia(message) is not { } package || index < 0 || index >= package.Attachments.Length) return;
+        if (disposed || chatClosing || page.Value != Page.Chats || chatRevision != revision || chatRecipient?.Id != peer ||
+            CachedChatMedia(message) is not { } package || index < 0 || index >= package.Attachments.Length) return;
         var file = package.Attachments[index];
         if (!file.AsFile && file.MediaType.StartsWith("video/", StringComparison.Ordinal))
         {
             await OpenChatVideoAsync(file, messageId, index);
         }
+        else if (!file.AsFile && file.MediaType.StartsWith("image/", StringComparison.Ordinal))
+            await TrackChatOperation(OpenChatImageAsync(file, messageId, index));
         else if(file.Voice!=null) await ActivateChatVoiceMessageAsync(messageId,index);
         else await SaveChatAttachmentAsync(messageId, index);
     }
-    private async Task OpenChatVideoAsync(ChatAttachment file, string messageId, int index)
+    private async Task OpenChatImageAsync(ChatAttachment file, string messageId, int index)
     {
+        var revision = chatRevision; var request = ++chatImagePreviewRequest;
+        var token = ChatReadToken();
+        ImageSource? source;
+        await chatImagePreviewGate.WaitAsync(token);
+        try
+        {
+            if (request != chatImagePreviewRequest) return;
+            // Cache retirement can clear the package during an account change.
+            // Decode our own bytes, and serialize full-resolution decodes.
+            var encoded = file.Data.ToArray();
+            try { source = await Task.Run(() => PrepareChatImage(encoded, 8192, 8192), token); }
+            finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(encoded); }
+        }
+        finally { chatImagePreviewGate.Release(); }
+        if (disposed || chatClosing || token.IsCancellationRequested || chatRevision != revision ||
+            request != chatImagePreviewRequest || page.Value != Page.Chats) return;
+        if (source == null) { chatThreadStatus.Value = "Не удалось открыть изображение."; return; }
+        var row = ChatRows.FirstOrDefault(row => row.Bound && row.Message?.Id == messageId);
+        UIElement? trigger = index >= 0 && row != null && index < row.Attachments.Children.Count
+            ? row.Attachments.Children[index].FindVisualChild<ChatPhotoFrame>() as ChatPhotoFrame : null;
+        // The thumbnail may have been recycled while the original was decoded.
+        OpenArtworkPreview(source, file.Name, trigger ?? chatInput);
+        chatVideoCurrent = (messageId, index);
+        RefreshChatViewerNavigation();
+    }
+    private void RefreshChatViewerNavigation()
+    {
+        var entries = ChatViewerEntries(); var selected = chatVideoCurrent is { } current ? entries.IndexOf(current) : -1;
+        chatVideoPrevious.IsVisible = selected > 0;
+        chatVideoNext.IsVisible = selected >= 0 && selected < entries.Count - 1;
+    }
+    private Task OpenChatVideoAsync(ChatAttachment file, string messageId, int index) =>
+        TrackChatOperation(OpenChatVideoCoreAsync(file, messageId, index));
+
+    private async Task OpenChatVideoCoreAsync(ChatAttachment file, string messageId, int index)
+    {
+        if (disposed || chatClosing) return;
         await StopChatVoicePlaybackAsync();
         if(chatVoiceRecorder is {Recording:true,Paused:false})chatVoiceRecorder.Pause();
         var message = chatMessageItems.FirstOrDefault(item => item.Id == messageId)?.Message;
@@ -121,14 +167,14 @@ internal sealed partial class MainWindow
         if (poster == null && file.Video is { Valid: true } info) poster = ImageSource.FromBgraPixels(info.ThumbWidth, info.ThumbHeight, info.Pixels);
         var replacingVideo = chatVideoOpen.Value;
         CloseChatVideo(true, replacing: true);
+        var previousClosing = chatVideoClosing;
         chatVideoShowingImage = false; chatVideoReturnFocus = null;
         chatVideoLayout.ImageMode = false; chatVideoControls.IsVisible = true;
         if (!replacingVideo) SetChatVideoExpanded(false, immediate: true);
         RevealChatVideoControls(); var generation = chatVideoGeneration;
         chatVideoImage.Source = poster;
         chatVideoCurrent = (messageId, index);
-        var entries = ChatVideoEntries(); var selected = entries.IndexOf((messageId, index));
-        chatVideoPrevious.IsVisible = selected > 0; chatVideoNext.IsVisible = selected >= 0 && selected < entries.Count - 1;
+        RefreshChatViewerNavigation();
         chatVideoTime.Text = "0:00"; chatVideoRemaining.Text = "−0:00"; chatVideoSeek.Value = 0; SetChatVideoMuted(false);
         chatVideoTitle.Text = file.Name; chatVideoStatus.Text = ""; chatVideoOpen.Value = true;
         _ = chatVideoSurface.SetOpen(true);
@@ -138,12 +184,14 @@ internal sealed partial class MainWindow
         var fadingMusic = SuspendMusicForChatVideo();
         try
         {
-            await fadingMusic;
+            await Task.WhenAll(previousClosing, fadingMusic);
             if (disposed || generation != chatVideoGeneration || !chatVideoOpen.Value) return;
-            var session = await ChatVideoSession.StartAsync(file.Data, Environment.GetEnvironmentVariable("POOKIE_VIDEO_SILENT") == "1");
-            if (disposed || generation != chatVideoGeneration || !chatVideoOpen.Value) { await session.DisposeAsync(); return; }
+            using var startup = StartOwnedChatSession(file.Data, Environment.GetEnvironmentVariable("POOKIE_VIDEO_SILENT") == "1");
+            await startup.Ready;
+            if (disposed || chatClosing || generation != chatVideoGeneration || !chatVideoOpen.Value || !startup.TryTake(out var session)) return;
             chatVideoSession = session; session.Volume((int)Math.Round(chatVideoVolume.Value)); SetChatVideoMuted(chatVideoVolume.Value == 0); session.Rate(chatVideoRate); chatVideoStarted = DateTimeOffset.UtcNow; chatVideoTimer.Start();
         }
+        catch (OperationCanceledException) when (disposed || chatClosing || generation != chatVideoGeneration) { }
         catch (Exception error)
         {
             ChatVideoRuntime.LogFailure(error);
@@ -169,6 +217,7 @@ internal sealed partial class MainWindow
     }
     private void CloseChatVideo(bool immediate = false, bool replacing = false)
     {
+        ++chatImagePreviewRequest;
         var wasOpen = chatVideoOpen.Value;
         var wasImage = chatVideoShowingImage;
         var returnFocus = chatVideoReturnFocus;
@@ -182,18 +231,30 @@ internal sealed partial class MainWindow
         // Replacing the decoder must not hide/reset the presentation surface.
         // Reopening during a close continues the current fade in the other direction.
         var hiding = replacing ? Task.CompletedTask : chatVideoSurface?.SetOpen(false, immediate || disposed || !wasOpen) ?? Task.CompletedTask;
-        var releasing = session?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+        var releasing = session == null ? Task.CompletedTask : DisposeChatResourceAsync(session);
         if (disposed && !wasImage) RestoreMusicAfterChatVideo();
-        async Task Finish()
+        // The pixel buffer owns managed, lock-protected memory; native GPU image
+        // views remain owned by the UI Image/renderer. Once the surface is hidden
+        // (or replaced), retire the old pixels/decoder without a dispatcher pump.
+        async Task Retire()
+        {
+            await hiding.ConfigureAwait(false);
+            bitmap?.Dispose();
+            await releasing.ConfigureAwait(false);
+        }
+        var retirement = Retire();
+        TrackChatCleanup(retirement);
+        async Task FinishPresentation()
         {
             await hiding;
             if (generation == chatVideoGeneration && chatVideoImage != null) chatVideoImage.Source = null;
-            bitmap?.Dispose();
-            await releasing;
-            if (!replacing && generation == chatVideoGeneration && !disposed && !wasImage) RestoreMusicAfterChatVideo();
+            await retirement;
+            if (!replacing && generation == chatVideoGeneration && !disposed && !chatClosing && !wasImage) RestoreMusicAfterChatVideo();
         }
-        chatVideoClosing = Task.WhenAll(chatVideoClosing, Finish());
-        Run(() => chatVideoClosing);
+        var finishing = FinishPresentation();
+        chatVideoClosing = finishing;
+        _ = TrackChatOperation(finishing);
+        Run(() => finishing);
         if (wasOpen && !disposed && !replacing)
         {
             Window.InvalidateVisual();

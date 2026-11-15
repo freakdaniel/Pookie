@@ -7,7 +7,7 @@ namespace Pookie.App;
 internal sealed class ShellHeader : Grid
 {
     internal const double HeaderHeight = 64;
-    internal const double NavigationWidth = 440;
+    internal const double NavigationWidth = 368;
     internal const double NavigationButtonHeight = 40;
     internal const double HistoryButtonSize = 36;
     internal const double AccountButtonSize = 34;
