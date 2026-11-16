@@ -469,7 +469,7 @@ internal sealed partial class MainWindow : IDisposable
 
         try
         {
-            presence?.Clear();
+            // Keep the previous activity until the selected track is ready.
             var stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.StopAsync();
             if (generation != playGeneration || disposed) return;
@@ -540,6 +540,7 @@ internal sealed partial class MainWindow : IDisposable
             {
                 audioPreparing = false;
                 playbackLoading.Value = false;
+                if (!audioReady) presence?.Clear();
                 UpdateSystemMedia();
             }
         }
@@ -732,11 +733,15 @@ internal sealed partial class MainWindow : IDisposable
             var state = player.Poll();
             PollPlaybackHistory(state.Position, state.Playing && !state.Buffering && !paused && !seekDragging && !seeking && pendingSeek == null);
             UpdateSystemMedia(state);
+            // Ended is reported once; advancing also covers subsequent polls
+            // while queue pagination is resolving the next track.
+            if (!state.Ended && !advancing && !state.Buffering)
+                presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
+                    state.Position, state.Duration > 0 ? state.Duration : current.DurationSeconds, state.Playing && !paused, current.User?.PermalinkUrl));
             if (Window.WindowState == WindowState.Minimized)
             {
                 // Keep audio, queue advancement and listening history alive.
                 // Presentation catches up from the next real snapshot on restore.
-                presence?.Update(new(current.Title,current.Author,current.ArtworkUrl ?? current.User?.AvatarUrl,current.PermalinkUrl,state.Position,state.Duration,state.Playing));
                 if (state.Ended && !advancing) { advancing = true; Run(() => SkipAsync(1,naturalEnd:true)); }
                 return;
             }
@@ -759,8 +764,6 @@ internal sealed partial class MainWindow : IDisposable
                 expandedBuffer.SetBuffer(state.BufferedStart, state.BufferedEnd, progress.Maximum);
             }
             SyncExpandedTimeline();
-            presence?.Update(new(current.Title, current.Author, current.ArtworkUrl ?? current.User?.AvatarUrl, current.PermalinkUrl,
-                state.Position, progress.Maximum, state.Playing));
             if (state.Ended && !advancing)
             {
                 advancing = true;

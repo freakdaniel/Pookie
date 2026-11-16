@@ -19,7 +19,8 @@ public sealed class PresenceTransportTests
             await pipe.ConnectAsync(stop); return pipe;
         });
         var now = new DateTime(2026, 11, 11, 0, 0, 0, DateTimeKind.Utc);
-        client.SetPresence(PresenceService.CreatePresence(new("Трек 🎵", "Artist", null, "https://soundcloud.com/artist/song", 5, 20, true), now));
+        client.SetPresence(PresenceService.CreatePresence(new("Трек 🎵", "Artist", null, "https://soundcloud.com/artist/song", 5, 20, true,
+            "https://soundcloud.com/artist"), now));
         client.Initialize(); await server.WaitForConnectionAsync(token);
         var handshake = await PresenceRpcClient.ReadFrameAsync(server, token);
         Assert.Equal(0, handshake.Opcode);
@@ -34,6 +35,15 @@ public sealed class PresenceTransportTests
             Assert.Equal(2, value.GetProperty("status_display_type").GetInt32());
             Assert.Equal(new DateTimeOffset(now.AddSeconds(-5)).ToUnixTimeMilliseconds(), value.GetProperty("timestamps").GetProperty("start").GetInt64());
             Assert.Equal("soundcloud-logo", value.GetProperty("assets").GetProperty("large_image").GetString());
+            Assert.Equal("https://soundcloud.com/artist/song", value.GetProperty("details_url").GetString());
+            Assert.Equal("https://soundcloud.com/artist", value.GetProperty("state_url").GetString());
+            var assets = value.GetProperty("assets");
+            Assert.False(assets.TryGetProperty("large_text", out _));
+            Assert.Equal("https://soundcloud.com/artist/song", assets.GetProperty("large_url").GetString());
+            Assert.Equal("SoundCloud", assets.GetProperty("small_text").GetString());
+            Assert.Equal("https://soundcloud.com", assets.GetProperty("small_url").GetString());
+            Assert.False(assets.TryGetProperty("small_image_text", out _));
+            Assert.False(value.TryGetProperty("buttons", out _));
         }
         await WriteAsync(server, 3, "ping"u8.ToArray(), token);
         while (true)

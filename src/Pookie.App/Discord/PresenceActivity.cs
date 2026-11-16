@@ -9,10 +9,11 @@ internal sealed class PresenceActivity
     public PresenceActivityType Type { get; init; }
     [JsonPropertyName("status_display_type")] public PresenceStatusDisplay StatusDisplay { get; init; }
     public string Details { get; init; } = "";
+    public string? DetailsUrl { get; init; }
     public string State { get; init; } = "";
+    public string? StateUrl { get; init; }
     public PresenceTimestamps? Timestamps { get; init; }
     public PresenceAssets Assets { get; init; } = new();
-    public PresenceButton[]? Buttons { get; init; }
 }
 internal sealed record PresenceTimestamps([property: JsonIgnore] DateTime? Start, [property: JsonIgnore] DateTime? End)
 {
@@ -22,13 +23,10 @@ internal sealed record PresenceTimestamps([property: JsonIgnore] DateTime? Start
 internal sealed class PresenceAssets
 {
     [JsonPropertyName("large_image")] public string LargeImageKey { get; init; } = "";
+    [JsonPropertyName("large_url")] public string? LargeImageUrl { get; init; }
     [JsonPropertyName("small_image")] public string SmallImageKey { get; init; } = "";
-    public string SmallImageText { get; init; } = "";
-}
-internal sealed record PresenceButton
-{
-    public string Label { get; init; } = "";
-    public string Url { get; init; } = "";
+    [JsonPropertyName("small_text")] public string SmallImageText { get; init; } = "";
+    [JsonPropertyName("small_url")] public string? SmallImageUrl { get; init; }
 }
 internal sealed record PresenceHandshake(int V, string ClientId);
 internal sealed record PresenceArguments(int Pid, [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] PresenceActivity? Activity);
