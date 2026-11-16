@@ -22,9 +22,9 @@ internal sealed partial class MainWindow
             shuffle.Value = false; playbackQueue.SetRepeat(RepeatMode.Off); playbackQueue.SetAutoContinue(false);
             foreach (var mode in Enum.GetValues<TrackViewMode>())
             {
-                current = null; likedFilter.Text = "";
+                current = null; likedFilter.Text = ""; await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                 libraryLikes = new(data, null); ShowLibraryTracks();
-                likesMode.Value = mode; likedFilter.Text = " t-fEST ";
+                likesMode.Value = mode; likedFilter.Text = " t-fEST "; await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                 await ClickFilteredTrackAsync(mode, collection: false, 4);
                 await WaitForLikedLayoutAsync(() => current?.Id == 4 && audioReady);
                 AssertSource([2, 4, 5], 3);
@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
                 await SkipAsync(-1);
                 if (current?.Id != 4) throw new InvalidOperationException("Library Previous lost the filtered history.");
                 var version = playbackQueue.SourceVersion;
-                likedFilter.Text = "";
+                likedFilter.Text = ""; await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                 if (version != playbackQueue.SourceVersion) throw new InvalidOperationException("Editing the filter replaced a playing queue.");
                 AssertSource([2, 4, 5], 3);
                 await ClickFilteredTrackAsync(mode, collection: false, 4);
@@ -46,7 +46,7 @@ internal sealed partial class MainWindow
                 if (playbackQueue.Context?.Filter != null) throw new InvalidOperationException("A different track kept the previous filter.");
                 if (mode == TrackViewMode.Waveform)
                 {
-                    likedFilter.Text = "T-Fest";
+                    likedFilter.Text = "T-Fest"; await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                     await SeekLikedTrackAsync(data[3], .25);
                     AssertSource([2, 4, 5], 3);
                 }
@@ -62,7 +62,7 @@ internal sealed partial class MainWindow
             librarySectionTitle.Value = item.Title; RenderLibrarySection();
             foreach (var mode in Enum.GetValues<TrackViewMode>())
             {
-                current = null; collectionMode.Value = mode; collectionFilter.Text = "T-Fest";
+                current = null; collectionMode.Value = mode; collectionFilter.Text = "T-Fest"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
                 RefreshCollectionTracks();
                 await ClickFilteredTrackAsync(mode, collection: true, 2, position: 4);
                 await WaitForLikedLayoutAsync(() => current?.Id == 2 && audioReady);
@@ -77,11 +77,11 @@ internal sealed partial class MainWindow
                 }
                 playbackQueue.SetRepeat(RepeatMode.Off);
                 var version = playbackQueue.SourceVersion;
-                collectionFilter.Text = "";
+                collectionFilter.Text = ""; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
                 if (version != playbackQueue.SourceVersion) throw new InvalidOperationException("Collection filter changed an existing queue.");
                 await PlayDisplayedCollectionAsync();
                 AssertSource([1, 2, 3, 4, 2], 0);
-                collectionFilter.Text = "ничего не найдено";
+                collectionFilter.Text = "ничего не найдено"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
                 await WaitForLoginFrameAsync();
                 version = playbackQueue.SourceVersion;
                 await PlayDisplayedCollectionAsync();

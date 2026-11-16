@@ -23,7 +23,7 @@ internal sealed class HeaderSearchField : ContentControl
     private readonly AnimationClock motion = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1));
     private double emphasis, from, target;
 
-    internal HeaderSearchField(TextBox input, bool compact = false, bool liveGlass = false, Button? shellTrigger = null)
+    internal HeaderSearchField(TextBox input, bool compact = false, bool liveGlass = false, Button? shellTrigger = null, SearchActivityGlyph? activity = null)
     {
         this.input = input;
         Height = compact ? 40 : ShellHeader.NavigationButtonHeight;
@@ -31,7 +31,8 @@ internal sealed class HeaderSearchField : ContentControl
         input.Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(compact ? 13 : 14).Foreground(TrackButtons.OnSurface);
         linkPreview = new LinkPreviewControl().Left().CenterVertical().IsVisible(false);
         linkPreview.FallbackCompleted = () => { linkPreview.IsVisible = false; input.Opacity = 1; };
-        var glyph = Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center();
+        FrameworkElement glyph = activity is { } indicator ? indicator.Center()
+            : Icons.View("magnifying-glass", compact ? 20 : 22, TrackButtons.OnSurface).Center();
         var editor = new Grid().Columns("*").Rows("*").Children(input.CenterVertical(), linkPreview);
         var content = new Grid().Columns(compact ? "20,*" : "24,*").Rows("*").Spacing(compact ? 10 : 12);
         if (shellTrigger != null)

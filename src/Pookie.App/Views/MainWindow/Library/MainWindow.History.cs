@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value, librarySectionRetry.Value,
-        likedFilterText, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilterText, userProfileState, feedState, feedReposts.Value);
+        likedFilter.Text, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilter.Text, userProfileState, feedState, feedReposts.Value);
 
     private ScrollViewer? NavigationScroll() => page.Value == Page.Chats || !shellPageScroll.IsReady ? null : shellScroll;
 
@@ -152,7 +152,7 @@ internal sealed partial class MainWindow
         searchResults = state.SearchResults;
         searchHeading.Value = $"Результаты для «{entry.Route.Search}»";
         RefreshSearchViews();
-        likedFilter.Text = state.Filter;
+        likedFilter.Text = state.Filter; likedFilterDebounce.Flush();
         likedActionError.Value = "";
         ReplaceTracks((entry.Route.Page is Page.Library or Page.LibraryTracks) && libraryLikes != null ? libraryLikes : state.Tracks);
         if (entry.Route.Page == Page.Home) RefreshCachedHome();
@@ -161,7 +161,7 @@ internal sealed partial class MainWindow
         else if (entry.Route.Page == Page.Settings) { settingsSection.Value = entry.Route.SettingsSection; RefreshSettingsControls(); RefreshSettingsData(); }
         else if (IsCollectionPage(entry.Route.Page))
         {
-            RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter;
+            RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; collectionFilterDebounce.Flush();
             librarySectionStatus.Value = state.CollectionStatus;
             librarySectionRetry.Value = state.CollectionRetry;
         }

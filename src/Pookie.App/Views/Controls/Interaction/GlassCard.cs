@@ -21,6 +21,7 @@ internal class GlassCard : ContentControl
     { popupBackdrop?.Unregister(this); popupBackdrop = backdrop; backdrop.Register(this); InvalidateVisual(); }
     internal bool HoverEnabled { get; init; } = true;
     internal bool ShadowEnabled { get; init; } = true;
+    internal bool CacheShadow { get; init; }
     internal Func<bool>? ResizeInProgress { get; init; }
     internal int ReflectionRasterizations => sheen.Rasterizations;
     internal IImage? OpticalImage => popupBackdrop?.OpticalImage(this);
@@ -48,7 +49,7 @@ internal class GlassCard : ContentControl
     protected override void OnRender(IGraphicsContext context)
     {
         if (ShadowEnabled) shadow.Draw(context, Bounds, CornerRadius, (byte)(65 + emphasis * 25) / 90d,
-            cache: ResizeInProgress != null);
+            cache: CacheShadow || ResizeInProgress != null);
         if (popupBackdrop != null && !WindowPresentation.IsRecording(context))
             popupBackdrop.Draw(this, context, presented: false);
         if (popupBackdrop == null)

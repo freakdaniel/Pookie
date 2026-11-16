@@ -108,6 +108,7 @@ internal sealed class PlaylistDialogContent : Panel
         internal RisingTrack(FrameworkElement content)
         {
             Content = content; Padding = new Thickness(0); BorderThickness = 0; CornerRadius = 0; Background = Color.Transparent;
+            content.CacheMode = new BitmapCache();
         }
         internal void Move(double value) { offset = value; InvalidateVisual(); }
         protected override bool TryGetChildTransform(out Matrix3x2 transform)

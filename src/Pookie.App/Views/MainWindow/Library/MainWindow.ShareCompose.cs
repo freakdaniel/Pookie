@@ -123,7 +123,7 @@ internal sealed partial class MainWindow
         var token = shareSearch.Token;
         var query = shareRecipientSearch.Text.Trim();
         var local = chatConversations.Select(c => c.Recipient).Where(u => u.Id != account &&
-            (query.Length == 0 || u.Username.Contains(query, StringComparison.CurrentCultureIgnoreCase))).ToArray();
+            Pookie.App.Playback.TrackFilter.MatchesText(u.Username + " " + u.FullName, query)).ToArray();
         void ShowUsers(IEnumerable<SoundCloudUser> users)
         {
             ClearShareRecipientChoices();

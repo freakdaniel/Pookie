@@ -57,8 +57,9 @@ internal sealed class PlaybackQueue
         Clear(); Context = context with { Filter = TrackFilter.Normalize(context.Filter) }; manual.AddRange(retainedManual);
         // SourceIndex remains the occurrence's position in the original list,
         // including gaps excluded by the filter and duplicate track IDs.
+        var matches = TrackFilter.CreateMatcher(Context.Filter);
         source.AddRange(data.Select((track, index) => (track, index))
-            .Where(item => item.index == selectedIndex || TrackFilter.Matches(item.track, Context.Filter))
+            .Where(item => item.index == selectedIndex || matches(item.track))
             .Select(item => NewEntry(item.track, PlaybackEntryOrigin.Context, item.index)));
         nextSourceIndex = data.Length;
         Current = source.Single(entry => entry.SourceIndex == selectedIndex);
@@ -207,8 +208,9 @@ internal sealed class PlaybackQueue
     internal bool Append(long version, string cursor, TrackPage page)
     {
         if (version != SourceVersion || Context?.NextHref != cursor) return false;
+        var matches = TrackFilter.CreateMatcher(Context.Filter);
         var added = page.Tracks.Select((track, index) => (track, index))
-            .Where(item => TrackFilter.Matches(item.track, Context.Filter))
+            .Where(item => matches(item.track))
             .Select(item => NewEntry(item.track, PlaybackEntryOrigin.Context, nextSourceIndex + item.index)).ToList();
         nextSourceIndex += page.Tracks.Length;
         source.AddRange(added);

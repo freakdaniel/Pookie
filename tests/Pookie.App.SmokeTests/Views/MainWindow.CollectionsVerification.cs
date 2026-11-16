@@ -70,13 +70,13 @@ internal sealed partial class MainWindow
             if (likedPlaylistIds.Contains(11) || !collectionLike.IsEnabled) throw new InvalidOperationException("Playlist unlike did not update.");
             await ToggleCollectionActionAsync(true);
             if (!repostedPlaylistIds.Contains(11) || !transport.LastPlaylistReposted) throw new InvalidOperationException("Playlist repost did not update.");
-            collectionFilter.Text = "Трек 10";
+            collectionFilter.Text = "Трек 10"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
             if (pageItems[collectionTrackList].DataCount != 1 || activeCollection?.Items.Length != 12)
                 throw new InvalidOperationException("Playlist filter changed source tracks.");
             SetQueue(activeCollection!.Items[9].Track!, 9);
             if (playbackQueue.Snapshot.Source.Count != 1 || playbackQueue.Current?.Track.Id != 9009 || playbackQueue.Current.SourceIndex != 9)
                 throw new InvalidOperationException("Filtered playlist playback did not keep the displayed result and its original occurrence.");
-            collectionFilter.Text = "";
+            collectionFilter.Text = ""; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
             await LoadFollowingAsync();
             var follow = artistFollowButtons.Single(entry => entry.User()?.Id == 7 && entry.Button.FindVisualRoot() == Window).Button;
             if (follow.StyleName != TrackButtons.Confirmed || !follow.IsEnabled)
@@ -147,7 +147,7 @@ internal sealed partial class MainWindow
             if (collectionTrackList.ActualHeight < 100 || !collectionDescriptionToggle.IsVisible)
                 throw new InvalidOperationException("Expanded playlist description hid its track list or collapse action.");
             collectionDescription.Text = savedDescription; collectionDescriptionExpanded = false; RefreshCollectionDescription();
-            collectionFilter.Text = "нет совпадений";
+            collectionFilter.Text = "нет совпадений"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
             if (!collectionEmpty.IsVisible || pageItems[collectionTrackList].DataCount != 0) throw new InvalidOperationException("Missing filter results have no empty state.");
             await WaitForLoginFrameAsync();
             if (collectionTrackList.IsVisible) throw new InvalidOperationException("Empty playlist filter still paints retained track rows.");
@@ -156,7 +156,7 @@ internal sealed partial class MainWindow
             // sizes, then filter it out and restore it repeatedly.
             for (var attempt = 0; attempt < 3; attempt++)
             {
-                collectionFilter.Text = "Трек 10";
+                collectionFilter.Text = "Трек 10"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
                 await WaitForLikedLayoutAsync(() => collectionTrackList.IsVisible && !collectionEmpty.IsVisible &&
                     compactTrackRows.Any(row => row.CollectionRow && row.Track?.Id == 9009 && row.Root.ActualWidth > 200));
                 Window.WindowSize = WindowSize.Resizable(attempt % 2 == 0 ? 1000 : 1400, 900, minWidth: 1000, minHeight: 680);
@@ -165,25 +165,31 @@ internal sealed partial class MainWindow
                 if (Math.Abs(filteredRow.Cover.Bounds.X - collectionEmpty.Bounds.X) > 1)
                     throw new InvalidOperationException("Restored playlist result is offset from the empty-state alignment.");
                 var previousListBounds = collectionTrackList.Bounds;
-                collectionFilter.Text = "Трек 100-";
+                collectionFilter.Text = "Трек 100-"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
                 await WaitForLoginFrameAsync();
                 if (collectionTrackList.IsVisible || !collectionEmpty.IsVisible || pageItems[collectionTrackList].DataCount != 0)
                     throw new InvalidOperationException("A removed lone playlist result overlaps the empty state.");
                 VerifyEmptyCollectionPaint(previousListBounds);
             }
-            collectionFilter.Text = "";
+            collectionFilter.Text = ""; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
             await WaitForLikedLayoutAsync(() => collectionTrackList.IsVisible && !collectionEmpty.IsVisible && pageItems[collectionTrackList].DataCount == 12);
             var first = activeCollection!.Items[0].Track!;
             SetQueue(first);
             if (playbackQueue.Context?.Key != item.Key || playbackQueue.Context.Kind != Pookie.App.Playback.PlaybackContextKind.Playlist || playbackQueue.Snapshot.Source.Count != 12)
                 throw new InvalidOperationException("Playlist playback copied another page's queue.");
-            collectionFilter.Text = "Трек";
+            collectionFilter.Text = "Трек"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
             var viewer = CollectionScroll!; viewer.SetScrollOffsets(0, 220);
             await WaitForLoginFrameAsync();
-            var offset = viewer.VerticalOffset;
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
+            // The shell owns the scrollbar. Collapsing the hero can change the
+            // inner list's viewport/offset again after that first frame.
+            var offset = shellScroll.VerticalOffset;
+            if (offset <= 0) throw new InvalidOperationException("The collection navigation fixture did not scroll.");
+            collectionFilter.Text = "Трек "; // Leave before the new debounce commits.
             ShowLibraryTracks(); await MoveNavigationAsync(-1);
-            await WaitForLikedLayoutAsync(() => Math.Abs(CollectionScroll!.VerticalOffset - offset) < 1);
-            if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || collectionFilter.Text != "Трек")
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && Math.Abs(shellScroll.VerticalOffset - offset) < 1);
+            if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || collectionFilter.Text != "Трек " || collectionFilterDebounce.Pending)
                 throw new InvalidOperationException("Back navigation lost playlist presentation.");
             await VerifyPlaylistDialogAsync(first, transport);
             await VerifySharePanelAsync(first, LibraryData.FromPlaylist(transport.Playlist));

@@ -66,7 +66,7 @@ internal sealed partial class MainWindow
         playlistDialog = TrackDialogChrome.MatteDialog(playlistDialogContent, card, playlistPickerFocus, playlistPickerClose,
             () => playlistDialogPages.Animating || playlistPickerLoading.Skeleton.IsVisible, reserveTransitionHeight: true);
         playlistDialog.DismissRequested = ClosePlaylistPicker;
-        playlistDialog.Presented = playlistDialogContent.RevealTrack;
+        playlistDialog.Opened = playlistDialogContent.RevealTrack;
         playlistDialog.Closed = () =>
         {
             playlistPickerClosing = false;

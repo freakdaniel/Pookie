@@ -46,6 +46,8 @@ internal sealed partial class MainWindow
             if (failure != null) throw new InvalidOperationException(failure);
             if (!shareDialog.HasGlassBackdrop || !shareDialog.UsesCachedTransition || shareDialog.BackdropVersion - backdrops != 1)
                 throw new InvalidOperationException("Share did not reuse a single glass backdrop while opening.");
+            if (shareDialog.SnapshotCaptures - captures > 2)
+                throw new InvalidOperationException("Plaque reveal recaptured the full modal during its perspective transition.");
             if (p95 > 33.4 || intervals.Max() > 100)
                 throw new InvalidOperationException("Share opening exceeded the frame budget.");
             if (attempt == 0) CaptureUiPreview("share-glass");

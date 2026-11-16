@@ -20,6 +20,8 @@ internal sealed partial class MainWindow
     private StackPanel likedFilterNotice = null!;
     private TextBlock likedFilterStatus = null!;
     private Button likedFilterRetry = null!;
+    private SearchActivityGlyph likedFilterGlyph = null!;
+    private DebouncedAction likedFilterDebounce = null!;
     private string likedFilterText = "";
     private bool FilteringLikes => page.Value == Page.LibraryTracks && !string.IsNullOrWhiteSpace(likedFilterText);
     private double likedArtworkSize = 176;
@@ -105,13 +107,28 @@ internal sealed partial class MainWindow
             RefreshLikedFilterState();
             if (paginationLoading.Value && page.Value == Page.LibraryTracks) RefreshPaginationSkeletons(true);
         };
-        likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
-            .OnTextChanged(value =>
+        likedFilterDebounce = new(() =>
+        {
+            likedFilterText = likedFilter.Text;
+            if (page.Value == Page.LibraryTracks) { failedPageCursor = null; emptyPageStreak = 0; }
+            RefreshLikedViews();
+        });
+        likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").OnTextChanged(value =>
+        {
+            likedFilterDebounce.Schedule(string.IsNullOrWhiteSpace(value));
+            RefreshLikedFilterState();
+        });
+        likedFilter.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; likedFilterDebounce.Flush(); } });
+        likedFilterGlyph = new SearchActivityGlyph(TrackButtons.OnSurface);
+        page.Changed += () =>
+        {
+            if (page.Value == Page.LibraryTracks) RefreshLikedFilterState();
+            else
             {
-                likedFilterText = value;
-                if (page.Value == Page.LibraryTracks) { failedPageCursor = null; emptyPageStreak = 0; }
-                RefreshLikedViews();
-            });
+                if (likedFilterDebounce.Pending) likedFilterDebounce.Flush();
+                likedFilterGlyph.SetLoading(false);
+            }
+        };
         likedFilterStatus = new TextBlock().Foreground(Muted).FontSize(13).CenterVertical();
         likedFilterRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13),
             RetryLikedFilter, TrackButtons.Text, 32);
@@ -120,7 +137,7 @@ internal sealed partial class MainWindow
         paginationLoading.Changed += RefreshLikedFilterState;
         likesLoadingView.ContentRevealed += RefreshLikedFilterState;
         var tools = TrackViewSwitch(likesMode);
-        var filterField = MaterialSearchField.CreateGlass(likedFilter, liveGlass: true);
+        var filterField = MaterialSearchField.CreateGlass(likedFilter, liveGlass: true, activity: likedFilterGlyph);
         return new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).DockTop().Children(
                 LikedSectionTitle().Column(0),
@@ -156,7 +173,7 @@ internal sealed partial class MainWindow
     {
         if (page.Value != Page.LibraryTracks) return;
         var filter = likedFilterText.Trim();
-        var visible = tracks.Where(track => TrackFilter.Matches(track, filter)).ToArray();
+        var visible = tracks.Where(TrackFilter.CreateMatcher(filter)).ToArray();
         SetPageItems(likedGrid, visible, LoadingRowStyle.Card);
         SetPageItems(likedList, visible, LoadingRowStyle.Waveform);
         SetPageItems(likedCompactList, visible, LoadingRowStyle.Compact);
@@ -172,10 +189,13 @@ internal sealed partial class MainWindow
         var incomplete = FilteringLikes && nextHref != null;
         var failed = incomplete && !paginationLoading.Value &&
             (failedPageCursor == nextHref || loadedPageCursors.Contains(nextHref!));
-        likedFilterNotice.IsVisible = incomplete && !likesLoading;
-        likedFilterStatus.Text = failed ? "Не удалось проверить оставшиеся лайки." : "Ищем среди более ранних лайков…";
-        likedFilterRetry.IsVisible = failed;
-        likedEmpty.Value = !likesLoading && !likesLoadingView.Skeleton.IsVisible && !paginationLoading.Value && !incomplete &&
+        var pending = likedFilterDebounce.Pending;
+        likedFilterGlyph.SetLoading(likesLoading || pending || incomplete && !failed);
+        likedFilterNotice.IsVisible = !likesLoading && failed && !pending;
+        likedFilterStatus.IsVisible = failed && !pending;
+        likedFilterStatus.Text = "Не удалось проверить оставшиеся лайки.";
+        likedFilterRetry.IsVisible = failed && !pending;
+        likedEmpty.Value = !pending && !likesLoading && !likesLoadingView.Skeleton.IsVisible && !paginationLoading.Value && !incomplete &&
             pageItems.TryGetValue(likedList, out var source) && source.DataCount == 0;
     }
 

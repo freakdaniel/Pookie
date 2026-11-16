@@ -31,6 +31,8 @@ internal sealed partial class MainWindow
     private Button collectionAuthorLink = null!, collectionFollow = null!, collectionMore = null!, collectionMixQueue = null!;
     private FrameworkElement collectionSocialActions = null!;
     private TextBox collectionFilter = null!;
+    private DebouncedAction collectionFilterDebounce = null!;
+    private SearchActivityGlyph collectionFilterGlyph = null!;
     private StackPanel collectionDescriptionHost = null!;
     private ScrollViewer collectionDescriptionScroll = null!;
     private TextBlock collectionEmpty = null!;
@@ -151,15 +153,24 @@ internal sealed partial class MainWindow
         collectionGlass = AttachCardGlass(hero);
         var header = collectionHeroShadow = new CardShadow(collectionHeroFrame = new Border().CornerRadius(20).ClipToBounds().BorderThickness(0).Background(Raised).Child(hero))
             .Margin(-12, -8, -12, -16);
-        collectionFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").OnTextChanged(value =>
+        collectionFilterGlyph = new SearchActivityGlyph(TrackButtons.OnSurface);
+        collectionFilterDebounce = new(() =>
         {
-            collectionFilterText = value; RefreshCollectionTracks();
+            collectionFilterText = collectionFilter.Text; RefreshCollectionTracks();
             CollectionScroll?.SetScrollOffsets(0, 0);
+            collectionFilterGlyph.SetLoading(false);
         });
+        collectionFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
+            .OnTextChanged(value =>
+            {
+                collectionFilterDebounce.Schedule(string.IsNullOrWhiteSpace(value));
+                collectionFilterGlyph.SetLoading(collectionFilterDebounce.Pending);
+            });
+        collectionFilter.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; collectionFilterDebounce.Flush(); } });
         collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
         var tools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
             new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
-            TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter, liveGlass: true).Column(2));
+            TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter, liveGlass: true, activity: collectionFilterGlyph).Column(2));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
             .Children(collectionDescriptionScroll,
@@ -203,8 +214,9 @@ internal sealed partial class MainWindow
     {
         if (!playlistCollectionVisible.Value) return;
         var filter = collectionFilterText.Trim();
+        var matches = TrackFilter.CreateMatcher(filter);
         var entries = (activeCollection?.Items ?? []).Select((item, index) => (item.Track, index))
-            .Where(item => item.Track != null && TrackFilter.Matches(item.Track, filter))
+            .Where(item => item.Track != null && matches(item.Track))
             .Select(item => new CollectionTrackEntry(item.Track!, item.index)).ToArray();
         SetPageItems(collectionTrackList, entries, LoadingRowStyle.Compact);
         SetPageItems(collectionTrackCards, entries, LoadingRowStyle.Card);

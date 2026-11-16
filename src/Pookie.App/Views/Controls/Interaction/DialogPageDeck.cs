@@ -88,7 +88,12 @@ internal class DialogPageDeck : Panel
     {
         internal double Offset { get; private set; }
         internal Page(FrameworkElement child)
-        { Content = child; Background = Color.Transparent; BorderThickness = 0; Padding = default; }
+        {
+            Content = child; Background = Color.Transparent; BorderThickness = 0; Padding = default;
+            // Fade/slide the painted page; descendants invalidate this cache
+            // when editors, artwork or other actual content changes.
+            child.CacheMode = new BitmapCache();
+        }
         internal void Move(double value) { Offset = value; InvalidateVisual(); }
         protected override bool TryGetChildTransform(out Matrix3x2 transform)
         { transform = Matrix3x2.CreateTranslation((float)Offset, 0); return !transform.IsIdentity; }

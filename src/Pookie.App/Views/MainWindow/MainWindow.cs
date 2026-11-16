@@ -849,6 +849,7 @@ internal sealed partial class MainWindow : IDisposable
         Window.FrameRendered -= CompleteChatMediaLayout;
         Window.FrameRendered -= CompleteExpandedQueueLayout;
         chatMediaLayoutPending.Clear();
+        likedFilterDebounce.Dispose(); collectionFilterDebounce.Dispose();
         DisposePageScrolling();
         foreach (var row in expandedQueueBlocks.Keys) row.Dispose();
         expandedQueueAnimation.Dispose();

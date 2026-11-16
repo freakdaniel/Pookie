@@ -471,8 +471,16 @@ in grid and list views. It follows six delayed metadata pages, including three
 empty pages and more matches after a full viewport, without global search or writes.
 It checks exclusive loading/empty states, completed-cache reuse, failure and retry,
 query changes during a request, clearing the filter, cursor-cycle protection and
-navigation cancellation. Filtered pagination uses a compact progress notice instead
-of unrelated waveform/card skeletons.
+navigation cancellation. Filtered search morphs the field's magnifier into a
+spinner and back over 220ms, without a placeholder or layout shift. The spinner
+stays active across metadata pages and stops on completion, failure, clear or
+navigation. Empty-result text only appears after the full scan completes.
+Input coalesces for 250ms; Enter and clearing apply immediately. The same debounce
+is used in playlist track filters; restoring navigation applies the saved filter
+before restoring scroll. Shared matching folds ё/е, Latin accents and Unicode
+compatibility letters, ignores punctuation/extra spacing and matches title/artist
+words in any order. Cyrillic й/и and ў/у remain distinct. Pure queue tests cover
+these matches so playback and later pages use the same search semantics.
 
 `--likes-edits-ui-smoke-test` uses an isolated account fixture to check per-track
 pending state, duplicate suppression, animated removal/insertion and movement in
@@ -507,6 +515,12 @@ collection action/hover scenarios. It measures the first and two repeated opens,
 checks stable body geometry, one GPU glass backdrop per opening, cached standard
 perspective/blur animation and backdrop reuse during hover. It verifies sampled
 red/blue page colors through the glass and then exercises all Share tabs/actions.
+Share/playlist page slides cache each page's content separately from its moving
+wrapper. The track plaque uses a cached shadow and content; its independent reveal
+starts on the live tree after the modal perspective animation completes. The Share
+glass fixture requires at most two full-dialog captures during opening, as well as
+its existing visual, interaction, glass-cache and frame-budget checks.
+
 The initial body size is settled before opening; only live tab changes resize it.
 The body/plaque graphics are warmed before the startup spinner starts, and the
 external close button uses its glass finish without CPU backdrop readbacks.

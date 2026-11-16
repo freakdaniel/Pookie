@@ -24,7 +24,7 @@ internal static class TrackDialogChrome
 
     internal static PaletteGlassCard Preview(FrameworkElement artwork, TextBlock title, TextBlock author, FrameworkElement? trailing = null)
     {
-        var card = new PaletteGlassCard { HoverEnabled = false }.CornerRadius(20).Padding(16).Height(PreviewHeight);
+        var card = new PaletteGlassCard { HoverEnabled = false, CacheShadow = true }.CornerRadius(20).Padding(16).Height(PreviewHeight);
         var row = new Grid().Columns(trailing == null ? "56,*" : "56,*,Auto").Rows("*").Spacing(14).Children(
                 new Border().CornerRadius(10).ClipToBounds().Child(artwork),
                 new StackPanel().Vertical().Spacing(5).CenterVertical().Column(1).Children(title, author));

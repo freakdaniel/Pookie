@@ -5,8 +5,8 @@ namespace Pookie.App;
 
 internal static class MaterialSearchField
 {
-    internal static FrameworkElement CreateGlass(TextBox input, bool liveGlass = false) =>
-        new HeaderSearchField(input, compact: true, liveGlass: liveGlass).CenterVertical();
+    internal static FrameworkElement CreateGlass(TextBox input, bool liveGlass = false, SearchActivityGlyph? activity = null) =>
+        new HeaderSearchField(input, compact: true, liveGlass: liveGlass, activity: activity).CenterVertical();
 
     internal static Border Create(TextBox input)
     {

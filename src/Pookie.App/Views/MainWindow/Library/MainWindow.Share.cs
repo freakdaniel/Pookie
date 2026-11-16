@@ -100,7 +100,9 @@ internal sealed partial class MainWindow
         ((MaterialTrackButton)close).UseLightGlassFinish();
         shareDialog = TrackDialogChrome.MatteDialog(shareContent, card, shareFocusAnchor, close, () => sharePages.Animating, tall: true);
         shareDialog.DismissRequested = () => CloseShare();
-        shareDialog.Presented = shareContent.RevealTrack;
+        // Animate the plaque on the live tree, after the perspective transition.
+        // Otherwise its motion recaptures and blurs the whole dialog each frame.
+        shareDialog.Opened = shareContent.RevealTrack;
         shareDialog.Closed = () =>
         {
             if (!shareSending) { shareSendBusyHeld = false; RefreshShareCompose(snap: true); }

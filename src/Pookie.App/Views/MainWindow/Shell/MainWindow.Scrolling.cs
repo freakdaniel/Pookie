@@ -63,8 +63,8 @@ internal sealed partial class MainWindow
     private void RefreshPaginationSkeletons(bool loading)
     {
         foreach (var existing in pageItems.Values) existing.SetLoading(0);
-        // A filtered library scans metadata pages, not visible rows. A compact
-        // search notice replaces the unrelated full waveform/card skeletons.
+        // A filtered library scans metadata pages. Its search-field spinner
+        // reports progress without appending unrelated track placeholders.
         if (!loading || FilteringLikes) return;
         var control = page.Value switch
         {
@@ -161,6 +161,7 @@ internal sealed partial class MainWindow
 
     private void CheckPageEnd()
     {
+        if (page.Value == Page.LibraryTracks && likedFilterDebounce.Pending) return;
         if (disposed || !CanUseWorkspace || paginationLoading.Value || navigationHistory[navigationIndex].Pending ||
             pendingNavigationScroll != null || likesLoading || searchLoading.Value || collectionLoadingView.Loading) return;
         var viewer = NavigationScroll();

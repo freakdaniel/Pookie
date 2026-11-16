@@ -10,10 +10,17 @@ internal sealed partial class MainWindow
     private async Task VerifyLikesFilterUiAsync()
     {
         string? invalidFrame = null;
+        var sawGlyphMorph = false; var sawSpinner = false;
         void Sample()
         {
-            if (!FilteringLikes) return;
-            if (likedEmpty.Value && (paginationLoading.Value || nextHref != null || likesLoadingView.Skeleton.IsVisible))
+            sawGlyphMorph |= likedFilterGlyph.Progress is > 0 and < 1;
+            sawSpinner |= likedFilterGlyph.Loading && likedFilterGlyph.SpinnerRunning;
+            if (!FilteringLikes && !likedFilterDebounce.Pending) return;
+            if (paginationLoading.Value && (likedFilterNotice.IsVisible || !likedFilterGlyph.Loading))
+                invalidFrame = "Filtered loading lost its field spinner or displayed a separate notice.";
+            if (likedFilterGlyph.ActualWidth > 0 && (Math.Abs(likedFilterGlyph.ActualWidth - 20) > .1 || Math.Abs(likedFilterGlyph.ActualHeight - 20) > .1))
+                invalidFrame = "Morphing the search icon changed its layout slot.";
+            if (likedEmpty.Value && (likedFilterDebounce.Pending || paginationLoading.Value || nextHref != null || likesLoadingView.Skeleton.IsVisible))
                 invalidFrame = "Empty-result text appeared before all likes were checked.";
             if (pageItems[likedGrid].LoadingCount != 0 || pageItems[likedList].LoadingCount != 0 || pageItems[likedCompactList].LoadingCount != 0)
                 invalidFrame = "Filtered metadata loading displayed unrelated track skeletons.";
@@ -51,6 +58,18 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The missing artwork tile lost its glass playback button.");
             CaptureUiPreview("likes-glass-missing-cover");
             MoveActionPointer(new Point(2, 2));
+            libraryLikes = new([Track(94001, "Догвилль", "тёмный принц"), Track(94002)], null);
+            ShowLibraryTracks();
+            likedFilter.Text = "тем"; likedFilter.Text = "темный"; likedFilter.Text = "принц догвилль темный";
+            if (!likedFilterDebounce.Pending || likedEmpty.Value || pageItems[likedList].DataCount != 2)
+                throw new InvalidOperationException("Typing bypassed debounce or flashed an empty result.");
+            await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending && pageItems[likedList].DataCount == 1);
+            if (pageItems[likedGrid].DataCount != 1 || pageItems[likedCompactList].DataCount != 1 || likedFilterStatus.IsVisible)
+                throw new InvalidOperationException("Normalized multiword search differs across library views.");
+            likedFilter.Text = "";
+            if (likedFilterDebounce.Pending || pageItems[likedList].DataCount != 2)
+                throw new InvalidOperationException("Clearing the query was delayed.");
+            Console.WriteLine("LIKES_FILTER_INPUT_OK: debounced burst, immediate clear, ё/е and title/artist words in any order");
             string Cursor(string value) => "https://api-v2.soundcloud.com/users/42/likes?cursor=" + value;
             void Start(string cursor)
             {
@@ -62,7 +81,7 @@ internal sealed partial class MainWindow
             async Task Pending(int count)
             {
                 await WaitForLikedLayoutAsync(() => transport.Requests.Count == count && paginationLoading.Value);
-                if (transport.MaxConcurrent != 1 || likedEmpty.Value || !likedFilterNotice.IsVisible || likedFilterRetry.IsVisible)
+                if (transport.MaxConcurrent != 1 || likedEmpty.Value || likedFilterNotice.IsVisible || !likedFilterGlyph.Loading || likedFilterRetry.IsVisible)
                     throw new InvalidOperationException("Library filtering overlapped requests or lost its incomplete-search state.");
             }
             foreach (var mode in Enum.GetValues<TrackViewMode>())
@@ -70,6 +89,12 @@ internal sealed partial class MainWindow
                 likesMode.Value = mode;
                 var before = transport.Requests.Count;
                 Start(mode + "-1");
+                if (mode == TrackViewMode.Cards)
+                {
+                    await Pending(before + 1);
+                    await WaitForLikedLayoutAsync(() => !likedFilterGlyph.Animating && likedFilterGlyph.Progress > .99 && likedFilterGlyph.SpinnerRunning);
+                    CaptureUiPreview("likes-filter-spinner");
+                }
                 // Three empty metadata pages must not end the search. The fourth
                 // contains tracks but still no match, reproducing old-liked songs.
                 for (var i = 1; i <= 4; i++)
@@ -85,13 +110,15 @@ internal sealed partial class MainWindow
                 if (pageItems[likedList].DataCount != 20)
                     throw new InvalidOperationException("Matches were not displayed while older likes were being checked.");
                 transport.Reply([Track(98001, "ВШБ (feat. CUPSIZE)", "GRILLYAZH")], null);
-                await WaitForLikedLayoutAsync(() => nextHref == null && !paginationLoading.Value && pageItems[likedList].DataCount == 21);
+                await WaitForLikedLayoutAsync(() => nextHref == null && !paginationLoading.Value && !likedFilterGlyph.Loading && !likedFilterGlyph.Animating && !likedFilterGlyph.SpinnerRunning && pageItems[likedList].DataCount == 21);
                 if (likedEmpty.Value || likedFilterNotice.IsVisible || libraryLikes?.Tracks.Length != 81)
                     throw new InvalidOperationException("The oldest liked track was not retained in the completed library search.");
                 likedFilter.Text = "grillyazh";
+                await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                 if (pageItems[likedList].DataCount != 1 || !tracks.Any(track => track.Id == 98001))
                     throw new InvalidOperationException("Author filtering lost an older liked track.");
                 likedFilter.Text = "совсем отсутствующий трек";
+                await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending && !likedFilterGlyph.Loading && !likedFilterGlyph.Animating && !likedFilterGlyph.SpinnerRunning);
                 if (!likedEmpty.Value || likedFilterNotice.IsVisible || transport.Requests.Count != before + 6)
                     throw new InvalidOperationException("A completed library search did not distinguish an absent song from loading.");
                 if (mode == TrackViewMode.List && likedCompactList.IsVisible)
@@ -120,7 +147,7 @@ internal sealed partial class MainWindow
             // A changed query uses the response against its current filter.
             likedFilter.Text = "grillyazh";
             transport.Reply([Track(98001, "ВШБ (feat. CUPSIZE)", "GRILLYAZH")], null);
-            await WaitForLikedLayoutAsync(() => !paginationLoading.Value && nextHref == null && pageItems[likedList].DataCount == 1);
+            await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending && !likedFilterGlyph.Loading && !likedFilterGlyph.Animating && !likedFilterGlyph.SpinnerRunning && !paginationLoading.Value && nextHref == null && pageItems[likedList].DataCount == 1);
             if (likedFilterRetry.IsVisible || likedFilterNotice.IsVisible)
                 throw new InvalidOperationException("A successful retry retained the failed-filter notice.");
 
@@ -130,7 +157,7 @@ internal sealed partial class MainWindow
             transport.Reply(Enumerable.Range(1, 30).Select(n => Track(99000 + n)).ToArray(), Cursor("after-clear"));
             await WaitForLikedLayoutAsync(() => !paginationLoading.Value && tracks.Count == 60);
             for (var i = 0; i < 3; i++) await WaitForLoginFrameAsync();
-            if (transport.Requests.Count != calls + 1 || likedFilterNotice.IsVisible)
+            if (transport.Requests.Count != calls + 1 || likedFilterStatus.IsVisible || likedFilterRetry.IsVisible)
                 throw new InvalidOperationException("Clearing the query kept scanning the remaining library.");
 
             calls = transport.Requests.Count;
@@ -148,6 +175,10 @@ internal sealed partial class MainWindow
             await WaitForLoginFrameAsync(); await WaitForLoginFrameAsync();
             if (page.Value != Page.Feed || tracks.Any(track => track.Id == 99999) || paginationLoading.Value || invalidFrame != null)
                 throw new InvalidOperationException(invalidFrame ?? "A cancelled library response changed another page.");
+            await WaitForLikedLayoutAsync(() => !likedFilterGlyph.Loading && !likedFilterGlyph.Animating && !likedFilterGlyph.SpinnerRunning);
+            if (!sawGlyphMorph || !sawSpinner || likedFilterGlyph.Progress != 0)
+                throw new InvalidOperationException("Filtered loading did not morph the field icon or stop its spinner.");
+            Console.WriteLine("LIKES_FILTER_SPINNER_OK: fixed search slot, intermediate morph frames, continuous multi-page spinner, stopped on completion/error/clear/navigation");
             Console.WriteLine("LIKES_FILTER_LIFECYCLE_OK: no empty/skeleton overlap, sequential requests, failure/retry, live query changes, clear stops scanning, cursor-cycle guard, navigation cancellation; no global search or writes");
         }
         catch (Exception error)
