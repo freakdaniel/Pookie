@@ -299,13 +299,16 @@ internal sealed partial class MainWindow
         if (menu.Card.BorderThickness != 0 || menu.Options.Any(option => option.Height != 48) ||
             menu.Bounds.Right > Window.ClientSize.Width + 1 || menu.Bounds.Bottom > Window.ClientSize.Height + 1)
             throw new InvalidOperationException("Settings menu is outlined, cramped or outside the window.");
+        if (menu.Options[0].Bounds.X - menu.Bounds.X < 7 || menu.Options[1].Bounds.Y - menu.Options[0].Bounds.Bottom < 3 ||
+            menu.Bounds.Right - menu.Options[0].Bounds.Right < 7)
+            throw new InvalidOperationException("Settings dropdown rows lost their insets or spacing.");
         CaptureUiPreview("settings-select-open", menu);
         RouteWaveformPointer(new Point(10, 10));
         RouteSettingsKey(Key.Escape);
         await WaitForSettingsLayoutAsync(() => !select.IsDropDownOpen);
         if (select.SelectedIndex != original)
             throw new InvalidOperationException("Dismissing the menu changed its selection.");
-        await WaitForSettingsLayoutAsync(() => select.Background == TrackButtons.TonalSurface);
+        await WaitForSettingsLayoutAsync(() => select.Background == GlassSheen.LightControlTint(TrackButtons.GlassSurface));
         if (!select.IsFocused || KeyboardFocusFeedback.IsVisible(select))
             throw new InvalidOperationException("Pointer-opened select retained a focus tint after Escape.");
         select.Focus(); RouteSettingsKey(Key.Down);
@@ -315,7 +318,7 @@ internal sealed partial class MainWindow
         if (!KeyboardFocusFeedback.IsVisible(select))
             throw new InvalidOperationException("Keyboard selection lost its visible focus cue.");
         await SetSettingsChoiceAsync("likes", original);
-        await WaitForSettingsLayoutAsync(() => select.Background == TrackButtons.TonalSurface);
+        await WaitForSettingsLayoutAsync(() => select.Background == GlassSheen.LightControlTint(TrackButtons.GlassSurface));
         if (KeyboardFocusFeedback.IsVisible(select))
             throw new InvalidOperationException("Mouse selection retained the select's keyboard focus tint.");
         CaptureUiPreview("settings-select-after-pointer-selection");
@@ -324,7 +327,7 @@ internal sealed partial class MainWindow
         RouteWaveformClick(new Point(10, 80));
         await WaitForSettingsLayoutAsync(() => !select.IsDropDownOpen);
         RouteWaveformPointer(new Point(10, 10));
-        await WaitForSettingsLayoutAsync(() => select.Background == TrackButtons.TonalSurface);
+        await WaitForSettingsLayoutAsync(() => select.Background == GlassSheen.LightControlTint(TrackButtons.GlassSurface));
         foreach (var keyboard in new[] { false, true })
         {
             if (keyboard) { select.Focus(); RouteSettingsKey(Key.Down); }
@@ -332,7 +335,7 @@ internal sealed partial class MainWindow
             await WaitForSettingsLayoutAsync(() => select.IsDropDownOpen && select.MenuReveal == 1);
             RouteWaveformClick(SettingsCenter(select));
             RouteWaveformPointer(new Point(10, 10));
-            await WaitForSettingsLayoutAsync(() => !select.IsDropDownOpen && select.Background == TrackButtons.TonalSurface);
+            await WaitForSettingsLayoutAsync(() => !select.IsDropDownOpen && select.Background == GlassSheen.LightControlTint(TrackButtons.GlassSurface));
             if (!select.IsFocused || KeyboardFocusFeedback.IsVisible(select))
                 throw new InvalidOperationException("Clicking the select trigger to dismiss its popup retained the focus tint.");
         }
@@ -428,6 +431,9 @@ internal sealed partial class MainWindow
             chart.Fractions.Where((value, index) => Math.Abs(value - actual[index] / (double)expected.TotalBytes) > .00001).Any() ||
             view.Amounts.Where((value, index) => value.Text != FormatSettingsBytes(actual[index])).Any())
             throw new InvalidOperationException("The cache chart does not represent real per-category disk usage.");
+        var legendCenter = (view.Title.Bounds.Y + view.Legends[0].Bounds.Bottom) / 2;
+        if (Math.Abs(legendCenter - (chart.Bounds.Y + chart.ActualHeight / 2)) > 2)
+            throw new InvalidOperationException("Cache title and legend are not centered beside the chart.");
         if (Math.Abs(view.Title.Bounds.X - view.Legends[0].Bounds.X) > .5 ||
             Math.Abs(view.Legends[0].Label.Bounds.X - view.Title.Bounds.X - 14) > .5 ||
             view.Legends.Where((legend, index) => Math.Abs(legend.Label.Bounds.X - view.Amounts[index].Bounds.X) > .5).Any())
@@ -514,9 +520,9 @@ internal sealed partial class MainWindow
             }
         if (settingsSection.Value != SettingsSection.About) return;
         var links = settingsActions.Select(action => action.Button).Where(button => button.Content is StackPanel).ToArray();
-        if (links.Length != 3 || links.Any(button => button.StyleName != TrackButtons.Text || button.Height != 40 || button.CornerRadius != 20 ||
+        if (links.Length != 3 || links.Any(button => button.StyleName != TrackButtons.Glass || button.Height != 40 || button.CornerRadius != 20 ||
             Math.Abs(((StackPanel)button.Content!).Children.OfType<Image>().Single().ActualWidth - 18) > 1 / Window.DpiScale))
-            throw new InvalidOperationException("About links lost their external-link glyph or Material text-button styling.");
+            throw new InvalidOperationException("About links lost their external-link glyph or glass button styling.");
     }
 
     private async Task RevealSettingsControlAsync(FrameworkElement control)

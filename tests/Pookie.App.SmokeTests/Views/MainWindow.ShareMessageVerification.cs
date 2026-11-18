@@ -33,24 +33,24 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Recipient scrollbar did not move into the card's outer gutter.");
             if (Window.HitTest(bar.Bounds.Center) is not { } hit || hit != bar && !bar.IsAncestorOf(hit))
                 throw new InvalidOperationException("Recipient scrollbar is outside its parents' hit-test bounds.");
-            if (shareSearchGlass.Background.A == 255 || shareSearchGlyph.Ink != MutedIcon)
+            if (shareSearchGlass.Background.A == 255 || shareSearchGlass.Glyph.Ink != MutedIcon)
                 throw new InvalidOperationException("Recipient search lost glass or its resting icon color.");
             CaptureUiPreview("share-recipients-scroll");
             fixture.SearchHold = new(TaskCreationOptions.RunContinuationsAsynchronously);
             shareRecipientSearch.Text = "али";
             var searching = SearchShareRecipientsAsync();
-            await WaitForLikedLayoutAsync(() => shareSearchGlyph.Progress is > 0 and < 1);
+            await WaitForLikedLayoutAsync(() => shareSearchGlass.Glyph.Progress is > 0 and < 1);
             CaptureUiPreview("share-search-to-spinner");
-            await WaitForLikedLayoutAsync(() => shareSearchGlyph.Progress == 1 && shareSearchGlyph.SpinnerRunning);
-            if (shareSearchGlyph.Ink != Color.White) throw new InvalidOperationException("Typing did not turn the magnifier white.");
+            await WaitForLikedLayoutAsync(() => shareSearchGlass.Glyph.Progress == 1 && shareSearchGlass.Glyph.SpinnerRunning);
+            if (shareSearchGlass.Glyph.Ink != Color.White) throw new InvalidOperationException("Typing did not turn the magnifier white.");
             shareRecipientSearch.Text = "";
-            await WaitForLikedLayoutAsync(() => shareSearchGlyph.Progress is > 0 and < 1);
+            await WaitForLikedLayoutAsync(() => shareSearchGlass.Glyph.Progress is > 0 and < 1);
             CaptureUiPreview("share-search-from-spinner");
             await searching;
             fixture.SearchHold.SetResult(); fixture.SearchHold = null;
             await SearchShareRecipientsAsync();
-            await WaitForLikedLayoutAsync(() => !shareSearchGlyph.Animating && !shareSearchGlyph.SpinnerRunning);
-            if (shareSearchGlyph.Ink != MutedIcon || shareRecipientChoices.Children.Count != 12)
+            await WaitForLikedLayoutAsync(() => !shareSearchGlass.Glyph.Animating && !shareSearchGlass.Glyph.SpinnerRunning);
+            if (shareSearchGlass.Glyph.Ink != MutedIcon || shareRecipientChoices.Children.Count != 12)
                 throw new InvalidOperationException("Clearing a pending search retained old results or a loading icon.");
             SetShareRecipient(peer);
             shareComposeText.Text = string.Join("\n", Enumerable.Repeat("Длинный комментарий к треку", 20));

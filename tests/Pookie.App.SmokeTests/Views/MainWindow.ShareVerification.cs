@@ -164,10 +164,10 @@ internal sealed partial class MainWindow
                     throw new InvalidOperationException("Empty recipient search lost the route illustration or its requested copy.");
                 CaptureUiPreview("share-recipients-empty");
                 shareRecipientSearch.Text = "?"; await SearchShareRecipientsAsync();
-                if (!shareSearchClear.IsVisible || shareSearchGlyph.Loading) throw new InvalidOperationException("Recipient search did not expose clear/settle its loading state.");
-                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareSearchClear.ActualWidth > 0);
-                RouteWaveformClick(SettingsCenter(shareSearchClear)); await SearchShareRecipientsAsync();
-                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareRecipientSearch.Text.Length == 0 && !shareSearchClear.IsVisible && shareRecipientChoices.Children.Count == 3);
+                if (!shareSearchGlass.ClearButton.IsVisible || shareSearchGlass.Glyph.Loading) throw new InvalidOperationException("Recipient search did not expose clear/settle its loading state.");
+                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareSearchGlass.ClearButton.ActualWidth > 0);
+                RouteWaveformClick(SettingsCenter(shareSearchGlass.ClearButton)); await SearchShareRecipientsAsync();
+                await WaitForLikedLayoutAsync(() => !shareContent.Resizing && shareRecipientSearch.Text.Length == 0 && !shareSearchGlass.ClearButton.IsVisible && shareRecipientChoices.Children.Count == 3);
                 row = (Button)shareRecipientChoices.Children[0]; RouteWaveformClick(SettingsCenter(row));
                 if (shareRecipient?.Id != 77 || shareRecipientDetails.Text != recipient.FullName) throw new InvalidOperationException("Recipient row click did not select its actual profile.");
                 shareComposeText.Text = "Послушай";

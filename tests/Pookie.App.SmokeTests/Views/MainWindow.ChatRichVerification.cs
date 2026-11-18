@@ -13,11 +13,67 @@ internal sealed partial class MainWindow
         ShowChatAttachMenu();
         await WaitForLikedLayoutAsync(() => chatAttachMenu.Reveal > .99);
         RouteWaveformClick(SettingsCenter(((StackPanel)chatAttachMenuPanel.Content!).Children.OfType<Button>().First()));
-        await WaitForLikedLayoutAsync(() => chatMusicDialog.IsOpen && chatMusicSearch.IsFocused);
+        await WaitForLikedLayoutAsync(() => chatMusicDialog.IsOpen && !chatMusicDialog.Running && chatMusicSearch.IsFocused && !chatMusicLoading.Skeleton.IsVisible);
+        if (!chatMusicField.PlaceholderLabel.IsVisible || chatMusicField.PlaceholderLabel.Text != "Найти трек")
+            throw new InvalidOperationException("The empty focused track search lost its placeholder.");
         chatMusicSearch.Text = "fixture";
+        if (!chatMusicLoading.Loading || !chatMusicLoading.Skeleton.IsVisible)
+            throw new InvalidOperationException("Typing a music query did not show the loading skeleton.");
+        await WaitForLikedLayoutAsync(() => chatMusicLoading.Loading && chatMusicLoading.Skeleton.Opacity is > 0 and < 1 &&
+            chatMusicField.Glyph.Progress is > 0 and < 1);
+        await WaitForLikedLayoutAsync(() => chatMusicField.Glyph.SpinnerRunning);
         await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running && chatMusicDialog.HasGlassBackdrop &&
-            chatMusicChoices.Children.Count == 2 && chatMusicChoices.ActualHeight > 100 && chatMusicChoices.ActualWidth > 100);
+            !chatMusicLoading.Skeleton.IsVisible && chatMusicChoices.Children.Count == 1 && chatMusicChoices.ActualWidth > 100 &&
+            VisualTree.Find(chatMusicChoices, e => e is TextBlock { Text: "Fixture track" }) != null);
+        await WaitForLikedLayoutAsync(() => !chatMusicField.Glyph.Animating && !chatMusicField.Glyph.SpinnerRunning);
+        if (chatMusicField.PlaceholderLabel.IsVisible || !chatMusicField.ClearButton.IsVisible)
+            throw new InvalidOperationException("The non-empty search retained its placeholder or lost its clear button.");
         CaptureUiPreview("chats-music-picker");
+        var playlists = (Button)VisualTree.Find(chatMusicDialog, element => element is Button { StyleName: "section-button" } tab &&
+            tab.FindVisualChild<TextBlock>() is TextBlock { Text: "Плейлисты" })!;
+        RouteWaveformClick(SettingsCenter(playlists));
+        await WaitForLikedLayoutAsync(() => chatMusicSearch.Text == "fixture" && !chatMusicLoading.Skeleton.IsVisible &&
+            chatMusicChoices.Children.Count == 1 && VisualTree.Find(chatMusicChoices, e => e is TextBlock { Text: "Fixture playlist" }) != null);
+        CaptureUiPreview("chats-music-picker-playlists");
+        RouteWaveformClick(SettingsCenter(chatMusicChoices.Children.OfType<Button>().Single()));
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        if (chatInput.Text != string.Join('\n', new[] { draft.TrimEnd(), "https://soundcloud.com/fixture/sets/list" }.Where(part => part.Length > 0)))
+            throw new InvalidOperationException("Selecting the playlist did not append its link to the draft.");
+        chatInput.Text = draft;
+        await OpenChatMusicPickerAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running);
+        var transport = (ChatFixtureTransport)api.BrowserTransport!;
+        RouteWaveformClick(SettingsCenter(playlists));
+        await WaitForLikedLayoutAsync(() => !chatMusicLoading.Skeleton.IsVisible && chatMusicChoices.Children.Count == 2);
+        if (chatMusicField.PlaceholderLabel.Text != "Найти плейлист" || !chatMusicField.PlaceholderLabel.IsVisible)
+            throw new InvalidOperationException("The playlist tab did not show its search placeholder.");
+        chatMusicSearch.Text = "no-music-matches";
+        await WaitForLikedLayoutAsync(() => chatMusicEmptyArt.IsVisible && !chatMusicLoading.Skeleton.IsVisible &&
+            chatMusicChoices.Children.Count == 0 && !chatMusicField.Glyph.SpinnerRunning);
+        CaptureUiPreview("chats-music-picker-no-matches");
+        RouteWaveformClick(SettingsCenter(chatMusicField.ClearButton));
+        await WaitForLikedLayoutAsync(() => chatMusicSearch.IsFocused && chatMusicField.PlaceholderLabel.IsVisible &&
+            !chatMusicField.ClearButton.IsVisible && !chatMusicEmptyArt.IsVisible && !chatMusicLoading.Skeleton.IsVisible &&
+            chatMusicChoices.Children.Count == 2);
+        var privateRows = chatMusicChoices.Children.OfType<Button>().ToArray();
+        if (transport.PrivateLinkReads.Count != 0 || privateRows.Any(row => TooltipHints.TextFor(row) != "Приватный плейлист" ||
+            VisualTree.Find(row, element => element is DockPanel panel && panel.Children.OfType<Image>().Any()) == null))
+            throw new InvalidOperationException("Private rows must show locks without fetching any secret link.");
+        CaptureUiPreview("chats-picker-private-locks");
+        RouteWaveformClick(SettingsCenter(privateRows[0]));
+        await WaitForLikedLayoutAsync(() => VisualTree.Find(privateRows[0], element => element is TextBlock text &&
+            text.Text.StartsWith("Секретная ссылка недоступна")) != null);
+        if (chatInput.Text != draft || !chatMusicDialog.IsOpen || !transport.PrivateLinkReads.SequenceEqual(new long[] { 123 }))
+            throw new InvalidOperationException("A missing secret changed the draft or fetched other playlists.");
+        transport.ReturnPrivateLink = true;
+        RouteWaveformClick(SettingsCenter(privateRows[0]));
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        if (chatInput.Text != string.Join('\n', new[] { draft.TrimEnd(), "https://soundcloud.com/fixture/sets/private-123/s-current" }.Where(part => part.Length > 0)) ||
+            !transport.PrivateLinkReads.SequenceEqual(new long[] { 123, 123 }))
+            throw new InvalidOperationException("Retry did not attach exactly the selected playlist's fresh secret link.");
+        chatInput.Text = draft;
+        await OpenChatMusicPickerAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running);
         RouteChatEscape();
         await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
         await OpenChatMusicPickerAsync();
@@ -30,8 +86,8 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
         if (chatInput.Text != draft) throw new InvalidOperationException("Dismissing the music picker changed the draft.");
         await OpenChatMusicPickerAsync();
-        chatMusicSearch.Text = "fixture"; chatMusicSearchTimer.Stop(); await SearchChatMusicAsync();
-        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running && chatMusicChoices.Children.Count == 2 && chatMusicChoices.Children.OfType<Button>().All(b => b.ActualHeight > 0));
+        chatMusicSearch.Text = "fixture"; await SearchChatMusicAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running && chatMusicChoices.Children.Count == 1 && chatMusicChoices.Children.OfType<Button>().All(b => b.ActualHeight > 0));
         RouteWaveformClick(SettingsCenter(chatMusicChoices.Children.OfType<Button>().First()));
         await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
         var expected = string.Join('\n', new[] { draft.TrimEnd(), "https://soundcloud.com/fixture/track" }.Where(part => part.Length > 0));

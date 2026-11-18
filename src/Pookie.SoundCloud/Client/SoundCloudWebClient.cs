@@ -209,16 +209,26 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<CollectionDetail> GetCollectionDetailAsync(LibraryItem item, CancellationToken cancellationToken = default)
     {
         string path;
+        string? secret = null;
         if (item.User is { Id: > 0 } user) path = $"users/{user.Id}/tracks?limit=30&linked_partitioning=1";
         else if (item.Playlist is { } playlist)
+        {
             path = (playlist.Urn ?? "").StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal)
                 ? "system-playlists/" + Uri.EscapeDataString(playlist.Urn!)
                 : playlist.Id > 0 ? $"playlists/{playlist.Id}" : throw new SoundCloudException("Подборка недоступна.");
+            if (playlist.IsPrivate && playlist.Id > 0 && PlaylistSharing.Token(playlist) is { } token)
+            {
+                secret = token;
+                path += "?secret_token=" + Uri.EscapeDataString(token);
+            }
+        }
         else throw new SoundCloudException("Нет треков для этой карточки.");
         using var document = await GetJsonAsync(Api(path), cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out _)) return new(item, ParsePage(root));
         var detail = LibraryData.ParsePlaylist(root);
+        if (detail.IsPrivate && secret != null && PlaylistSharing.Token(detail) == null)
+            detail = detail with { SecretToken = secret };
         item = LibraryData.FromPlaylist(detail) with { Key = item.Key };
         var complete = detail.Tracks.Where(track => track is { Id: > 0 }).ToArray();
         var missing = complete.Where(t => string.IsNullOrEmpty(t.Title)).Select(t => t.Id).Distinct().ToArray();

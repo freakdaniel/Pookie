@@ -37,8 +37,8 @@ internal sealed class CacheUsageView : Panel
             categories.Add(legends[index].Column(index));
         }
         card = new Border().Background(Color.FromRgb(34, 34, 34)).BorderThickness(0).CornerRadius(20).Padding(24)
-            .Child(new Grid().Columns("168,*").Rows("*").Spacing(28).Children(ring.Column(0),
-                new StackPanel().Vertical().Spacing(24).Column(1).Children(Title, categories)));
+            .Child(new Grid().Columns("168,*").Rows("*").Spacing(28).Children(ring.CenterVertical().Column(0),
+                new StackPanel().Vertical().Spacing(20).CenterVertical().Column(1).Children(Title, categories)));
         Add(card);
         Chart.HoveredChanged = ShowCategory;
         Chart.HoverFrame = () =>

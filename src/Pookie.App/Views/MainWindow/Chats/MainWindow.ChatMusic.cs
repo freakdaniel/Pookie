@@ -14,24 +14,37 @@ internal sealed partial class MainWindow
     private readonly Dictionary<string, Task<LibraryItem>> chatMusicLoads = [];
     private readonly HashSet<string> chatMusicAttempted = [];
     private readonly SemaphoreSlim chatMusicGate = new(2, 2);
-    private TextBox chatMusicSearch = null!;
+    private DialogSearchField chatMusicField = null!;
+    private TextBox chatMusicSearch => chatMusicField.Input;
+    private readonly ObservableValue<SearchSection> chatMusicSection = new(SearchSection.Tracks);
+    private LibraryLoadingView chatMusicLoading = null!;
+    private ScrollViewer chatMusicScroll = null!;
+    private Image chatMusicEmptyArt = null!;
     private TextBlock chatMusicStatus = null!;
     private StackPanel chatMusicChoices = null!;
     private CancellationTokenSource? chatMusicRequest;
     private long chatMusicGeneration;
-    private readonly DispatcherTimer chatMusicSearchTimer = new(TimeSpan.FromMilliseconds(350));
     private FrameworkElement ChatMusicPickerView()
     {
-        chatMusicSearch = new TextBox().Placeholder("Найти трек или плейлист").Background(Color.Transparent).BorderThickness(0).FontSize(14);
-        chatMusicSearch.OnTextChanged(_ => { chatMusicSearchTimer.Stop(); if (chatMusicDialog.IsOpen) chatMusicSearchTimer.Start(); });
-        chatMusicSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; chatMusicSearchTimer.Stop(); Run(SearchChatMusicAsync); } });
-        chatMusicSearchTimer.Tick += () => { chatMusicSearchTimer.Stop(); Run(SearchChatMusicAsync); };
-        chatMusicStatus = new TextBlock().FontSize(12).Foreground(Muted);
-        chatMusicChoices = new StackPanel().Vertical().Spacing(6);
-        var content = new Grid().Columns("*").Rows("Auto,Auto,Auto,*").Spacing(12).Margin(24).Children(
-            TrackDialogChrome.Heading("Трек или плейлист"),
-            MaterialSearchField.CreateGlass(chatMusicSearch).Row(1), chatMusicStatus.Row(2),
-            new ScrollViewer().Content(chatMusicChoices).Background(Color.Transparent).BorderThickness(0).Padding(0).Row(3));
+        chatMusicField = new DialogSearchField("Найти трек", MutedIcon);
+        chatMusicSearch.OnTextChanged(_ => { if (chatMusicDialog.IsOpen) Run(() => SearchChatMusicAsync(debounce: true)); });
+        chatMusicSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(() => SearchChatMusicAsync()); } });
+        var tabs = new StackPanel().Horizontal().Spacing(24).Children(
+            SectionTab("Треки", chatMusicSection, SearchSection.Tracks, () => SelectChatMusicSection(SearchSection.Tracks), animate: false),
+            SectionTab("Плейлисты", chatMusicSection, SearchSection.Playlists, () => SelectChatMusicSection(SearchSection.Playlists), animate: false));
+        chatMusicEmptyArt = new Image().Source(ImageSource.FromResource<MainWindow>("Pookie.App.Assets.Stickle.route.png"))
+            .Width(104).Height(100).StretchMode(Stretch.Uniform).CenterHorizontal().IsVisible(false);
+        chatMusicStatus = new TextBlock().FontSize(13).Foreground(Muted).CenterHorizontal()
+            .TextWrapping(TextWrapping.Wrap).TextAlignment(TextAlignment.Center);
+        var empty = new StackPanel().Vertical().Spacing(10).CenterVertical().IsHitTestVisible(false)
+            .Children(chatMusicEmptyArt, chatMusicStatus);
+        chatMusicChoices = new StackPanel().Vertical().Spacing(8);
+        chatMusicScroll = new ScrollViewer().Content(chatMusicChoices).Background(Color.Transparent).BorderThickness(0).Padding(0);
+        chatMusicLoading = CreateLibraryLoadingView(new Grid().Columns("*").Rows("*").Children(chatMusicScroll, empty));
+        chatMusicLoading.FadeInSkeleton = true;
+        chatMusicLoading.Skeleton.PlaylistRows = true;
+        var content = new Grid().Columns("*").Rows("Auto,Auto,*").Spacing(16).Margin(24).Children(
+            tabs, chatMusicField.Row(1), chatMusicLoading.Root.ClipToBounds().Row(2));
         var card = TrackDialogChrome.MatteBody(content).Width(PlaylistDialogContent.PreferredWidth).Height(PlaylistDialogContent.MaximumBodyHeight);
         var close = TrackButtons.Icon(Icons.View("x", 20), CloseChatMusicPicker, TrackButtons.Glass).Top().Hint("Закрыть");
         ((MaterialTrackButton)close).UseLightGlassFinish();
@@ -44,54 +57,94 @@ internal sealed partial class MainWindow
         if (!CanAttachChat() || chatMusicDialog.IsOpen) return Task.CompletedTask;
         CloseChatAttachMenu(true);
         chatInput.Focus();
+        chatMusicSection.Value = SearchSection.Tracks;
+        chatMusicField.PlaceholderLabel.Text = "Найти трек";
         chatMusicSearch.Text = "";
         chatMusicDialog.Show();
         return SearchChatMusicAsync();
     }
+    private void SelectChatMusicSection(SearchSection section)
+    {
+        chatMusicSection.Value = section;
+        chatMusicField.PlaceholderLabel.Text = section == SearchSection.Tracks ? "Найти трек" : "Найти плейлист";
+        Run(() => SearchChatMusicAsync());
+    }
+
+    private void CancelChatMusicSearch()
+    {
+        ++chatMusicGeneration;
+        chatMusicRequest?.Cancel();
+        chatMusicRequest?.Dispose();
+        chatMusicRequest = null;
+    }
+
     private void CloseChatMusicPicker()
     {
         chatMusicDialog?.Close(immediate: disposed);
-        ++chatMusicGeneration; chatMusicSearchTimer.Stop();
-        chatMusicRequest?.Cancel(); chatMusicRequest?.Dispose(); chatMusicRequest = null; chatMusicChoices?.Clear();
+        CancelChatMusicSearch();
+        chatMusicChoices?.Clear();
+        chatMusicLoading?.SetLoading(false);
+        chatMusicField?.Glyph.SetLoading(false);
     }
-    private async Task SearchChatMusicAsync()
+    private async Task SearchChatMusicAsync(bool debounce = false)
     {
-        if (!chatMusicDialog.IsOpen || me == null || chatRecipient == null) return;
-        chatMusicRequest?.Cancel(); chatMusicRequest?.Dispose(); chatMusicRequest = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
-        var token = chatMusicRequest.Token; var generation = ++chatMusicGeneration; var peer = chatRecipient.Id;
-        chatMusicChoices.Clear(); chatMusicStatus.Text = "Загрузка…";
+        if (!chatMusicDialog.IsOpen || me is not { } account || chatRecipient == null) return;
+        CancelChatMusicSearch();
+        chatMusicScroll.SetScrollOffsets(0, 0);
+        chatMusicChoices.Clear();
+        chatMusicChoices.IsEnabled = true;
+        chatMusicStatus.Text = "";
+        chatMusicEmptyArt.IsVisible = false;
+        chatMusicLoading.SetLoading(true);
+        chatMusicField.Glyph.SetLoading(chatMusicSearch.Text.Trim().Length > 0);
         chatMusicDialog.InvalidateTransitionSnapshot();
+        chatMusicRequest = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
+        var token = chatMusicRequest.Token;
+        var generation = chatMusicGeneration;
+        var peer = chatRecipient.Id;
+        var section = chatMusicSection.Value;
+        var tracks = section == SearchSection.Tracks;
         try
         {
-            var query = chatMusicSearch.Text.Trim(); LibraryItem[] items;
+            var query = chatMusicSearch.Text.Trim();
+            if (debounce) await Task.Delay(350, token);
+            IReadOnlyList<LibraryItem> items;
+            var emptyMessage = "Ничего не найдено";
             if (query.Length == 0)
             {
-                var likes = api.GetLikesAsync(me.Id, token); var playlists = api.GetOwnedPlaylistsAsync(me.Id, token);
-                await Task.WhenAll(likes, playlists);
-                items = likes.Result.Tracks.Take(20).Select(LibraryItem.FromTrack).Concat(playlists.Result.Take(20)).ToArray();
+                emptyMessage = tracks ? "Пока нет понравившихся треков" : "Пока нет своих плейлистов";
+                items = tracks
+                    ? (await api.GetLikesAsync(account.Id, token)).Tracks.Take(20).Select(LibraryItem.FromTrack).ToArray()
+                    : (await api.GetOwnedPlaylistsAsync(account.Id, token)).Take(20).ToArray();
             }
-            else if (ChatMusicLink.IsMusicUrl(query)) items = [await api.ResolveChatMusicAsync(query, token)];
-            else items = (await api.SearchResultsAsync(query, SearchSection.All, token)).Items.Where(i => i.Track != null || i.Playlist != null).ToArray();
+            else if (ChatMusicLink.IsMusicUrl(query))
+            {
+                var resolved = await api.ResolveChatMusicAsync(query, token);
+                items = [resolved];
+                if (tracks && resolved.Playlist != null) emptyMessage = "Открой ссылку во вкладке «Плейлисты»";
+                if (!tracks && resolved.Track != null) emptyMessage = "Открой ссылку во вкладке «Треки»";
+            }
+            else items = (await api.SearchResultsAsync(query, section, token)).Items;
             if (disposed || generation != chatMusicGeneration || chatRecipient?.Id != peer) return;
-            chatMusicStatus.Text = items.Length == 0 ? "Ничего не найдено" : query.Length == 0 ? "Из твоей библиотеки" : "";
             foreach (var item in items)
             {
-                var url = item.Track?.PermalinkUrl ?? item.Playlist?.PermalinkUrl;
-                if (url == null || !ChatMusicLink.IsMusicUrl(url)) continue;
+                var url = tracks ? item.Track?.PermalinkUrl : item.Playlist?.PermalinkUrl;
+                var isPrivate = !tracks && item.Playlist is { IsPrivate: true, Id: > 0 };
+                if (!isPrivate && (url == null || !ChatMusicLink.IsMusicUrl(url))) continue;
                 var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
                 SetCollectionArtwork(cover, item);
+                FrameworkElement title = new TextBlock().Text(item.Title).FontSize(14).TextTrimming(TextTrimming.CharacterEllipsis);
+                if (isPrivate)
+                    title = new DockPanel().LastChildFill().Spacing(6).Left().Children(
+                        Icons.View("lock-simple", 14, MutedIcon).DockRight().CenterVertical(), title);
+                var subtitle = new TextBlock().Text(item.Playlist is { } list
+                    ? $"Плейлист · {list.TrackCount} {RussianPlural(list.TrackCount, "трек", "трека", "треков")}" : item.Subtitle)
+                    .FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
                 var button = TrackButtons.Action(new Grid().Columns("44,*").Rows("52").Spacing(12).Children(
                     new Border().CornerRadius(7).ClipToBounds().Child(ArtworkLayer(cover)).CenterVertical(),
-                    new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(
-                        new TextBlock().Text(item.Title).FontSize(14).TextTrimming(TextTrimming.CharacterEllipsis),
-                        new TextBlock().Text(item.Playlist != null ? $"Плейлист · {item.Playlist.TrackCount} треков" : item.Subtitle).FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis))),
-                    () =>
-                    {
-                        if (chatRecipient?.Id != peer || !CanAttachChat()) return;
-                        CacheChatMusic(url, item); CloseChatMusicPicker();
-                        chatInput.Text = (chatInput.Text.TrimEnd() is { Length: > 0 } text ? text + "\n" : "") + url;
-                        chatInput.CaretPosition = chatInput.Text.Length; chatInput.Focus();
-                    }, TrackButtons.Text, 60);
+                    new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(title, subtitle)),
+                    () => Run(() => AttachChatMusicAsync(item, url, subtitle, generation, peer, token)), TrackButtons.Text, 64);
+                if (isPrivate) button.Hint("Приватный плейлист");
                 button.CornerRadius = 10; button.Padding = new Thickness(8, 0);
                 ((MaterialTrackButton)button).UseListStateLayer();
                 ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -104,11 +157,62 @@ internal sealed partial class MainWindow
                     chatMusicDialog.InvalidateTransitionSnapshot();
                 });
             }
+            if (chatMusicChoices.Children.Count == 0)
+            {
+                chatMusicStatus.Text = emptyMessage;
+                chatMusicEmptyArt.IsVisible = query.Length > 0 && items.Count == 0;
+            }
         }
         catch (OperationCanceledException) { }
         catch { if (generation == chatMusicGeneration) chatMusicStatus.Text = "Не удалось загрузить музыку. Попробуй ещё раз."; }
-        finally { if (generation == chatMusicGeneration) chatMusicDialog.InvalidateTransitionSnapshot(); }
+        finally
+        {
+            if (generation == chatMusicGeneration)
+            {
+                chatMusicLoading.SetLoading(false);
+                chatMusicField.Glyph.SetLoading(false);
+                chatMusicDialog.InvalidateTransitionSnapshot();
+            }
+        }
     }
+    private async Task AttachChatMusicAsync(LibraryItem item, string? url, TextBlock subtitle, long generation,
+        long peer, CancellationToken token)
+    {
+        bool Current() => !disposed && !token.IsCancellationRequested && generation == chatMusicGeneration &&
+            chatRecipient?.Id == peer && chatMusicDialog.IsOpen && CanAttachChat();
+        if (!Current() || !chatMusicChoices.IsEnabled) return;
+        if (item.Playlist is { IsPrivate: true } playlist)
+        {
+            chatMusicChoices.IsEnabled = false;
+            subtitle.Text = "Загружаем секретную ссылку…";
+            try
+            {
+                var resolved = await FetchPlaylistForSharingAsync(playlist, token);
+                if (!Current()) return;
+                url = resolved.IsPrivate ? PlaylistSharing.ShareUri(resolved)?.AbsoluteUri : null;
+                if (url == null)
+                {
+                    subtitle.Text = "Секретная ссылка недоступна. Попробуй ещё раз.";
+                    return;
+                }
+                item = LibraryData.FromPlaylist(resolved);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+            catch
+            {
+                if (Current()) subtitle.Text = "Не удалось получить ссылку. Попробуй ещё раз.";
+                return;
+            }
+            finally { if (generation == chatMusicGeneration) chatMusicChoices.IsEnabled = true; }
+        }
+        if (url == null) return;
+        CacheChatMusic(url, item);
+        CloseChatMusicPicker();
+        chatInput.Text = (chatInput.Text.TrimEnd() is { Length: > 0 } text ? text + "\n" : "") + url;
+        chatInput.CaretPosition = chatInput.Text.Length;
+        chatInput.Focus();
+    }
+
     private void CacheChatMusic(string url, LibraryItem item)
     { chatMusicCache[url] = item; while (chatMusicCache.Count > 64) chatMusicCache.Remove(chatMusicCache.First().Key); }
     private void QueueChatMusicSummary(string url)

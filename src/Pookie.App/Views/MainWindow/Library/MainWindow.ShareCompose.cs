@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private TextBox shareRecipientSearch = null!;
+    private TextBox shareRecipientSearch => shareSearchGlass.Input;
     private MultiLineTextBox shareComposeText = null!;
     private StackPanel shareRecipientChoices = null!, shareRecipientPicker = null!;
     private FrameworkElement shareComposeFields = null!, shareRecipientEmpty = null!;
@@ -15,9 +15,8 @@ internal sealed partial class MainWindow
     private TextBlock shareRecipientName = null!, shareRecipientDetails = null!, shareRecipientEmptyTitle = null!, shareRecipientEmptyText = null!;
     private Image shareRecipientEmptyArt = null!;
     private Image shareSelectedAvatar = null!;
-    private Button shareSearchClear = null!, shareRecipientEdit = null!;
-    private SearchActivityGlyph shareSearchGlyph = null!;
-    private GlassCard shareSearchGlass = null!;
+    private Button shareRecipientEdit = null!;
+    private DialogSearchField shareSearchGlass = null!;
     private ShareMessageField shareMessageField = null!;
     private Button shareSend = null!;
     private TextBlock shareSendLabel = null!;
@@ -30,22 +29,8 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ShareComposeView()
     {
-        shareRecipientSearch = new TextBox().FontSize(14)
-            .Height(28).Padding(0).Background(Color.Transparent).Foreground(TrackButtons.OnSurface).BorderThickness(0);
-        var placeholder = new TextBlock().Text("Имя или профиль SoundCloud").FontSize(13).Foreground(Muted)
-            .IsHitTestVisible(false).CenterVertical().Left();
-        shareSearchClear = TrackButtons.Icon(Icons.View("x", 16, MutedIcon), () => { shareRecipientSearch.Text = ""; shareRecipientSearch.Focus(); }, TrackButtons.Text, 28)
-            .Hint("Очистить поиск").IsVisible(false);
-        shareSearchGlyph = new SearchActivityGlyph(MutedIcon).Center();
-        var search = shareSearchGlass = new GlassCard { HoverEnabled = false, ShadowEnabled = false }.Height(48).CornerRadius(24)
-            .Padding(16, 0).Background(GlassSheen.LightControlTint(TrackButtons.GlassSurface)).Child(
-            new Grid().Columns("20,*,Auto").Rows("*").Spacing(10).Children(
-                shareSearchGlyph,
-                new Grid().Columns("*").Rows("*").Column(1).Children(shareRecipientSearch.CenterVertical(), placeholder), shareSearchClear.Column(2).CenterVertical()));
-        void SearchFocus() => search.SetEmphasized(shareRecipientSearch.IsFocused);
-        shareRecipientSearch.GotFocus += SearchFocus; shareRecipientSearch.LostFocus += SearchFocus;
-        search.MouseDown += e => { if (!e.Handled && e.Button == MouseButton.Left) shareRecipientSearch.Focus(); };
-        shareRecipientSearch.OnTextChanged(_ => { placeholder.IsVisible = shareRecipientSearch.Text.Length == 0; shareSearchClear.IsVisible = !placeholder.IsVisible; shareSearchGlyph.SetInk(placeholder.IsVisible ? MutedIcon : Color.White); StopShareSearch(); if (shareTab.Value == 1 && shareRecipient == null) shareSearchTimer.Start(); });
+        var search = shareSearchGlass = new DialogSearchField("Имя или профиль SoundCloud", MutedIcon);
+        shareRecipientSearch.OnTextChanged(_ => { StopShareSearch(); if (shareTab.Value == 1 && shareRecipient == null) shareSearchTimer.Start(); });
         shareRecipientSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; shareSearchTimer.Stop(); Run(SearchShareRecipientsAsync); } });
         shareSearchTimer.Tick += () => { shareSearchTimer.Stop(); Run(SearchShareRecipientsAsync); };
         shareRecipientChoices = new StackPanel().Vertical().Spacing(2);
@@ -174,7 +159,7 @@ internal sealed partial class MainWindow
 
     private void ShareSearchLoading(bool loading)
     {
-        shareSearchGlyph?.SetLoading(loading);
+        shareSearchGlass?.Glyph.SetLoading(loading);
     }
 
     private void ClearShareRecipientChoices()

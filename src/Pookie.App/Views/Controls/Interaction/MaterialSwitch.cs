@@ -85,15 +85,15 @@ internal sealed class MaterialSwitchVisual : Control
         var pressed = enabled && GetValue(PressedProperty);
         var focused = enabled && GetValue(FocusedProperty);
         var hot = enabled && GetValue(HotProperty);
-        var track = selected ? TrackButtons.OnSurface : TrackButtons.TonalSurface;
-        var handle = selected ? TrackButtons.OnPrimary : HandleOff;
+        var track = selected ? TrackButtons.BlueGlassAccent : TrackButtons.TonalSurface;
+        var handle = selected ? Color.White : HandleOff;
         if (!enabled)
         {
             track = selected ? TrackButtons.StateColor(Surface, TrackButtons.OnSurface, .12) : TrackButtons.TonalSurface;
             handle = selected ? Surface : TrackButtons.StateColor(track, TrackButtons.OnSurface, .38);
         }
         else if (hot || focused || pressed)
-            handle = selected ? Color.FromRgb(64, 64, 69) : OnSurfaceVariant;
+            handle = selected ? Color.FromRgb(230, 239, 255) : OnSurfaceVariant;
         return new(pressed ? 21 : selected ? 18 : 12, track, handle,
             pressed || focused ? .12 : hot ? .08 : 0);
     }

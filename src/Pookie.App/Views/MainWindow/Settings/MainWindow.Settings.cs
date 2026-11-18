@@ -70,8 +70,8 @@ internal sealed partial class MainWindow
         // Notes or dynamic content may follow the final setting row.
         if (rows.OfType<Border>().LastOrDefault() is { } last)
         { last.NonUniformBorderThickness = new Thickness(0); last.BorderThickness = 0; }
-        return new StackPanel().Vertical().Spacing(title.Length > 0 ? 4 : 0).Children(
-            new TextBlock().Text(title).FontSize(21).SemiBold().Margin(0, 0, 0, 6).IsVisible(title.Length > 0),
+        return new StackPanel().Vertical().Spacing(title.Length > 0 ? 16 : 0).Children(
+            new TextBlock().Text(title).FontSize(21).SemiBold().IsVisible(title.Length > 0),
             new StackPanel().Vertical().Children(rows));
     }
 
@@ -112,7 +112,8 @@ internal sealed partial class MainWindow
         FrameworkElement content = new TextBlock().Text(action).FontSize(14).SemiBold();
         if (externalLink) content = new StackPanel().Horizontal().Spacing(8).Children(
             content.CenterVertical(), Icons.View("arrow-square-out", 18, TrackButtons.OnSurface).CenterVertical());
-        var button = TrackButtons.Action(content, click, externalLink ? TrackButtons.Text : TrackButtons.Tonal);
+        var button = TrackButtons.Action(content, click, TrackButtons.Glass);
+        ((MaterialTrackButton)button).UseLightGlassFinish();
         settingsActions.Add((button, enabled ?? (() => true)));
         return SettingsRow(title, description, button);
     }

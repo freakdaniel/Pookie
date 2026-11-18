@@ -7,17 +7,21 @@ public static class PlaylistSharing
         if (ValidToken(playlist.SecretToken)) return playlist.SecretToken;
         foreach (var address in new[] { playlist.PermalinkUrl, playlist.Uri })
         {
-            if (!System.Uri.TryCreate(address, UriKind.Absolute, out var uri)) continue;
-            foreach (var part in uri.Query.TrimStart('?').Split('&'))
-            {
-                var pair = part.Split('=', 2);
-                if (pair.Length == 2 && pair[0] == "secret_token" && ValidToken(System.Uri.UnescapeDataString(pair[1])))
-                    return System.Uri.UnescapeDataString(pair[1]);
-            }
-            var last = uri.AbsolutePath.TrimEnd('/').Split('/').Last();
-            if (uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Length == 4 && ValidToken(last)) return last;
+            if (System.Uri.TryCreate(address, UriKind.Absolute, out var uri) && TokenFromUri(uri) is { } token) return token;
         }
         return null;
+    }
+
+    internal static string? TokenFromUri(Uri uri)
+    {
+        foreach (var part in uri.Query.TrimStart('?').Split('&'))
+        {
+            var pair = part.Split('=', 2);
+            if (pair.Length != 2 || pair[0] != "secret_token") continue;
+            var token = System.Uri.UnescapeDataString(pair[1]);
+            if (ValidToken(token)) return token;
+        }
+        return uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) is [_, "sets", _, var last] && ValidToken(last) ? last : null;
     }
 
     public static Uri? ShareUri(SoundCloudPlaylist playlist)

@@ -85,12 +85,18 @@ internal sealed partial class MainWindow
         FitShareContent();
     }
 
+    private async Task<SoundCloudPlaylist> FetchPlaylistForSharingAsync(SoundCloudPlaylist playlist, CancellationToken token)
+    {
+        if (shareSecretResetCompletion is { } pendingReset) await pendingReset.Task.WaitAsync(token);
+        var secret = playlist.User?.Id == me?.Id ? null : PlaylistSharing.Token(playlist);
+        return await api.GetPlaylistForSharingAsync(playlist.Id, token, secret);
+    }
+
     private async Task ResolveSharePlaylistAsync(SoundCloudPlaylist playlist, long generation, CancellationToken token)
     {
         try
         {
-            if (shareSecretResetCompletion is { } pendingReset) await pendingReset.Task.WaitAsync(token);
-            var resolved = await api.GetPlaylistForSharingAsync(playlist.Id, token, playlist.User?.Id == me?.Id ? null : PlaylistSharing.Token(playlist));
+            var resolved = await FetchPlaylistForSharingAsync(playlist, token);
             if (disposed || generation != shareGeneration) return;
             shareTarget = LibraryData.FromPlaylist(resolved); shareUri = PlaylistSharing.ShareUri(resolved);
             sharePrivateLoading = false; RefreshPrivateShare(); RefreshShareLink();

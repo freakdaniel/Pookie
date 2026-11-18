@@ -9,11 +9,12 @@ internal sealed class LibraryLoadingView : IDisposable
 {
     public Grid Root { get; }
     public LibrarySkeleton Skeleton { get; } = new();
+    internal bool FadeInSkeleton { get; set; }
     public bool Loading { get; private set; }
     internal event Action? ContentRevealed;
     private readonly FrameworkElement content;
     private readonly AnimationClock fade;
-    private double previewHeight;
+    private double previewHeight, skeletonFrom;
 
     public LibraryLoadingView(FrameworkElement content, bool preview = false)
     {
@@ -25,7 +26,12 @@ internal sealed class LibraryLoadingView : IDisposable
         {
             TickCallback = value =>
             {
-                content.Opacity = value; Skeleton.Opacity = 1 - value;
+                if (Loading)
+                {
+                    Skeleton.Opacity = skeletonFrom + (1 - skeletonFrom) * value;
+                    return;
+                }
+                content.Opacity = value; Skeleton.Opacity = skeletonFrom * (1 - value);
                 if (preview && Root.ActualWidth > 0)
                 {
                     // Empty/short responses shrink their reserved slot gradually, preserving neighboring sections.
@@ -35,6 +41,7 @@ internal sealed class LibraryLoadingView : IDisposable
             },
             CompletedCallback = () =>
             {
+                if (Loading) { Skeleton.Opacity = 1; return; }
                 Skeleton.IsVisible = false; Skeleton.Height = double.NaN; Skeleton.SetActive(false);
                 ContentRevealed?.Invoke();
             }
@@ -50,10 +57,13 @@ internal sealed class LibraryLoadingView : IDisposable
         if (loading)
         {
             Skeleton.Height = double.NaN;
-            content.Opacity = 0; Skeleton.Opacity = 1;
+            skeletonFrom = Skeleton.IsVisible ? Skeleton.Opacity : 0;
+            if (!FadeInSkeleton) skeletonFrom = 1;
+            content.Opacity = 0; Skeleton.Opacity = skeletonFrom;
             Skeleton.IsVisible = true; Skeleton.SetActive(true);
+            if (skeletonFrom < 1) fade.Start();
         }
-        else { previewHeight = Skeleton.ActualHeight; fade.Start(); }
+        else { previewHeight = Skeleton.ActualHeight; skeletonFrom = Skeleton.Opacity; fade.Start(); }
     }
 
     public void Dispose() { fade.Stop(); Skeleton.SetActive(false); }

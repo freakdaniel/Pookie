@@ -731,7 +731,7 @@ internal sealed partial class MainWindow
         chatEmojiSearchTimer?.Stop(); CloseChatMessageMenu(true); chatEmojiPopup?.Close(true); ChatEmojiArtwork.Clear();
         SaveChatDraft(); CleanupChatVoiceFiles(); RememberChatThread(); RetireChatHistory(); chatHistorySearch?.Cancel(); chatTimer.Dispose(); chatSearchTimer.Dispose(); chatMessageSearchTimer.Dispose(); chatDraftTimer.Dispose(); CancelChatReads();
         chatMusicRecognizeTimer.Dispose(); chatMusicEditor?.Dispose();
-        chatAttachInteraction.Dispose(); chatMusicSearchTimer.Dispose(); chatVideoTimer.Dispose(); chatVideoExpansionClock.Stop(); chatVideoSpeedClock.Stop();
+        chatAttachInteraction.Dispose(); chatVideoTimer.Dispose(); chatVideoExpansionClock.Stop(); chatVideoSpeedClock.Stop();
         WindowPresentation.FramePresented(Window) -= ArrangeChatScroll; CloseChatGifs();
         WindowPresentation.FramePresented(Window) -= QueueChatLibraryPreviews; ClearChatLibraryPreviews();
         if (chatDateViewer != null) chatDateViewer.ScrollChanged -= OnChatDateScroll;

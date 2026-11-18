@@ -20,8 +20,12 @@ public sealed partial class SoundCloudWebClient
     {
         var uri = await ExpandSoundCloudUrlAsync(url, token);
         using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), token);
-        return LibraryData.ParseItem(document.RootElement)
+        var item = LibraryData.ParseItem(document.RootElement)
             ?? throw new SoundCloudException("Эта ссылка SoundCloud не ведёт на трек, пользователя или подборку.");
+        if (item.Playlist is { IsPrivate: true } playlist && PlaylistSharing.Token(playlist) == null &&
+            PlaylistSharing.TokenFromUri(uri) is { } secret)
+            item = item with { Playlist = playlist with { SecretToken = secret } };
+        return item;
     }
 
     private static bool IsSoundCloudLink(Uri uri) => uri.Scheme == "https" && uri.UserInfo.Length == 0 && uri.IsDefaultPort &&

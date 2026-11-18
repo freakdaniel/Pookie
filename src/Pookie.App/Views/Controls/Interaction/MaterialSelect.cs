@@ -7,7 +7,7 @@ using Aprillz.MewUI.Text;
 namespace Pookie.App;
 
 // The trigger and its dropdown share the main window's chat popup compositor.
-internal sealed class MaterialSelect : ContentControl
+internal sealed class MaterialSelect : GlassCard
 {
     private readonly string[] options;
     private readonly AnimationClock stateMotion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
@@ -15,7 +15,7 @@ internal sealed class MaterialSelect : ContentControl
     private int selectedIndex = -1;
     private ITextLayout? label;
     private (string Text, uint Dpi, TextRunStyle Style, double Width) labelKey;
-    private Color stateFrom, stateTarget = TrackButtons.TonalSurface;
+    private Color stateFrom, stateTarget = GlassSheen.LightControlTint(TrackButtons.GlassSurface);
     private bool keyboardInteraction, headerHovered;
     private InAppPopup? popup;
     private bool isDropDownOpen;
@@ -43,9 +43,11 @@ internal sealed class MaterialSelect : ContentControl
     internal MaterialSelect(string[] options)
     {
         this.options = options.ToArray();
+        ShadowEnabled = false;
+        Transitions = [];
         Background = stateTarget; Foreground = TrackButtons.OnSurface;
         BorderThickness = 0; BorderBrush = Color.Transparent; CornerRadius = 12;
-        Height = 48; FontSize = 16; Padding = new Thickness(16, 0, 12, 0);
+        Height = 48; FontSize = 16; Padding = new Thickness(18, 0, 16, 0);
         Focusable = true;
         Content = Icons.View("caret-down", 20, TrackButtons.OnSurface).Right().CenterVertical();
         KeyboardFocusFeedback.Attach(this);
@@ -144,8 +146,15 @@ internal sealed class MaterialSelect : ContentControl
 
     private void RefreshState()
     {
-        var next = TrackButtons.StateColor(TrackButtons.TonalSurface, TrackButtons.OnSurface,
-            !IsEffectivelyEnabled ? 0 : IsDropDownOpen || GetValue(KeyboardFocusFeedback.VisibleProperty) ? .12 : headerHovered ? .08 : 0);
+        var surface = TrackButtons.GlassSurface;
+        if (IsEffectivelyEnabled)
+        {
+            if (IsDropDownOpen || GetValue(KeyboardFocusFeedback.VisibleProperty))
+                surface = TrackButtons.PressedColor(surface, TrackButtons.OnSurface);
+            else if (headerHovered)
+                surface = TrackButtons.HoverColor(surface, TrackButtons.OnSurface);
+        }
+        var next = GlassSheen.LightControlTint(surface);
         if (next == stateTarget) return;
         stateMotion.Stop(); stateFrom = Background; stateTarget = next;
         if (FindVisualRoot() is Window) stateMotion.Start(); else Background = next;
@@ -157,6 +166,8 @@ internal sealed class MaterialSelect : ContentControl
 internal sealed class MaterialSelectMenu : Panel
 {
     internal const double ItemHeight = 48;
+    private const double MenuInset = 8;
+    private const double RowGap = 4;
     private readonly Button[] buttons;
     private readonly Image[] checks;
     private readonly GlassCard card;
@@ -171,7 +182,7 @@ internal sealed class MaterialSelectMenu : Panel
         this.dismiss = dismiss;
         this.interaction = interaction;
         buttons = new Button[options.Length]; checks = new Image[options.Length];
-        var rows = new StackPanel().Vertical();
+        var rows = new StackPanel().Vertical().Spacing(RowGap);
         for (var index = 0; index < options.Length; index++)
         {
             var item = index;
@@ -180,14 +191,14 @@ internal sealed class MaterialSelectMenu : Panel
                 new TextBlock().Text(options[index]).FontSize(14).Foreground(TrackButtons.OnSurface)
                     .TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical().Column(0), check.CenterVertical().Column(1));
             var button = TrackButtons.Action(content, () => choose(item), TrackButtons.Text, ItemHeight)
-                .Padding(12, 0).CornerRadius(12);
+                .Padding(14, 0).CornerRadius(10);
             content.HorizontalAlignment = HorizontalAlignment.Stretch;
             button.MouseDown += _ => interaction(false);
             button.KeyDown += e => { if (e.Key != Key.Escape) interaction(true); };
             buttons[index] = button; rows.Add(button);
         }
         card = new GlassCard(PopupAppearance.AppBackground) { HoverEnabled = false }
-            .Background(PopupAppearance.Surface).CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding, 8)
+            .Background(PopupAppearance.Surface).CornerRadius(PopupAppearance.Radius).Padding(MenuInset)
             .Child(new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(rows));
         Add(card);
     }
@@ -206,8 +217,10 @@ internal sealed class MaterialSelectMenu : Panel
 
     protected override Size MeasureContent(Size availableSize)
     {
-        card.Measure(new Size(availableSize.Width, Math.Min(availableSize.Height, buttons.Length * ItemHeight + 16)));
-        return new Size(availableSize.Width, Math.Min(buttons.Length * ItemHeight + 16, availableSize.Height));
+        var height = buttons.Length * ItemHeight + Math.Max(0, buttons.Length - 1) * RowGap + 2 * MenuInset;
+        var size = new Size(availableSize.Width, Math.Min(availableSize.Height, height));
+        card.Measure(size);
+        return size;
     }
     protected override Size ArrangeOverride(Size finalSize)
     { card.Arrange(new Rect(Bounds.X, Bounds.Y, finalSize.Width, finalSize.Height)); return finalSize; }

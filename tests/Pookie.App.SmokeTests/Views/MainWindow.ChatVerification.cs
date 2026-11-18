@@ -554,9 +554,26 @@ internal sealed partial class MainWindow
         }
         internal TaskCompletionSource? MusicReady;
         private static object MusicTrack(string title = "Fixture track") => new { kind = "track", id = 101, title, artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", waveform_url = "https://wave.sndcdn.com/chat-track-fixture.json", permalink_url = "https://soundcloud.com/fixture/track", duration = 120000, user = new { id = 7, username = "Fixture artist" } };
+        internal List<long> PrivateLinkReads { get; } = [];
+        internal bool ReturnPrivateLink;
+        private static object PrivateMusicPlaylist(long id, string? secret = null) => new
+        {
+            kind = "playlist", id, title = $"Private {id}", sharing = "private", user = new { id = 42 },
+            permalink_url = $"https://soundcloud.com/fixture/sets/private-{id}", secret_token = secret, track_count = 1
+        };
         private static object MusicPlaylist() => new { kind = "playlist", id = 102, title = "Fixture playlist", artwork_url = "https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg", permalink_url = "https://soundcloud.com/fixture/sets/list", track_count = 2, user = new { id = 7, username = "Fixture artist" }, tracks = new[] { MusicTrack() } };
         public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
         {
+            if (uri.AbsolutePath == "/users/42/playlists")
+                return JsonSerializer.SerializeToDocument(new { collection = new[] { PrivateMusicPlaylist(123), PrivateMusicPlaylist(124) } });
+            if (uri.AbsolutePath is "/playlists/123" or "/playlists/124")
+            {
+                var id = long.Parse(uri.Segments[^1]);
+                PrivateLinkReads.Add(id);
+                return JsonSerializer.SerializeToDocument(PrivateMusicPlaylist(id, ReturnPrivateLink ? "s-current" : null));
+            }
+            if (uri.AbsolutePath.StartsWith("/search", StringComparison.Ordinal) && uri.Query.Contains("q=no-music-matches", StringComparison.Ordinal))
+                return JsonSerializer.SerializeToDocument(new { collection = Array.Empty<object>() });
             var animated = uri.AbsolutePath == "/resolve" && uri.Query.Contains("animated", StringComparison.Ordinal);
             if (animated && MusicReady != null) await MusicReady.Task.WaitAsync(cancellationToken);
             object data = uri.AbsolutePath == "/tracks/101" ? MusicTrack() : uri.AbsolutePath == "/resolve" ? Uri.UnescapeDataString(uri.Query).Contains("/sets/", StringComparison.Ordinal) ? MusicPlaylist() : MusicTrack() :

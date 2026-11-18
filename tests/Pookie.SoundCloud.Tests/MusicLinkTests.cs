@@ -25,6 +25,19 @@ public sealed class MusicLinkTests
         if (url.EndsWith("/album", StringComparison.Ordinal)) Assert.True(item.IsAlbum);
     }
 
+    [Fact]
+    public async Task RecipientCanOpenPrivatePlaylistWhenResolveOmitsTheToken()
+    {
+        const string url = "https://soundcloud.com/fixture/sets/list/s-current";
+        var browser = new LinkBrowser("""{"kind":"playlist","id":42,"title":"Private","sharing":"private","permalink_url":"https://soundcloud.com/fixture/sets/list","tracks":[]}""");
+        using var http = new HttpClient(new Handler(_ => throw new InvalidOperationException("Unexpected HTTP request")));
+        var api = new SoundCloudWebClient(http) { BrowserTransport = browser, Session = new("fixture", "fixture-token", "Test") };
+        var item = await api.ResolveChatMusicAsync(url);
+        var detail = await api.GetCollectionDetailAsync(item);
+        Assert.Equal("/playlists/42?secret_token=s-current", browser.Calls[1].PathAndQuery);
+        Assert.Equal(url, PlaylistSharing.ShareUri(detail.Item.Playlist!)?.AbsoluteUri);
+    }
+
     [Theory]
     [InlineData("https://soundcloud.com/artist", true)]
     [InlineData("https://WWW.SOUNDCLOUD.COM/artist/song", true)]
