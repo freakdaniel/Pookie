@@ -283,7 +283,8 @@ internal sealed partial class MainWindow
         collectionTitle.TextTrimming = TextTrimming.CharacterEllipsis;
         collectionPlay.IsVisible = true;
         collectionAuthorLink.IsVisible = !system;
-        collectionSocialActions.IsVisible = collectionFollow.IsVisible = collectionMore.IsVisible = !system;
+        collectionFollow.IsVisible = collectionMore.IsVisible = !system;
+        collectionSocialActions.IsVisible = !system && !playlist.IsPrivate;
         collectionMixQueue.IsVisible = system;
         collectionTitleBlock.Columns("64,*").Spacing(18);
         collectionMetadataLine.Spacing(system ? 0 : 6);

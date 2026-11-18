@@ -149,7 +149,15 @@ internal sealed partial class MainWindow
             if (deleting)
             {
                 likedPlaylistIds.Remove(playlist.Id); repostedPlaylistIds.Remove(playlist.Id);
-                if (displayedCollection?.Playlist?.Id == playlist.Id) await ShowLibrarySectionAsync(Page.LibraryPlaylists);
+                if (page.Value == Page.LibraryCollection && displayedCollection?.Playlist?.Id == playlist.Id)
+                    await ShowLibrarySectionAsync(Page.LibraryPlaylists);
+                for (var i = navigationHistory.Count - 1; i >= 0; i--)
+                {
+                    if (i == navigationIndex || navigationHistory[i].Route.Item?.Playlist?.Id != playlist.Id) continue;
+                    navigationHistory.RemoveAt(i);
+                    if (i < navigationIndex) navigationIndex--;
+                }
+                RefreshHistoryButtons();
             }
             await RefreshEditedPlaylistLibraryAsync(session);
             if (!disposed && api.Session == session) status.Value = deleting ? "Плейлист удалён." : "Плейлист сохранён.";

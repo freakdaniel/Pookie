@@ -52,6 +52,7 @@ internal sealed partial class MainWindow : IDisposable
     private readonly Slider progress;
     private readonly Image artwork;
     private readonly Image profileAvatar;
+    private readonly Image profileMenuAvatar = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
     private readonly ItemsControl queueList;
     private readonly MaterialTooltipLayer tooltipLayer;
     private IAudioPlayer? player;
@@ -188,6 +189,7 @@ internal sealed partial class MainWindow : IDisposable
         {
             if (widevineSetup != null && widevineDialog.HandleKey(e)) return;
             if (embeddedLoginDialog.HandleKey(e)) return;
+            if (chatMusicDialog.HandleKey(e)) return;
             if (playlistPickerClosing) { e.Handled = true; return; }
             if (playlistEditor.IsOpen && InAppPopup.HandleKey(Window, e)) return;
             if (playlistEditor.HandleKey(e)) return;
@@ -196,7 +198,7 @@ internal sealed partial class MainWindow : IDisposable
                 shareWidgetColorPopup.HandleKey(e);
                 return;
             }
-            if (HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
+            if (HandleShareResetKey(e) || HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
             if (chatVideoOpen.Value && chatVideoShowingImage && e.Key == Key.Escape)
@@ -213,7 +215,6 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && chatVideoOpen.Value) { e.Handled = true; if (chatVideoExpanded.Value) SetChatVideoExpanded(false); else CloseChatVideo(); return; }
             if (chatVideoOpen.Value && e.Key is Key.Left or Key.Right) { e.Handled = true; Run(() => NavigateChatVideoAsync(e.Key == Key.Left ? -1 : 1)); return; }
             if (chatVideoOpen.Value && e.Key == Key.Space) { e.Handled = true; if (chatVideoSession is { } video) Run(video.ToggleAsync); RevealChatVideoControls(); return; }
-            if (e.Key == Key.Escape && chatMusicOpen.Value) { e.Handled = true; CloseChatMusicPicker(); return; }
             if (e.Key == Key.Escape && chatGifsOpen.Value) { e.Handled = true; CloseChatGifs(); return; }
             if (e.Key == Key.Escape && playlistPickerOpen.Value) { e.Handled = true; ClosePlaylistPicker(); return; }
             if (e.Key == Key.Escape && CancelTrackCommentInput()) { e.Handled = true; return; }
@@ -223,11 +224,14 @@ internal sealed partial class MainWindow : IDisposable
         InitializeChatComposer(); InitializeSearchInput();
         Window.Deactivated += () => { RefreshHomeMixMotion(); foreach (var motion in smoothScrolls.Values) motion.Stop(); CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
         chatTimer.Start();
+        pageRefreshTimer.Tick += () => Run(RefreshVisibleDataAsync);
+        pageRefreshTimer.Start();
         Window.Activated += () =>
         {
             RefreshHomeMixMotion();
             foreach (var motion in smoothScrolls.Values) motion.Stop();
             chatNextPoll = default;
+            Run(RefreshVisibleDataAsync);
             trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
             if (!disposed && !demo && me != null && api.Session != null) Run(RefreshChatsAsync);
         };
@@ -386,9 +390,16 @@ internal sealed partial class MainWindow : IDisposable
         if (libraryLikes != null) ReplaceTracks(libraryLikes);
         else ReplaceTracks(new([], null));
         RefreshLibraryCards();
-        var result = await api.GetLikesAsync(me.Id, token);
-        await PrepareTrackArtworkAsync(result.Tracks, token, preview: !showAll, mode: showAll ? likesMode.Value : TrackViewMode.Cards);
-        token.ThrowIfCancellationRequested();
+        var userId = me.Id;
+        long revision;
+        TrackPage result;
+        do
+        {
+            revision = confirmedLikeRevision;
+            result = await api.GetLikesAsync(userId, token);
+            await PrepareTrackArtworkAsync(result.Tracks, token, preview: !showAll, mode: showAll ? likesMode.Value : TrackViewMode.Cards);
+            token.ThrowIfCancellationRequested();
+        } while (revision != confirmedLikeRevision);
         libraryLikes = result;
         ReplaceTracks(result);
         likedIds.UnionWith(result.Tracks.Select(t => t.Id));
@@ -407,9 +418,15 @@ internal sealed partial class MainWindow : IDisposable
         var generation = navigationGeneration;
         var session = api.Session;
         var token = loading?.Token ?? lifetime.Token;
-        var result = await api.GetNextPageAsync(target, token);
-        token.ThrowIfCancellationRequested();
-        if (disposed || generation != navigationGeneration || api.Session != session || nextHref != target) return;
+        TrackPage result;
+        long revision;
+        do
+        {
+            revision = confirmedLikeRevision;
+            result = await api.GetNextPageAsync(target, token);
+            token.ThrowIfCancellationRequested();
+            if (disposed || generation != navigationGeneration || api.Session != session || nextHref != target) return;
+        } while (revision != confirmedLikeRevision && page.Value == Page.LibraryTracks);
         var ids = tracks.Select(t => t.Id).ToHashSet();
         tracks.AddRange(result.Tracks.Where(t => ids.Add(t.Id)));
         nextHref = result.NextHref;
@@ -505,6 +522,7 @@ internal sealed partial class MainWindow : IDisposable
             localRecent.RemoveAll(item => item.Key == "track:" + track.Id);
             localRecent.Insert(0, LibraryItem.FromTrack(track));
             if (localRecent.Count > 30) localRecent.RemoveAt(30);
+            if (page.Value == Page.LibraryHistory) RenderLibrarySection();
             RefreshHomeShortcuts();
             RefreshOverviewSections();
             audioReady = true;
@@ -830,6 +848,7 @@ internal sealed partial class MainWindow : IDisposable
         embeddedLogin?.Stop();
         tooltipLayer.Dispose();
         ResetExpandedPlayer();
+        pageRefreshTimer.Dispose();
         DisposeFeed();
         DisposeUserPublicationViews(); DisposeTrackSectionViews();
         trackDetailGlass?.Dispose(); collectionGlass?.Dispose();
@@ -840,7 +859,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        CloseShare(true); shareTimePopup?.Dispose(); shareWidgetColorPopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        CloseShare(true); shareTimePopup?.Dispose(); shareResetPopup?.Dispose(); shareWidgetColorPopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;

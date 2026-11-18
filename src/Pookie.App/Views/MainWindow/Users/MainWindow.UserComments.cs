@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
 
     private void RenderUserComments(UserProfileState state)
     {
-        var pending = state.Loading.Contains(UserSection.Comments);
+        var pending = state.Loading.Contains(UserSection.Comments) && state.Comments == null;
         var error = state.Errors.GetValueOrDefault(UserSection.Comments) ?? "";
         userCommentsSection.IsVisible = state.Comments is { Comments.Length: > 0 } || pending || error.Length > 0;
         SetUserLoading(userCommentsLoading, pending && state.Comments == null, LoadingRowStyle.Compact, 246);
@@ -29,7 +29,7 @@ internal sealed partial class MainWindow
         foreach (var entry in state.Comments?.Comments ?? []) userCommentsBody.Add(UserCommentView(entry, preview: false));
         if (error.Length > 0)
             userSidebarComments.Add(TrackButtons.Action(new TextBlock().Text("Повторить загрузку").FontSize(12),
-                () => Run(() => LoadUserSectionAsync(UserSection.Comments, navigationGeneration, loading!.Token, state.Comments?.NextHref)), TrackButtons.Text, 30).Padding(0).Left());
+                () => Run(() => LoadUserSectionAsync(UserSection.Comments, navigationGeneration, loading!.Token, cachedProfile!.FailedCursors.GetValueOrDefault(UserSection.Comments))), TrackButtons.Text, 30).Padding(0).Left());
     }
 
     private void ClearUserComments()

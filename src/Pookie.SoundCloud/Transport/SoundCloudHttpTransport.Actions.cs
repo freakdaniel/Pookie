@@ -127,6 +127,26 @@ public sealed partial class SoundCloudHttpTransport
                 playlist.TryGetProperty("is_system_playlist", out var system) && system.ValueKind == JsonValueKind.True)
                 throw new SoundCloudException("Этот плейлист нельзя редактировать.");
 
+            if (request.Kind == "reset-secret")
+            {
+                var before = LibraryData.ParsePlaylist(playlist);
+                if (!before.IsPrivate) throw new SoundCloudException("Секретная ссылка есть только у приватных плейлистов.");
+                var browserReset = false;
+                using var reset = await ExecuteAsync(HttpMethod.Post, Api($"/soundcloud:playlists:{request.PlaylistId}/secret_token/reset"), null,
+                    verification == null ? null : async ct =>
+                    {
+                        var result = await verification.EditPlaylistAsync(request, ct).ConfigureAwait(false);
+                        browserReset = true; return result;
+                    }, token, expectedAccount: account).ConfigureAwait(false);
+                var resetResult = browserReset ? JsonDocument.Parse(reset.RootElement.GetRawText()) :
+                    await ReadPlaylistSnapshotAsync(full, account, token).ConfigureAwait(false);
+                var after = LibraryData.ParsePlaylist(resetResult.RootElement);
+                if (after.Id != before.Id || after.User?.Id != request.UserId || !after.IsPrivate ||
+                    PlaylistSharing.Token(after) is not { } secret || secret == PlaylistSharing.Token(before) || PlaylistSharing.ShareUri(after) == null)
+                { resetResult.Dispose(); throw new SoundCloudException("SoundCloud не подтвердил новую секретную ссылку. Открой окно заново, чтобы проверить её."); }
+                return resetResult;
+            }
+
             var update = request.Update;
             List<long>? order = null;
             if (request.Kind == "remove" || update?.TrackIds != null || update?.ExpectedTrackIds != null)

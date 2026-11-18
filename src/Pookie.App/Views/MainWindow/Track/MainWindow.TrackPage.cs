@@ -184,9 +184,36 @@ internal sealed partial class MainWindow
             ? (trackResizePaint ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task.WaitAsync(token)
             : Task.CompletedTask;
 
+    private long trackLikeRevision, trackRepostRevision;
+
+    private void UpdateTrackSocialDetails(long trackId, bool selected, bool repost)
+    {
+        TrackDetailState Apply(TrackDetailState state)
+        {
+            long? Count(long? value) => value is { } count ? Math.Max(0, count + (selected ? 1 : -1)) : null;
+            if (!repost) return state with { Track = state.Track with { LikesCount = Count(state.Track.LikesCount) } };
+            state = state with { Track = state.Track with { RepostsCount = Count(state.Track.RepostsCount) } };
+            if (state.Sections.TryGetValue(TrackSection.Reposts, out var list) && me is { } actor)
+                state = state with { Sections = new Dictionary<TrackSection, LibraryPage>(state.Sections) {
+                    [TrackSection.Reposts] = ChangeMembership(list, UserItem(actor), selected) } };
+            return state;
+        }
+        foreach (var entry in navigationHistory)
+            if (entry.Snapshot is { Detail: { } detail } snapshot && detail.Track.Id == trackId)
+                entry.Snapshot = snapshot with { Detail = Apply(detail) };
+        if (trackDetailState?.Track.Id != trackId) return;
+        if (repost) ++trackRepostRevision; else ++trackLikeRevision;
+        trackDetailState = Apply(trackDetailState);
+        if (page.Value != Page.Track) return;
+        RenderTrackDetailHeader();
+        if (repost && trackDetailSection.Value == TrackSection.Reposts) RenderTrackSection();
+    }
+
     private async Task LoadTrackDetailMetadataAsync(long id, long generation, CancellationToken token)
     {
         var commentsRevision = trackCommentCountRevision;
+        var likesRevision = trackLikeRevision;
+        var repostsRevision = trackRepostRevision;
         try
         {
             // Publish the whole byline once both independent responses are ready.
@@ -198,6 +225,8 @@ internal sealed partial class MainWindow
             var upload = await quality;
             await WaitForTrackResizePaintAsync(token);
             if (!IsTrackDetailCurrent(id, generation)) return;
+            if (likesRevision != trackLikeRevision) track = track with { LikesCount = trackDetailState!.Track.LikesCount };
+            if (repostsRevision != trackRepostRevision) track = track with { RepostsCount = trackDetailState!.Track.RepostsCount };
             if (commentsRevision != trackCommentCountRevision) track = track with { CommentCount = trackDetailState!.Track.CommentCount };
             trackDetailState = trackDetailState! with { Track = track, Upload = upload, MetadataLoading = false };
             RenderTrackDetailHeader();

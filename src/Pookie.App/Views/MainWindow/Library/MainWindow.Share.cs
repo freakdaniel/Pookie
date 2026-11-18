@@ -58,7 +58,7 @@ internal sealed partial class MainWindow
         shareLinkGlass = new GlassCard { HoverEnabled = false, ShadowEnabled = false }.CornerRadius(24)
             .Background(GlassSheen.LightControlTint(TrackButtons.GlassSurface)).Padding(0).Child(
                 new Grid().Columns("*,Auto").Rows("48").Children(
-                    shareLink.CenterVertical().Margin(16, 0, 8, 0), time.Column(1)));
+                    shareLink.CenterVertical().Margin(16, 0, 8, 0), time.Column(1), ShareResetButton().Column(1)));
         shareMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         var destinations = new ShareDestinationsRow();
         foreach (var (label, service, icon, color) in new[]
@@ -80,7 +80,7 @@ internal sealed partial class MainWindow
         }
         shareLinksPanel = new StackPanel().Vertical().Spacing(16).Children(
             new Grid().Columns("*,Auto").Rows("48").Spacing(12).Children(
-                shareLinkGlass, shareCopy.Column(1)), destinations);
+                shareLinkGlass, shareCopy.Column(1)), SharePrivateView(), shareDestinationsPanel = destinations);
         shareComposePanel = ShareComposeView().IsVisible(false);
         shareEmbedPanel = ShareEmbedView().IsVisible(false).Margin(0, 0, 18, 0);
         shareLinksPanel.Margin(0, 0, 18, 0);
@@ -149,7 +149,11 @@ internal sealed partial class MainWindow
         if (!shareClosing) { shareContent.ResetTrack(); sharePreview.ResetPalette(); }
         shareClosing = sharePreparingClose = false; shareWidgetPreview.ResumeFromPopup(); shareContent.IsHitTestVisible = true;
         shareSendBusyHeld = false;
-        shareTarget = item; shareUri = TrackLink(item.Track?.PermalinkUrl ?? item.Playlist?.PermalinkUrl);
+        shareTarget = item;
+        shareResetConfirmation = false;
+        sharePrivateLoading = !demo && item.Playlist is { Id: > 0, IsPrivate: true };
+        shareUri = sharePrivateLoading ? null : item.Playlist is { } playlist ? PlaylistSharing.ShareUri(playlist) : TrackLink(item.Track?.PermalinkUrl);
+        RefreshPrivateShare();
         shareTitle.Text = item.Title; shareAuthor.Text = item.Track?.Author ?? item.Playlist?.User?.Username ?? item.Subtitle;
         RefreshShareTrackStats();
         shareStartSeconds = null; UpdateShareTimeLabel(false);
@@ -164,13 +168,14 @@ internal sealed partial class MainWindow
         shareDialog.Show();
         if (reopening) shareContent.RevealTrack();
         Run(() => LoadShareArtworkAsync(item, generation, token));
+        if (sharePrivateLoading && item.Playlist is { } privatePlaylist) Run(() => ResolveSharePlaylistAsync(privatePlaylist, generation, token));
         if (shareUri == null && item.Track is { Id: > 0 } track) Run(() => ResolveShareTrackAsync(track, generation, token));
     }
 
     private void ResetShareRequest()
     {
         shareCopyIcon.Reset();
-        shareTimePopup?.Close(true, false);
+        shareTimePopup?.Close(true, false); shareResetPopup?.Close(true, false);
         ++shareGeneration; StopShareSearch(); shareRequest?.Cancel(); shareRequest?.Dispose(); shareRequest = null;
     }
 
@@ -230,7 +235,8 @@ internal sealed partial class MainWindow
         shareTimeAction.IsEnabled = shareCopy.IsEnabled && shareTarget?.Track is { DurationSeconds: > 0 } track && double.IsFinite(track.DurationSeconds);
         foreach (var button in shareDestinations) button.IsEnabled = shareCopy.IsEnabled;
         if (shareTab.Value != 2)
-            SetShareMessage(shareUri == null ? "У этого трека или плейлиста пока нет ссылки для отправки." : "");
+            SetShareMessage(sharePrivateLoading ? "Загружаем секретную ссылку…" : shareUri == null ?
+                shareTarget?.Playlist?.IsPrivate == true ? "Не удалось получить секретную ссылку. Открой окно заново." : "У этого трека или плейлиста пока нет ссылки для отправки." : "");
         RefreshShareCompose(); RefreshShareEmbed();
     }
 
@@ -280,7 +286,7 @@ internal sealed partial class MainWindow
 
     private void SelectShareTab(int tab, bool animate = true)
     {
-        shareTimePopup?.Close(true, false);
+        shareTimePopup?.Close(true, false); shareResetPopup?.Close(true, false);
         if (tab != 1) StopShareSearch();
         if (tab != 2) shareWidgetColorPopup?.Close(true, false);
         shareTab.Value = tab;

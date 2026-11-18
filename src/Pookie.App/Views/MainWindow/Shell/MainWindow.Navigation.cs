@@ -29,6 +29,7 @@ internal sealed partial class MainWindow
     private CancellationTokenSource? likedLoading;
     private Task? likedTask;
     private bool likedIdsReady, advancing;
+    private long confirmedLikeRevision;
     private readonly Dictionary<(WebSession Session, long Track), bool> pendingLikes = [];
     private bool IsTrackLiked(SoundCloudTrack track) => api.Session is { } session && pendingLikes.TryGetValue((session, track.Id), out var liked)
         ? liked : likedIds.Contains(track.Id) || !likedIdsReady && page.Value is Page.Library or Page.LibraryTracks && tracks.Any(item => item.Id == track.Id);
@@ -109,10 +110,13 @@ internal sealed partial class MainWindow
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
-            RefreshHomeShortcuts();
+            ++confirmedLikeRevision;
+            UpdateTrackSocialDetails(track.Id, liked, repost: false);
+            UpdateProfileMembership(user.Id, UserSection.Likes, LibraryItem.FromTrack(track), liked);
             UpdateLikeState();
             status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
             await ApplyLibraryLikeAsync(track, liked, session);
+            if (!disposed && api.Session == session) RefreshHomeShortcuts();
         }
         finally
         {

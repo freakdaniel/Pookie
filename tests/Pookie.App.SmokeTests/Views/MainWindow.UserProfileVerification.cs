@@ -77,7 +77,7 @@ internal sealed partial class MainWindow
             userProfileState = userProfileState with { User = fixture.User }; RenderUserProfile();
             await WaitForLikedLayoutAsync(() => userBioHeading.IsVisible && !userBioMore.IsVisible);
             await WaitForLoginFrameAsync(); CaptureUiPreview("user-profile-overview");
-            foreach (var width in new[] { 1000, 1600, 1160 })
+            foreach (var width in new[] { 1000, VerificationWindowWidth(1600), 1160 })
             {
                 Window.WindowSize = WindowSize.Resizable(width, 900, minWidth: 1000, minHeight: 680);
                 await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 && Math.Abs(contentFrame.ActualWidth - Math.Min(1440, width)) < 1 && !userHero.IsArrangeDirty);
@@ -215,13 +215,78 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("A stale banner overwrote the active profile or a cached banner was decoded again");
             if (userProfileState?.User.Id != 7 || userName.Text != fixture.User.Username)
                 throw new InvalidOperationException("A late profile reply replaced the current profile.");
+            await VerifySidebarPlaylistInteractionsAsync(fixture.User);
             await OpenUserProfileAsync(me);
             if (follow.IsVisible) throw new InvalidOperationException("The profile offered to follow the current account.");
+            UpdateProfileAvatar(me! with { AvatarUrl = fixture.User.AvatarUrl });
+            profile.Value = "freakdaniel";
+            await WaitForLikedLayoutAsync(() => hasAvatar.Value);
+            RouteWaveformClick(SettingsCenter(profileButton));
+            var profileMenu = shellMenus.Single(menu => ReferenceEquals(menu.State, profileOpen)).Layer;
+            await WaitForLikedLayoutAsync(() => profileMenu.Reveal > .999);
+            if (profileMenuAvatar.Source != profileAvatar.Source || VisualTree.Find(profileMenu, element => element is TextBlock { Text: "Твой профиль" }) != null)
+                throw new InvalidOperationException("Profile menu lost the avatar or kept its old heading.");
+            CaptureUiPreview("profile-menu-avatar");
+            var mine = (Button)VisualTree.Find(profileMenu, element => element is Button button &&
+                VisualTree.Find(button, child => child is TextBlock { Text: "Мой профиль" }) != null)!;
+            RouteWaveformClick(SettingsCenter(mine));
+            MoveActionPointer(new(2, 2));
+            await WaitForLikedLayoutAsync(() => !profileOpen.Value && page.Value == Page.UserProfile && userProfileState?.User.Id == me!.Id);
+            if (KeyboardFocusFeedback.IsVisible(profileButton)) throw new InvalidOperationException("Mouse navigation left the avatar focus ring active.");
+            await VerifyProfileChangesAsync(fixture);
             Console.WriteLine("USER_PROFILE_UI_OK: independent loading skeletons, stable column geometry, avatar palette, banner crossfade/cache, shared bottom fade, hydrated hero, banner/avatar, overview, seven tabs and follower navigation, virtualized deduplicated pagination, source-preserving linked biography, retry, history/scroll restoration, responsive widths, confirmed follow and stale response isolation");
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; CaptureUiPreview("user-profile-failure"); Console.Error.WriteLine("USER_PROFILE_UI_FAILED: " + error); }
         finally { Window.Close(); }
+    }
+
+    private async Task VerifyProfileChangesAsync(UserProfileFixture fixture)
+    {
+        var track = fixture.Tracks[3];
+        await OpenUserProfileAsync(me!);
+        var profile = cachedProfile!;
+        var reads = fixture.OwnLikesReads;
+        var followers = profile.State.Sections[UserSection.Followers];
+        await OpenTrackPageAsync(track);
+        await ToggleTrackLikeAsync(track);
+        await MoveNavigationAsync(-1);
+        if (userSidebarRows.FirstOrDefault()?.Track?.Id != track.Id || fixture.OwnLikesReads != reads ||
+            profile.State.Sections[UserSection.Followers] != followers)
+            throw new InvalidOperationException("Back did not restore the confirmed like in place.");
+        await OpenUserSectionAsync(UserSection.Likes);
+        await OpenTrackPageAsync(track);
+        await ToggleTrackLikeAsync(track);
+        await MoveNavigationAsync(-1);
+        if (UserMusicPage!.Items.Any(item => item.Track?.Id == track.Id))
+            throw new InvalidOperationException("The Likes tab restored a removed track.");
+        await MoveNavigationAsync(-1);
+        if (userSidebarRows.Any(row => row.Track?.Id == track.Id))
+            throw new InvalidOperationException("The overview restored a removed like from a different history entry.");
+
+        // Simulate a like from another client while this profile is retained.
+        fixture.OwnLikes.Add(fixture.Tracks[4]);
+        var stamp = profile.Reads[UserSection.Likes];
+        profile.Reads[UserSection.Likes] = stamp with { Checked = DateTimeOffset.MinValue };
+        await RefreshVisibleProfileAsync();
+        if (userSidebarRows.FirstOrDefault()?.Track?.Id != fixture.Tracks[4].Id || !IsTrackLiked(fixture.Tracks[4]) || fixture.OwnLikesReads != reads + 1 ||
+            profile.State.Sections[UserSection.Followers] != followers)
+            throw new InvalidOperationException("Refreshing stale likes did not update just the affected profile section.");
+        profile.Reads[UserSection.Likes] = stamp with { Checked = DateTimeOffset.MinValue };
+        var held = fixture.OwnLikesHold = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var oldRead = RefreshVisibleProfileAsync();
+        try
+        {
+            if (oldRead.IsCompleted) throw new InvalidOperationException("The delayed likes read did not start.");
+            var retained = userSidebarRows.First();
+            await ToggleTrackLikeAsync(track);
+            if (!userSidebarRows.Contains(retained)) throw new InvalidOperationException("A new like recreated the other visible track.");
+        }
+        finally { fixture.OwnLikesHold = null; held.TrySetResult(); }
+        await oldRead;
+        if (userSidebarRows.FirstOrDefault()?.Track?.Id != track.Id || userSidebarRows.Count(row => row.Track?.Id == track.Id) != 1)
+            throw new InvalidOperationException("A stale response rolled back or duplicated a confirmed like.");
+        Console.WriteLine("PROFILE_CHANGES_OK: confirmed like and unlike across history, shared tabs and scoped background refresh");
     }
 
     private sealed class UserProfileFixture : ISoundCloudBrowserTransport
@@ -233,6 +298,9 @@ internal sealed partial class MainWindow
         internal SoundCloudTrack[] Tracks { get; }
         private static readonly JsonSerializerOptions json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
         internal bool FailLikes;
+        internal int OwnLikesReads;
+        internal TaskCompletionSource? OwnLikesHold;
+        internal readonly List<SoundCloudTrack> OwnLikes = [];
         internal TaskCompletionSource? ActivityHold, SidebarHold;
         internal int FollowWrites, PlaylistLikeWrites, PlaylistRepostWrites;
         internal TaskCompletionSource Delayed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -244,6 +312,17 @@ internal sealed partial class MainWindow
             var path = uri.AbsolutePath;
             if (path == "/stream/users/7" && ActivityHold != null) await ActivityHold.Task;
             if (path.StartsWith("/users/7/") && !path.EndsWith("web-profiles") && SidebarHold != null) await SidebarHold.Task;
+            if (path == "/users/42/likes")
+            {
+                OwnLikesReads++;
+                var response = JsonSerializer.SerializeToDocument(new { collection = OwnLikes.Select(track => new { track }) }, json);
+                if (OwnLikesHold != null) await OwnLikesHold.Task;
+                return response;
+            }
+            if (path == "/me/track_likes/ids") return JsonDocument.Parse("[]");
+            if (path == $"/tracks/{Tracks[3].Id}") return JsonSerializer.SerializeToDocument(Tracks[3], SoundCloudJson.Default.SoundCloudTrack);
+            if (path == $"/tracks/{Tracks[3].Id}/related" || path == $"/tracks/{Tracks[3].Id}/comments")
+                return JsonDocument.Parse("""{"collection":[]}""");
             if (path is "/me/playlist_likes/ids" or "/me/playlist_reposts/ids") return JsonDocument.Parse("[]");
             if (path == "/users/42/followings/ids") return JsonDocument.Parse("[]");
             if (path is "/users/7" or "/users/8" or "/users/9" or "/users/42")
@@ -290,7 +369,11 @@ internal sealed partial class MainWindow
             if (path == "/users/7/followings") return JsonDocument.Parse("""{"collection":[{"id":8,"username":"Другой слушатель","followers_count":12}]}""");
             if (path == "/users/7/albums" || path == "/users/7/playlists_without_albums")
                 return JsonDocument.Parse("""{"collection":[{"kind":"playlist","id":101,"title":"Там, где мы остались","track_count":19,"artwork_url":"https://i1.sndcdn.com/user-profile-banner.jpg","user":{"id":7,"username":"kurokovvv"}},{"kind":"playlist","id":102,"title":"Пустой плейлист","track_count":0,"artwork_url":"https://i1.sndcdn.com/user-profile-banner.jpg"}]}""");
-            if (path == "/stream/users/7/reposts" || path == "/users/7/likes")
+            if (path == "/users/7/likes")
+                return JsonSerializer.SerializeToDocument(new { collection = new object[] {
+                    new { playlist = new SoundCloudPlaylist { Id = 101, Title = "Там, где мы остались", TrackCount = 19, User = User with { Id = 8, Username = "Автор подборки" },
+                        ArtworkUrl = User.AvatarUrl, Sharing = "public" } }, new { track = Tracks[0] } } }, json);
+            if (path == "/stream/users/7/reposts")
                 return JsonSerializer.SerializeToDocument(new { collection = new[] { new { track = Tracks[0] } } }, json);
             if (path.StartsWith("/users/") || path.StartsWith("/stream/users/")) return JsonDocument.Parse("""{"collection":[]}""");
             throw new InvalidOperationException("Unexpected profile request: " + path);
@@ -299,7 +382,12 @@ internal sealed partial class MainWindow
         { PlaylistLikeWrites++; await Task.Delay(80, token); }
         public Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken token = default)
         { PlaylistRepostWrites++; return Task.CompletedTask; }
-        public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default) => Task.CompletedTask;
+        public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default)
+        {
+            OwnLikes.RemoveAll(track => track.Id == trackId);
+            if (liked) OwnLikes.Insert(0, Tracks.Single(track => track.Id == trackId));
+            return Task.CompletedTask;
+        }
         public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken token = default)
         { FollowWrites++; await Task.Delay(100, token); }
     }

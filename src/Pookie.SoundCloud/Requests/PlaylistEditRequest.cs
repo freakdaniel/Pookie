@@ -5,7 +5,7 @@ public sealed record PlaylistEditRequest(string Kind, long UserId, long Playlist
 {
     public bool IsValid() => UserId is > 0 and <= 9007199254740991 && PlaylistId is > 0 and <= 9007199254740991 &&
         (Kind == "update" ? Update?.IsValid() == true && Update.UserId == UserId && Update.PlaylistId == PlaylistId && TrackId == 0 && Artwork == null :
-         Update == null && (Kind == "delete" ? TrackId == 0 && Artwork == null :
+         Update == null && (Kind is "delete" or "reset-secret" ? TrackId == 0 && Artwork == null :
          Kind == "remove" ? TrackId is > 0 and <= 9007199254740991 && Artwork == null :
          Kind == "artwork" && TrackId == 0 && Artwork is { Length: > 0 and <= 1398104 } && ValidJpeg(Artwork)));
 

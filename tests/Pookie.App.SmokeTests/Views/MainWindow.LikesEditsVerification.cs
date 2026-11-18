@@ -36,6 +36,8 @@ internal sealed partial class MainWindow
             Button Like(LikedTrackRow row) => FindLikeAction(row.Root);
             current = fixtures[0]; UpdateLikeState();
             Like(first).Focus();
+            // Sample the edit after the waveform rows and focus cue have been painted.
+            await WaitForLoginFrameAsync();
             var fade = new List<double>(); var shift = new List<double>(); var appearance = new List<double>();
             void Sample()
             {

@@ -68,6 +68,7 @@ internal sealed partial class MainWindow
     {
         if (trackDetailState is not { } state) return;
         var id = state.Track.Id;
+        var repostRevision = trackRepostRevision;
         trackDetailState = state with { SectionLoading = true, SectionError = "" };
         RenderTrackSection();
         try
@@ -78,6 +79,8 @@ internal sealed partial class MainWindow
             var previous = sections.GetValueOrDefault(section);
             sections[section] = new(cursor == null ? result.Items : (previous?.Items ?? []).Concat(result.Items).DistinctBy(item => item.Key).ToArray(),
                 result.NextHref == cursor || cursor != null && result.Items.Length == 0 ? null : result.NextHref);
+            if (section == TrackSection.Reposts && repostRevision != trackRepostRevision && me is { } actor)
+                sections[section] = ChangeMembership(sections[section], UserItem(actor), repostedIds.Contains(id));
             trackDetailState = trackDetailState with { Sections = sections, SectionLoading = false };
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }

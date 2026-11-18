@@ -2,6 +2,7 @@ using System.Net;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Browser;
+using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
@@ -108,7 +109,8 @@ internal sealed partial class MainWindow
         if (shareEmbedCode == null || shareEmbedCopy == null) return;
         shareEmbedLayout.Select(shareEmbedVisual);
         RefreshShareWidgetColors();
-        shareEmbedCode.Text = shareUri == null ? "" : BuildShareEmbed(shareUri, shareEmbedVisual, shareTarget?.Playlist != null, shareEmbedColor.Text);
+        var embedUri = shareUri == null ? null : shareTarget?.Playlist is { IsPrivate: true } playlist ? PlaylistSharing.EmbedUri(playlist) : shareUri;
+        shareEmbedCode.Text = embedUri == null ? "" : BuildShareEmbed(embedUri, shareEmbedVisual, shareTarget?.Playlist != null, shareEmbedColor.Text);
         shareEmbedCopy.IsEnabled = shareEmbedCode.Text.Length > 0;
         shareEmbedCopyGlyph.Reset(); shareEmbedCopy.Hint("Скопировать код");
         if (shareEmbedCode.Text.Length > 0)

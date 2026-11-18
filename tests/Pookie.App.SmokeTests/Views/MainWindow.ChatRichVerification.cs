@@ -6,6 +6,40 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private async Task VerifyChatMusicPickerAsync()
+    {
+        collectionImages["https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg"] = libraryCoverCache[101] = ImageSource.FromBytes(ArtworkFixtureBitmap(160));
+        var draft = chatInput.Text;
+        ShowChatAttachMenu();
+        await WaitForLikedLayoutAsync(() => chatAttachMenu.Reveal > .99);
+        RouteWaveformClick(SettingsCenter(((StackPanel)chatAttachMenuPanel.Content!).Children.OfType<Button>().First()));
+        await WaitForLikedLayoutAsync(() => chatMusicDialog.IsOpen && chatMusicSearch.IsFocused);
+        chatMusicSearch.Text = "fixture";
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running && chatMusicDialog.HasGlassBackdrop &&
+            chatMusicChoices.Children.Count == 2 && chatMusicChoices.ActualHeight > 100 && chatMusicChoices.ActualWidth > 100);
+        CaptureUiPreview("chats-music-picker");
+        RouteChatEscape();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        await OpenChatMusicPickerAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running);
+        RouteWaveformClick(new Point(10, 80));
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        await OpenChatMusicPickerAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running);
+        RouteWaveformClick(SettingsCenter(chatMusicDialog.Children.OfType<Button>().Single()));
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        if (chatInput.Text != draft) throw new InvalidOperationException("Dismissing the music picker changed the draft.");
+        await OpenChatMusicPickerAsync();
+        chatMusicSearch.Text = "fixture"; chatMusicSearchTimer.Stop(); await SearchChatMusicAsync();
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.Running && chatMusicChoices.Children.Count == 2 && chatMusicChoices.Children.OfType<Button>().All(b => b.ActualHeight > 0));
+        RouteWaveformClick(SettingsCenter(chatMusicChoices.Children.OfType<Button>().First()));
+        await WaitForLikedLayoutAsync(() => !chatMusicDialog.IsVisible && chatInput.IsFocused);
+        var expected = string.Join('\n', new[] { draft.TrimEnd(), "https://soundcloud.com/fixture/track" }.Where(part => part.Length > 0));
+        if (chatInput.Text != expected)
+            throw new InvalidOperationException("Selecting music did not insert a link in the composer.");
+        chatInput.Text = draft;
+    }
+
     private async Task VerifyChatRichAttachmentsAsync(ChatFixtureTransport transport, ChatFixtureMediaHandler media, bool musicOnly = false)
     {
         var document = media.Add(new(42, 90, "", [new("ghosty-config.txt", "text/plain", new byte[87], true)]));
@@ -58,13 +92,7 @@ internal sealed partial class MainWindow
         chatFilePickerOpen = true; ShowChatAttachMenu();
         if (chatAttachMenu.IsOpen) throw new InvalidOperationException("Attachment menu reopened over the file picker.");
         chatFilePickerOpen = false;
-        collectionImages["https://i1.sndcdn.com/chat-music-fixture-t500x500.jpg"] = libraryCoverCache[101] = ImageSource.FromBytes(ArtworkFixtureBitmap(160));
-        var draft = chatInput.Text;
-        await OpenChatMusicPickerAsync(); chatMusicSearch.Text = "fixture"; chatMusicSearchTimer.Stop(); await SearchChatMusicAsync();
-        if (chatMusicChoices.Children.Count != 2) throw new InvalidOperationException("Music picker did not include both tracks and playlists.");
-        await WaitForLoginFrameAsync();
-        await WaitForLikedLayoutAsync(() => chatMusicChoices.ActualHeight > 100 && chatMusicChoices.ActualWidth > 100);
-        CaptureUiPreview("chats-music-picker"); CloseChatMusicPicker(); chatInput.Text = draft;
+        await VerifyChatMusicPickerAsync();
         waveformRequests["https://wave.sndcdn.com/chat-track-fixture.json"] = Task.FromResult<float[]?>(Enumerable.Range(0, 300)
             .Select(i => (float)(.2 + .7 * Math.Abs(Math.Sin(i * .41)) * (.3 + .7 * Math.Abs(Math.Sin(i * .027))))).ToArray());
         transport.AddOwn("Послушай\nhttps://soundcloud.com/fixture/track");

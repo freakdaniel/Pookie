@@ -179,7 +179,7 @@ internal sealed partial class MainWindow
         avatarLoading?.Cancel(); avatarLoading?.Dispose(); avatarLoading = null;
         hasAvatar.Value = false;
         profileInitial.Value = "";
-        profileAvatar.Source = null;
+        profileAvatar.Source = profileMenuAvatar.Source = null;
     }
 
     private void UpdateProfileAvatar(SoundCloudUser user)
@@ -194,7 +194,7 @@ internal sealed partial class MainWindow
             var source = await FetchImageAsync(user.AvatarUrl, token);
             token.ThrowIfCancellationRequested();
             if (source == null || generation != avatarGeneration || disposed || me?.Id != user.Id) return;
-            profileAvatar.Source = source;
+            profileAvatar.Source = profileMenuAvatar.Source = source;
             hasAvatar.Value = true;
         });
     }

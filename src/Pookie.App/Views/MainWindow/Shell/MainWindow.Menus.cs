@@ -29,7 +29,8 @@ internal sealed partial class MainWindow
             }
             else
             {
-                if (layer.IsFocusWithin) anchor.Focus();
+                if (layer.IsFocusWithin) KeyboardFocusFeedback.Restore(anchor,
+                    Window.FocusManager.FocusedElement is Control focused && KeyboardFocusFeedback.IsVisible(focused));
                 layer.Close();
             }
         };

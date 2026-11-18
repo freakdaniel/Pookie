@@ -13,8 +13,8 @@ internal sealed partial class MainWindow
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus, bool CollectionRetry,
-        string Filter, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter, UserProfileState? UserProfile,
-        FeedState? Feed, bool FeedReposts);
+        string Filter, double Scroll, LibraryPage? SearchResults, TrackDetailState? Detail, string CollectionFilter, CachedProfile? UserProfile,
+        bool FeedReposts);
     private sealed class NavigationEntry(NavigationRoute route)
     {
         public NavigationRoute Route { get; } = route;
@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
 
     private NavigationSnapshot CaptureNavigation() => new(new(tracks.ToArray(), nextHref), heading.Value, eyebrow.Value, status.Value,
         activeCollection, activeLibrarySource, librarySectionTitle.Value, librarySectionStatus.Value, librarySectionRetry.Value,
-        likedFilter.Text, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilter.Text, userProfileState, feedState, feedReposts.Value);
+        likedFilter.Text, page.Value == Page.Chats ? 0 : shellScroll.VerticalOffset, searchResults, trackDetailState, collectionFilter.Text, cachedProfile, feedReposts.Value);
 
     private ScrollViewer? NavigationScroll() => page.Value == Page.Chats || !shellPageScroll.IsReady ? null : shellScroll;
 
@@ -138,9 +138,10 @@ internal sealed partial class MainWindow
         }
         var state = entry.Snapshot;
         feedLoading = false;
-        feedState = state.Feed; feedReposts.Value = state.FeedReposts; feedError = "";
+        feedReposts.Value = state.FeedReposts; feedError = "";
         if (entry.Route.Page == Page.Feed) RenderFeed();
-        userProfileState = state.UserProfile is { } userProfile ? userProfile with { Loading = [] } : null;
+        cachedProfile = state.UserProfile;
+        if (userProfileState is { } profile) userProfileState = profile with { Loading = [] };
         if (entry.Route.Page == Page.UserProfile) { userSection.Value = entry.Route.UserSection; failedUserCursor = null; RenderUserProfile(); }
         trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false, SectionLoading = false } : null;
         if (entry.Route.Page == Page.Track) { trackDetailSection.Value = entry.Route.TrackSection; failedTrackSectionCursor = null; RenderTrackDetail(); }
@@ -161,12 +162,40 @@ internal sealed partial class MainWindow
         else if (entry.Route.Page == Page.Settings) { settingsSection.Value = entry.Route.SettingsSection; RefreshSettingsControls(); RefreshSettingsData(); }
         else if (IsCollectionPage(entry.Route.Page))
         {
+            if (entry.Route.Page == Page.LibraryCollection && entry.Route.Item is { } item &&
+                collectionDetails.TryGetValue(item.Key, out var latest) && latest.Tracks.NextHref == null)
+                activeCollection = new(latest.Tracks.Tracks.Select(LibraryItem.FromTrack).ToArray(), null);
             RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; collectionFilterDebounce.Flush();
             librarySectionStatus.Value = state.CollectionStatus;
             librarySectionRetry.Value = state.CollectionRetry;
         }
         RestoreNavigationScroll(state.Scroll);
         Window.InvalidateVisual();
+        await RefreshVisibleDataAsync();
+        if (entry.Route.Page == Page.Library)
+            await Task.WhenAll(staleLibrarySources.ToArray().Select(RefreshLibrarySourceInPlaceAsync));
+        else if (entry.Route.Page == Page.LibraryCollection && entry.Route.Item is { Playlist: not null } playlist &&
+            !collectionDetails.ContainsKey(playlist.Key) && api.Session is { } session && !demo)
+            await ReloadEditedPlaylistAsync(playlist, session);
+        else if (entry.Route.Page is Page.LibraryFollowing or Page.LibraryPlaylists or Page.LibraryAlbums)
+            await RefreshLibrarySourceInPlaceAsync(state.Source);
+    }
+
+    private static readonly TimeSpan PageFreshness = TimeSpan.FromMinutes(2);
+    private readonly DispatcherTimer pageRefreshTimer = new(TimeSpan.FromSeconds(30));
+    private DateTimeOffset feedRefreshAttempt;
+    private Task RefreshVisibleDataAsync()
+    {
+        if (disposed || !Window.IsActive || api.Session == null || browser?.Embedded?.IsBlocked == true)
+            return Task.CompletedTask;
+        if (page.Value == Page.UserProfile) return RefreshVisibleProfileAsync();
+        if (page.Value == Page.Feed && !feedLoading && feedState is { Loaded: true } feed &&
+            DateTimeOffset.UtcNow - feed.Checked >= PageFreshness && DateTimeOffset.UtcNow - feedRefreshAttempt >= TimeSpan.FromSeconds(30))
+        {
+            feedRefreshAttempt = DateTimeOffset.UtcNow;
+            return LoadFeedAsync();
+        }
+        return Task.CompletedTask;
     }
 
     private void RestoreNavigationScroll(double offset)

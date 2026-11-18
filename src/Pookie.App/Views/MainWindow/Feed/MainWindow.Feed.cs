@@ -7,10 +7,12 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private sealed record FeedState(FeedEntry[] Entries, string? Cursor, WebSession? Session, bool Loaded = false);
+    private sealed record FeedState(FeedEntry[] Entries, string? Cursor, WebSession? Session, bool Loaded = false,
+        int Pages = 1, DateTimeOffset Checked = default);
     private FeedState? feedState;
     private readonly ObservableValue<bool> feedReposts = new(true);
     private bool feedLoading;
+    private long feedFollowingRevision;
     private bool failedFeedAppend;
     private string feedError = "";
     private ItemsControl feedList = null!;
@@ -55,7 +57,7 @@ internal sealed partial class MainWindow
         if (feedState?.Session != api.Session) feedState = null;
         feedError = "";
         RenderFeed();
-        if (force || feedState?.Loaded != true) await LoadFeedAsync();
+        if (force || feedState?.Loaded != true || DateTimeOffset.UtcNow - feedState.Checked >= PageFreshness) await LoadFeedAsync();
     });
 
     private async Task LoadFeedAsync(bool append = false)
@@ -63,22 +65,41 @@ internal sealed partial class MainWindow
         if (page.Value != Page.Feed || feedLoading || append && feedState?.Cursor == null) return;
         if (!demo && (api.Session == null || me == null)) { RenderFeed(); return; }
         var generation = navigationGeneration; var session = api.Session; var token = loading!.Token;
+        var followingRevision = feedFollowingRevision;
         var cursor = append ? feedState?.Cursor : null;
         feedLoading = true; feedError = ""; RenderFeed();
         try
         {
-            var result = demo ? new FeedPage(tracks.Select(track => new FeedEntry("demo:" + track.Id, LibraryItem.FromTrack(track), track.User, "track", track.CreatedAt)).ToArray(), null)
-                : await api.GetFeedActivitiesAsync(cursor, token);
-            if (disposed || token.IsCancellationRequested || page.Value != Page.Feed || generation != navigationGeneration || session != api.Session) return;
-            var entries = (append ? feedState?.Entries ?? [] : Array.Empty<FeedEntry>()).Concat(result.Entries).DistinctBy(entry => entry.Key).ToArray();
-            feedState = new(entries, result.NextHref == cursor ? null : result.NextHref, session, true);
+            var entries = new List<FeedEntry>();
+            if (append) entries.AddRange(feedState!.Entries);
+            var pages = append ? feedState!.Pages : 0;
+            var limit = append ? 1 : Math.Max(1, feedState?.Pages ?? 1);
+            var cursors = new HashSet<string>();
+            if (cursor != null) cursors.Add(cursor);
+            for (int i = 0; i < limit; i++)
+            {
+                var result = demo ? new FeedPage(tracks.Select(track => new FeedEntry("demo:" + track.Id, LibraryItem.FromTrack(track), track.User, "track", track.CreatedAt)).ToArray(), null)
+                    : await api.GetFeedActivitiesAsync(cursor, token);
+                if (disposed || token.IsCancellationRequested || page.Value != Page.Feed || generation != navigationGeneration || session != api.Session || followingRevision != feedFollowingRevision) return;
+                entries.AddRange(result.Entries); pages++;
+                cursor = result.NextHref;
+                if (cursor == null || !cursors.Add(cursor)) { cursor = null; break; }
+            }
+            if (!append) { loadedPageCursors.Clear(); emptyPageStreak = 0; failedPageCursor = null; }
+            feedState = new(entries.DistinctBy(entry => entry.Key).ToArray(), cursor, session, true, pages,
+                append ? feedState!.Checked : DateTimeOffset.UtcNow);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException)
         { if (generation == navigationGeneration && !disposed) { failedFeedAppend = append; feedError = FriendlyError(error).TrimEnd('.'); throw; } }
         finally
         {
-            if (generation == navigationGeneration && !disposed) { feedLoading = false; RenderFeed(); }
+            if (generation == navigationGeneration && !disposed)
+            {
+                feedLoading = false;
+                RenderFeed();
+                if (followingRevision != feedFollowingRevision) Run(() => LoadFeedAsync());
+            }
         }
     }
 
@@ -95,9 +116,9 @@ internal sealed partial class MainWindow
         if (page.Value != Page.Feed) return;
         var entries = VisibleFeedEntries;
         SetPageItems(feedList, entries, LoadingRowStyle.Waveform);
-        feedSkeleton.IsVisible = feedLoading && entries.Length == 0;
+        feedSkeleton.IsVisible = feedLoading && feedState?.Loaded != true && entries.Length == 0;
         feedSkeleton.SetActive(feedSkeleton.IsVisible);
-        feedEmpty.IsVisible = !feedLoading && entries.Length == 0 && feedError.Length == 0;
+        feedEmpty.IsVisible = (!feedLoading || feedState?.Loaded == true) && entries.Length == 0 && feedError.Length == 0;
         feedEmpty.Text = !demo && me == null ? "Войди в SoundCloud, чтобы увидеть публикации и репосты своих подписок" :
             feedState?.Entries.Length > 0 && !feedReposts.Value ? "Здесь пока только репосты — включи все публикации или загрузи более ранние записи" :
             "Здесь появятся новые треки и плейлисты твоих подписок";

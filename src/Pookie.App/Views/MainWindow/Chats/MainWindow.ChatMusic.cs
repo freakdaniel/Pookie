@@ -9,7 +9,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly ConditionalWeakTable<Grid, ChatMusicView> chatMusicViews = new();
-    private readonly ObservableValue<bool> chatMusicOpen = new(false);
+    private ModalDialog chatMusicDialog = null!;
     private readonly Dictionary<string, LibraryItem> chatMusicCache = [];
     private readonly Dictionary<string, Task<LibraryItem>> chatMusicLoads = [];
     private readonly HashSet<string> chatMusicAttempted = [];
@@ -23,37 +23,44 @@ internal sealed partial class MainWindow
     private FrameworkElement ChatMusicPickerView()
     {
         chatMusicSearch = new TextBox().Placeholder("Найти трек или плейлист").Background(Color.Transparent).BorderThickness(0).FontSize(14);
-        chatMusicSearch.OnTextChanged(_ => { chatMusicSearchTimer.Stop(); if (chatMusicOpen.Value) chatMusicSearchTimer.Start(); });
+        chatMusicSearch.OnTextChanged(_ => { chatMusicSearchTimer.Stop(); if (chatMusicDialog.IsOpen) chatMusicSearchTimer.Start(); });
         chatMusicSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; chatMusicSearchTimer.Stop(); Run(SearchChatMusicAsync); } });
         chatMusicSearchTimer.Tick += () => { chatMusicSearchTimer.Stop(); Run(SearchChatMusicAsync); };
         chatMusicStatus = new TextBlock().FontSize(12).Foreground(Muted);
         chatMusicChoices = new StackPanel().Vertical().Spacing(6);
-        var panel = new Border().Background(Raised).CornerRadius(24).Padding(22).Width(540).Center().Child(
-            new Grid().Columns("*").Rows("Auto,Auto,Auto,340").Spacing(14).Children(
-                new Grid().Columns("*,36").Rows("36").Children(new TextBlock().Text("Трек или плейлист").FontSize(22).Bold().CenterVertical(),
-                    TrackButtons.Icon(Icons.View("x", 20), CloseChatMusicPicker, TrackButtons.Text, 36).Column(1)),
-                MaterialSearchField.Create(chatMusicSearch).Row(1), chatMusicStatus.Row(2),
-                new ScrollViewer().Content(chatMusicChoices).Background(Color.Transparent).BorderThickness(0).Padding(0).Row(3)));
-        return new Grid().Columns("*").Rows("*").BindIsVisible(chatMusicOpen).Children(
-            new Button().Background(Color.FromArgb(150, 0, 0, 0)).BorderThickness(0).Padding(0).OnClick(CloseChatMusicPicker), panel);
+        var content = new Grid().Columns("*").Rows("Auto,Auto,Auto,*").Spacing(12).Margin(24).Children(
+            TrackDialogChrome.Heading("Трек или плейлист"),
+            MaterialSearchField.CreateGlass(chatMusicSearch).Row(1), chatMusicStatus.Row(2),
+            new ScrollViewer().Content(chatMusicChoices).Background(Color.Transparent).BorderThickness(0).Padding(0).Row(3));
+        var card = TrackDialogChrome.MatteBody(content).Width(PlaylistDialogContent.PreferredWidth).Height(PlaylistDialogContent.MaximumBodyHeight);
+        var close = TrackButtons.Icon(Icons.View("x", 20), CloseChatMusicPicker, TrackButtons.Glass).Top().Hint("Закрыть");
+        ((MaterialTrackButton)close).UseLightGlassFinish();
+        chatMusicDialog = new ModalDialog(card, chatMusicSearch, close, staticBackdrop: true, cacheTransition: true,
+            backdropTint: TrackDialogChrome.MatteTint) { DismissRequested = CloseChatMusicPicker };
+        return chatMusicDialog;
     }
     private Task OpenChatMusicPickerAsync()
     {
-        if (!CanAttachChat()) return Task.CompletedTask;
-        CloseChatAttachMenu(); chatMusicSearch.Text = ""; chatMusicOpen.Value = true; chatMusicSearch.Focus();
+        if (!CanAttachChat() || chatMusicDialog.IsOpen) return Task.CompletedTask;
+        CloseChatAttachMenu(true);
+        chatInput.Focus();
+        chatMusicSearch.Text = "";
+        chatMusicDialog.Show();
         return SearchChatMusicAsync();
     }
     private void CloseChatMusicPicker()
     {
-        chatMusicOpen.Value = false; ++chatMusicGeneration; chatMusicSearchTimer.Stop();
+        chatMusicDialog?.Close(immediate: disposed);
+        ++chatMusicGeneration; chatMusicSearchTimer.Stop();
         chatMusicRequest?.Cancel(); chatMusicRequest?.Dispose(); chatMusicRequest = null; chatMusicChoices?.Clear();
     }
     private async Task SearchChatMusicAsync()
     {
-        if (!chatMusicOpen.Value || me == null || chatRecipient == null) return;
+        if (!chatMusicDialog.IsOpen || me == null || chatRecipient == null) return;
         chatMusicRequest?.Cancel(); chatMusicRequest?.Dispose(); chatMusicRequest = CancellationTokenSource.CreateLinkedTokenSource(ChatReadToken());
         var token = chatMusicRequest.Token; var generation = ++chatMusicGeneration; var peer = chatRecipient.Id;
         chatMusicChoices.Clear(); chatMusicStatus.Text = "Загрузка…";
+        chatMusicDialog.InvalidateTransitionSnapshot();
         try
         {
             var query = chatMusicSearch.Text.Trim(); LibraryItem[] items;
@@ -85,13 +92,22 @@ internal sealed partial class MainWindow
                         chatInput.Text = (chatInput.Text.TrimEnd() is { Length: > 0 } text ? text + "\n" : "") + url;
                         chatInput.CaretPosition = chatInput.Text.Length; chatInput.Focus();
                     }, TrackButtons.Text, 60);
+                button.CornerRadius = 10; button.Padding = new Thickness(8, 0);
+                ((MaterialTrackButton)button).UseListStateLayer();
                 ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
                 chatMusicChoices.Add(button);
-                Run(async () => { var image = await GetCollectionArtworkAsync(item); if (!disposed && generation == chatMusicGeneration) SetCollectionArtwork(cover, item, image, finished: true); });
+                Run(async () =>
+                {
+                    var image = await GetCollectionArtworkAsync(item);
+                    if (disposed || generation != chatMusicGeneration) return;
+                    SetCollectionArtwork(cover, item, image, finished: true);
+                    chatMusicDialog.InvalidateTransitionSnapshot();
+                });
             }
         }
         catch (OperationCanceledException) { }
         catch { if (generation == chatMusicGeneration) chatMusicStatus.Text = "Не удалось загрузить музыку. Попробуй ещё раз."; }
+        finally { if (generation == chatMusicGeneration) chatMusicDialog.InvalidateTransitionSnapshot(); }
     }
     private void CacheChatMusic(string url, LibraryItem item)
     { chatMusicCache[url] = item; while (chatMusicCache.Count > 64) chatMusicCache.Remove(chatMusicCache.First().Key); }

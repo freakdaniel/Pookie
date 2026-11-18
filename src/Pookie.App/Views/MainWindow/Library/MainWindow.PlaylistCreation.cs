@@ -129,8 +129,8 @@ internal sealed partial class MainWindow
     }
     private void InvalidatePlaylistLibrary(long playlistId, bool details = true)
     {
-        libraryPages.Remove("collections"); libraryLoads.Remove("collections"); libraryLoadedAt.Remove("collections");
-        overviewReady.Remove("collections");
+        InvalidateLibrarySource("collections");
+        if (details) InvalidateProfilePlaylist(playlistId);
         if (details)
             foreach (var key in collectionDetails.Where(pair => pair.Value.Item.Playlist?.Id == playlistId).Select(pair => pair.Key).ToArray())
                 collectionDetails.Remove(key);

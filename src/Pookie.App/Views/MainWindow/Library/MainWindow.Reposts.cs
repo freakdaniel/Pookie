@@ -86,17 +86,8 @@ internal sealed partial class MainWindow
             await api.SetRepostedAsync(track.Id, reposted, repostLoading?.Token ?? lifetime.Token);
             if (disposed || api.Session != session) return;
             if (reposted) repostedIds.Add(track.Id); else repostedIds.Remove(track.Id);
-            if (trackDetailState is { } detail && detail.Track.Id == track.Id)
-            {
-                var sections = new Dictionary<TrackSection, LibraryPage>(detail.Sections);
-                sections.Remove(TrackSection.Reposts);
-                trackDetailState = detail with { Track = detail.Track with {
-                    RepostsCount = Math.Max(0, (detail.Track.RepostsCount ?? 0) + (reposted ? 1 : -1))
-                }, Sections = sections };
-                RenderTrackDetailHeader();
-                if (trackDetailSection.Value == TrackSection.Reposts)
-                    Run(() => LoadTrackSectionAsync(TrackSection.Reposts, navigationGeneration, loading!.Token));
-            }
+            UpdateProfileRepost(me!.Id, LibraryItem.FromTrack(track), reposted);
+            UpdateTrackSocialDetails(track.Id, reposted, repost: true);
             status.Value = reposted ? "Трек появился в твоём профиле." : "Репост убран.";
         }
         finally { pendingReposts.Remove((session, track.Id)); if (!disposed) RefreshRepostState(); }

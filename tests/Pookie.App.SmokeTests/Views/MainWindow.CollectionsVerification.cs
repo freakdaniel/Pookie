@@ -34,11 +34,14 @@ internal sealed partial class MainWindow
                     await VerifyPlaylistDialogAsync(transport.Playlist.Tracks[0], transport);
                     return;
                 }
+                if (Environment.GetEnvironmentVariable("POOKIE_PRIVATE_SHARE_ONLY") == "1")
+                { await VerifyPrivateShareAsync(LibraryData.FromPlaylist(transport.Playlist)); return; }
                 if (Environment.GetEnvironmentVariable("POOKIE_WIDGET_REAL_ONLY") == "1") { await VerifyShareWidgetNativeAsync(transport.Playlist.Tracks[0]); return; }
                 if (Environment.GetEnvironmentVariable("POOKIE_SHARE_FUNCTIONAL_ONLY") == "1")
                     PrepareShareWidgetFixture();
                 else await VerifyShareGlassAsync(transport.Playlist.Tracks[0]);
                 await VerifySharePanelAsync(transport.Playlist.Tracks[0], LibraryData.FromPlaylist(transport.Playlist));
+                await VerifyPrivateShareAsync(LibraryData.FromPlaylist(transport.Playlist));
                 return;
             }
             if (Environment.GetEnvironmentVariable("POOKIE_COMPACT_INTERACTION_PROBE") == "1")
@@ -56,7 +59,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth > 150 && collectionTrackList.ActualHeight > 100 &&
                 compactTrackRows.Any(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.ActualWidth > 200));
             if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || librarySectionTitle.Value != transport.Playlist.Title || collectionGrid.IsVisible && collectionGrid.ItemsSource.Count > 0 ||
-                activeCollection?.Items.Length != 12 || collectionMeta.Text != "· Alternative Rock · 12 треков · 24:00 · Приватный · " + DetailAge(transport.Playlist.CreatedAt))
+                activeCollection?.Items.Length != 12 || collectionMeta.Text != "· Alternative Rock · 12 треков · 24:00 · " + DetailAge(transport.Playlist.CreatedAt))
                 throw new InvalidOperationException("Playlist did not hydrate its own metadata or show the track list.");
             await LoadCollectionActionsAsync();
             if (collectionLike.StyleName != TrackButtons.Selected || collectionRepost.StyleName != TrackButtons.Glass)
@@ -372,7 +375,7 @@ internal sealed partial class MainWindow
     {
         public SoundCloudPlaylist Playlist { get; } = new()
         {
-            Id = 11, Title = "Музыка для долгой дороги", Description = "Треки, которые хочется слушать по пути домой.", Sharing = "private",
+            Id = 11, Title = "Музыка для долгой дороги", Description = "Треки, которые хочется слушать по пути домой.", Sharing = "public",
             Genre = "Alternative Rock", CreatedAt = "2020-01-01T00:00:00Z",
             User = new() { Id = 7, Username = "Автор подборки" }, Duration = 1440000, TrackCount = 12,
             ArtworkUrl = "https://i1.sndcdn.com/collection-fixture-t500x500.jpg",

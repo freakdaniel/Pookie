@@ -160,6 +160,7 @@ internal sealed partial class MainWindow
         {
             var comment = await api.CreateTrackCommentAsync(state.Track.Id, body, state.CommentTimestamp ?? CurrentCommentTimestamp(state.Track), token);
             if (disposed || api.Session != session) return;
+            UpdateProfileComment(me!.Id, state.Track, comment, posted: true);
             if (CommitTrackCommentState(state.Track.Id, latest => AddPostedComment(latest, comment, state.CommentDraft)))
                 status.Value = "Комментарий отправлен";
         }
@@ -222,6 +223,7 @@ internal sealed partial class MainWindow
         {
             await api.DeleteTrackCommentAsync(track.Id, comment, viewer.Id, token);
             if (disposed || api.Session != session) return;
+            UpdateProfileComment(viewer.Id, track, comment, posted: false);
             if (CommitTrackCommentState(track.Id, state =>
             {
                 var comments = state.Comments.Comments.SelectMany(c => c.Id != comment.Id

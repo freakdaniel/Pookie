@@ -12,6 +12,8 @@ internal sealed partial class MainWindow
     private static bool IsCollectionPage(Page value) => value is Page.LibraryPlaylists or Page.LibraryAlbums or
         Page.LibraryStations or Page.LibraryFollowing or Page.LibraryHistory or Page.LibraryCollection or Page.LibraryMixes;
     private readonly Dictionary<string, LibraryPage> libraryPages = [];
+    private readonly HashSet<string> staleLibrarySources = [];
+    private readonly Dictionary<string, int> libraryPageDepth = [];
     private readonly Dictionary<string, Task<LibraryPage>> libraryLoads = [];
     private readonly Dictionary<string, DateTimeOffset> libraryLoadedAt = [];
     private readonly Dictionary<string, string> overviewErrors = [];
@@ -168,20 +170,57 @@ internal sealed partial class MainWindow
             SetCollectionArtwork(card.Cover, item, source, finished: true);
     }
 
+    private void InvalidateLibrarySource(string source)
+    {
+        staleLibrarySources.Add(source);
+        libraryLoads.Remove(source);
+        libraryLoadedAt.Remove(source);
+        if (page.Value == Page.Library || page.Value != Page.LibraryCollection && IsCollectionPage(page.Value) && activeLibrarySource == source)
+            Run(() => RefreshLibrarySourceInPlaceAsync(source));
+    }
+
+    private async Task RefreshLibrarySourceInPlaceAsync(string source)
+    {
+        var generation = navigationGeneration;
+        var result = await LoadLibrarySourceAsync(source);
+        if (disposed || generation != navigationGeneration) return;
+        if (page.Value == Page.Library) RefreshOverviewSections();
+        else if (IsCollectionPage(page.Value) && page.Value != Page.LibraryCollection && activeLibrarySource == source)
+        { activeCollection = result; RenderLibrarySection(); }
+    }
+
+    private async Task<LibraryPage> ReadLibraryWindowAsync(string source, long userId)
+    {
+        if (source == "mixes") return await LoadPersonalMixesAsync(userId);
+        var depth = staleLibrarySources.Contains(source) ? libraryPageDepth.GetValueOrDefault(source, 1) : 1;
+        var session = api.Session;
+        var page = await api.GetLibraryAsync(source, userId, lifetime.Token);
+        if (depth <= 1 || page.NextHref == null) return page;
+        var items = page.Items.ToList();
+        var cursors = new HashSet<string>();
+        for (int i = 1; i < depth && page.NextHref is { } next && api.Session == session; i++)
+        {
+            if (!cursors.Add(next)) { page = page with { NextHref = null }; break; }
+            page = await api.GetLibraryNextAsync(next, lifetime.Token);
+            items.AddRange(page.Items);
+        }
+        return page with { Items = items.DistinctBy(item => item.Key).ToArray() };
+    }
+
     private async Task<LibraryPage> LoadLibrarySourceAsync(string source)
     {
-        if (libraryPages.TryGetValue(source, out var cached) && (demo || source is not ("recent" or "history" or "mixes") ||
+        if (libraryPages.TryGetValue(source, out var cached) && !staleLibrarySources.Contains(source) && (demo || source is not ("recent" or "history" or "mixes") ||
             libraryLoadedAt.TryGetValue(source, out var at) && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(source == "mixes" ? 600 : source == "recent" ? 2 : 15))) return cached;
         if (demo || me == null) return new([], null);
         if (!libraryLoads.TryGetValue(source, out var request))
-            libraryLoads[source] = request = source == "mixes" ? LoadPersonalMixesAsync(me.Id) : api.GetLibraryAsync(source, me.Id, lifetime.Token);
+            libraryLoads[source] = request = ReadLibraryWindowAsync(source, me.Id);
         var session = api.Session;
         try
         {
             var result = await request;
             if (!disposed && api.Session == session && libraryLoads.GetValueOrDefault(source) != request)
                 return await LoadLibrarySourceAsync(source);
-            if (!disposed && api.Session == session) { libraryPages[source] = result; libraryLoadedAt[source] = DateTimeOffset.UtcNow; overviewErrors.Remove(source); if (source == "collections") { overviewErrors.Remove("playlists"); overviewErrors.Remove("albums"); } }
+            if (!disposed && api.Session == session) { staleLibrarySources.Remove(source); libraryPages[source] = result; libraryLoadedAt[source] = DateTimeOffset.UtcNow; overviewErrors.Remove(source); if (source == "collections") { overviewErrors.Remove("playlists"); overviewErrors.Remove("albums"); } }
             return result;
         }
         finally { if (libraryLoads.GetValueOrDefault(source) == request) libraryLoads.Remove(source); }
@@ -325,7 +364,11 @@ internal sealed partial class MainWindow
         token.ThrowIfCancellationRequested();
         if (generation != navigationGeneration || page.Value != target || api.Session != session || disposed || activeCollection != previous) return;
         activeCollection = new(previous.Items.Concat(next.Items).DistinctBy(item => item.Key).ToArray(), next.NextHref);
-        if (target != Page.LibraryCollection) libraryPages[activeLibrarySource] = activeCollection;
+        if (target != Page.LibraryCollection)
+        {
+            libraryPages[activeLibrarySource] = activeCollection;
+            libraryPageDepth[activeLibrarySource] = libraryPageDepth.GetValueOrDefault(activeLibrarySource, 1) + 1;
+        }
         RenderLibrarySection(); RefreshOverviewSections();
     }
 
@@ -378,7 +421,7 @@ internal sealed partial class MainWindow
         collectionDetails.Clear(); ResetCollectionActions();
         userProfileState = null; userArtworkKey = default; userArtworkReady = false;
         if (userOverviewBody != null) { ClearUserOverview(); ClearUserSidebar(); ClearUserComments(); }
-        libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); collectionCardPositions.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
+        libraryPageDepth.Clear(); staleLibrarySources.Clear(); libraryPages.Clear(); libraryLoads.Clear(); libraryLoadedAt.Clear(); overviewErrors.Clear(); collectionImages.Clear(); collectionCardPositions.Clear(); localRecent.Clear(); libraryLikes = null; activeCollection = null;
         overviewPending.Clear(); overviewReady.Clear(); SetLikesLoading(false); collectionLoadingView.SetLoading(false);
         ClearHome();
         RefreshOverviewSections();

@@ -9,7 +9,7 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyWebPlaylistEditingUiAsync()
     {
-        var fixture = new WebPlaylistEditingFixture(new CollectionFixtureTransport().Playlist);
+        var fixture = new WebPlaylistEditingFixture(new CollectionFixtureTransport().Playlist with { Sharing = "private" });
         api.Session = new("fixture", "web-fixture", "Test");
         api.Transport = fixture; me = new() { Id = 42, Username = "Owner" };
         signedIn.Value = true;

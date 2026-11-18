@@ -1055,3 +1055,24 @@ test('playlist edits share the host-owned write cancellation policy; reads still
     assert.equal(signal.aborted, !write, 'writes require host worker teardown; reads cancel their own fetch');
   }
 });
+
+test('private playlist secret reset checks owner and privacy and never replays an uncertain POST', async () => {
+  for (const mode of ['success', 'public', 'foreign', 'lost', 'lost-challenge', 'unchanged']) {
+    let playlist = {id:77, user:{id: mode === 'foreign' ? 9 : 42}, sharing: mode === 'public' ? 'public' : 'private',
+      secret_token:'s-old', permalink_url:'https://soundcloud.com/artist/sets/mix', track_count:0, tracks:[]};
+    const h = harness((url, options) => {
+      if (options.method === 'POST') {
+        assert.equal(new URL(url).pathname, '/soundcloud:playlists:77/secret_token/reset');
+        assert.equal(options.body, undefined);
+        if (mode === 'lost-challenge') { h.emit('dd_response_displayed','device_check'); h.emit('dd_response_passed','device_check'); }
+        if (mode === 'lost' || mode === 'lost-challenge') throw Error('Lost response');
+        if (mode !== 'unchanged') playlist = {...playlist, secret_token:'s-new'};
+      }
+      return response(200, playlist);
+    });
+    h.window.__pookieRequest({id:'aa'.repeat(16),operation:'playlist-edit',edit:{kind:'reset-secret',user_id:42,playlist_id:77}});
+    await tick();
+    assert.equal(h.calls.filter(([, options]) => options.method === 'POST').length, ['public', 'foreign'].includes(mode) ? 0 : 1);
+    assert.equal(h.messages.at(-1).status === 200, mode === 'success');
+  }
+});

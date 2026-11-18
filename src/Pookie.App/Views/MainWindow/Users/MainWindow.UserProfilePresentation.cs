@@ -11,6 +11,7 @@ internal sealed partial class MainWindow
     private void RefreshUserProfilePlayback()
     {
         RefreshFeedPlayback();
+        foreach (var row in userSidebarPlaylists) RefreshUserSidebarPlaylist(row);
         foreach (var (item, icon) in userPlaylistPlayIcons)
             icon.Source = Icons.Source(playbackQueue.Context?.Key == item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
     }
@@ -56,7 +57,7 @@ internal sealed partial class MainWindow
         userNotice.Text = string.Join("\n", new[] { state.MetadataError }.Concat(errors).Where(value => value.Length > 0));
         userNotice.IsVisible = userNotice.Text.Length > 0;
         userRetry.IsVisible = userNotice.IsVisible;
-        var pending = section == UserSection.Overview ? state.Loading.Contains(UserSection.Overview) : state.Loading.Contains(source);
+        var pending = state.Loading.Contains(source) && (section == UserSection.Comments ? state.Comments == null : data == null);
         userSectionLoading.Root.IsVisible = section is not (UserSection.Overview or UserSection.About);
         userSectionLoading.Skeleton.TextOnly = section == UserSection.Comments;
         SetUserLoading(userSectionLoading, pending && itemCount == 0 && userSectionLoading.Root.IsVisible,

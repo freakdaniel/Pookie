@@ -7,7 +7,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private sealed record UserPlaylistActionView(StackPanel Root, Button Like, Button Repost,
-        Image Heart, Image Repeat, Button Queue)
+        Image Heart, Image Repeat, Button Queue, FrameworkElement Social)
     {
         internal required LibraryItem Item { get; set; }
     }
@@ -23,9 +23,10 @@ internal sealed partial class MainWindow
         var repost = TrackButtons.Icon(repeat, () => { if (Current() is { Playlist: { } playlist }) Run(() => TogglePlaylistActionAsync(playlist, true)); }, TrackButtons.Glass, size);
         var queue = TrackButtons.Icon(Icons.View("queue", 20, TrackButtons.OnSurface),
             () => { if (Current() is { } value) Run(() => EnqueueUserPlaylistAsync(value)); }, TrackButtons.Glass, size).Hint("Добавить в очередь");
+        var social = TrackButtons.Connected(like, repost).IsVisible(item.Playlist?.IsPrivate != true);
         var root = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Height(size).Left()
-            .Children(TrackButtons.Connected(like, repost), TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (Current() is { } value) OpenShare(value); }, TrackButtons.Glass, size).Hint("Поделиться"), queue);
-        (views ?? userPlaylistActionViews).Add(new(root, like, repost, heart, repeat, queue) { Item = item });
+            .Children(social, TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (Current() is { } value) OpenShare(value); }, TrackButtons.Glass, size).Hint("Поделиться"), queue);
+        (views ?? userPlaylistActionViews).Add(new(root, like, repost, heart, repeat, queue, social) { Item = item });
         RefreshUserPlaylistActions();
         return root;
     }
@@ -35,7 +36,8 @@ internal sealed partial class MainWindow
         foreach (var view in userPlaylistActionViews.Concat(feedPlaylistActions))
         {
             var playlist = view.Item.Playlist!;
-            var available = !demo && me != null && api.Session is { } session && collectionActionsReady && collectionActionsSession == session;
+            view.Social.IsVisible = !playlist.IsPrivate;
+            var available = !playlist.IsPrivate && !demo && me != null && api.Session is { } session && collectionActionsReady && collectionActionsSession == session;
             var liked = likedPlaylistIds.Contains(playlist.Id); var reposted = repostedPlaylistIds.Contains(playlist.Id);
             var likePending = api.Session is { } likeSession && pendingCollectionActions.Contains((likeSession, playlist.Id, false));
             var repostPending = api.Session is { } repostSession && pendingCollectionActions.Contains((repostSession, playlist.Id, true));

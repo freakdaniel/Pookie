@@ -190,7 +190,7 @@ internal sealed partial class MainWindow
             .Width(ShellHeader.NavigationWidth).IsHitTestVisible(false);
         query.Changed += RefreshSearchLinkPreview;
 
-        profileButton = new Button().StyleName("flat-button").Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
+        profileButton = new HeaderButton(new CornerRadius(ShellHeader.AccountButtonSize / 2)).Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
                 new Border().Background(Color.FromRgb(65, 65, 65)).CornerRadius(15).ClipToBounds().BindIsVisible(signedIn)
                     .Child(new Grid().Columns("*").Rows("*").Children(
                         new TextBlock().BindText(profileInitial).FontSize(12).Bold().CenterHorizontal().CenterVertical().BindIsVisible(hasAvatar, value => !value),
@@ -401,11 +401,15 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ProfilePanel() => ShellMenu(profileButton,
         FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Spacing(6).Children(
-            new StackPanel().Vertical().Spacing(8).Margin(12, 8, 12, 8).Children(
-                new TextBlock().Text("Твой профиль").Bold().FontSize(14),
-                new TextBlock().BindText(profile).TextWrapping(TextWrapping.Wrap).FontSize(14),
-                new TextBlock().BindText(signedIn, value => value ? "SoundCloud подключён" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
-                    .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap)),
+            new Grid().Columns("Auto,*").Rows("Auto").Spacing(12).Margin(12, 10, 12, 12).Children(
+                new Border().Width(44).Height(44).CornerRadius(22).ClipToBounds().CenterVertical().BindIsVisible(signedIn)
+                    .Background(Color.FromRgb(65, 65, 65)).Child(new Grid().Columns("*").Rows("*").Children(
+                        new TextBlock().BindText(profileInitial).FontSize(16).SemiBold().Center().BindIsVisible(hasAvatar, value => !value),
+                        profileMenuAvatar.BindIsVisible(hasAvatar))),
+                new StackPanel().Vertical().Spacing(5).CenterVertical().Column(1).Children(
+                    new TextBlock().BindText(profile).TextTrimming(TextTrimming.CharacterEllipsis).SemiBold().FontSize(14),
+                    new TextBlock().BindText(signedIn, value => value ? "Аккаунт SoundCloud" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
+                        .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap))),
             MenuChoice("user-circle", "Мой профиль", () => { profileOpen.Value = false; if (me != null) Run(() => OpenUserProfileAsync(me)); }).BindIsVisible(signedIn),
             MenuChoice("user-circle", "Войти в SoundCloud", () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
             MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),

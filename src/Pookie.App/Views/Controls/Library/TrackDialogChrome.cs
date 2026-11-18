@@ -9,7 +9,7 @@ internal static class TrackDialogChrome
     internal static readonly Color MatteTint = Color.FromArgb(244, 24, 24, 28);
     internal static TextBlock Heading(string title) => new TextBlock().Text(title).FontSize(21).Bold().CenterVertical();
 
-    internal static GlassCard MatteBody(FrameworkElement content, Func<bool> resizing) =>
+    internal static GlassCard MatteBody(FrameworkElement content, Func<bool>? resizing = null) =>
         new GlassCard { HoverEnabled = false, ResizeInProgress = resizing }.Padding(0).CornerRadius(24)
             .MaxWidth(PlaylistDialogContent.MaximumWidth).Child(
                 new Border().Background(Color.Transparent).BorderThickness(0).CornerRadius(24).ClipToBounds().Child(content));

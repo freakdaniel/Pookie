@@ -40,7 +40,8 @@ internal sealed partial class MainWindow
         RefreshUserPlaylistActions();
         if (collectionLike == null) return;
         var playlist = displayedCollection?.Playlist;
-        var available = !demo && me != null && api.Session != null && playlist?.Id > 0 && collectionActionsReady && collectionActionsSession == api.Session;
+        collectionSocialActions.IsVisible = playlist is { IsPrivate: false } && !IsSystemCollection(displayedCollection);
+        var available = playlist?.IsPrivate == false && !demo && me != null && api.Session != null && playlist?.Id > 0 && collectionActionsReady && collectionActionsSession == api.Session;
         var liked = playlist != null && likedPlaylistIds.Contains(playlist.Id);
         var reposted = playlist != null && repostedPlaylistIds.Contains(playlist.Id);
         var likePending = playlist != null && api.Session is { } session && pendingCollectionActions.Contains((session, playlist.Id, false));
@@ -95,7 +96,7 @@ internal sealed partial class MainWindow
 
     private async Task TogglePlaylistActionAsync(SoundCloudPlaylist playlist, bool repost)
     {
-        if (playlist.Id <= 0 || api.Session is not { } session || me is not { } user ||
+        if (playlist.IsPrivate || playlist.Id <= 0 || api.Session is not { } session || me is not { } user ||
             demo || !collectionActionsReady || collectionActionsSession != session || repost && playlist.User?.Id == user.Id || !pendingCollectionActions.Add((session, playlist.Id, repost))) return;
         RefreshCollectionActions();
         var ids = repost ? repostedPlaylistIds : likedPlaylistIds;
@@ -106,8 +107,10 @@ internal sealed partial class MainWindow
             else await api.SetPlaylistLikedAsync(user.Id, playlist.Id, selected, lifetime.Token);
             if (disposed || api.Session != session || collectionActionsSession != session) return;
             if (selected) ids.Add(playlist.Id); else ids.Remove(playlist.Id);
+            var profileItem = LibraryData.FromPlaylist(playlist);
+            if (repost) UpdateProfileRepost(user.Id, profileItem, selected);
+            else UpdateProfileMembership(user.Id, UserSection.Likes, profileItem, selected);
             if (!repost) InvalidatePlaylistLibrary(playlist.Id, details: false);
-            libraryPages.Remove("collections"); overviewReady.Remove("collections");
             status.Value = repost ? selected ? "Плейлист появился в твоём профиле." : "Репост убран." : selected ? "Плейлист сохранён." : "Лайк убран.";
         }
         finally { pendingCollectionActions.Remove((session, playlist.Id, repost)); if (!disposed) RefreshCollectionActions(); }

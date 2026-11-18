@@ -135,7 +135,7 @@ internal sealed partial class MainWindow
     private string? PageCursor() => page.Value switch
     {
         Page.Home => null,
-        Page.Feed => feedState?.Cursor,
+        Page.Feed => feedLoading ? null : feedState?.Cursor,
         Page.Library => null,
         Page.Track => null,
         Page.UserProfile => null,

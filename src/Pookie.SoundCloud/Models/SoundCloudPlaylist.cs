@@ -29,6 +29,9 @@ public sealed record SoundCloudPlaylist
     public double Duration { get; init; }
     public string? Description { get; init; }
     public string? Sharing { get; init; }
+    public string? SecretToken { get; init; }
+    public string? Uri { get; init; }
+    [JsonIgnore] public bool IsPrivate => string.Equals(Sharing, "private", StringComparison.OrdinalIgnoreCase);
     public string? Genre { get; init; }
     public string[] Tags { get; init; } = [];
     public string? TagList { get; init; }

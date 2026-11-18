@@ -1,4 +1,5 @@
 using Aprillz.MewUI;
+using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
 
@@ -27,23 +28,7 @@ internal sealed partial class MainWindow
         var updateFollowing = !sameUser || !ReferenceEquals(following, renderedUserFollowing);
         renderedUserSidebarId = state.User.Id; renderedUserSidebarGeneration = navigationGeneration;
         renderedUserLikes = likes; renderedUserFollowers = followers; renderedUserFollowing = following;
-        if (updateLikes)
-        {
-            foreach (var row in userSidebarRows) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
-            userSidebarRows.Clear(); userSidebarLikes.Clear();
-            foreach (var item in (likes ?? []).Where(UserItemVisible).Take(3))
-            {
-                if (item.Track is { } track)
-                {
-                    var row = CreateCompactTrackRow(value => Run(() => PlayUserSidebarTrackAsync(value)));
-                    row.Root.Margin = new Thickness(-8, 0, -8, 0);
-                    BindCompactTrackRow(row, track); userSidebarRows.Add(row); userSidebarLikes.Add(row.Root);
-                }
-                else if (item.Playlist != null)
-                    userSidebarLikes.Add(TrackButtons.Action(new TextBlock().Text(item.Title).FontSize(13).TextTrimming(TextTrimming.CharacterEllipsis),
-                        () => Run(() => OpenLibraryItemAsync(item)), TrackButtons.Text, 40).Padding(0));
-            }
-        }
+        if (updateLikes) UpdateSidebarLikes((likes ?? []).Where(UserItemVisible).Take(3), state.User.Id, sameUser);
         if (updateFollowers)
         {
             userSidebarFollowers.Clear();
@@ -71,9 +56,52 @@ internal sealed partial class MainWindow
         }
     }
 
+    private void UpdateSidebarLikes(IEnumerable<LibraryItem> items, long profileId, bool sameView)
+    {
+        var oldTracks = userSidebarRows.ToArray();
+        var oldPlaylists = userSidebarPlaylists.ToArray();
+        var rows = new List<FrameworkElement>(3);
+        userSidebarRows.Clear();
+        foreach (var item in items)
+        {
+            if (item.Track is { } track)
+            {
+                var row = oldTracks.FirstOrDefault(old => old.Track?.Id == track.Id) ??
+                    CreateCompactTrackRow(value => Run(() => PlayUserSidebarTrackAsync(value)));
+                row.Root.Margin = new Thickness(-8, 0, -8, 0);
+                BindCompactTrackRow(row, track); userSidebarRows.Add(row); rows.Add(row.Root);
+            }
+            else if (item.Playlist != null)
+            {
+                var existing = sameView ? oldPlaylists.FirstOrDefault(row => row.Item == item) : null;
+                rows.Add(existing?.Root ?? UserSidebarPlaylist(item, profileId));
+            }
+        }
+        foreach (var row in oldTracks.Where(row => !userSidebarRows.Contains(row)))
+        {
+            BindCompactTrackRow(row, null); compactTrackRows.Remove(row); userSidebarLikes.Remove(row.Root);
+        }
+        foreach (var row in oldPlaylists.Where(row => !rows.Contains(row.Root)))
+        {
+            row.Overlay.Reset(); ClearCardArtwork(row.Cover); userSidebarPlaylists.Remove(row); userSidebarLikes.Remove(row.Root);
+        }
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var root = rows[i];
+            if (i < userSidebarLikes.Count && userSidebarLikes.Children[i] == root) continue;
+            var wasVisible = root.Parent == userSidebarLikes;
+            if (wasVisible) userSidebarLikes.Remove(root);
+            var fadeIn = sameView && !wasVisible;
+            if (fadeIn) { root.Opacity = 0; root.Transitions = [Transition.Create(UIElement.OpacityProperty, 160)]; }
+            userSidebarLikes.Insert(i, root);
+            if (fadeIn) root.Opacity = 1;
+        }
+    }
+
     private void ClearUserSidebar()
     {
         foreach (var row in userSidebarRows) { BindCompactTrackRow(row, null); compactTrackRows.Remove(row); }
+        ClearUserSidebarPlaylists();
         userSidebarRows.Clear(); userSidebarLikes.Clear(); userSidebarFollowers.Clear(); userSidebarFollowing.Clear();
         renderedUserSidebarId = renderedUserSidebarGeneration = 0;
         renderedUserLikes = renderedUserFollowers = renderedUserFollowing = null;

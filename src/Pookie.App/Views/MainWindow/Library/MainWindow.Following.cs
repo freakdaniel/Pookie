@@ -76,9 +76,17 @@ internal sealed partial class MainWindow
             await api.SetFollowingAsync(user.Id, artist.Id, following, lifetime.Token);
             if (api.Session != session || disposed) return;
             if (following) followingIds.Add(artist.Id); else followingIds.Remove(artist.Id);
-            // The next library visit must read the actual following collection.
-            libraryPages.Remove("following"); libraryLoads.Remove("following"); libraryLoadedAt.Remove("following");
-            overviewReady.Remove("following");
+            UpdateProfileFollow(user, artist, following);
+            if (libraryPages.TryGetValue("following", out var list))
+            {
+                libraryPages["following"] = ChangeMembership(list, UserItem(artist), following);
+                if (page.Value == Page.LibraryFollowing) { activeCollection = libraryPages["following"]; RenderLibrarySection(); }
+                RefreshOverviewSections();
+            }
+            InvalidateLibrarySource("following");
+            ++feedFollowingRevision;
+            if (feedState != null) feedState = feedState with { Checked = DateTimeOffset.MinValue };
+            if (page.Value == Page.Feed) Run(RefreshVisibleDataAsync);
             status.Value = following ? $"Теперь ты подписан на {artist.Username}." : $"Подписка на {artist.Username} отменена.";
         }
         finally { pendingFollows.Remove((session, artist.Id)); if (!disposed) RefreshFollowingButtons(); }

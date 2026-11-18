@@ -385,6 +385,7 @@
       const playlist = (await readJson(current, context)).json;
       if (playlist?.id !== edit.playlist_id || playlist.user?.id !== edit.user_id || playlist.is_system_playlist)
         throw new Error('playlist-owner-mismatch');
+      if (edit.kind === 'reset-secret' && playlist.sharing !== 'private') throw new Error('playlist-not-private');
       let body, contentType = 'application/json';
       if (edit.kind === 'remove' || edit.update?.track_ids != null || edit.update?.expected_track_ids != null) {
         if (!Array.isArray(playlist.tracks) || playlist.tracks.length !== playlist.track_count ||
@@ -412,11 +413,15 @@
         body = new FormData(); body.append('playlist[artwork_data]', new Blob([bytes], { type: 'image/jpeg' }), 'artwork.jpg');
         contentType = null;
       }
-      const response = await fetchProtected(url, edit.kind === 'delete' ? 'DELETE' : 'PUT', context, body, true, contentType);
+      const reset = edit.kind === 'reset-secret';
+      const target = reset ? new URL(`/soundcloud:playlists:${edit.playlist_id}/secret_token/reset`, apiOrigin) : url;
+      const response = await fetchProtected(target, reset ? 'POST' : edit.kind === 'delete' ? 'DELETE' : 'PUT', context, body, !reset, contentType);
       if (!response.ok || edit.kind === 'delete') { send({ kind: 'complete', request_id: command.id, status: response.status }); return; }
       const confirmed = await fetchProtected(new URL(`${url.href}?representation=full`), 'GET', context);
       if (confirmed.ok) {
-        const { text } = await readJson(confirmed, context);
+        const { text, json } = await readJson(confirmed, context);
+        if (reset && (json.sharing !== 'private' || !json.secret_token || json.secret_token === playlist.secret_token))
+          throw new Error('playlist-secret-unconfirmed');
         for (let start = 0, index = 0; start < text.length;) {
           let end = Math.min(start + 1024, text.length);
           if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
@@ -613,7 +618,7 @@
     }
     if (edit.update != null) return false;
     if (edit.kind === 'remove') return id(edit.track_id) && edit.artwork == null;
-    if (edit.kind === 'delete') return !edit.track_id && edit.artwork == null;
+    if (edit.kind === 'delete' || edit.kind === 'reset-secret') return !edit.track_id && edit.artwork == null;
     if (edit.kind !== 'artwork' || edit.track_id || typeof edit.artwork !== 'string' || edit.artwork.length > 1398104) return false;
     try { const bytes = atob(edit.artwork); return bytes.length >= 4 && bytes.length <= 1048576 &&
       bytes.charCodeAt(0) === 255 && bytes.charCodeAt(1) === 216 && bytes.charCodeAt(bytes.length - 2) === 255 && bytes.charCodeAt(bytes.length - 1) === 217; }

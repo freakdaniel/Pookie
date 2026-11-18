@@ -21,7 +21,8 @@ public sealed partial class SoundCloudWebClient
                 edit.Update is { } update && (playlist.Title != update.Title || (playlist.Description ?? "") != update.Description || playlist.Sharing != update.Sharing ||
                     update.TrackIds != null && !playlist.Tracks.Select(track => track.Id).SequenceEqual(update.TrackIds) ||
                     update.Metadata is { } metadata && !MetadataConfirmed(playlist, metadata)) ||
-                edit.Kind == "remove" && playlist.Tracks.Any(track => track.Id == edit.TrackId))
+                edit.Kind == "remove" && playlist.Tracks.Any(track => track.Id == edit.TrackId) ||
+                edit.Kind == "reset-secret" && (!playlist.IsPrivate || PlaylistSharing.ShareUri(playlist) == null))
                 throw new SoundCloudException("SoundCloud не подтвердил изменение плейлиста.");
             return playlist;
         }
@@ -44,6 +45,17 @@ public sealed partial class SoundCloudWebClient
             try { return new DateOnly(year, month, day).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture); } catch (ArgumentOutOfRangeException) { }
         return "";
     }
+    public async Task<SoundCloudPlaylist> GetPlaylistForSharingAsync(long playlistId, CancellationToken token = default, string? secretToken = null)
+    {
+        ValidateDetailTrackId(playlistId);
+        using var result = await GetJsonAsync(Api($"playlists/{playlistId}" + (secretToken == null ? "" : "?secret_token=" + Uri.EscapeDataString(secretToken))), token);
+        var playlist = LibraryData.ParsePlaylist(result.RootElement);
+        if (playlist.Id != playlistId) throw new SoundCloudException("SoundCloud вернул другой плейлист.");
+        return playlist.IsPrivate && PlaylistSharing.Token(playlist) == null ? playlist with { SecretToken = secretToken } : playlist;
+    }
+    public Task<SoundCloudPlaylist> ResetPlaylistSecretAsync(long userId, long playlistId, CancellationToken token = default) =>
+        EditWebPlaylistAsync(new("reset-secret", userId, playlistId), token);
+
     public async Task RemovePlaylistTrackAsync(long userId, long playlistId, long trackId, CancellationToken token = default) =>
         _ = await EditWebPlaylistAsync(new("remove", userId, playlistId, TrackId: trackId), token);
     public Task<SoundCloudPlaylist> UpdatePlaylistAsync(PlaylistUpdateRequest request, CancellationToken token = default) =>
