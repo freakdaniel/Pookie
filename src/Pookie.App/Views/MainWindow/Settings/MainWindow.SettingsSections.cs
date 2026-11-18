@@ -61,8 +61,8 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ChatSettingsView() => SettingsGroups(
         SettingsGroup("Сообщения",
-            SettingsChoice("chat_send", "Отправлять сообщение", "При отправке по Enter новая строка — Shift+Enter. Ctrl+Enter также отправляет сообщение",
-                () => preferences.ChatSendOnEnter, value => UpdatePreferences(p => p with { ChatSendOnEnter = value }), ("Ctrl+Enter", false), ("Enter", true)),
+            SettingsAction("Отправка с клавиатуры", "Выбрать сочетание для отправки сообщения", "Сочетания клавиш",
+                () => Run(() => ShowSettingsAsync(SettingsSection.Shortcuts))),
             SettingsToggle("chat_drafts", "Сохранять черновики на устройстве", "Выключение удаляет сохранённые черновики; данные незавершённых отправок хранятся отдельно",
                 () => preferences.ChatSaveDrafts, value => UpdatePreferences(p => p with { ChatSaveDrafts = value })),
             SettingsToggle("chat_background", "Обновлять чаты в фоне", "Получать новые сообщения и обновлять счётчик при переходе в другие разделы",

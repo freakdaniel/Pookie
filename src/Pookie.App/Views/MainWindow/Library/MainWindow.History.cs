@@ -252,6 +252,7 @@ internal sealed partial class MainWindow
                 .OnClick(() => Run(() => MoveNavigationAsync(offset)));
         }
         backButton = Arrow("arrow-left", canGoBack, -1); forwardButton = Arrow("arrow-right", canGoForward, 1);
+        ShortcutHint(backButton, ShortcutAction.Back); ShortcutHint(forwardButton, ShortcutAction.Forward);
         return new StackPanel().Horizontal().Spacing(2).Children(backButton, forwardButton).CenterVertical();
     }
 }

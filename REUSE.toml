@@ -64,15 +64,7 @@ SPDX-FileCopyrightText = "2023 Phosphor Icons"
 SPDX-License-Identifier = "MIT"
 SPDX-FileComment = """
 Embedded SVGs from https://github.com/phosphor-icons/core at commit
-2b75f3ad12b420c9504ef05df8d2564a28f8500e; no runtime CDN dependency.
-Most icons are upstream duotone assets, including squares-four, list-bullets, copy, link,
-chat-circle, arrow-left, arrows-out, text-align-left and paper-plane-tilt.
-Heart and playback variants include upstream fill assets; user uses assets/fill/user-fill.svg.
-clock-counter-clockwise, thumbs-down, paperclip, list, trash and gif use assets/regular/ variants;
-the filled dislike variant is assets/fill/thumbs-down-fill.svg.
-Chat attachments use assets/fill/file-fill.svg and assets/regular/image.svg.
-Profile badges also use upstream fill assets seal-fill.svg and crown-simple-fill.svg.
-Full terms and attribution: licenses/MIT.txt.
+2b75f3ad12b420c9504ef05df8d2564a28f8500e
 """
 
 [[annotations]]

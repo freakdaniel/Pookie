@@ -55,6 +55,7 @@ internal sealed partial class MainWindow
         var before = preferences;
         preferences = update(before).Normalize();
         if (preferences == before) return;
+        if (before.ShortcutOverrides != preferences.ShortcutOverrides) RefreshShortcuts();
         ApplyChatPreferences(before);
         ApplyPlaybackPreferences(before);
         if (before.ShowCommentMarkers != preferences.ShowCommentMarkers && trackDetailWaveformLayer != null) RenderTrackCommentMarkers();

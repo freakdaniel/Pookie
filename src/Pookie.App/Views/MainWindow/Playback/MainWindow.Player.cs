@@ -61,7 +61,7 @@ internal sealed partial class MainWindow
             .OnMouseLeave(() => { heartHovered = false; RefreshHeart(); })
             .OnClick(() => Run(ToggleLikeAsync));
         RefreshHeart();
-        heartButton.Hint("Нравится");
+        ShortcutHint(heartButton, ShortcutAction.Like);
         playerRepostButton = PlayerButton(PlayerRepostGlyph(19, Color.White),
             () => Run(ToggleCurrentTrackRepostAsync), isReposted).BindIsEnabled(repostAvailable);
         void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? "Убрать репост" : "Сделать репост");
@@ -84,6 +84,7 @@ internal sealed partial class MainWindow
             .OnLostFocus(() => playerArtworkOverlay.Opacity = 0)
             .OnClick(() => SetExpandedPlayer(true));
 
+        ShortcutHint(playerArtworkButton, ShortcutAction.Expand);
         playerTrackTitle = new CommentTextBlock().BindText(title).FontSize(13).Bold().Foreground(TrackButtons.OnSurface)
             .Height(18).TextTrimming(TextTrimming.CharacterEllipsis);
         playerTrackArtist = new CommentTextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText)
@@ -119,6 +120,7 @@ internal sealed partial class MainWindow
                     .BindIsVisible(isPlaying, value => !value),
                 Icons.View("pause-solid", playGlyphSize, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying)))
             .Width(playButtonSize).Height(playButtonSize).CornerRadius(playButtonSize / 2).OnClick(() => Run(ToggleAsync));
+        ShortcutHint(playerPlayButton, ShortcutAction.Play);
         playerContentFrame = new Border().Height(PlayerBarHeight)
             .Padding(36, 8).Bottom().Child(new Grid().Columns($"*,{PlayerControlsWidth},*").Rows("*").Spacing(12).Children(
             new Grid().Columns("48,Auto,Auto,Auto,Auto").Rows("*").Spacing(6).Left().CenterVertical().Column(0).Children(
@@ -127,19 +129,18 @@ internal sealed partial class MainWindow
                 heartButton.CenterVertical().Column(2), playerRepostButton.Column(3), share.Column(4)),
             new Grid().Columns("*").Rows("34,18").Spacing(4).CenterVertical().Column(1).Children(
                 new StackPanel().Horizontal().Spacing(10).CenterHorizontal().Row(0).Children(
-                    PlayerButton(Icons.View("skip-back-solid", 18, Color.White), () => Run(() => SkipAsync(-1))).CenterVertical(),
+                    ShortcutHint(PlayerButton(Icons.View("skip-back-solid", 18, Color.White), () => Run(() => SkipAsync(-1))), ShortcutAction.Previous).CenterVertical(),
                     playerPlayButton,
-                    PlayerButton(Icons.View("skip-forward-solid", 18, Color.White), () => Run(() => SkipAsync(1))).CenterVertical()),
+                    ShortcutHint(PlayerButton(Icons.View("skip-forward-solid", 18, Color.White), () => Run(() => SkipAsync(1))), ShortcutAction.Next).CenterVertical()),
                 playerTimeline.Row(1)),
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Right().Column(2).Children(
-                queueButton = PlayerButton(Icons.View("queue", 19, Color.White), () =>
-                    { queueOpen.Value = !queueOpen.Value; profileOpen.Value = false; }, queueOpen),
-                PlayerButton(Icons.View("shuffle", 19, Color.White), () => shuffle.Value = !shuffle.Value, shuffle),
-                PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive),
+                queueButton = ShortcutHint(PlayerButton(Icons.View("queue", 19, Color.White), ToggleCompactQueue, queueOpen), ShortcutAction.Queue),
+                ShortcutHint(PlayerButton(Icons.View("shuffle", 19, Color.White), () => shuffle.Value = !shuffle.Value, shuffle), ShortcutAction.Shuffle),
+                ShortcutHint(PlayerButton(RepeatIcon(19), CycleRepeat, repeatActive), ShortcutAction.Repeat),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
-                    PlayerButton(new Grid().Columns("*").Rows("*").Children(
+                    ShortcutHint(PlayerButton(new Grid().Columns("*").Rows("*").Children(
                         Icons.View("speaker-high", 19, Color.White).CenterHorizontal().CenterVertical().BindIsVisible(muted, value => !value),
-                        Icons.View("speaker-slash", 19, Color.White).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute),
+                        Icons.View("speaker-slash", 19, Color.White).CenterHorizontal().CenterVertical().BindIsVisible(muted)), ToggleMute), ShortcutAction.Mute),
                     volumeSlider))));
         // The backdrop is shared with the rounded content corners above the player.
         playerBackdrop.Height(0).Bottom().BindIsVisible(playerVisible);

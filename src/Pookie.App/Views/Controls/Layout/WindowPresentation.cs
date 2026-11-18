@@ -8,6 +8,9 @@ namespace Pookie.App;
 // Typed build-time extension of our pinned MewUI assembly; no runtime patching.
 internal static class WindowPresentation
 {
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "ToggleDirtyRegionOverlay")]
+    internal static extern void ToggleDirtyRegionOverlay(Window owner);
+
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "PookieHoldWindowFrame")]
     internal static extern ref Func<bool>? HoldFrame(Window owner);
 

@@ -10,6 +10,8 @@ namespace Pookie.App;
 internal sealed class MaterialSelect : GlassCard
 {
     private readonly string[] options;
+    private readonly Func<string, FrameworkElement>? optionContent;
+    private readonly Border? selectedContent;
     private readonly AnimationClock stateMotion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
     private MaterialSelectMenu? menu;
     private int selectedIndex = -1;
@@ -36,20 +38,29 @@ internal sealed class MaterialSelect : GlassCard
         {
             if (value < -1 || value >= options.Length) throw new ArgumentOutOfRangeException(nameof(value));
             if (selectedIndex == value) return;
-            selectedIndex = value; menu?.Select(value); InvalidateVisual(); SelectionChanged?.Invoke(value);
+            selectedIndex = value;
+            if (selectedContent != null) selectedContent.Child = value < 0 ? null : optionContent!(SelectedText);
+            menu?.Select(value); InvalidateVisual(); SelectionChanged?.Invoke(value);
         }
     }
 
-    internal MaterialSelect(string[] options)
+    internal MaterialSelect(string[] options, Func<string, FrameworkElement>? optionContent = null)
     {
         this.options = options.ToArray();
+        this.optionContent = optionContent;
         ShadowEnabled = false;
         Transitions = [];
         Background = stateTarget; Foreground = TrackButtons.OnSurface;
         BorderThickness = 0; BorderBrush = Color.Transparent; CornerRadius = 12;
         Height = 48; FontSize = 16; Padding = new Thickness(18, 0, 16, 0);
         Focusable = true;
-        Content = Icons.View("caret-down", 20, TrackButtons.OnSurface).Right().CenterVertical();
+        var arrow = Icons.View("caret-down", 20, TrackButtons.OnSurface).Right().CenterVertical();
+        if (optionContent == null) Content = arrow;
+        else
+        {
+            selectedContent = new Border().BorderThickness(0).Background(Color.Transparent).Left().CenterVertical();
+            Content = new Grid().Columns("*,20").Rows("*").Spacing(6).Children(selectedContent, arrow.Column(1));
+        }
         KeyboardFocusFeedback.Attach(this);
         stateMotion.TickCallback = amount => Background = stateFrom.Lerp(stateTarget, amount);
     }
@@ -60,6 +71,7 @@ internal sealed class MaterialSelect : GlassCard
     protected override void OnRender(IGraphicsContext context)
     {
         base.OnRender(context);
+        if (selectedContent != null) return;
         var area = new Rect(Bounds.X + Padding.Left, Bounds.Y,
             Math.Max(0, Bounds.Width - Padding.Left - 40), Bounds.Height);
         var style = GetTextRunStyle();
@@ -91,7 +103,7 @@ internal sealed class MaterialSelect : GlassCard
                 {
                     keyboardInteraction = keyboard;
                     if (!keyboard) { headerHovered = false; RefreshState(); }
-                });
+                }, optionContent);
                 popup = new InAppPopup();
                 popup.InitializePopup(menu, () => Bounds, () => MenuPlacement.Below);
                 popup.Dismissing = () => IsDropDownOpen = false;
@@ -177,7 +189,7 @@ internal sealed class MaterialSelectMenu : Panel
     internal IReadOnlyList<Button> Options => buttons;
     internal GlassCard Card => card;
 
-    internal MaterialSelectMenu(string[] options, Action<int> choose, Action dismiss, Action<bool> interaction)
+    internal MaterialSelectMenu(string[] options, Action<int> choose, Action dismiss, Action<bool> interaction, Func<string, FrameworkElement>? optionContent = null)
     {
         this.dismiss = dismiss;
         this.interaction = interaction;
@@ -187,9 +199,10 @@ internal sealed class MaterialSelectMenu : Panel
         {
             var item = index;
             var check = checks[index] = Icons.View("check", 20, TrackButtons.OnSurface);
+            var option = optionContent?.Invoke(options[index]) ?? new TextBlock().Text(options[index]).FontSize(14)
+                .Foreground(TrackButtons.OnSurface).TextTrimming(TextTrimming.CharacterEllipsis);
             var content = new Grid().Columns("*,20").Rows("*").Spacing(12).Children(
-                new TextBlock().Text(options[index]).FontSize(14).Foreground(TrackButtons.OnSurface)
-                    .TextTrimming(TextTrimming.CharacterEllipsis).CenterVertical().Column(0), check.CenterVertical().Column(1));
+                option.Left().CenterVertical().Column(0), check.CenterVertical().Column(1));
             var button = TrackButtons.Action(content, () => choose(item), TrackButtons.Text, ItemHeight)
                 .Padding(14, 0).CornerRadius(10);
             content.HorizontalAlignment = HorizontalAlignment.Stretch;

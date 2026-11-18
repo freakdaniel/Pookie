@@ -127,7 +127,7 @@ internal sealed partial class MainWindow
         // Keep the backdrop and splash in a single-cell root so they always cover
         // the client area from the very first layout pass.
         return new PresentationRoot().Columns("*").Rows("*").Children(
-            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), PlaylistEditorView().Row(0), ShareView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ChatVideoView().Row(0), EmbeddedLoginPanel().Row(0), WidevineSetupView().Row(0));
+            startupBackdrop.Row(0), workspace.Row(0), LoginScreen().Row(0), StartupSplash().Row(0), ExpandedPlayer().Row(0), PlaylistPickerView().Row(0), PlaylistEditorView().Row(0), ShareView().Row(0), ChatAttachMenuView().Row(0), ChatMessageMenuView().Row(0), ChatGifsView().Row(0), ChatMusicPickerView().Row(0), ShortcutRecorderView().Row(0), ChatVideoView().Row(0), EmbeddedLoginPanel().Row(0), WidevineSetupView().Row(0));
     }
 
     private bool ScrollShellWheel(MouseWheelEventArgs args)
@@ -175,6 +175,7 @@ internal sealed partial class MainWindow
     private ShellHeader Header()
     {
         var searchTrigger = Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch);
+        ShortcutHint(searchTrigger, ShortcutAction.Search);
         topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto").Rows("*")
             .Width(ShellHeader.NavigationWidth).Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
                 Nav("house-simple", "Главная", Page.Home).Column(0), Nav("broadcast", "Лента", Page.Feed).Column(2),
@@ -204,7 +205,7 @@ internal sealed partial class MainWindow
         var settingsIcon = settings.WithActivationMotion(settingsGlyph, progress => Matrix3x2.CreateRotation(progress * MathF.PI / 2));
         settings.Content(settingsIcon.Center()).OnClick(() => Run(() => ShowSettingsAsync(settingsSection.Value)));
         settings.UseAnimatedInk(settingsInk, Surface.Lerp(NavInk, .85), NavInk, NavInk);
-        settingsButton = settings;
+        settingsButton = ShortcutHint(settings, ShortcutAction.Settings);
         page.Changed += () => settings.SetSelected(page.Value == Page.Settings);
 
         return new ShellHeader(() => contentSurface,

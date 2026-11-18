@@ -5,7 +5,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum SettingsSection { General, Interface, Playback, Chats, Data, About }
+    private enum SettingsSection { General, Interface, Playback, Chats, Data, About, Shortcuts }
     private readonly ObservableValue<SettingsSection> settingsSection = new(SettingsSection.General);
     private readonly ObservableValue<string> settingsMessage = new("");
     private readonly List<Action> settingsRefreshers = [];
@@ -25,7 +25,7 @@ internal sealed partial class MainWindow
         foreach (var (section, title, content) in new (SettingsSection, string, Func<FrameworkElement>)[] {
             (SettingsSection.General, "Общие", GeneralSettingsView), (SettingsSection.Interface, "Интерфейс", InterfaceSettingsView),
             (SettingsSection.Playback, "Воспроизведение", PlaybackSettingsView),
-            (SettingsSection.Chats, "Чаты", ChatSettingsView), (SettingsSection.Data, "Данные", DataSettingsView),
+            (SettingsSection.Chats, "Чаты", ChatSettingsView), (SettingsSection.Shortcuts, "Сочетания клавиш", ShortcutSettingsView), (SettingsSection.Data, "Данные", DataSettingsView),
             (SettingsSection.About, "О приложении", AboutSettingsView) })
         {
             var tab = SectionTab(title, settingsSection, section, () => Run(() => ShowSettingsAsync(section)));
@@ -93,9 +93,12 @@ internal sealed partial class MainWindow
     }
 
     private FrameworkElement SettingsChoice<T>(string key, string title, string description, Func<T> read, Action<T> write,
-        params (string Title, T Value)[] options)
+        params (string Title, T Value)[] options) => SettingsChoiceWithContent(key, title, description, read, write, null, options);
+
+    private FrameworkElement SettingsChoiceWithContent<T>(string key, string title, string description, Func<T> read, Action<T> write,
+        Func<string, FrameworkElement>? optionContent, params (string Title, T Value)[] options)
     {
-        var control = new MaterialSelect(options.Select(option => option.Title).ToArray()).Width(220);
+        var control = new MaterialSelect(options.Select(option => option.Title).ToArray(), optionContent).Width(220);
         void Refresh() => control.SelectedIndex = Array.FindIndex(options, option => EqualityComparer<T>.Default.Equals(option.Value, read()));
         Refresh();
         control.SelectionChanged += _ =>

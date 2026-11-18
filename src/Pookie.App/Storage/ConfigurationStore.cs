@@ -37,6 +37,7 @@ internal sealed record AppConfiguration
     public bool LyricsEnabled { get; set; } = true;
     public bool LyricsAutoScroll { get; set; } = true;
     public bool SendPlaybackHistory { get; set; } = true;
+    public Dictionary<string, string> ShortcutOverrides { get; set; } = [];
     public bool ChatSendOnEnter { get; set; } = true;
     public bool ChatAutoLoad { get; set; } = true;
     public bool ChatAnimateGifs { get; set; } = true;
@@ -49,6 +50,7 @@ internal sealed record AppConfiguration
 
     public AppConfiguration Normalize() => this with
     {
+        ShortcutOverrides = ShortcutOverrides ?? [],
         SchemaVersion = Math.Max(2, SchemaVersion),
         Repeat = Enum.IsDefined(Repeat) ? Repeat : RepeatMode.Off,
         LikesView = LikesView is { } view && Enum.IsDefined(view) ? view : LikesAsList ? TrackViewMode.Waveform : TrackViewMode.Cards,

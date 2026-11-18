@@ -24,6 +24,8 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
     private FrameworkElement? owner, pending;
     private WeakReference<FrameworkElement>? dismissed;
     private bool keyboard, pendingKeyboard, observing, attached, disposed;
+    private bool waitForPointerMove, waitForFocusNavigation;
+    private Point? pointerPosition;
     private double amount;
     private Rect surfaceBounds;
     private Rect placedAnchor;
@@ -54,6 +56,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         window.OverlayLayer.RegisterService(this);
         window.Deactivated += Deactivated;
         window.PreviewKeyDown += PreviewKey;
+        window.MouseMove += PointerMoved;
         window.MouseDown += PointerDown;
         window.MouseWheel += Wheel;
     }
@@ -63,6 +66,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         // Pointer-opened dialogs return focus for continued keyboard use. That
         // focus restoration must not create a keyboard tooltip under a distant
         // pointer; the next genuine hover still follows its normal delay.
+        if (keyboard ? waitForFocusNavigation : waitForPointerMove) return;
         if (keyboard && target is Control control && !KeyboardFocusFeedback.IsVisible(control)) return;
         if (disposed || !Eligible(target) || dismissed?.TryGetTarget(out var blocked) == true && blocked == target) return;
         if (owner == target && attached)
@@ -289,12 +293,41 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         return !transform.IsIdentity;
     }
     protected override UIElement? OnHitTest(Point point) => null;
-    private void Deactivated() { Hide(true); dismissed = null; }
+    internal void ShortcutInvoked()
+    {
+        // Commands can move focus immediately and change the hover target on a later layout.
+        // Wait for new input in each modality, regardless of how long the command takes.
+        waitForFocusNavigation = waitForPointerMove = true;
+        dismissed = null;
+        if (attached || pending != null) Hide(immediate: true);
+    }
+
+    private void PointerMoved(MouseEventArgs args)
+    {
+        var point = args.GetPosition(window);
+        if (point == pointerPosition) return;
+        pointerPosition = point;
+        if (!waitForPointerMove) return;
+        waitForPointerMove = false;
+        if (args.LeftButton || args.RightButton || args.MiddleButton) return;
+        // MouseEnter runs before MouseMove and may already have run beneath a stationary cursor.
+        for (var element = window.HitTest(point); element != null; element = element.Parent as UIElement)
+            if (element is FrameworkElement target && TooltipHints.TextFor(target) != null)
+            { Request(target, keyboard: false); break; }
+    }
+
+    private void Deactivated()
+    {
+        Hide(true); dismissed = null; pointerPosition = null;
+        waitForFocusNavigation = waitForPointerMove = false;
+    }
     private void PointerDown(MouseEventArgs _) => Dismiss();
     private void Wheel(MouseWheelEventArgs _) => Dismiss();
     private void PreviewKey(KeyEventArgs args)
     {
         if (args.Handled) return;
+        if (args.Key is Key.Tab or Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End)
+            waitForFocusNavigation = false;
         if (args.Key == Key.Escape && (IsOpen || pending != null))
         {
             // A hint that has not appeared must not consume the Escape intended
@@ -308,7 +341,7 @@ internal sealed class MaterialTooltipLayer : Panel, IOverlayService
         if (disposed) return;
         disposed = true; Hide(true); delay.Dispose(); motion.Stop(); groupMotion.Stop();
         window.Deactivated -= Deactivated; window.PreviewKeyDown -= PreviewKey;
-        window.MouseDown -= PointerDown; window.MouseWheel -= Wheel;
+        window.MouseMove -= PointerMoved; window.MouseDown -= PointerDown; window.MouseWheel -= Wheel;
         base.OnDispose();
     }
 }

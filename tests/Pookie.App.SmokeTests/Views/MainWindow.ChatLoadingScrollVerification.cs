@@ -151,8 +151,13 @@ internal sealed partial class MainWindow
     private void SendStationaryChatWheel(Aprillz.MewUI.Point point, int notches)
     {
         if (!OperatingSystem.IsLinux()) { RouteSearchTestWheel(point, notches); return; }
+        SendX11Button(point, notches > 0 ? 4u : 5u, Math.Abs(notches));
+    }
+
+    private void SendX11Button(Aprillz.MewUI.Point point, uint detail, int count = 1)
+    {
         var display = XOpenDisplay(0);
-        if (display == 0) throw new InvalidOperationException("No display for native stationary chat wheel verification.");
+        if (display == 0) throw new InvalidOperationException("No display for native mouse verification.");
         var buffer = Marshal.AllocHGlobal(24 * IntPtr.Size);
         try
         {
@@ -162,9 +167,9 @@ internal sealed partial class MainWindow
                 Display = display, Window = Window.Handle, Root = XDefaultRootWindow(display),
                 X = (int)Math.Round(point.X * Window.DpiScale), Y = (int)Math.Round(point.Y * Window.DpiScale),
                 RootX = (int)Math.Round(screen.X), RootY = (int)Math.Round(screen.Y),
-                KeyCode = notches > 0 ? 4u : 5u, SameScreen = 1
+                KeyCode = detail, SameScreen = 1
             };
-            for (var i = 0; i < Math.Abs(notches); i++)
+            for (var i = 0; i < count; i++)
             {
                 button.Type = 4; Marshal.StructureToPtr(button, buffer, false);
                 if (XSendEvent(display, Window.Handle, 0, 4, buffer) == 0) throw new InvalidOperationException("Native wheel press was not sent.");

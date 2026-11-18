@@ -67,16 +67,17 @@ internal sealed partial class MainWindow
         transport.IsHitTestVisible = false;
         transport.Transitions = [Transition.Create(UIElement.OpacityProperty, 220, Easing.CubicBezier(.2, 0, 0, 1))];
         var coverControls = new StackPanel().Horizontal().Spacing(22).CenterHorizontal().CenterVertical().Children(
-            ExpandedIconButton("skip-back-solid", () => Run(() => SkipAsync(-1)), 42),
-            ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
+            ShortcutHint(ExpandedIconButton("skip-back-solid", () => Run(() => SkipAsync(-1)), 42), ShortcutAction.Previous),
+            ShortcutHint(ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                     Icons.View("play-solid", 28, Color.White).Center().BindIsVisible(isPlaying, value => !value),
                     Icons.View("pause-solid", 28, Color.White).Center().BindIsVisible(isPlaying)),
-                () => Run(ToggleAsync), 60),
-            ExpandedIconButton("skip-forward-solid", () => Run(() => SkipAsync(1)), 42));
+                () => Run(ToggleAsync), 60), ShortcutAction.Play),
+            ShortcutHint(ExpandedIconButton("skip-forward-solid", () => Run(() => SkipAsync(1)), 42), ShortcutAction.Next));
         var like = ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                 Icons.View("heart", 24, Color.White).Center().BindIsVisible(isLiked, value => !value),
                 Icons.View("heart-filled", 24, TrackButtons.OnSelected).Center().BindIsVisible(isLiked)),
             () => Run(ToggleLikeAsync), 38, isLiked).BindIsEnabled(likeAvailable);
+        ShortcutHint(like, ShortcutAction.Like);
         void RefreshLikePending() => ((ExpandedGlassButton)like).SetPending(current != null && IsLikePending(current));
         isLiked.Changed += RefreshLikePending;
         likeAvailable.Changed += RefreshLikePending;
@@ -89,6 +90,8 @@ internal sealed partial class MainWindow
             () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }, CoverHeaderButtonSize);
         var shuffleControl = ExpandedIconButton("shuffle", () => shuffle.Value = !shuffle.Value, 38, shuffle);
         var repeatControl = ExpandedActionButton(RepeatIcon(21), CycleRepeat, 38, repeatActive);
+        ShortcutHint(shuffleControl, ShortcutAction.Shuffle);
+        ShortcutHint(repeatControl, ShortcutAction.Repeat);
         var playbackTint = Color.FromRgb(28, 76, 76);
         ((ExpandedGlassButton)shuffleControl).Connect(true, playbackTint);
         ((ExpandedGlassButton)repeatControl).Connect(false, playbackTint);
@@ -97,11 +100,11 @@ internal sealed partial class MainWindow
             coverControls,
             ExpandedVolumeControl().Left().Top().Margin(CoverHeaderInset),
             share.CenterHorizontal().Top().Margin(0, CoverHeaderInset),
-            ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), CoverHeaderButtonSize, expandedQueueActive)
+            ShortcutHint(ExpandedIconButton("queue", () => ToggleExpandedPanel(PlayerPanel.Queue), CoverHeaderButtonSize, expandedQueueActive), ShortcutAction.Queue)
                 .Right().Top().Margin(CoverHeaderInset),
             new Grid().Columns("*,*,*").Rows("*").Height(42).Bottom().Margin(16).Children(
                 new StackPanel().Horizontal().Spacing(2).Left().Column(0).Children(shuffleControl, repeatControl),
-                ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive).CenterHorizontal().Column(1),
+                ShortcutHint(ExpandedIconButton("text-align-left", () => ToggleExpandedPanel(PlayerPanel.Lyrics), 38, expandedLyricsActive), ShortcutAction.Lyrics).CenterHorizontal().Column(1),
                 new StackPanel().Horizontal().Spacing(2).Right().Column(2).Children(like, repost)));
         const double coverRadius = 10, shadowBlur = 44, shadowOffset = 8;
         expandedCover = new Border().Background(Raised).CornerRadius(coverRadius).ClipToBounds()
@@ -156,7 +159,7 @@ internal sealed partial class MainWindow
         expandedLayout.Add(cardLayer); expandedLayout.Add(panelLayer);
         expandedHeader = new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
             Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
-            ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false).Right().Column(1));
+            ShortcutHint(ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false), ShortcutAction.Expand).Right().Column(1));
         expandedHost = new Grid().Columns("*").Rows("84,*").ClipToBounds().Children(
             expandedBackdrop.Row(0).RowSpan(2), expandedHeader,
             expandedLayout.Row(1).Margin(24, 0, 24, 32));
@@ -207,9 +210,9 @@ internal sealed partial class MainWindow
             Transition.Create(UIElement.OpacityProperty, 170, Easing.CubicBezier(.2, 0, 0, 1))];
         expandedVolume = new ExpandedGlassSurface(expandedGlassBackdrop).Background(Color.Transparent).BorderThickness(0).CornerRadius(CoverHeaderButtonSize / 2)
             .Width(CoverHeaderButtonSize).Height(CoverHeaderButtonSize).Content(new Grid().Columns("38,*").Rows("*").Children(
-                ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
+                ShortcutHint(ExpandedActionButton(new Grid().Columns("*").Rows("*").Children(
                     Icons.View("speaker-high", 20, Color.White).Center().BindIsVisible(muted, value => !value),
-                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, CoverHeaderButtonSize, paintSurface: false).Column(0),
+                    Icons.View("speaker-slash", 20, Color.White).Center().BindIsVisible(muted)), ToggleMute, CoverHeaderButtonSize, paintSurface: false), ShortcutAction.Mute).Column(0),
                 expandedVolumeSlider.Margin(8, 0, 14, 0).Column(1)));
         expandedVolume.Transitions = [Transition.Create(FrameworkElement.WidthProperty, 250, Easing.CubicBezier(.2, 0, 0, 1))];
         hoverReveals.Add(new HoverReveal(expandedVolume, SetExpandedVolumeOpen, () => expandedVolumeSlider.IsMouseCaptured));

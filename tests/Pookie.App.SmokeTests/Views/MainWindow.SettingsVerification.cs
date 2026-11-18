@@ -26,9 +26,9 @@ internal sealed partial class MainWindow
             profile.Value = me.Username; signedIn.Value = true; likedIdsReady = true;
             await ShowWorkspaceAsync();
             await VerifySettingsDraftCleanupBeforeOpeningChatsAsync();
-            if (settingsButton.ToolTip != null || TooltipHints.TextFor(settingsButton) != null || settingsToggles.Values.Any(control => control.ToolTip != null || TooltipHints.TextFor(control) != null) ||
+            if (settingsButton.ToolTip != null || TooltipHints.TextFor(settingsButton) != "Открыть настройки · " + ShortcutBinding.Display(ShortcutBinding.All.Single(b => b.Action == ShortcutAction.Settings).Default) || settingsToggles.Values.Any(control => control.ToolTip != null || TooltipHints.TextFor(control) != null) ||
                 settingsChoices.Values.Any(control => control.ToolTip != null || TooltipHints.TextFor(control) != null))
-                throw new InvalidOperationException("Settings gear, switches or selects retained tooltips.");
+                throw new InvalidOperationException("Incorrect shortcut hint on the gear or unexpected tooltip on a switch/select.");
             Window.Activate();
             Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
             await WaitForSettingsLayoutAsync(() => Window.IsActive && Math.Abs(Window.ClientSize.Width - 1000) < 1 &&
@@ -46,8 +46,8 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Settings opened with a shell popup covering its page.");
 
             var sections = Enum.GetValues<SettingsSection>();
-            if (sections.Length != 6 || settingsTabs.Count != sections.Length)
-                throw new InvalidOperationException("The settings page does not expose all six sections.");
+            if (sections.Length != 7 || settingsTabs.Count != sections.Length)
+                throw new InvalidOperationException("The settings page does not expose all seven sections.");
             foreach (var section in sections)
             {
                 await SelectSettingsTabAsync(section);
@@ -65,6 +65,7 @@ internal sealed partial class MainWindow
                     CaptureUiPreview("settings-" + section.ToString().ToLowerInvariant() + "-bottom-1000x680");
                 }
             }
+            await VerifyShortcutsAsync();
             AssertExcludedAnimationPreferenceAbsent();
             await VerifySettingsSelectAsync();
             await VerifyMaterialSwitchAsync();
@@ -102,6 +103,7 @@ internal sealed partial class MainWindow
             StartQueueContext(new("settings:playlist", "Проверка настроек", "Текущая очередь", Kind: PlaybackContextKind.Playlist), source, source[0]);
             var manual = playbackQueue.Enqueue(SettingsFixtureTrack(800));
             await PlayAsync(source[0]); await queueLoader.EnsureAheadAsync(); RefreshQueue();
+            await VerifyQueueShortcutTooltipsAsync();
             var currentEntry = playbackQueue.Current!.EntryId; var sourceVersion = playbackQueue.SourceVersion;
             if (playbackQueue.Snapshot.Recommendations.Count == 0)
                 throw new InvalidOperationException("The settings fixture did not prepare recommendations to test their cancellation.");
@@ -156,8 +158,9 @@ internal sealed partial class MainWindow
             await SelectSettingsTabAsync(SettingsSection.Playback);
             await SetSettingsToggleAsync("auto_continue", false);
             await SetSettingsToggleAsync("lyrics", false);
-            await SelectSettingsTabAsync(SettingsSection.Chats);
+            await SelectSettingsTabAsync(SettingsSection.Shortcuts);
             await SetSettingsChoiceAsync("chat_send", 1);
+            await SelectSettingsTabAsync(SettingsSection.Chats);
             await SetSettingsChoiceAsync("chat_download", 1);
             await SetSettingsToggleAsync("chat_background", false);
             await SetSettingsToggleAsync("klipy", false);
@@ -176,7 +179,7 @@ internal sealed partial class MainWindow
             await WaitForSettingsLayoutAsync(() => Math.Abs(Window.ClientSize.Width - 1280) < 1 && Math.Abs(Window.ClientSize.Height - 840) < 1);
             await SettleSettingsPresentationAsync();
             CheckSettingsTabBounds(); CaptureUiPreview("settings-general-1280x840");
-            Console.WriteLine("UI_SETTINGS_OK: native gear/tab/toggle/select clicks, animated borderless menu, keyboard selection/dismissal, category dividers, external-link icons, six sections at 1000x680, history section/scroll restoration, persistent likes view, real playback/lyrics/history policies, preserved current/manual entries, configuration round trip and no reduced-animation preference");
+            Console.WriteLine("UI_SETTINGS_OK: native gear/tab/toggle/select clicks, animated borderless menu, keyboard selection/dismissal, category dividers, external-link icons, seven sections at 1000x680, history section/scroll restoration, persistent likes view, real playback/lyrics/history policies, preserved current/manual entries, configuration round trip and no reduced-animation preference");
 
             void CheckSettingsQueue()
             {
@@ -236,6 +239,163 @@ internal sealed partial class MainWindow
                 !chatOutgoing.ContainsKey(91) || chatUnread.States.GetValueOrDefault(92) != unread)
                 throw new InvalidOperationException(action + " before opening Chats erased outbox/read positions or left saved drafts behind.");
         }
+    }
+
+    private async Task VerifyShortcutsAsync()
+    {
+        await SelectSettingsTabAsync(SettingsSection.Shortcuts);
+        var back = ShortcutBinding.All.First(b => b.Action == ShortcutAction.Back);
+        var button = shortcutButtons[back];
+        await RevealSettingsControlAsync(button);
+        RouteWaveformClick(SettingsCenter(button));
+        await WaitForSettingsLayoutAsync(() => shortcutDialog.IsOpen && shortcutDialog.Pose == 1);
+        if (recordingShortcut != back || shortcutSave.IsEnabled || !shortcutCapture.IsFocused)
+            throw new InvalidOperationException("Shortcut recorder opened without a focused capture surface.");
+        Stroke(Key.Right, ModifierKeys.Alt);
+        if (pendingShortcut != "Alt+Right" || !shortcutNotice.IsVisible || shortcutSaveLabel.Text != "Переназначить" ||
+            !shortcutDialog.IsOpen || Assigned(back) != "Mouse4")
+            throw new InvalidOperationException("A conflicting shortcut was applied before confirmation.");
+        Stroke(Key.Escape);
+        await WaitForSettingsLayoutAsync(() => !shortcutDialog.IsVisible);
+        if (recordingShortcut != null || Assigned(back) != "Mouse4" || !button.IsFocused)
+            throw new InvalidOperationException("Cancelling did not restore the original binding and focus.");
+
+        // Open the actual button through Space, capture multiple modifiers and replace the preview.
+        RouteSettingsKey(Key.Space);
+        await WaitForSettingsLayoutAsync(() => shortcutDialog.IsOpen && shortcutDialog.Pose == 1);
+        Stroke(Key.K, ModifierKeys.Control | ModifierKeys.Shift);
+        Window.PerformLayout();
+        CheckInputIcons(shortcutPreview.Child, "Ctrl", "Shift", "K");
+        CaptureUiPreview("settings-shortcut-recording");
+        Stroke(Key.F8);
+        if (!shortcutDialog.IsOpen || !shortcutSave.IsEnabled || pendingShortcut != "F8" || Assigned(back) != "Mouse4")
+            throw new InvalidOperationException("Shortcut preview failed to keep the original binding.");
+        RouteWaveformClick(SettingsCenter(shortcutSave));
+        await WaitForSettingsLayoutAsync(() => !shortcutDialog.IsVisible);
+        SaveConfiguration(); await configuration.FlushAsync();
+        if (configuration.Load().ShortcutOverrides.GetValueOrDefault(back.Id) != "F8" ||
+            TooltipHints.TextFor(backButton)?.Contains("F8") != true)
+            throw new InvalidOperationException("Shortcut edit did not persist and refresh the navigation hint.");
+        await SelectSettingsTabAsync(SettingsSection.About);
+        Stroke(Key.F8);
+        await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.Shortcuts);
+        await RevealSettingsControlAsync(button);
+        RouteWaveformClick(SettingsCenter(button));
+        Stroke(Key.Backspace);
+        Stroke(Key.Enter);
+        await WaitForSettingsLayoutAsync(() => !shortcutDialog.IsVisible);
+        if (Assigned(back) != "") throw new InvalidOperationException("Clearing a shortcut fell back to its default.");
+
+        if (OperatingSystem.IsLinux())
+        {
+            RouteWaveformClick(SettingsCenter(button));
+            SendX11Button(SettingsCenter(shortcutCapture), 8);
+            await WaitForSettingsLayoutAsync(() => pendingShortcut == "Mouse4" && shortcutDialog.Pose == 1);
+            Window.PerformLayout();
+            CheckInputIcons(shortcutPreview.Child, "Mouse4");
+            CaptureUiPreview("settings-shortcut-mouse");
+            if (Assigned(back) != "" || !shortcutDialog.IsOpen) throw new InvalidOperationException("Mouse capture triggered navigation.");
+            Stroke(Key.Enter);
+            await WaitForSettingsLayoutAsync(() => !shortcutDialog.IsVisible && Assigned(back) == "Mouse4");
+            await SelectSettingsTabAsync(SettingsSection.About);
+            var point = SettingsCenter(settingsTabs[SettingsSection.Interface]);
+            SendX11Button(point, 8);
+            await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.Shortcuts);
+            SendX11Button(point, 9);
+            await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.About);
+        }
+        else await AssignShortcutAsync(back, back.Default);
+
+        Stroke(Key.Left, ModifierKeys.Alt);
+        await WaitForSettingsLayoutAsync(() => settingsSection.Value == SettingsSection.Shortcuts);
+        Stroke(Key.K, OperatingSystem.IsMacOS() ? ModifierKeys.Meta : ModifierKeys.Control);
+        await WaitForSettingsLayoutAsync(() => searching.Value && topSearchInput.IsFocused);
+        var before = volume.Value;
+        Stroke(Key.M);
+        Stroke(Key.Up, ModifierKeys.Control);
+        if (volume.Value != before) throw new InvalidOperationException("Editing search text changed volume.");
+        Stroke(Key.Escape);
+        Window.FocusManager.ClearFocus();
+        Stroke(Key.M);
+        if (volume.Value != 0) throw new InvalidOperationException("Mute shortcut did not run.");
+        Stroke(Key.M);
+        if (volume.Value != before) throw new InvalidOperationException("Unmute did not restore volume.");
+
+        var diagnostics = ShortcutBinding.All.Single(b => b.Action == ShortcutAction.RepaintOverlay);
+        var overlay = typeof(Window).GetProperty("DirtyRegionOverlayEnabled",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        bool Highlighting() => (bool)overlay.GetValue(Window)!;
+        var gesture = ShortcutBinding.RepaintGesture;
+        Stroke(gesture.Key, gesture.Modifiers);
+        if (!Highlighting()) throw new InvalidOperationException("The default diagnostics shortcut did not enable repaint highlighting.");
+        await AssignShortcutAsync(diagnostics, "F8");
+        Stroke(gesture.Key, gesture.Modifiers);
+        if (!Highlighting()) throw new InvalidOperationException("The original framework shortcut survived remapping.");
+        Stroke(Key.F8);
+        if (Highlighting()) throw new InvalidOperationException("The reassigned shortcut did not disable repaint highlighting.");
+        await AssignShortcutAsync(diagnostics, "");
+        Stroke(Key.F8);
+        if (Highlighting()) throw new InvalidOperationException("The cleared F8 shortcut still activated.");
+        Stroke(gesture.Key, gesture.Modifiers);
+        if (Highlighting()) throw new InvalidOperationException("A cleared diagnostics shortcut still activated.");
+        await AssignShortcutAsync(diagnostics, diagnostics.Default);
+        OpenTopSearch();
+        await WaitForSettingsLayoutAsync(() => topSearchInput.IsFocused);
+        Stroke(gesture.Key, gesture.Modifiers);
+        if (!Highlighting()) throw new InvalidOperationException("The diagnostics chord was unavailable while searching.");
+        Stroke(gesture.Key, gesture.Modifiers);
+        CloseTopSearch(clear: true);
+
+        static void CheckInputIcons(UIElement? view, params string[] names)
+        {
+            var caps = (view as StackPanel)?.Children.OfType<Border>().ToArray() ?? [];
+            if (caps.Length != names.Length) throw new InvalidOperationException("Incorrect number of input keycaps.");
+            for (int index = 0; index < caps.Length; index++)
+                if (caps[index].Child is not StackPanel face || !face.Children.OfType<Image>().Any() ||
+                    face.Children.OfType<TextBlock>().SingleOrDefault()?.Text != names[index])
+                    throw new InvalidOperationException("Missing input icon or name for " + names[index]);
+        }
+    }
+
+    private void Stroke(Key key, ModifierKeys modifiers = ModifierKeys.None)
+    {
+        var args = new KeyEventArgs(key, 0, modifiers);
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        typeof(Window).GetMethod("RaisePreviewKeyDown", flags)!.Invoke(Window, [args]);
+        if (!args.Handled)
+            typeof(Window).Assembly.GetType("Aprillz.MewUI.Input.WindowInputRouter")!.GetMethod("KeyDown")!.Invoke(null, [Window, args]);
+    }
+
+    private async Task VerifyQueueShortcutTooltipsAsync()
+    {
+        await WaitForSettingsLayoutAsync(() => playerVisible.Value && queueButton.ActualWidth > 0 && !ShortcutOverlayActive);
+        Window.FocusManager.ClearFocus();
+        MoveActionPointer(new Point(2, 2));
+        MoveActionPointer(SettingsCenter(settingsButton));
+        Stroke(Key.Q);
+        if (!queueOpen.Value || !queueButton.IsFocused)
+            throw new InvalidOperationException("Q did not open the queue with its normal focus.");
+        var flashed = tooltipLayer.IsVisible;
+        void Sample() => flashed |= tooltipLayer.IsVisible;
+        Window.FrameRendered += Sample;
+        try { await Task.Delay(MaterialTooltipLayer.HoverDelayMs + 180, lifetime.Token); }
+        finally { Window.FrameRendered -= Sample; }
+        if (flashed || tooltipLayer.Running || tooltipLayer.Preparing)
+            throw new InvalidOperationException("A focused or pending tooltip survived the queue shortcut.");
+
+        MoveActionPointer(SettingsCenter(queueButton));
+        await WaitForSettingsLayoutAsync(() => tooltipLayer.Owner == queueButton && tooltipLayer.Reveal == 1);
+        Stroke(Key.Q);
+        if (queueOpen.Value || tooltipLayer.IsVisible || tooltipLayer.Running)
+            throw new InvalidOperationException("Closing the queue by shortcut left its visible tooltip behind.");
+        Window.FocusManager.ClearFocus();
+        settingsButton.Focus();
+        if (tooltipLayer.IsOpen) throw new InvalidOperationException("A subsequent programmatic focus reopened a tooltip.");
+        Stroke(Key.Tab);
+        queueButton.Focus();
+        await WaitForSettingsLayoutAsync(() => tooltipLayer.Owner == queueButton && tooltipLayer.Reveal == 1);
+        Window.FocusManager.ClearFocus();
+        MoveActionPointer(new Point(2, 2));
     }
 
     private async Task SelectSettingsTabAsync(SettingsSection section)

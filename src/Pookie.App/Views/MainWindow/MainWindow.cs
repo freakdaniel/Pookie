@@ -187,6 +187,7 @@ internal sealed partial class MainWindow : IDisposable
         };
         Window.PreviewKeyDown += e =>
         {
+            if (CaptureShortcutKey(e)) return;
             if (widevineSetup != null && widevineDialog.HandleKey(e)) return;
             if (embeddedLoginDialog.HandleKey(e)) return;
             if (chatMusicDialog.HandleKey(e)) return;
@@ -220,7 +221,9 @@ internal sealed partial class MainWindow : IDisposable
             if (e.Key == Key.Escape && CancelTrackCommentInput()) { e.Handled = true; return; }
             if (e.Key == Key.Escape && expandedOpen) { e.Handled = true; SetExpandedPlayer(false); return; }
             if (e.Key == Key.Escape && searching.Value) { e.Handled = true; CloseTopSearch(clear: true); }
+            if (e.Modifiers != ModifierKeys.None) HandleShortcutKey(e);
         };
+        InitializeShortcuts();
         InitializeChatComposer(); InitializeSearchInput();
         Window.Deactivated += () => { RefreshHomeMixMotion(); foreach (var motion in smoothScrolls.Values) motion.Stop(); CloseShellMenus(true); CloseChatGifs(); CloseChatMessageMenu(true); ResetTrackCommentPreview(); trackCommentsLoadingView.Skeleton.SetActive(false); };
         chatTimer.Start();
@@ -846,6 +849,7 @@ internal sealed partial class MainWindow : IDisposable
         disposed = true;
         topSearchMotion.Stop();
         embeddedLogin?.Stop();
+        shortcutDialog.Close(immediate: true);
         tooltipLayer.Dispose();
         ResetExpandedPlayer();
         pageRefreshTimer.Dispose();

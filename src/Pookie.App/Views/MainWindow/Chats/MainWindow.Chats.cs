@@ -150,7 +150,8 @@ internal sealed partial class MainWindow
             chatName.Column(1).Left().CenterVertical()), () => { if (chatFavoritesOpen) OpenChatSavedInfo(); else OpenChatInfo(); }, TrackButtons.Text, 46).Padding(0);
         ((FrameworkElement)identity.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         ((MaterialTrackButton)identity).SuppressStateLayer();
-        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, MutedIcon), OpenChatThreadSearch, TrackButtons.Text, 36).Hint("Поиск в переписке");
+        var find = TrackButtons.Icon(Icons.View("magnifying-glass", 21, MutedIcon), OpenChatThreadSearch, TrackButtons.Text, 36);
+        ShortcutHint(find, ShortcutAction.Find, "Поиск в переписке");
         chatNormalIdentity = new Grid().Columns("Auto,*,36,36").Rows("*").Spacing(8).Children(chatBack.Column(0).CenterVertical(), identity.Column(1).CenterVertical(), find.Column(2).CenterVertical());
         chatIdentityCard = new GlassCard { HoverEnabled = false }.Background(ChatGlassSurface).Height(48).CornerRadius(24).Padding(4, 0).MaxWidth(ChatColumns.ReadingWidth).CenterHorizontal().Child(new ChatMessageColumn(chatNormalIdentity).Initialize());
         chatOptions = TrackButtons.Icon(Icons.View("dots-three", 24), () => chatOptionsMenu.Show(chatOptions), TrackButtons.Text, 36)
