@@ -155,6 +155,7 @@ internal sealed partial class MainWindow
             if (expandedLayout.ReduceMotion ? sawCoverInFlight : !sawCoverInFlight || !sawStaggeredText)
                 throw new InvalidOperationException($"Missing artwork travel or staged metadata: travel={sawCoverInFlight}, metadata={sawStaggeredText}.");
             Console.WriteLine($"EXPANDED_REVEAL_OK: reduced={expandedLayout.ReduceMotion}, moving cover={sawCoverInFlight}, staggered metadata={sawStaggeredText}");
+            VerifyExpandedSurface();
             var centeredX = expandedCover.Bounds.X;
             var centerError = Math.Abs(expandedCover.Bounds.X + expandedCover.ActualWidth / 2 - Window.ClientSize.Width / 2);
             if (centerError > 1) throw new InvalidOperationException($"Cover is not centered: {centerError}");
@@ -303,6 +304,44 @@ internal sealed partial class MainWindow
             if (restoreCursor && !SetLikedActionCursor(savedCursor.X, savedCursor.Y))
                 throw new InvalidOperationException("Could not restore cursor position after fullscreen verification.");
         }
+    }
+
+    private void VerifyExpandedSurface()
+    {
+        var reduced = expandedLayout.ReduceMotion;
+        var radius = expandedCover.CornerRadius;
+        try
+        {
+            expandedLayout.ReduceMotion = false;
+            foreach (var reveal in new[] { .02, .5, .98 })
+            {
+                ApplyExpandedReveal(reveal);
+                var painted = expandedCover.TranslateRect(new Rect(Point.Zero, expandedCover.Bounds.Size), Window);
+                var visibleRadius = expandedCover.CornerRadius * painted.Width / expandedCover.ActualWidth;
+                var expectedRadius = playerArtworkButton.CornerRadius * (1 - reveal) + radius * reveal;
+                if (Math.Abs(visibleRadius - expectedRadius) > .1)
+                    throw new InvalidOperationException($"Moving artwork radius {visibleRadius} differs from {expectedRadius} at {reveal}.");
+                var card = (PlayerMotionLayer)expandedLayout.Children[0];
+                var artworkPixels = CaptureSectionButton(card);
+                var cardStride = artworkPixels.Length / (int)Math.Ceiling(card.ActualHeight * Window.DpiScale);
+                var x = (int)Math.Round((painted.X - card.Bounds.X) * Window.DpiScale);
+                var y = (int)Math.Round((painted.Y - card.Bounds.Y) * Window.DpiScale);
+                var inset = (int)Math.Ceiling(expectedRadius * Window.DpiScale);
+                if (artworkPixels[y * cardStride + x * 4 + 3] > 128 || artworkPixels[(y + inset) * cardStride + (x + inset) * 4 + 3] < 250)
+                    throw new InvalidOperationException($"The artwork lost its rounded pixel mask at {reveal}.");
+                var pixels = CaptureSectionButton(expandedHost);
+                var height = (int)Math.Ceiling(expandedHost.ActualHeight * Window.DpiScale);
+                var stride = pixels.Length / height;
+                var top = (int)Math.Round((playerBackdrop.Bounds.Y - expandedHost.Bounds.Y) * (1 - reveal) * Window.DpiScale);
+                if (pixels[(top - 3) * stride + 7] != 0 || pixels[(top + 3) * stride + 7] != 255)
+                    throw new InvalidOperationException($"Expanded background did not grow from the player bar at {reveal}.");
+            }
+            expandedLayout.ReduceMotion = true;
+            ApplyExpandedReveal(.5);
+            if (CaptureSectionButton(expandedHost)[3] is < 125 or > 130 || expandedCover.CornerRadius != radius)
+                throw new InvalidOperationException("Reduced motion must crossfade the full surface at its resting geometry.");
+        }
+        finally { expandedLayout.ReduceMotion = reduced; ApplyExpandedReveal(1); }
     }
 
     private void CaptureExpandedPanelPreview(string name)

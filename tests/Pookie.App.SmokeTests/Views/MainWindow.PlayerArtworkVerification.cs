@@ -272,6 +272,19 @@ internal sealed partial class MainWindow
         var reply = new TaskCompletionSource<ImageSource?>(TaskCreationOptions.RunContinuationsAsynchronously);
         compactArtworkRequests[(queuedUrl, CompactArtworkSide(CompactCoverSize))] = reply.Task;
         playbackQueue.Enqueue(queued, false);
+        RefreshQueue();
+        SetExpandedPlayer(false);
+        await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible);
+        ToggleCompactQueue();
+        CompactTrackRow? compact = null;
+        await WaitForLikedLayoutAsync(() =>
+        {
+            compact = compactTrackRows.FirstOrDefault(item => item.Track?.Id == queued.Id && queueList.IsAncestorOf(item.Root));
+            return compact != null && compact.Cover.ActualWidth > 0 && ArtworkSkeleton(compact.Cover).Running;
+        });
+        VerifyShimmer(compact!.Cover);
+        SetExpandedPlayer(true);
+        await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
         ToggleExpandedPanel(PlayerPanel.Queue);
         CompactTrackRow? row = null;
         await WaitForLikedLayoutAsync(() =>
@@ -281,9 +294,11 @@ internal sealed partial class MainWindow
         });
         var cover = row!.Cover;
         var skeleton = ArtworkSkeleton(cover);
+        VerifyShimmer(cover);
         var blended = false;
         void Sample() => blended |= ReferenceEquals(cover.Source, thumbnail) &&
-            skeleton.IsVisible && !skeleton.Running && skeleton.Opacity is > 0 and < 1;
+            skeleton.IsVisible && !skeleton.Running && cover.Opacity is > 0 and < 1 &&
+            Math.Abs(cover.Opacity + skeleton.Opacity - 1) < .001;
         Window.FrameRendered += Sample;
         try
         {
@@ -291,10 +306,18 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => ReferenceEquals(cover.Source, thumbnail) && !skeleton.IsVisible);
         }
         finally { Window.FrameRendered -= Sample; }
-        if (!blended || skeleton.Opacity != 1)
+        if (!blended || skeleton.Opacity != 1 || cover.Opacity != 1)
             throw new InvalidOperationException("A delayed queue thumbnail skipped its reveal or left the recycled skeleton translucent.");
         ToggleExpandedPanel(PlayerPanel.Queue);
         await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning);
+
+        void VerifyShimmer(Image image)
+        {
+            var pixels = CaptureSectionButton(ArtworkSkeleton(image));
+            var alpha = pixels[3];
+            if (alpha is 0 or >= 64 || pixels[0] != pixels[1] || pixels[1] != pixels[2] || pixels[0] < alpha - 1)
+                throw new InvalidOperationException($"Expected translucent white queue artwork, got BGRA {pixels[0]},{pixels[1]},{pixels[2]},{alpha}.");
+        }
     }
 
     private void VerifyExpandedArtworkPixels()

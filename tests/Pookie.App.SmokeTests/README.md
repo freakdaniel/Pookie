@@ -804,8 +804,8 @@ final native frames without clicking or hovering the progress bar; an opacity
 change alone is insufficient.
 Queue checks cover the retained playback source/current track, row backgrounds
 extending beyond heading edges, hidden scrollbars, native wheel interpolation,
-animated movement of earlier tracks and a stable now-playing source heading while
-playback advances, including after scrolling away and selecting a distant track.
+animated movement of earlier tracks and a vertically centered current track while
+playback advances, including after browsing the queue and selecting a distant track.
 GPU-rendered background/edge-fade pixels and the window's presented frame follow
 intermediate and settled colors, including an interrupted transition. Background
 and edge fades each reuse one mutable image, including the final frame. Queue rows

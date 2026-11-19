@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aprillz.MewUI;
 using Pookie.App.Playback;
 using Pookie.SoundCloud;
 
@@ -49,7 +50,46 @@ internal sealed partial class MainWindow
                 expandedQueueData.Single(block => block.Key == "source").Title != "Исходный плейлист" ||
                 expandedQueueData.Any(block => block.Key == "upcoming") || expandedQueueData.Any(block => block.Track?.Id == 201))
                 throw new InvalidOperationException("Expanded queue did not distinguish continuation from the original playlist.");
-            CaptureUiPreview("queue-continuation-expanded");
+            await WaitForExpandedQueueSettledAsync();
+            VerifyNowPlayingAnchor();
+            for (var i = 0; i < 6; i++)
+            {
+                var previousEntry = playbackQueue.Current!.EntryId;
+                await SkipAsync(1, naturalEnd: true);
+                await queueLoader.EnsureAheadAsync();
+                await WaitForExpandedQueueSettledAsync();
+                if (playbackQueue.Current is not { Origin: PlaybackEntryOrigin.Recommendation } next || next.EntryId == previousEntry)
+                    throw new InvalidOperationException("The next recommended occurrence did not start playing.");
+                VerifyNowPlayingAnchor();
+            }
+            var previousSize = Window.WindowSize;
+            var previousViewport = expandedHost.Bounds.Size;
+            try
+            {
+                Window.WindowSize = WindowSize.Resizable(1000, 681, minWidth: 1000, minHeight: 680);
+                await WaitForLikedLayoutAsync(() => Math.Abs(expandedHost.ActualHeight - 681) <= 1 / Window.DpiScale);
+                await WaitForExpandedQueueSettledAsync();
+                VerifyNowPlayingAnchor();
+                CaptureExpandedPanelPreview("queue-continuation-expanded");
+            }
+            finally { Window.WindowSize = previousSize; }
+            await WaitForLikedLayoutAsync(() => expandedHost.Bounds.Size == previousViewport);
+            await WaitForExpandedQueueSettledAsync();
+            expandedQueueRows.Values.Single(row => row.EntryId == playbackQueue.Current!.EntryId && row.Track != null)
+                .PlaybackButton.Focus();
+            for (var step = 0; step < 6 && expandedQueueScroll.VerticalOffset > 1; step++)
+            {
+                RouteSearchTestWheel(expandedQueueScroll.Bounds.Center, 6);
+                await WaitForLikedLayoutAsync(() => !smoothScrolls[expandedQueueScroll].IsRunning);
+            }
+            if (expandedQueueScroll.VerticalOffset > 1)
+                throw new InvalidOperationException($"Could not scroll to the beginning of the queue history: offset={expandedQueueScroll.VerticalOffset}.");
+            SetExpandedPlayer(false);
+            await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible);
+            SetExpandedPlayer(true);
+            await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
+            await WaitForExpandedQueueSettledAsync();
+            VerifyNowPlayingAnchor();
             SetExpandedPlayer(false);
             var retained = AssertRecommendations().ToArray();
             CycleRepeat();

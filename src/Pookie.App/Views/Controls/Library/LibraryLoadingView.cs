@@ -71,6 +71,10 @@ internal sealed class LibraryLoadingView : IDisposable
 
 internal sealed class LibrarySkeleton : Control
 {
+    private static readonly GradientStop[] GrayShimmer = [
+        new(0, Color.FromRgb(37, 37, 37)), new(.5, Color.FromRgb(53, 53, 53)), new(1, Color.FromRgb(37, 37, 37))];
+    private static readonly GradientStop[] WhiteShimmer = [
+        new(0, Color.FromArgb(18, 255, 255, 255)), new(.5, Color.FromArgb(40, 255, 255, 255)), new(1, Color.FromArgb(18, 255, 255, 255))];
     internal bool Running => shimmer.IsRunning;
     public bool Preview { get; set; }
     public int PreviewItems { get; set; } = 6;
@@ -81,6 +85,7 @@ internal sealed class LibrarySkeleton : Control
     public bool PlaylistRows { get; set; }
     public int CompactRowSpacing { get; set; }
     public bool ArtworkOnly { get; set; }
+    internal bool Translucent { get; init; }
     public bool AvatarStrip { get; set; }
     public bool TextOnly { get; set; }
     public bool CommentRows { get; set; }
@@ -148,8 +153,8 @@ internal sealed class LibrarySkeleton : Control
         var bounds = Bounds;
         var band = Math.Max(180, bounds.Width * .35);
         var x = bounds.X - band + phase * (bounds.Width + 2 * band);
-        var brush = new LinearGradientBrush(new Point(x, bounds.Y), new Point(x + band, bounds.Y + 80), [
-            new(0, Color.FromRgb(37, 37, 37)), new(.5, Color.FromRgb(53, 53, 53)), new(1, Color.FromRgb(37, 37, 37))]);
+        var brush = new LinearGradientBrush(new Point(x, bounds.Y), new Point(x + band, bounds.Y + 80),
+            Translucent ? WhiteShimmer : GrayShimmer);
         if (ArtworkOnly) { context.FillRectangle(bounds, brush); return; }
         void Block(double left, double top, double width, double height, double radius = 4)
         {

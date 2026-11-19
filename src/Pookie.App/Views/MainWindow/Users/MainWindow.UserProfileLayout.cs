@@ -103,7 +103,7 @@ internal sealed partial class MainWindow
         userRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), RetryUserProfile, TrackButtons.Tonal, 32).Left();
         userEmpty = new TextBlock().FontSize(14).Foreground(Muted).Margin(8, 16).TextWrapping(TextWrapping.Wrap);
         userTrackList = CreateUserTrackList(); userCardGrid = CreateCollectionGrid(false);
-        userActivityEmpty = new TextBlock().Text("Пока нет публикаций, репостов и комментариев").FontSize(14).Foreground(Muted).IsVisible(false);
+        userActivityEmpty = new TextBlock().Text("Пока нет публикаций и репостов").FontSize(14).Foreground(Muted).IsVisible(false);
         userOverviewBody = new StackPanel().Vertical().Children(UserPublicationListView(), userActivityEmpty);
         userOverviewLoading = CreateLibraryLoadingView(userOverviewBody, preview: true);
         userOverviewLoading.Skeleton.Preview = false;

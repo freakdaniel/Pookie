@@ -38,11 +38,9 @@ internal sealed partial class MainWindow
         renderedCommentsUser = renderedUserCommentsGeneration = 0; renderedUserCommentsStatus = "";
     }
 
-    private FrameworkElement UserCommentView(UserComment entry, bool preview, bool activity = false)
+    private FrameworkElement UserCommentView(UserComment entry, bool preview)
     {
-        var title = string.IsNullOrWhiteSpace(entry.Track?.Title)
-            ? (activity ? "Комментарий к недоступному треку" : "На недоступном треке")
-            : (activity ? "Комментарий к треку «" : "На треке «") + entry.Track.Title + "»";
+        var title = string.IsNullOrWhiteSpace(entry.Track?.Title) ? "На недоступном треке" : $"На треке «{entry.Track.Title}»";
         var track = new TextBlock().Text(title).FontSize(preview ? 12 : 14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         if (entry.Track?.Id is > 0) AttachTrackTitle(track, () => entry.Track);
         var date = new TextBlock().Text(UserPublicationDate(entry.Comment.CreatedAt)).FontSize(10).Foreground(Muted).CenterVertical();

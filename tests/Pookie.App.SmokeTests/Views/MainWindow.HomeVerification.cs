@@ -69,6 +69,7 @@ internal sealed partial class MainWindow
                 await ShowTrendsInViewportAsync();
                 await VerifyTrendingActionsAsync(homeChartRows[0]);
                 await VerifyTrendingQueueOriginAsync();
+                await VerifyHomeGenreMenuAsync();
                 return;
             }
             if (homeMixCarousel.VisibleCoverCount != 5 || homeMixSection.Children.OfType<Button>().Any())
@@ -152,6 +153,7 @@ internal sealed partial class MainWindow
             await VerifyTrendingActionsAsync(homeChartRows[0]);
             await VerifyTrendingQueueOriginAsync();
             await VerifyHomeChartRefreshAsync(transport, picker);
+            await VerifyHomeGenreMenuAsync();
             var chartScroll = shellScroll.VerticalOffset;
             transport.ChartReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
             picker.SelectedIndex = 0;
@@ -325,6 +327,54 @@ internal sealed partial class MainWindow
         shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + homeChart.Bounds.Y - chartTop);
         await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !homeMixCarousel.MotionActive && Math.Abs(homeChart.Bounds.Y - chartTop) < 2 &&
             homeChartOpen.Bounds.Y > startupHeader.Bounds.Bottom && homeChartOpen.Bounds.Bottom < homeScroll.Bounds.Bottom);
+    }
+
+    private async Task VerifyHomeGenreMenuAsync()
+    {
+        var picker = homeChartGenreSlot.Children.OfType<MaterialSelect>().Single();
+        var previousSize = Window.WindowSize;
+        var previousViewport = Window.Content!.Bounds.Size;
+        var previousOffset = shellScroll.VerticalOffset;
+        try
+        {
+            Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
+            await WaitForLikedLayoutAsync(() => Window.Content!.Bounds.Size == new Size(1000, 680) && shellPageScroll.IsReady);
+            foreach (var offset in new[] { -8, 8 })
+            {
+                var viewport = Window.Content!.Bounds;
+                var y = viewport.Center.Y - picker.ActualHeight / 2 + offset;
+                for (var attempt = 0; attempt < 5 && Math.Abs(picker.Bounds.Y - y) > 2; attempt++)
+                {
+                    shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + picker.Bounds.Y - y);
+                    await WaitForLoginFrameAsync();
+                }
+                if (Math.Abs(picker.Bounds.Y - y) > 2)
+                    throw new InvalidOperationException($"Could not center genre trigger {picker.Bounds} at {y}, shell={shellScroll.VerticalOffset}/{SmoothScroll.Maximum(shellScroll)}, inner={homeScroll.VerticalOffset}, chart={homeChart.Bounds}, viewport={viewport}.");
+                ClickHomeElement(picker);
+                await WaitForLikedLayoutAsync(() => picker.IsDropDownOpen && picker.MenuReveal == 1);
+                var menu = picker.Menu!;
+                var above = picker.Bounds.Y - viewport.Y - 16;
+                var below = viewport.Bottom - picker.Bounds.Bottom - 16;
+                var expectedTop = below > above ? picker.Bounds.Bottom + 8 : viewport.Y + 8;
+                if (menu.ActualHeight >= picker.MaxDropDownHeight || Math.Abs(menu.ActualHeight - Math.Max(above, below)) > 1 ||
+                    Math.Abs(menu.Bounds.Y - expectedTop) > 1)
+                    throw new InvalidOperationException($"Genre menu {menu.Bounds} does not fit the roomier side of {picker.Bounds} in {viewport}.");
+                CaptureUiPreview(offset < 0 ? "trending-menu-below" : "trending-menu-above");
+                RouteSettingsKey(Key.End);
+                await WaitForLikedLayoutAsync(() => menu.Options[^1].IsFocused && menu.Bounds.Contains(menu.Options[^1].Bounds.Center));
+                RouteSettingsKey(Key.Escape);
+                await WaitForLikedLayoutAsync(() => !picker.IsDropDownOpen && picker.MenuReveal == 0);
+            }
+            Console.WriteLine("TRENDING_MENU_OK: the scrollable genre list fits above and below its trigger at 1000x680.");
+        }
+        finally
+        {
+            picker.IsDropDownOpen = false;
+            Window.WindowSize = previousSize;
+            await WaitForLikedLayoutAsync(() => Window.Content!.Bounds.Size == previousViewport && shellPageScroll.IsReady);
+            shellScroll.SetScrollOffsets(0, previousOffset);
+            await WaitForLoginFrameAsync();
+        }
     }
 
     private async Task VerifyTrendingQueueOriginAsync()

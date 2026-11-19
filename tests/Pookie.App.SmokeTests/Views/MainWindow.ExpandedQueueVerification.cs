@@ -10,8 +10,8 @@ internal sealed partial class MainWindow
 {
     private async Task VerifyExpandedQueueDesignAsync()
     {
-        await WaitForLikedLayoutAsync(() => expandedQueueScroll.VerticalOffset < 1 &&
-            expandedQueueBlocks.Values.Any(block => block?.Key == "source"));
+        await WaitForExpandedQueueSettledAsync();
+        VerifyNowPlayingAnchor();
         var source = expandedQueueBlocks.Single(pair => pair.Value?.Key == "source");
         var playing = expandedQueueRows.Values.Single(row => row.Track?.Id == current?.Id);
         var heading = ((StackPanel)((Grid)source.Key.Content!).Children[1]).Children.OfType<TextBlock>().Last();
@@ -35,7 +35,6 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("Playback origin followed page navigation instead of the queue.");
         page.Value = originalPage;
 
-        var before = source.Key.Bounds.Y;
         var positions = new List<double>();
         var intervals = new List<double>();
         long previousMotionFrame = 0;
@@ -76,9 +75,9 @@ internal sealed partial class MainWindow
             if (!expandedQueueRows.Values.Any(row => row.Track?.Title == resolvedTrack.Title))
                 throw new InvalidOperationException("Retained queue rows did not receive resolved metadata.");
             await WaitForExpandedQueueSettledAsync();
-            var after = expandedQueueBlocks.Single(pair => pair.Value?.Key == "source").Key.Bounds.Y;
-            if (Math.Abs(after - before) > 2 || positions.Select(y => Math.Round(y, 1)).Distinct().Count() < 4)
-                throw new InvalidOperationException($"Queue advance jumped its source or failed to animate the previous row: before={before}, after={after}, frames={string.Join(',', positions)}");
+            VerifyNowPlayingAnchor();
+            if (positions.Select(y => Math.Round(y, 1)).Distinct().Count() < 4)
+                throw new InvalidOperationException($"Queue advance did not animate the previous row: frames={string.Join(',', positions)}");
         }
         finally { Window.FrameRendered -= Sample; }
         intervals.Sort();
@@ -107,8 +106,7 @@ internal sealed partial class MainWindow
         await PlayAsync(tracks[2]);
         await WaitForExpandedQueueSettledAsync();
         VerifyNowPlayingAnchor();
-        // A distant selection must realize the source heading and keep it at the
-        // same viewport position even with hundreds of preceding virtualized rows.
+        // The new current occurrence may be outside the realized rows.
         await PlayAsync(tracks[500]);
         await WaitForExpandedQueueSettledAsync();
         VerifyNowPlayingAnchor();
@@ -119,13 +117,14 @@ internal sealed partial class MainWindow
         await VerifyQueuePaletteTransitionAsync();
         await VerifyExpandedManualQueueAsync();
         await VerifyNativeQueueAdvanceAsync();
+        await PlayAsync(tracks[^1]);
+        await WaitForExpandedQueueSettledAsync();
+        VerifyNowPlayingAnchor();
         SetQueue(tracks[0]);
         await PlayAsync(tracks[0]);
         await WaitForExpandedQueueSettledAsync();
-        expandedQueueAnchor = null;
-        expandedQueueScroll.SetScrollOffsets(0, 0); expandedQueue.ScrollIntoView(0);
-        await WaitForLikedLayoutAsync(() => expandedQueueScroll.VerticalOffset < 1);
-        Console.WriteLine("EXPANDED_QUEUE_DESIGN_OK: heading outsets, hidden scrollbar, retained playback origin, animated previous rows, smooth wheel scrolling and stable now-playing source anchor after scrolling and distant selections");
+        VerifyNowPlayingAnchor();
+        Console.WriteLine("EXPANDED_QUEUE_DESIGN_OK: heading outsets, hidden scrollbar, retained playback origin, animated previous rows, smooth wheel scrolling and centered current occurrence through the first and last tracks");
     }
 
     private async Task VerifyNativeQueueAdvanceAsync()
@@ -158,7 +157,8 @@ internal sealed partial class MainWindow
                 RouteWaveformClick(new Point(next.Bounds.X + next.Bounds.Width / 2, next.Bounds.Y + next.Bounds.Height / 2));
                 await WaitForLikedLayoutAsync(() => current?.Id == tracks[index].Id && audioReady);
                 await WaitForExpandedQueueSettledAsync();
-                if (!native.Poll().Playing || expandedCurrentEntry != playbackQueue.Current?.EntryId)
+                VerifyNowPlayingAnchor();
+                if (!native.Poll().Playing || playbackQueue.Current?.Track.Id != current?.Id)
                     throw new InvalidOperationException("Native audio and fullscreen queue diverged after Next on the cover.");
             }
             if (intervals.Count < 12) throw new InvalidOperationException("Native track changes did not render intermediate queue frames.");
@@ -193,7 +193,7 @@ internal sealed partial class MainWindow
                 ancestors.Add($"{element.GetType().Name}:{element.IsMeasureDirty}/{element.IsArrangeDirty}:{(element as UIElement)?.IsVisible}");
             Console.Error.WriteLine("QUEUE_LAYOUT_CHAIN " + string.Join(" -> ", ancestors));
             Console.Error.WriteLine($"QUEUE_INNER_STATE dirty={expandedQueueScroll.IsMeasureDirty}/{expandedQueueScroll.IsArrangeDirty}, rows={string.Join(';', expandedQueueBlocks.Where(pair => pair.Value != null).Select(pair => $"{pair.Value!.Key}:{pair.Key.IsMeasureDirty}/{pair.Key.IsArrangeDirty}:{pair.Key.Bounds}"))}");
-            throw new InvalidOperationException($"Queue settle: anchor={expandedQueueAnchor}, anchorBounds={anchor?.Bounds}, viewport={expandedQueueScroll.Bounds}, offset={expandedQueueScroll.VerticalOffset}/{SmoothScroll.Maximum(expandedQueueScroll)}, dirty={expandedQueue.IsMeasureDirty}/{expandedQueue.IsArrangeDirty}, moving={expandedQueueBlocks.Keys.Count(row => row.Animating)}, start={expandedQueueStartPending}, shown={expandedOpen}/{expandedHost.IsVisible}, mode={expandedPanelMode}, reveal={panelReveal}, frames={frames}.", error);
+            throw new InvalidOperationException($"Queue settle: anchor={expandedQueueAnchor}, anchorBounds={anchor?.Bounds}, viewport={expandedQueueScroll.Bounds}, offset={expandedQueueScroll.VerticalOffset}/{SmoothScroll.Maximum(expandedQueueScroll)}, dirty={expandedQueue.IsMeasureDirty}/{expandedQueue.IsArrangeDirty}, moving={expandedQueueBlocks.Keys.Count(row => row.Animating)}, following={expandedQueueFollowing}, shown={expandedOpen}/{expandedHost.IsVisible}, mode={expandedPanelMode}, reveal={panelReveal}, frames={frames}.", error);
         }
         finally { Window.FrameRendered -= Sample; }
         await WaitForLoginFrameAsync();
@@ -201,11 +201,12 @@ internal sealed partial class MainWindow
 
     private void VerifyNowPlayingAnchor()
     {
-        var source = expandedQueueBlocks.Single(pair => pair.Value?.Key == "source").Key;
-        var playing = expandedQueueBlocks.Single(pair => pair.Value?.Track?.Id == current?.Id).Key;
-        if (Math.Abs(source.Bounds.Y - expandedQueueScroll.Bounds.Y) > 2 ||
-            playing.Bounds.Y < source.Bounds.Bottom || playing.Bounds.Bottom > expandedQueueScroll.Bounds.Bottom)
-            throw new InvalidOperationException($"Now-playing heading/current track escaped the viewport: source={source.Bounds}, current={playing.Bounds}, viewport={expandedQueueScroll.Bounds}");
+        var entryId = playbackQueue.Current!.EntryId;
+        var playing = expandedQueueRows.Values.SingleOrDefault(row => row.Track != null && row.EntryId == entryId);
+        var center = expandedQueueScroll.Bounds.Center;
+        if (playing == null || Math.Abs(playing.HoverFill.Bounds.Center.Y - center.Y) * Window.DpiScale > 1 ||
+            expandedQueueScroll.HitTest(center) is not { } hit || hit != playing.Root && !playing.Root.IsAncestorOf(hit))
+            throw new InvalidOperationException($"Current queue entry {entryId} is off center: row={playing?.HoverFill.Bounds}, viewport={expandedQueueScroll.Bounds}, offset={expandedQueueScroll.VerticalOffset}.");
     }
 
     private async Task VerifyQueuePaletteTransitionAsync()
@@ -400,8 +401,10 @@ internal sealed partial class MainWindow
         var origin = playbackQueue.Context!;
         StartQueueContext(origin with { NextHref = "fixture-page" }, tracks.ToArray(), current!);
         await PlayAsync(current!);
-        await WaitForLikedLayoutAsync(() => expandedQueueScroll.VerticalOffset < 1);
-        smoothScrolls[expandedQueueScroll].Stop();
+        await WaitForExpandedQueueSettledAsync();
+        VerifyNowPlayingAnchor();
+        RouteSearchTestWheel(expandedQueueScroll.Bounds.Center);
+        await WaitForLikedLayoutAsync(() => !smoothScrolls[expandedQueueScroll].IsRunning);
         expandedQueueScroll.SetScrollOffsets(0, 400);
         await WaitForLoginFrameAsync();
         offset = expandedQueueScroll.VerticalOffset;
@@ -410,6 +413,11 @@ internal sealed partial class MainWindow
         await WaitForLoginFrameAsync();
         if (Math.Abs(expandedQueueScroll.VerticalOffset - offset) > 2)
             throw new InvalidOperationException("Appending a source page pulled the expanded queue back to now-playing.");
+        ToggleExpandedPanel(PlayerPanel.Queue);
+        await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning);
+        ToggleExpandedPanel(PlayerPanel.Queue);
+        await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning);
+        VerifyNowPlayingAnchor();
         Console.WriteLine("EXPANDED_MANUAL_QUEUE_OK: duplicate occurrence keys, edits preserve current/viewport, and source pagination preserves a scrolled viewport");
     }
 

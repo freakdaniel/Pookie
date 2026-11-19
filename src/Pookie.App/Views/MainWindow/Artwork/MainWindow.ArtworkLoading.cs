@@ -19,21 +19,22 @@ internal sealed partial class MainWindow
 
     private const int CompactCoverSize = 44;
 
-    private sealed class ArtworkPresentation(Grid root, LibrarySkeleton skeleton, bool fadeLoading)
+    private sealed class ArtworkPresentation(Grid root, Image cover, LibrarySkeleton skeleton)
     {
         internal LibrarySkeleton Skeleton { get; } = skeleton;
-        internal bool CanFadeLoading => fadeLoading && Skeleton.IsVisible;
+        internal bool CanFadeLoading => Skeleton.Translucent && Skeleton.IsVisible;
         internal bool FadingSkeleton { get; private set; }
         private Image? placeholder;
         private AnimationClock? fade;
 
-        internal void Reveal(Image cover, string fallback, bool fromSkeleton)
+        internal void Reveal(string fallback, bool fromSkeleton)
         {
             StopReveal();
             UIElement outgoing;
             if (fromSkeleton)
             {
                 FadingSkeleton = true;
+                cover.Opacity = 0;
                 outgoing = Skeleton;
             }
             else
@@ -45,7 +46,11 @@ internal sealed partial class MainWindow
             }
             fade = new(TimeSpan.FromMilliseconds(180), Easing.CubicBezier(.2, 0, 0, 1))
             {
-                TickCallback = progress => outgoing.Opacity = 1 - progress,
+                TickCallback = progress =>
+                {
+                    outgoing.Opacity = 1 - progress;
+                    if (fromSkeleton) cover.Opacity = progress;
+                },
                 CompletedCallback = StopReveal
             };
             fade.Start();
@@ -58,6 +63,7 @@ internal sealed partial class MainWindow
             if (FadingSkeleton)
             {
                 FadingSkeleton = false;
+                cover.Opacity = 1;
                 Skeleton.IsVisible = false;
                 Skeleton.Opacity = 1;
             }
@@ -119,14 +125,14 @@ internal sealed partial class MainWindow
         finally { coverGate.Release(); }
     }
 
-    private Grid ArtworkLayer(Image cover) => ArtworkLayer(cover, fadeLoading: false);
+    private Grid ArtworkLayer(Image cover) => ArtworkLayer(cover, queueArtwork: false);
 
-    private Grid ArtworkLayer(Image cover, bool fadeLoading)
+    private Grid ArtworkLayer(Image cover, bool queueArtwork)
     {
         cover.VectorCacheMode = ImageVectorCacheMode.Direct;
-        var skeleton = new LibrarySkeleton { ArtworkOnly = true, IsVisible = false };
+        var skeleton = new LibrarySkeleton { ArtworkOnly = true, Translucent = queueArtwork, IsVisible = false };
         var root = new Grid().Columns("*").Rows("*").Children(cover, skeleton);
-        artworkLoading.Add(cover, new(root, skeleton, fadeLoading));
+        artworkLoading.Add(cover, new(root, cover, skeleton));
         return root;
     }
 
@@ -154,7 +160,7 @@ internal sealed partial class MainWindow
         {
             var fromSkeleton = !pending && cover.Source == null && presentation?.CanFadeLoading == true;
             if ((fromSkeleton || source != null && wasPlaceholder) && cover.FindVisualRoot() is Window)
-                presentation?.Reveal(cover, fallback, fromSkeleton);
+                presentation?.Reveal(fallback, fromSkeleton);
             else presentation?.StopReveal();
             cover.Source = next;
             if (artworkPlayback.TryGetValue(cover, out var overlay)) overlay.ArtworkChanged();

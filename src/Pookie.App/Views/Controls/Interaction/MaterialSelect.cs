@@ -105,7 +105,9 @@ internal sealed class MaterialSelect : GlassCard
                     if (!keyboard) { headerHovered = false; RefreshState(); }
                 }, optionContent);
                 popup = new InAppPopup();
-                popup.InitializePopup(menu, () => Bounds, () => MenuPlacement.Below);
+                popup.InitializePopup(menu, () => FindVisualRoot() is Window window
+                    ? TranslateRect(new Rect(Point.Zero, Bounds.Size), window) : Bounds,
+                    () => MenuPlacement.Below, keepTriggerClear: () => true);
                 popup.Dismissing = () => IsDropDownOpen = false;
             }
             menu.Width = ActualWidth; menu.MaxHeight = MaxDropDownHeight;

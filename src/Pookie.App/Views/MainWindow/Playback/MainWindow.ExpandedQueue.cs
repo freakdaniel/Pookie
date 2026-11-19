@@ -7,7 +7,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private enum QueueBlockKind { Track, Source, Upcoming, Context }
+    private enum QueueBlockKind { Track, Source, Upcoming, Context, Spacer }
     private sealed record QueueBlock(string Key, QueueBlockKind Kind, SoundCloudTrack? Track = null, string Title = "", string Subtitle = "", long? EntryId = null);
     private readonly PaginationItems expandedQueueSource = new(LoadingRowStyle.Compact, item => ((QueueBlock)item).Key);
     private readonly Dictionary<QueueRowMotion, QueueBlock?> expandedQueueBlocks = [];
@@ -19,17 +19,15 @@ internal sealed partial class MainWindow
     private QueueRowAnimation expandedQueueAnimation = null!;
     private QueueEdgeFade expandedQueueFade = null!;
     private (string Key, double Y)? expandedQueueAnchor;
-    private bool expandedQueueStartPending = true;
+    private bool expandedQueueFollowing = true;
     private bool expandedQueueLayoutQueued;
-    private long? expandedCurrentEntry;
+    private string? expandedCurrentKey;
     private long expandedSourceVersion = -1;
     private bool expandedRowsNeedCleanup;
     private string queueOriginTitle = "Очередь воспроизведения", queueOriginKind = "Сейчас играет";
 
     private void CaptureQueueOrigin(bool recent = false)
     {
-        expandedQueueStartPending = true;
-        expandedQueueAnchor = null;
         queueOriginTitle = page.Value switch
         {
             Page.LibraryCollection => librarySectionTitle.Value,
@@ -80,6 +78,9 @@ internal sealed partial class MainWindow
         {
             var motion = context.Get<QueueRowMotion>("motion");
             expandedQueueBlocks[motion] = block;
+            var spacer = block.Kind == QueueBlockKind.Spacer;
+            motion.Height = spacer ? ExpandedQueueEdgeSpace : double.NaN;
+            ((Grid)motion.Content!).IsVisible = !spacer;
             // Layout/binding refreshes for the same retained item must not stop
             // an in-flight translation (for example when its artwork arrives).
             if (motion.RetainedKey != block.Key)
@@ -107,7 +108,18 @@ internal sealed partial class MainWindow
             if (element is ScrollBar bar) { bar.Opacity = 0; bar.IsHitTestVisible = false; }
             return true;
         });
-        smoothScrolls[expandedQueueScroll] = new SmoothScroll(expandedQueueScroll);
+        smoothScrolls[expandedQueueScroll] = new SmoothScroll(expandedQueueScroll)
+        {
+            UserScrolling = () => { expandedQueueFollowing = false; expandedQueueAnchor = null; },
+            // Carry an active wheel movement through the presenter's row-height corrections.
+            RestoringAnchor = () => true
+        };
+        expandedQueueScroll.SizeChanged += size =>
+        {
+            if (size.NewSize.Height == size.OldSize.Height) return;
+            foreach (var (motion, block) in expandedQueueBlocks)
+                if (block?.Kind == QueueBlockKind.Spacer) motion.Height = ExpandedQueueEdgeSpace;
+        };
         expandedQueueFade = new QueueEdgeFade(expandedBackdrop) { IsHitTestVisible = false };
         return new Grid().Columns("*").Rows("*").Children(
             new ScrollLayoutHost(RestoreExpandedQueueAnchor).Background(Color.Transparent).BorderThickness(0).Padding(0).Content(expandedQueue),
@@ -126,16 +138,27 @@ internal sealed partial class MainWindow
         }
     }
 
+    // Scrollable end space lets even the first and last track reach the middle.
+    private double ExpandedQueueEdgeSpace => Math.Max(1, (expandedQueueScroll.ActualHeight - expandedQueue.ItemHeight) / 2);
+
+    private void FollowExpandedQueue()
+    {
+        expandedQueueFollowing = true;
+        expandedQueueAnchor = null;
+        smoothScrolls[expandedQueueScroll].Stop();
+        // A focused virtual row can retain its old bounds while it is off screen.
+        if (expandedOpen && expandedPanelMode == PlayerPanel.Queue && expandedCurrentKey != null)
+            expandedQueue.ScrollIntoView(Array.FindIndex(expandedQueueData, block => block.Key == expandedCurrentKey));
+        expandedQueue.InvalidateMeasure();
+    }
+
     private bool RestoreExpandedQueueAnchor()
     {
-        if (expandedQueueStartPending && expandedQueueData.Length > 0)
-        {
-            expandedQueueStartPending = false;
-            expandedQueueAnchor = ("source", 0);
-            expandedQueue.ScrollIntoView(Array.FindIndex(expandedQueueData, block => block.Kind == QueueBlockKind.Source));
-            return true;
-        }
-        if (expandedQueueAnchor is not { } anchor) return false;
+        if (!expandedOpen || expandedPanelMode != PlayerPanel.Queue || expandedQueueScroll.ViewportHeight <= 0) return false;
+        var target = expandedQueueAnchor;
+        if (expandedQueueFollowing && expandedCurrentKey != null)
+            target = (expandedCurrentKey, expandedQueueScroll.ViewportHeight / 2);
+        if (target is not { } anchor) return false;
         var row = expandedQueueBlocks.FirstOrDefault(pair => pair.Value?.Key == anchor.Key).Key;
         if (row == null)
         {
@@ -144,11 +167,16 @@ internal sealed partial class MainWindow
             expandedQueue.ScrollIntoView(index);
             return true;
         }
-        var delta = row.Bounds.Y - expandedQueueScroll.Bounds.Y - anchor.Y;
-        if (Math.Abs(delta) < .5) { expandedQueueAnchor = null; return false; }
+        var y = expandedQueueFollowing ? row.Bounds.Center.Y : row.Bounds.Y;
+        var delta = y - expandedQueueScroll.Bounds.Y - anchor.Y;
+        var scale = Window.DpiScale;
+        if (Math.Abs(delta) * scale <= .5) { expandedQueueAnchor = null; return false; }
         var before = expandedQueueScroll.VerticalOffset;
-        smoothScrolls[expandedQueueScroll].CorrectLayoutOffset(delta);
-        if (Math.Abs(expandedQueueScroll.VerticalOffset - before) < .5) { expandedQueueAnchor = null; return false; }
+        // Row bounds use the pixel-snapped offset, even while wheel input is fractional.
+        var renderedOffset = LayoutRounding.RoundToPixel(before, scale);
+        var offset = LayoutRounding.RoundToPixel(renderedOffset + delta, scale);
+        smoothScrolls[expandedQueueScroll].CorrectLayoutOffset(offset - before);
+        if (expandedQueueScroll.VerticalOffset == before) { expandedQueueAnchor = null; return false; }
         return true;
     }
 
@@ -184,13 +212,15 @@ internal sealed partial class MainWindow
         var state = playbackQueue.Snapshot;
         expandedUpcoming = state.Upcoming.Select(entry => entry.Track).ToArray();
         static QueueBlock TrackBlock(PlaybackEntry entry) => new($"entry:{entry.EntryId}", QueueBlockKind.Track, entry.Track, EntryId: entry.EntryId);
-        var next = state.History.Select(TrackBlock).ToList();
+        var next = new List<QueueBlock> { new("start-space", QueueBlockKind.Spacer) };
+        next.AddRange(state.History.Select(TrackBlock));
         var manualCurrent = state.Current?.Origin == PlaybackEntryOrigin.Manual;
         var recommendedCurrent = state.Current?.Origin == PlaybackEntryOrigin.Recommendation;
         next.Add(new("source", QueueBlockKind.Source,
             Title: manualCurrent ? "Сейчас играет" : state.Context?.Title ?? queueOriginTitle,
             Subtitle: manualCurrent ? "" : recommendedCurrent ? "Сейчас играют похожие треки" : state.Context?.Subtitle ?? queueOriginKind));
-        if (state.Current is { } playing) next.Add(TrackBlock(playing));
+        var currentBlock = state.Current is { } playing ? TrackBlock(playing) : null;
+        if (currentBlock != null) next.Add(currentBlock);
         if (state.Recommendations.Count == 0 || state.ManualUpcoming.Count + state.Forward.Count + state.ContextUpcoming.Count > 0)
             next.Add(new("upcoming", QueueBlockKind.Upcoming,
                 Title: state.ManualUpcoming.Count > 0 ? "Добавлено тобой" :
@@ -205,6 +235,7 @@ internal sealed partial class MainWindow
             next.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? "Далее на радио" : "Похожие дальше"));
             next.AddRange(state.Recommendations.Select(TrackBlock));
         }
+        next.Add(new("end-space", QueueBlockKind.Spacer));
         var data = next.ToArray();
         if (expandedQueueData.SequenceEqual(data)) return;
         // Resolving audio can replace track metadata without changing queue order.
@@ -223,27 +254,20 @@ internal sealed partial class MainWindow
                 if (block != null) expandedQueuePositions[block.Key] = motion.VisualY;
         }
         expandedQueueAnimation.Begin(460);
-        var followCurrent = expandedQueueStartPending || expandedSourceVersion != state.SourceVersion ||
-            expandedCurrentEntry != state.Current?.EntryId;
-        if (followCurrent)
+        var currentChanged = expandedSourceVersion != state.SourceVersion || expandedCurrentKey != currentBlock?.Key;
+        if (!currentChanged && !expandedQueueFollowing && expandedQueueAnchor == null)
         {
-            // Advancing playback follows the source heading. Appending a page or
-            // editing upcoming entries instead preserves the user's viewport.
-            smoothScrolls[expandedQueueScroll].Stop();
-            expandedQueueAnchor = ("source", 0);
-        }
-        else
-        {
-            var visible = expandedQueueBlocks.Where(pair => pair.Value != null && pair.Key.Bounds.Bottom > expandedQueueScroll.Bounds.Y)
+            var visible = expandedQueueBlocks.Where(pair => pair.Value is { Kind: not QueueBlockKind.Spacer } &&
+                pair.Key.Bounds.Bottom > expandedQueueScroll.Bounds.Y && pair.Key.Bounds.Y < expandedQueueScroll.Bounds.Bottom)
                 .OrderBy(pair => pair.Key.Bounds.Y).FirstOrDefault();
             if (visible.Key != null) expandedQueueAnchor = (visible.Value!.Key, visible.Key.Bounds.Y - expandedQueueScroll.Bounds.Y);
         }
         expandedNewKeys = data.Select(block => block.Key).Except(expandedQueueData.Select(block => block.Key)).ToHashSet();
         expandedQueueChangedAt = Environment.TickCount64;
-        expandedCurrentEntry = state.Current?.EntryId; expandedSourceVersion = state.SourceVersion;
+        expandedCurrentKey = currentBlock?.Key; expandedSourceVersion = state.SourceVersion;
         expandedQueueData = data;
         expandedQueueSource.SetData(data);
-        if (followCurrent) expandedQueue.ScrollIntoView(Array.FindIndex(data, block => block.Kind == QueueBlockKind.Source));
+        if (currentChanged) FollowExpandedQueue();
         foreach (var (motion, block) in expandedQueueBlocks)
             if (block != null) RetargetExpandedQueueRow(motion, block);
         expandedQueue.InvalidateMeasure();

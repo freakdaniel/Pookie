@@ -1,7 +1,32 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Rendering;
 
 namespace Pookie.App;
+
+internal sealed class ExpandedPlayerViewport(ExpandedPlayerBackdrop backdrop) : Grid
+{
+    private double reveal;
+
+    internal void SetReveal(double amount, bool reduceMotion)
+    {
+        backdrop.BrushOpacity = reduceMotion ? amount : 1;
+        var next = reduceMotion ? 1 : amount;
+        if (reveal == next) return;
+        reveal = next;
+        InvalidateVisual();
+    }
+
+    protected override ChildClip? GetChildClip(UIElement child)
+    {
+        if (reveal == 1) return base.GetChildClip(child);
+        var barTop = backdrop.CompactTop;
+        var top = Bounds.Y + (barTop - Bounds.Y) * (1 - reveal);
+        // The compact player paints its own strip while its controls are fading.
+        var bottom = ReferenceEquals(child, backdrop) ? barTop : Bounds.Bottom;
+        return new ChildClip(new Rect(Bounds.X, top, Bounds.Width, bottom - top));
+    }
+}
 
 // The cover and its details remain one retained subtree throughout the transition.
 internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionLayer panel, Border cover, Button miniArtwork, Thickness coverShadowPadding) : Panel
@@ -9,6 +34,7 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
     private double sideAmount, revealAmount, sideTarget, panelReveal;
     private double coverSize, panelWidth, gap;
     private double center, split;
+    private readonly double expandedCornerRadius = cover.CornerRadius;
 
     internal bool ReduceMotion { get; set; }
     internal double SideAmount => sideAmount;
@@ -43,9 +69,15 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         {
             var x = (animatedX - restingX) * revealAmount + (from.X - to.X) * remaining;
             var scale = revealAmount + from.Width / to.Width * remaining;
+            // Interpolate the visible radius, then undo the scale applied to the whole card.
+            cover.CornerRadius = (miniArtwork.CornerRadius * remaining + expandedCornerRadius * revealAmount) / scale;
             card.Move(x, (from.Y - to.Y) * remaining, settled, scale, new Point(to.X, to.Y));
         }
-        else card.Move(animatedX - restingX, y, settled);
+        else
+        {
+            cover.CornerRadius = expandedCornerRadius;
+            card.Move(animatedX - restingX, y, settled);
+        }
         // Keep room between the cover and the panel throughout the same spring
         // in either direction. No delayed fade is needed to hide an intersection.
         var closedOffset = Math.Max(36, center - split - gap + 24);

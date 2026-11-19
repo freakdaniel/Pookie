@@ -76,8 +76,7 @@ internal sealed partial class MainWindow
         if (section == UserSection.Overview)
         {
             RenderUserOverview(state);
-            var waitingForActivity = pending || state.Comments == null && state.Loading.Contains(UserSection.Comments);
-            SetUserLoading(userOverviewLoading, waitingForActivity && pageItems[userPublicationList].DataCount == 0,
+            SetUserLoading(userOverviewLoading, pending && pageItems[userPublicationList].DataCount == 0,
                 LoadingRowStyle.Waveform, TrackRowLayout.Stride * 2);
             RenderUserSidebar(state); Run(LoadUserPlaylistActionsAsync);
         }
@@ -107,53 +106,27 @@ internal sealed partial class MainWindow
     }
 
     private LibraryPage? renderedActivityPage;
-    private UserCommentPage? renderedActivityComments;
-    private static DateTimeOffset ActivityDate(string? value) =>
-        DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)
-            ? date : DateTimeOffset.MinValue;
-    private static DateTimeOffset PublicationDate(LibraryItem item) => ActivityDate(item.ActivityAt ?? item.Track?.CreatedAt ?? item.Playlist?.CreatedAt);
-
-    // Older rows from one source can only be placed once the other source has reached their date.
-    private static (DateTimeOffset Date, UserSection Section) ActivityBoundary(UserProfileState state)
-    {
-        var publications = state.Sections.GetValueOrDefault(UserSection.Overview);
-        var musicDate = publications is { NextHref: not null, Items.Length: > 0 } ? PublicationDate(publications.Items[^1]) : DateTimeOffset.MinValue;
-        var commentDate = state.Comments is { NextHref: not null, Comments.Length: > 0 } comments
-            ? ActivityDate(comments.Comments[^1].Comment.CreatedAt) : DateTimeOffset.MinValue;
-        if (publications?.NextHref == null || commentDate > musicDate) return (commentDate, UserSection.Comments);
-        return (musicDate, UserSection.Overview);
-    }
 
     private void RenderUserOverview(UserProfileState state)
     {
         var activity = state.Sections.GetValueOrDefault(UserSection.Overview);
         if (renderedUserId != state.User.Id || renderedUserPublicationGeneration != navigationGeneration) ClearUserOverview();
-        if (renderedUserId != state.User.Id || !ReferenceEquals(activity, renderedActivityPage) ||
-            !ReferenceEquals(state.Comments, renderedActivityComments))
+        if (renderedUserId != state.User.Id || !ReferenceEquals(activity, renderedActivityPage))
         {
-            var entries = (activity?.Items ?? []).Where(item => (item.Track != null || item.Playlist != null) && UserItemVisible(item))
-                .Select(item => new UserActivityEntry(item.Key, PublicationDate(item), Publication: item));
-            if (state.Comments is { Comments.Length: > 0 } comments)
-            {
-                var boundary = ActivityBoundary(state).Date;
-                entries = entries.Concat(comments.Comments.Select(comment =>
-                    new UserActivityEntry("comment:" + comment.Comment.Id, ActivityDate(comment.Comment.CreatedAt), Comment: comment)))
-                    .Where(entry => entry.Date >= boundary).OrderByDescending(entry => entry.Date);
-            }
+            var entries = (activity?.Items ?? []).Where(item => (item.Track != null || item.Playlist != null) && UserItemVisible(item));
             renderedUserId = state.User.Id; renderedUserPublicationGeneration = navigationGeneration;
-            renderedActivityPage = activity; renderedActivityComments = state.Comments;
+            renderedActivityPage = activity;
             SetPageItems(userPublicationList, entries, LoadingRowStyle.Waveform);
         }
-        userActivityEmpty.IsVisible = pageItems[userPublicationList].DataCount == 0 &&
-            !state.Loading.Contains(UserSection.Overview) && !state.Loading.Contains(UserSection.Comments);
+        userActivityEmpty.IsVisible = pageItems[userPublicationList].DataCount == 0 && !state.Loading.Contains(UserSection.Overview);
     }
 
     private void ClearUserOverview()
     {
-        SetPageItems(userPublicationList, Array.Empty<UserActivityEntry>(), LoadingRowStyle.Waveform);
+        SetPageItems(userPublicationList, Array.Empty<LibraryItem>(), LoadingRowStyle.Waveform);
         foreach (var host in userPublicationViews.Keys) ClearUserPublication(host);
         userActivityEmpty.IsVisible = false;
-        renderedActivityPage = null; renderedActivityComments = null; renderedUserId = 0;
+        renderedActivityPage = null; renderedUserId = 0;
     }
     private void RenderUserLinks(UserProfileState state)
     {

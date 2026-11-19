@@ -90,11 +90,11 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
         // A newly shown layer can be measured before its viewport is arranged.
         // Resolve the final constraint before using a zero/stale desired size.
         var constraint = new Size(Math.Max(0, area.Width - 16), Math.Max(0, area.Height - 16));
+        var above = trigger.Y - area.Y - 8 - gap;
+        var below = area.Bottom - trigger.Bottom - 8 - gap;
         if (keepTriggerClear?.Invoke() == true)
         {
             // A long menu scrolls on the available side of its trigger.
-            var above = trigger.Y - area.Y - 8 - gap;
-            var below = area.Bottom - trigger.Bottom - 8 - gap;
             constraint = new Size(constraint.Width, Math.Clamp(Math.Max(above, below), 0, constraint.Height));
         }
         if (constraint != measuredConstraint) MeasurePopup(constraint);
@@ -116,9 +116,9 @@ internal sealed class ChatPopupLayer(FrameworkElement content, Func<Rect> anchor
                 if (x + width > area.Right - 8 && trigger.X - width - gap >= area.X + 8) x = trigger.X - width - gap;
                 else if (x < area.X + 8 && trigger.Right + width + gap <= area.Right - 8) x = trigger.Right + gap;
             }
-            else if (requested == MenuPlacement.Above && y < area.Y + 8 && trigger.Bottom + height + gap <= area.Bottom - 8)
+            else if (requested == MenuPlacement.Above && height > above && height <= below)
                 y = trigger.Bottom + gap;
-            else if (requested == MenuPlacement.Below && y + height > area.Bottom - 8 && trigger.Y - height - gap >= area.Y + 8)
+            else if (requested == MenuPlacement.Below && height > below && height <= above)
                 y = trigger.Y - height - gap;
         }
         x = Math.Clamp(x, area.X + 8, Math.Max(area.X + 8, area.Right - width - 8));

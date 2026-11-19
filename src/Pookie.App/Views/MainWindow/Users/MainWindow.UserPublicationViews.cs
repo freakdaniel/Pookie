@@ -6,8 +6,6 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private sealed record UserActivityEntry(string Key, DateTimeOffset Date, LibraryItem? Publication = null, UserComment? Comment = null);
-
     private sealed class UserPublicationView
     {
         internal LibraryItem? Item;
@@ -27,10 +25,10 @@ internal sealed partial class MainWindow
 
     private FrameworkElement UserPublicationListView()
     {
-        userPublicationList = new ItemsControl().Items(Array.Empty<UserActivityEntry>(), item => item.Key)
+        userPublicationList = new ItemsControl().Items(Array.Empty<LibraryItem>(), item => item.Key)
             .VariableHeightPresenter().ItemHeight(TrackRowLayout.Stride).Background(Color.Transparent).BorderThickness(0).Padding(0)
             .ItemPadding(new Thickness(0, 0, 0, 36));
-        userPublicationList.ItemTemplate = new DelegateTemplate<UserActivityEntry>(context =>
+        userPublicationList.ItemTemplate = new DelegateTemplate<LibraryItem>(context =>
         {
             var host = new StackPanel().Vertical();
             userPublicationViews.Add(host, new()); context.Register("host", host); return host;
@@ -47,16 +45,9 @@ internal sealed partial class MainWindow
         return new(author, actor, new TextBlock().FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis), false);
     }
 
-    private void BindUserPublication(StackPanel host, UserActivityEntry entry)
+    private void BindUserPublication(StackPanel host, LibraryItem item)
     {
         ClearUserPublication(host);
-        if (entry.Comment is { } comment)
-        {
-            host.Clear();
-            host.Add(UserCommentView(comment, preview: false, activity: true));
-            return;
-        }
-        var item = entry.Publication!;
         var view = userPublicationViews[host]; view.Item = item;
         var revision = ++view.Revision; var user = userProfileState!.User; var generation = navigationGeneration;
         bool Current() => view.Item != null && view.Revision == revision && IsUserProfileCurrent(user.Id, generation);

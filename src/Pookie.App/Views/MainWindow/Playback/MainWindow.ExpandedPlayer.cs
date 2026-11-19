@@ -16,7 +16,8 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> expandedQueueActive = new(false), expandedLyricsActive = new(false);
     private readonly BufferedTrack expandedBuffer = new();
     private readonly LoadingTrack expandedLoading = new();
-    private Grid expandedHost = null!, expandedHeader = null!;
+    private ExpandedPlayerViewport expandedHost = null!;
+    private Grid expandedHeader = null!;
     private StackPanel expandedMetadata = null!;
     private Grid expandedTimeline = null!;
     private ExpandedPlayerLayout expandedLayout = null!;
@@ -166,7 +167,8 @@ internal sealed partial class MainWindow
             Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
             ShortcutHint(ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false),
                 ShortcutAction.Expand, "Свернуть плеер").Right().Column(1));
-        expandedHost = new Grid().Columns("*").Rows("84,*").ClipToBounds().Children(
+        expandedHost = new(expandedBackdrop);
+        expandedHost.Columns("*").Rows("84,*").ClipToBounds().Children(
             expandedBackdrop.Row(0).RowSpan(2), expandedHeader,
             expandedLayout.Row(1).Margin(24, 0, 24, 32));
         ApplyExpandedReveal(0);
@@ -205,9 +207,9 @@ internal sealed partial class MainWindow
 
     private void ApplyExpandedReveal(double reveal)
     {
-        // Blend the background brush directly. Grouping it with the foreground
-        // allocates and composites a window-sized opacity layer on every tick.
-        expandedReveal = expandedBackdrop.Reveal = expandedHeader.Opacity = reveal;
+        expandedReveal = expandedHeader.Opacity = reveal;
+        expandedHost.SetReveal(reveal, expandedLayout.ReduceMotion);
+        expandedCoverShadow.ShadowOpacity = expandedLayout.ReduceMotion ? 1 : reveal;
         playerContentFrame.Opacity = expandedLayout.ReduceMotion ? 1 - reveal : Math.Clamp(1 - reveal / .32, 0, 1);
         // The moving cover takes over the mini cover at its original bounds.
         playerArtworkButton.Opacity = expandedLayout.ReduceMotion || reveal == 0 ? 1 : 0;
@@ -273,6 +275,7 @@ internal sealed partial class MainWindow
         if (open)
         {
             ResetTrackCommentPreview();
+            if (expandedPanelMode == PlayerPanel.Queue) FollowExpandedQueue();
             if (expandedPanelMode != PlayerPanel.None && expandedPanel.ContentOpacity < 1)
                 SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
@@ -312,7 +315,7 @@ internal sealed partial class MainWindow
         expandedLyricsActive.Value = next == PlayerPanel.Lyrics;
         panelAnimation.Stop();
         BeginExpandedPanelMotion(next != PlayerPanel.None);
-        if (next == PlayerPanel.Queue) RefreshExpandedQueue();
+        if (next == PlayerPanel.Queue) { FollowExpandedQueue(); RefreshExpandedQueue(); }
         SetLyricsPanelActive(next == PlayerPanel.Lyrics && expandedOpen);
     }
 

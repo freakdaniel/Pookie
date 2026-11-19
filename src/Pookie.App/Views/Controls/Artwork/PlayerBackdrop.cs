@@ -152,15 +152,16 @@ internal sealed class PlayerBackdrop : Control
     }
 }
 
-// Both players span the window. Draw the same texture with this view's origin and opacity.
+// Share the compact player's texture, including its dither pattern at the moving join.
 internal sealed class ExpandedPlayerBackdrop : Control
 {
     internal PlayerBackdrop Source { get; }
-    private double reveal;
-    internal double Reveal
+    internal double CompactTop => Bounds.Bottom - Math.Min(Source.ActualHeight, Bounds.Height);
+    private double brushOpacity = 1;
+    internal double BrushOpacity
     {
-        get => reveal;
-        set { if (reveal != value) { reveal = value; InvalidateVisual(); } }
+        get => brushOpacity;
+        set { if (brushOpacity != value) { brushOpacity = value; InvalidateVisual(); } }
     }
 
     internal ExpandedPlayerBackdrop(PlayerBackdrop source)
@@ -170,7 +171,10 @@ internal sealed class ExpandedPlayerBackdrop : Control
         source.PaletteChanged += InvalidateVisual;
     }
 
-    protected override void OnRender(IGraphicsContext context) => Source.RenderRegion(context, Bounds, Bounds, reveal);
+    protected override void OnRender(IGraphicsContext context)
+    {
+        Source.RenderRegion(context, Bounds, new Rect(Bounds.X, CompactTop, Bounds.Width, Bounds.Height), brushOpacity);
+    }
 
     protected override void OnDispose()
     {

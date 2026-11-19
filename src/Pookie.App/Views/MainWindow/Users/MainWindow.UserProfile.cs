@@ -239,7 +239,7 @@ internal sealed partial class MainWindow
         if (page.Value != Page.UserProfile || userSection.Value is UserSection.About ||
             userProfileState is not { } state || navigationHistory[navigationIndex].Pending) return;
         if (userSection.Value == UserSection.Overview && !userPublicationHost.IsReady) return;
-        var section = userSection.Value == UserSection.Overview ? ActivityBoundary(state).Section : userSection.Value;
+        var section = userSection.Value;
         var cursor = section == UserSection.Comments ? state.Comments?.NextHref : state.Sections.GetValueOrDefault(section)?.NextHref;
         if (state.Loading.Contains(section) || cursor == null || cursor == failedUserCursor || UserProfileScroll is not { ViewportHeight: > 0 } scroll ||
             SmoothScroll.Maximum(scroll) - scroll.VerticalOffset > Math.Max(160, scroll.ViewportHeight * .5)) return;

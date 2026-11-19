@@ -50,10 +50,10 @@ internal sealed partial class MainWindow
             CaptureUiPreview("user-profile-activity-reveal");
             fixture.SidebarHold.SetResult(); await opening;
             await WaitForLikedLayoutAsync(() => !userOverviewLoading.Skeleton.IsVisible && !userCommentsLoading.Skeleton.IsVisible);
-            var timeline = Enumerable.Range(0, userPublicationList.ItemsSource.Count).Select(userPublicationList.ItemsSource.GetItem).OfType<UserActivityEntry>().ToArray();
-            if (timeline.Length < 3 || timeline[0].Publication?.Track?.Id != fixture.Tracks[0].Id ||
-                timeline[1].Comment?.Comment.Id != 50000 || timeline[2].Publication?.Playlist?.Id != 101)
-                throw new InvalidOperationException("The comment must appear between the newer track and the older playlist.");
+            var timeline = Enumerable.Range(0, userPublicationList.ItemsSource.Count).Select(userPublicationList.ItemsSource.GetItem).Cast<LibraryItem>().ToArray();
+            if (timeline.Length != 3 || timeline[0].Track?.Id != fixture.Tracks[0].Id ||
+                timeline[1].Playlist?.Id != 101 || timeline[2].Track?.Id != fixture.Tracks[1].Id || userSidebarComments.Children.Count != 3)
+                throw new InvalidOperationException("Recent activity must list publications and reposts in stream order, with comments in the sidebar.");
             var sidebarRow = userSidebarRows.Single(); RenderUserProfile();
             if (!ReferenceEquals(sidebarRow, userSidebarRows.Single())) throw new InvalidOperationException("An unrelated profile render rebuilt ready sidebar rows");
             CaptureUiPreview("user-profile-avatar-gradient");
@@ -263,7 +263,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !profileOpen.Value && page.Value == Page.UserProfile && userProfileState?.User.Id == me!.Id);
             if (KeyboardFocusFeedback.IsVisible(profileButton)) throw new InvalidOperationException("Mouse navigation left the avatar focus ring active.");
             await VerifyProfileChangesAsync(fixture);
-            Console.WriteLine("USER_PROFILE_UI_OK: chronological comments and publications, comments tab and pagination, playlist action feedback and rollback, responsive layout, cached artwork, history and account isolation");
+            Console.WriteLine("USER_PROFILE_UI_OK: publications and reposts, separate comment previews and pagination, playlist action feedback and rollback, responsive layout, cached artwork, history and account isolation");
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; CaptureUiPreview("user-profile-failure"); Console.Error.WriteLine("USER_PROFILE_UI_FAILED: " + error); }

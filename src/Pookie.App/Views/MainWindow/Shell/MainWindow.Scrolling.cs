@@ -50,7 +50,6 @@ internal sealed partial class MainWindow
         CollectionTrackEntry entry => ("collection-track", entry.Position),
         Pookie.SoundCloud.LibraryItem entry => entry.Key,
         Pookie.SoundCloud.FeedEntry entry => entry.Key,
-        UserActivityEntry entry => entry.Key,
         SearchBlock block => (block.Kind, block.Kind switch
         {
             SearchBlockKind.Hero => "hero",
@@ -84,7 +83,7 @@ internal sealed partial class MainWindow
     {
         if (disposed) return;
         ClearUnboundExpandedQueueRows();
-        if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
+        if (expandedQueueAnchor == null) expandedQueuePositions.Clear();
         RefreshHomeMixMotion();
         // The expanded player owns input throughout its reveal. Resume page
         // maintenance when the underlying viewport is interactive again.
