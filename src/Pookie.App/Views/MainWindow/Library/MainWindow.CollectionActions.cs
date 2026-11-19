@@ -10,7 +10,7 @@ internal sealed partial class MainWindow
     private Image collectionHeart = null!, collectionRepostIcon = null!;
     private TextBlock collectionLikeLabel = null!, collectionRepostLabel = null!;
     private readonly HashSet<long> likedPlaylistIds = [], repostedPlaylistIds = [];
-    private readonly HashSet<(WebSession Session, long Playlist, bool Repost)> pendingCollectionActions = [];
+    private readonly Dictionary<(WebSession Session, long Playlist, bool Repost), bool> pendingCollectionActions = [];
     private WebSession? collectionActionsSession;
     private Task? collectionActionsTask;
     private bool collectionActionsReady;
@@ -41,11 +41,11 @@ internal sealed partial class MainWindow
         if (collectionLike == null) return;
         var playlist = displayedCollection?.Playlist;
         collectionSocialActions.IsVisible = playlist is { IsPrivate: false } && !IsSystemCollection(displayedCollection);
-        var available = playlist?.IsPrivate == false && !demo && me != null && api.Session != null && playlist?.Id > 0 && collectionActionsReady && collectionActionsSession == api.Session;
-        var liked = playlist != null && likedPlaylistIds.Contains(playlist.Id);
-        var reposted = playlist != null && repostedPlaylistIds.Contains(playlist.Id);
-        var likePending = playlist != null && api.Session is { } session && pendingCollectionActions.Contains((session, playlist.Id, false));
-        var repostPending = playlist != null && api.Session is { } repostSession && pendingCollectionActions.Contains((repostSession, playlist.Id, true));
+        var available = playlist?.IsPrivate == false && !demo && me != null && api.Session != null && playlist?.Id > 0 && collectionActionsSession == api.Session;
+        var liked = playlist != null && PlaylistActionSelected(playlist.Id, false);
+        var reposted = playlist != null && PlaylistActionSelected(playlist.Id, true);
+        var likePending = playlist != null && api.Session is { } session && pendingCollectionActions.ContainsKey((session, playlist.Id, false));
+        var repostPending = playlist != null && api.Session is { } repostSession && pendingCollectionActions.ContainsKey((repostSession, playlist.Id, true));
         TrackButtons.SetLiked(collectionLike, liked, TrackButtons.Glass);
         TrackButtons.SetReposted(collectionRepost, reposted, TrackButtons.Glass);
         TrackButtons.SetGlyph(collectionHeart, liked ? "heart-filled" : "heart", liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
@@ -57,7 +57,7 @@ internal sealed partial class MainWindow
     }
 
     private Task LoadCollectionActionsAsync() => EnsureCollectionActionsAsync(displayedCollection?.Playlist?.Id is > 0);
-    private Task LoadUserPlaylistActionsAsync() => EnsureCollectionActionsAsync(userPublications.Any(entry => entry.Item.Playlist?.Id is > 0));
+    private Task LoadUserPlaylistActionsAsync() => EnsureCollectionActionsAsync(userProfileState?.Sections.GetValueOrDefault(UserSection.Overview)?.Items.Any(item => item.Playlist?.Id is > 0) == true);
     private Task EnsureCollectionActionsAsync(bool hasPlaylist)
     {
         if (demo || me == null || api.Session is not { } session || !hasPlaylist) return Task.CompletedTask;
@@ -65,6 +65,7 @@ internal sealed partial class MainWindow
         {
             likedPlaylistIds.Clear(); repostedPlaylistIds.Clear(); collectionActionsReady = false;
             collectionActionsSession = session; collectionActionsTask = null;
+            RefreshCollectionActions();
         }
         if (collectionActionsReady) return Task.CompletedTask;
         if (collectionActionsTask is { IsCompleted: true }) collectionActionsTask = null;
@@ -84,12 +85,17 @@ internal sealed partial class MainWindow
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException)
         {
-            // Keep unknown states unavailable; never offer a toggle based on a failed read.
+            // A later action can retry this read before sending its write.
             if (!disposed && api.Session == session && playlistCollectionVisible.Value && collectionActionStatusKey != displayedCollection?.Key)
             { collectionActionStatusKey = displayedCollection?.Key; status.Value = FriendlyError(error); }
         }
         finally { if (!disposed && collectionActionsSession == session) RefreshCollectionActions(); }
     }
+
+    private bool PlaylistActionSelected(long id, bool repost) =>
+        api.Session is { } session && collectionActionsSession == session &&
+        (pendingCollectionActions.TryGetValue((session, id, repost), out var selected)
+            ? selected : (repost ? repostedPlaylistIds : likedPlaylistIds).Contains(id));
 
     private Task ToggleCollectionActionAsync(bool repost) => displayedCollection?.Playlist is { } playlist
         ? TogglePlaylistActionAsync(playlist, repost) : Task.CompletedTask;
@@ -97,12 +103,15 @@ internal sealed partial class MainWindow
     private async Task TogglePlaylistActionAsync(SoundCloudPlaylist playlist, bool repost)
     {
         if (playlist.IsPrivate || playlist.Id <= 0 || api.Session is not { } session || me is not { } user ||
-            demo || !collectionActionsReady || collectionActionsSession != session || repost && playlist.User?.Id == user.Id || !pendingCollectionActions.Add((session, playlist.Id, repost))) return;
-        RefreshCollectionActions();
+            demo || collectionActionsSession != session || repost && playlist.User?.Id == user.Id) return;
         var ids = repost ? repostedPlaylistIds : likedPlaylistIds;
         var selected = !ids.Contains(playlist.Id);
+        if (!pendingCollectionActions.TryAdd((session, playlist.Id, repost), selected)) return;
+        RefreshCollectionActions();
         try
         {
+            if (!collectionActionsReady) await EnsureCollectionActionsAsync(true);
+            if (disposed || api.Session != session || collectionActionsSession != session || !collectionActionsReady) return;
             if (repost) await api.SetPlaylistRepostedAsync(playlist.Id, selected, lifetime.Token);
             else await api.SetPlaylistLikedAsync(user.Id, playlist.Id, selected, lifetime.Token);
             if (disposed || api.Session != session || collectionActionsSession != session) return;

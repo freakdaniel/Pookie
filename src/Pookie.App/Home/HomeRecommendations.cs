@@ -2,7 +2,10 @@ using Pookie.SoundCloud;
 
 namespace Pookie.App.Home;
 
-internal sealed record HomeContent(LibraryItem[] Recent, LibraryItem[] Recommendations, LibraryItem[] Releases, string[] Seeds, SoundCloudDiscoverShelves? Discover = null);
+internal sealed record HomeContent(LibraryItem[] Recent, LibraryItem[] Recommendations, LibraryItem[] Releases, string[] Seeds, SoundCloudDiscoverShelves? Discover = null)
+{
+    internal LibraryItem[]? Buzzing { get; init; }
+}
 
 internal static class HomeRecommendations
 {

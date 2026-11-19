@@ -10,6 +10,7 @@ internal sealed class AnimatedContextMenu : InAppPopup
 {
     internal ContextMenu Model { get; }
     internal IList<MenuEntry> Items => Model.Items;
+    internal bool HideUnavailableItems { get; set; }
     internal UIElement? PlacementTarget { get; private set; }
     internal GlassCard Card { get { EnsureContent(); return card!; } }
     internal IReadOnlyList<Button> Buttons => buttons;
@@ -62,6 +63,7 @@ internal sealed class AnimatedContextMenu : InAppPopup
         this.keepTriggerClear = keepTriggerClear;
         commandTarget = parent?.commandTarget ?? window.CommandRouter.CaptureTarget(owner);
         BuildRows();
+        if (HideUnavailableItems && buttons.Count == 0) { Close(); return; }
         ShowPopup(owner, Card);
     }
 
@@ -79,10 +81,11 @@ internal sealed class AnimatedContextMenu : InAppPopup
     private void BuildRows()
     {
         EnsureContent();
-        if (rendered.SequenceEqual(Items)) return;
+        IEnumerable<MenuEntry> entries = HideUnavailableItems ? Items.Where(IsAvailable).ToArray() : Items;
+        if (rendered.SequenceEqual(entries)) return;
         foreach (var element in rows!.Children.OfType<Control>().ToArray()) { rows.Remove(element); element.Dispose(); }
-        buttons.Clear(); rendered = Items.ToArray();
-        foreach (var entry in Items)
+        buttons.Clear(); rendered = entries as MenuEntry[] ?? entries.ToArray();
+        foreach (var entry in rendered)
         {
             if (entry is not MenuItem item)
             {
@@ -111,6 +114,10 @@ internal sealed class AnimatedContextMenu : InAppPopup
             buttons.Add(button); rows.Add(button);
         }
     }
+
+    private bool IsAvailable(MenuEntry entry) => entry is not MenuItem item ||
+        item.IsEnabled && (item.CanClick?.Invoke() ?? true) &&
+        (item.Command == null || sourceWindow!.CommandRouter.CanExecute(item.Command, commandTarget));
 
     private async ValueTask InvokeAsync(Command command)
     {

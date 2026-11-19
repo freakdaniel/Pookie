@@ -54,6 +54,11 @@ internal sealed partial class MainWindow
     {
         CaptureQueueOrigin();
         var route = navigationHistory[navigationIndex].Route;
+        if (route.Page == Page.Track && route.Track?.Id == first.Id && route.OriginChart is { } origin)
+        {
+            SetChartQueue(origin.Chart, first, origin.Filter);
+            return;
+        }
         var filter = PagePlaybackFilter;
         var data = page.Value == Page.Track ? [first] :
             page.Value == Page.Search ? searchResults?.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() ?? [first] :
@@ -247,7 +252,7 @@ internal sealed partial class MainWindow
             root.Commands.Register(command, execute, enabled);
             menu.Item(command);
         }
-        Item("open", "Открыть страницу трека", "music-notes", () => { if (track() is { } item) Run(() => OpenTrackPageAsync(item)); }, () => track() != null);
+        Item("open", "Открыть страницу трека", "music-notes", () => { if (track() is { } item) Run(() => OpenTrackFromRowAsync(item, root)); }, () => track() != null);
         Item("radio", "Запустить радио по треку", "broadcast", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
             () => track() is { } item && CanStartTrackRadio(item));
         Item("next", "Воспроизвести следующим", "skip-forward", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);

@@ -226,7 +226,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         using var document = await GetJsonAsync(Api(path), cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out _)) return new(item, ParsePage(root));
-        var detail = LibraryData.ParsePlaylist(root);
+        var detail = LibraryData.ParsePlaylist(root, knownOwner: item.Playlist?.User);
         if (detail.IsPrivate && secret != null && PlaylistSharing.Token(detail) == null)
             detail = detail with { SecretToken = secret };
         item = LibraryData.FromPlaylist(detail) with { Key = item.Key };

@@ -59,7 +59,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth > 150 && collectionTrackList.ActualHeight > 100 &&
                 compactTrackRows.Any(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.ActualWidth > 200));
             if (!playlistCollectionVisible.Value || collectionTitle.Text != transport.Playlist.Title || librarySectionTitle.Value != transport.Playlist.Title || collectionGrid.IsVisible && collectionGrid.ItemsSource.Count > 0 ||
-                activeCollection?.Items.Length != 12 || collectionMeta.Text != "· Alternative Rock · 12 треков · 24:00 · " + DetailAge(transport.Playlist.CreatedAt))
+                activeCollection?.Items.Length != 12 || collectionCount.Text != "12" || collectionDuration.Text != "24:00" || collectionMeta.Text != "· " + DetailAge(transport.Playlist.CreatedAt))
                 throw new InvalidOperationException("Playlist did not hydrate its own metadata or show the track list.");
             await LoadCollectionActionsAsync();
             if (collectionLike.StyleName != TrackButtons.Selected || collectionRepost.StyleName != TrackButtons.Glass)
@@ -96,29 +96,32 @@ internal sealed partial class MainWindow
             var add = ToggleArtistFollowAsync(transport.Playlist.User!); transport.FollowCompletion.SetResult(); await add;
             if (!followingIds.Contains(7) || !transport.LastFollowing) throw new InvalidOperationException("Follow did not update the account state.");
             Window.WindowSize = WindowSize.Resizable(1000, 900, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 176 and <= 208 && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
+            await WaitForLikedLayoutAsync(() => collectionCover.ActualWidth is >= 224 and <= 280 && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
             if (Math.Abs(collectionPlay.ActualWidth - 64) >= 1 / Window.DpiScale || collectionPlay.Bounds.Right >= collectionTitle.Bounds.X ||
-                Math.Abs(collectionPlay.Bounds.Y - collectionTitle.Bounds.Y) > 1 ||
                 Math.Abs(collectionLike.Bounds.X - collectionPlay.Bounds.X) > 1 || collectionShare.Bounds.Y <= collectionTitle.Bounds.Bottom ||
                 Math.Abs(collectionAuthor.Bounds.Y - collectionMeta.Bounds.Y) > 2 || collectionAuthor.Bounds.X < collectionTitle.Bounds.X ||
                 Math.Abs(follow.Bounds.Y - collectionLike.Bounds.Y) > 1 || follow.Bounds.X <= collectionShare.Bounds.X ||
-                Math.Abs(collectionPlay.Bounds.Y - collectionCover.Bounds.Y) > 1 ||
                 Math.Abs(collectionCover.ActualWidth - collectionCover.ActualHeight) > 1 ||
-                collectionCover.ActualHeight + 48 > 256 + 1 / Window.DpiScale)
+                collectionCover.ActualHeight > 280 + 1 / Window.DpiScale)
                 throw new InvalidOperationException("Playlist hero did not match the track hero's title, play button, bottom actions and right-hand square cover layout.");
+            VerifyCollectionArtworkLayout();
             await WaitForLikedLayoutAsync(() => !collectionLoadingView.Skeleton.IsVisible && collectionBackdrop.Source != null && collectionBackdrop.Opacity == 1);
             await VerifyCardGlassSourceAsync(collectionGlass!, collectionCover, collectionBackdrop, collectionPlay);
-            var collectionMore = (Button)VisualTree.Find(collectionPlay.Parent!.Parent!, element =>
-                element is Button button && button.ContextMenu?.Items.OfType<MenuItem>()
-                    .Any(item => item.Command?.Id == "pookie.collection.queue") == true)!;
+            var resting = collectionAuthor.Foreground;
+            MoveActionPointer(SettingsCenter(collectionAuthor));
+            await WaitForLikedLayoutAsync(() => collectionAuthor.Foreground == resting.Lerp(Color.White, .4));
+            MoveActionPointer(new(2, 2));
+            await WaitForLikedLayoutAsync(() => collectionAuthor.Foreground == resting);
             RouteWaveformClick(collectionMore.Bounds.Center);
             var collectionMenu = PopupAppearance.MenuFor(collectionMore);
             await WaitForLikedLayoutAsync(() => collectionMenu.IsOpen && collectionMenu.Reveal == 1);
             VerifyContextMenuIcons(collectionMenu);
+            if (!collectionMenu.Buttons.Select(button => button.Command?.Id).SequenceEqual(["pookie.collection.queue", "pookie.collection.open"]))
+                throw new InvalidOperationException("Another listener's playlist rendered unavailable menu actions.");
             await VerifyMoreClosesMenuAsync(collectionMore, collectionMenu);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-narrow");
             Window.WindowSize = WindowSize.Resizable(1400, 900, minWidth: 1000, minHeight: 680);
-            await WaitForLikedLayoutAsync(() => Math.Abs(collectionCover.ActualWidth - 208) < 1 / Window.DpiScale && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
+            await WaitForLikedLayoutAsync(() => Math.Abs(collectionCover.ActualWidth - 280) < 1 / Window.DpiScale && collectionTitle.Bounds.Right < collectionCover.Bounds.X);
             await WaitForLoginFrameAsync(); CaptureUiPreview("playlist-page-wide");
             if (Math.Abs(collectionRepost.Bounds.X - collectionLike.Bounds.Right - 2) > 1 ||
                 collectionLike is not MaterialTrackButton { IsConnected: true } || collectionRepost is not MaterialTrackButton { IsConnected: true } ||
@@ -148,7 +151,7 @@ internal sealed partial class MainWindow
             collectionDescriptionExpanded = true; RefreshCollectionDescription();
             await WaitForLoginFrameAsync();
             if (collectionTrackList.ActualHeight < 100 || !collectionDescriptionToggle.IsVisible)
-                throw new InvalidOperationException("Expanded playlist description hid its track list or collapse action.");
+                throw new InvalidOperationException($"Expanded playlist description left {collectionTrackList.ActualHeight} for tracks; collapse visible={collectionDescriptionToggle.IsVisible}, description={collectionDescriptionScroll.Bounds}, max={collectionDescriptionScroll.MaxHeight}, tools={collectionTools.Bounds}.");
             collectionDescription.Text = savedDescription; collectionDescriptionExpanded = false; RefreshCollectionDescription();
             collectionFilter.Text = "нет совпадений"; await WaitForLikedLayoutAsync(() => !collectionFilterDebounce.Pending);
             if (!collectionEmpty.IsVisible || pageItems[collectionTrackList].DataCount != 0) throw new InvalidOperationException("Missing filter results have no empty state.");

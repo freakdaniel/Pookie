@@ -11,6 +11,9 @@ internal static class WindowPresentation
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "ToggleDirtyRegionOverlay")]
     internal static extern void ToggleDirtyRegionOverlay(Window owner);
 
+    [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "get_SubtreeContentVersion")]
+    internal static extern int SubtreeContentVersion(UIElement element);
+
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "PookieHoldWindowFrame")]
     internal static extern ref Func<bool>? HoldFrame(Window owner);
 

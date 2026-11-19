@@ -15,7 +15,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
 {
     private readonly Func<bool> canPresent;
     private readonly TextBlock message = new TextBlock().Text("Загружаем плеер…").FontSize(13).Foreground(TrackButtons.OnSurface).CenterHorizontal();
-    private readonly LoadingSpinner spinner = new LoadingSpinner().Width(22).Height(22).Foreground(Color.White).CenterHorizontal();
+    private readonly LoadingSpinner spinner;
     // The bundled mark contains large transparent gutters. Crop those rather
     // than centering its PNG canvas and leaving a false gap above the spinner.
     private readonly Image logo = new Image { Source = Icons.SoundCloudMark(76).Source, ViewBox = new Rect(24, 49, 102, 46) }
@@ -63,7 +63,10 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
     {
         this.canPresent = canPresent;
         Height = 166; CornerRadius = PreviewRadius; Background = Color.FromRgb(30, 30, 34); BorderThickness = 0; Padding = new Thickness(0);
-        message.IsVisible = false; spinner.Width = spinner.Height = 28;
+        message.IsVisible = false;
+        // Keep the loader painted in the tab transition. Start its own animation
+        // when the page settles so its bitmap can be reused while sliding.
+        spinner = new LoadingSpinner { CanAnimate = canPresent }.Width(28).Height(28).Foreground(Color.White).CenterHorizontal();
         Content = placeholder = new StackPanel().Vertical().Spacing(16).Center().Children(logo, spinner, message);
         reload.Tick += () => { reload.Stop(); if (requested && VisibleHere()) Reload(); };
         deadline.Tick += () => Fail(new TimeoutException("Плеер SoundCloud не загрузился вовремя."));
@@ -104,7 +107,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         }
         InvalidateVisual();
     }
-    internal void Deactivate() { requested = false; reload.Stop(); Hide(pause: false); if (browser is { } host) _ = PauseAsync(host); }
+    internal void Deactivate() { requested = false; spinner.IsActive = false; reload.Stop(); Hide(pause: false); if (browser is { } host) _ = PauseAsync(host); }
     internal Task FreezeForPopupAsync() => FreezeFrameAsync(() => popupFrozen = true);
     internal Task FreezeForTooltipAsync() => FreezeFrameAsync(() => tooltipFrozen = true);
     internal void ResumeFromTooltip() { tooltipFrozen = false; InvalidateVisual(); }

@@ -306,7 +306,12 @@ internal sealed class ModalDialog : Panel, IVisualTreeHost
         var sine = Math.Sin(angle); var cosine = Math.Cos(angle);
         var dpi = context.DpiScale;
         double Y(double y) => center.Y + scale * (y - center.Y) * cosine / (1 - scale * (y - center.Y) * sine / 500);
-        const double strip = 3;
+        // Near the end of the tilt, consecutive strips have effectively the same
+        // projected width. Bound their edge drift to half a physical pixel.
+        var nearestDepth = 1 - scale * (bounds.Y - center.Y) * sine / 500;
+        var halfWidth = Math.Max(center.X - bounds.X, bounds.Right - center.X);
+        var edgeSlope = halfWidth * scale * scale * Math.Abs(sine) / (500 * nearestDepth * nearestDepth);
+        var strip = Math.Clamp(1 / (dpi * edgeSlope), 3, 32);
         for (var top = bounds.Y; top < bounds.Bottom; top += strip)
         {
             var bottom = Math.Min(bounds.Bottom, top + strip);

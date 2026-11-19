@@ -18,8 +18,8 @@ internal sealed partial class MainWindow
         view.PlaylistTitle = new TextBlock().FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         view.PlaylistTitle.Cursor = CursorType.Hand;
         view.PlaylistTitle.MouseDown += args => { if (args.Button == MouseButton.Left) { args.Handled = true; Open(); } };
-        view.Play = Icons.View("play-solid", 19, TrackButtons.OnPrimary).Center();
-        var play = TrackButtons.Icon(view.Play, () => { if (view.CurrentItem is { } item) Run(() => PlayLibraryCollectionAsync(item)); }, TrackButtons.Filled, 36);
+        view.Play = Icons.View("play-solid", 20, TrackButtons.OnSurface).Center();
+        var play = TrackButtons.Icon(view.Play, () => { if (view.CurrentItem is { } item) Run(() => PlayLibraryCollectionAsync(item)); }, TrackButtons.Glass, TrackRowLayout.ActionSize);
         var preview = new StackPanel().Vertical().Spacing(0);
         for (var i = 0; i < 3; i++)
         {
@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
         }
         var actions = UserPlaylistActions(view.Entry.Item, view.Actions, 36, () => view.CurrentItem);
         view.PlaylistCount = new TextBlock().FontSize(11).Foreground(Muted);
-        var more = TrackButtons.Action(view.PlaylistCount, Open, TrackButtons.Text, 28).Padding(0).Left();
+        var more = TrackButtons.Action(view.PlaylistCount, Open, TrackButtons.Text, 28).Padding(8, 0).Margin(-8, 0).Left();
         var root = new Grid().Columns($"{TrackRowLayout.CoverSize},*").Rows("*").Height(TrackRowLayout.Height).Spacing(TrackRowLayout.ColumnGap).Children(artwork.Column(0),
             new Grid().Columns("*").Rows("36,72,36").Spacing(8).Padding(TrackRowLayout.ContentInset, 12).Column(1).Children(
                 new Grid().Columns("36,*,Auto").Rows("36").Spacing(10).Row(0).Children(play.Column(0),
@@ -40,7 +40,11 @@ internal sealed partial class MainWindow
                 preview.Row(1), actions.Row(2)));
         VisualTree.Visit(root, element =>
         {
-            if (element is MaterialTrackButton button) button.RetainDecorationOnDetach = true;
+            if (element is MaterialTrackButton button)
+            {
+                if (button.StyleName == TrackButtons.Glass) button.UseCardGlassFallback();
+                button.RetainDecorationOnDetach = true;
+            }
         });
         return root;
     }

@@ -15,7 +15,6 @@ internal sealed class PlayerBackdrop : Control
     private IImage? rasterImage;
     private IGraphicsFactory? rasterFactory;
     private PlayerGradient rasterPalette;
-    private double reveal = 1;
     private float[] grain = [];
     private Vector3[] columnColors = [];
     private PlayerGradient from = PlayerGradient.FromPalette(PlayerPalette.Neutral);
@@ -26,11 +25,6 @@ internal sealed class PlayerBackdrop : Control
     internal double BlendAmount => clock.Progress;
     internal bool ReuseRasterForResize { get; set; }
     internal event Action? PaletteChanged;
-    internal double Reveal
-    {
-        get => reveal;
-        set { if (reveal != value) { reveal = value; InvalidateVisual(); } }
-    }
 
     internal PlayerBackdrop()
     {
@@ -67,13 +61,16 @@ internal sealed class PlayerBackdrop : Control
     protected override void OnRender(IGraphicsContext context) => RenderRegion(context, Bounds);
 
     // Reuse the exact player brush and coordinates for surfaces joined to the bar.
-    internal void RenderRegion(IGraphicsContext context, Rect region)
+    internal void RenderRegion(IGraphicsContext context, Rect region) =>
+        RenderRegion(context, region, Bounds, 1, ReuseRasterForResize);
+
+    internal void RenderRegion(IGraphicsContext context, Rect region, Rect gradientBounds, double opacity, bool resizing = false)
     {
-        if (reveal <= 0 || Bounds.Width <= 0 || Bounds.Height <= 0) return;
+        if (opacity <= 0 || gradientBounds.IsEmpty) return;
         var scale = Math.Max(context.DpiScale, GetDpi() / 96d);
-        var width = Math.Max(1, (int)Math.Ceiling(Bounds.Width * scale));
+        var width = Math.Max(1, (int)Math.Ceiling(gradientBounds.Width * scale));
         var factory = Application.IsRunning ? Application.Current.GraphicsFactory : Application.DefaultGraphicsFactory;
-        var reuse = ReuseRasterForResize && rasterImage != null && rasterFactory == factory;
+        var reuse = resizing && rasterImage != null && rasterFactory == factory;
         var changed = !reuse && (rasterImage == null || rasterImage.PixelWidth != width || rasterFactory != factory);
         if (changed)
         {
@@ -102,7 +99,7 @@ internal sealed class PlayerBackdrop : Control
             rasterPalette = CurrentGradient;
         }
         context.FillRectangle(region, new ImageBrush(rasterImage!, new Rect(0, 0, rasterImage!.PixelWidth, RasterRows),
-            new Rect(Bounds.X, Bounds.Y, Bounds.Width, RasterRows / scale), TileMode.TileY, opacity: reveal));
+            new Rect(gradientBounds.X, gradientBounds.Y, gradientBounds.Width, RasterRows / scale), TileMode.TileY, opacity: opacity));
     }
 
     internal static byte[] CreateRaster(PlayerPalette palette, int width) => CreateRaster(PlayerGradient.FromPalette(palette), width);
@@ -151,6 +148,33 @@ internal sealed class PlayerBackdrop : Control
     {
         clock.Stop();
         ClearRaster();
+        base.OnDispose();
+    }
+}
+
+// Both players span the window. Draw the same texture with this view's origin and opacity.
+internal sealed class ExpandedPlayerBackdrop : Control
+{
+    internal PlayerBackdrop Source { get; }
+    private double reveal;
+    internal double Reveal
+    {
+        get => reveal;
+        set { if (reveal != value) { reveal = value; InvalidateVisual(); } }
+    }
+
+    internal ExpandedPlayerBackdrop(PlayerBackdrop source)
+    {
+        Source = source;
+        IsHitTestVisible = false;
+        source.PaletteChanged += InvalidateVisual;
+    }
+
+    protected override void OnRender(IGraphicsContext context) => Source.RenderRegion(context, Bounds, Bounds, reveal);
+
+    protected override void OnDispose()
+    {
+        Source.PaletteChanged -= InvalidateVisual;
         base.OnDispose();
     }
 }

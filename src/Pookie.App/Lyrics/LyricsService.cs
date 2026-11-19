@@ -8,7 +8,7 @@ namespace Pookie.Lyrics;
 // Automatic resolution is independent of the audio player and UI dispatcher.
 public sealed class LyricsService : IDisposable
 {
-    private const int SelectionVersion = 3;
+    private const int SelectionVersion = 4;
     private readonly ILyricsProvider provider;
     private readonly Func<LyricsIdentity, bool, CancellationToken, Task<LyricsDocument?>>? lyricsFallback;
     private readonly string cache;
@@ -139,6 +139,24 @@ public sealed class LyricsService : IDisposable
                         var document = match.ToDocument(); result = new(document.Status, document);
                         if (result.Status != LyricsStatus.Plain) break;
                     }
+                }
+            }
+            if (chosen == null && !failed && identity.Duration > 0 && double.IsFinite(identity.Duration))
+            {
+                var query = queries[0];
+                foreach (var fragment in LyricsMatcher.TitleFragments(query.Title))
+                {
+                    if (!searched.Add((fragment, query.Artist))) continue;
+                    try
+                    {
+                        var hits = await provider.SearchAsync(fragment, query.Artist, token).ConfigureAwait(false);
+                        chosen = LyricsMatcher.ChooseFragmentMatch(identity, query, hits);
+                    }
+                    catch (Exception error) when (IsProviderFailure(error, token)) { failed = true; break; }
+                    if (chosen == null) continue;
+                    var document = chosen.ToDocument();
+                    result = new(document.Status, document);
+                    break;
                 }
             }
             token.ThrowIfCancellationRequested();

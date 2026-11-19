@@ -15,7 +15,7 @@ internal sealed partial class MainWindow
         {
             LikedTrackTile tile = null!;
             tile = new(this, track => Run(() => PlayCollectionTrackAsync(track, collectionTrackTiles[tile.Root].Position)),
-                track => Run(() => OpenTrackPageAsync(track)), "music-notes");
+                track => Run(() => OpenTrackFromRowAsync(track, tile.Root)), "music-notes");
             tile.SetSize(collectionTrackArtworkSize);
             collectionTrackTiles.Add(tile.Root, (tile, -1));
             AttachTrackQueueMenu(tile.Root, () => tile.Track, extraActions: true);

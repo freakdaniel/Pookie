@@ -51,7 +51,7 @@ public static class LibraryData
         return null;
     }
 
-    public static SoundCloudPlaylist ParsePlaylist(JsonElement item, string? contextUrn = null)
+    public static SoundCloudPlaylist ParsePlaylist(JsonElement item, string? contextUrn = null, SoundCloudUser? knownOwner = null)
     {
         // System playlists put a URN in `id`, unlike numeric ordinary playlists.
         var id = Text(item, "id");
@@ -71,8 +71,12 @@ public static class LibraryData
         }
         var playlist = JsonSerializer.Deserialize(output.ToArray(), SoundCloudJson.Default.SoundCloudPlaylist)
             ?? throw new JsonException("Invalid playlist");
+        var owner = playlist.User ?? knownOwner;
+        if (owner is { Id: > 0 } && owner.Id == knownOwner?.Id && string.IsNullOrWhiteSpace(owner.AvatarUrl))
+            owner = owner with { AvatarUrl = knownOwner.AvatarUrl };
         var tracks = playlist.Tracks ?? [];
-        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? "Подборка", Urn = playlist.Urn ?? "", Tracks = tracks,
+        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? "Подборка", Urn = playlist.Urn ?? "", Tracks = tracks, User = owner,
+            ArtworkFieldMissing = !item.TryGetProperty("artwork_url", out _),
             TrackPagesComplete = item.TryGetProperty("tracks", out var rows) && rows.ValueKind == JsonValueKind.Array &&
                 tracks.Length == playlist.TrackCount && tracks.All(track => track.Id > 0) };
     }
@@ -81,8 +85,12 @@ public static class LibraryData
         "playlist:" + (!string.IsNullOrEmpty(playlist.Urn) ? playlist.Urn : playlist.Id.ToString()), playlist.Title,
         playlist.ShortDescription ?? playlist.User?.Username ?? (playlist.MadeFor != null ? "Для " + playlist.MadeFor.Username :
             playlist.PlaylistType?.Contains("STATION", StringComparison.OrdinalIgnoreCase) == true ? "Станция" : "Подборка"),
-        playlist.CalculatedArtworkUrl ?? playlist.ArtworkUrl ?? playlist.Tracks?.FirstOrDefault(t => !string.IsNullOrEmpty(t.ArtworkUrl))?.ArtworkUrl,
+        playlist.UsesTrackArtwork
+            ? playlist.CalculatedArtworkUrl ?? playlist.ArtworkUrl ?? playlist.Tracks?.FirstOrDefault(t => !string.IsNullOrEmpty(t.ArtworkUrl))?.ArtworkUrl
+            : NonBlank(playlist.ArtworkUrl) ?? NonBlank(playlist.User?.AvatarUrl) ?? NonBlank(playlist.CalculatedArtworkUrl),
         Playlist: playlist);
+
+    private static string? NonBlank(string? url) => string.IsNullOrWhiteSpace(url) ? null : url;
 
     private static string? Text(JsonElement item, string name) => item.TryGetProperty(name, out var value) &&
         value.ValueKind == JsonValueKind.String ? value.GetString() : null;

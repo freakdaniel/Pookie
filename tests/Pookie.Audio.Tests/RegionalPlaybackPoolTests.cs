@@ -108,6 +108,34 @@ public sealed class RegionalPlaybackPoolTests
         Assert.False(error.TrackUnavailable);
     }
 
+    [Fact]
+    public async Task BackgroundHealthReusesRecentSuccessWithoutSavingCredentialsAndExpiresOnFailure()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var path = Path.Combine(directory.FullName, "checked.json");
+            var uri = new Uri("http://name:password@proxy.test:8080");
+            var clock = new Clock(); var calls = 0;
+            Task<bool> Check(Uri target, CancellationToken token)
+            {
+                Assert.Equal(uri, target);
+                return Task.FromResult(++calls == 1);
+            }
+
+            await RegionalProxyHealth.RefreshAsync(path, uri, Check, clock, default);
+            Assert.DoesNotContain("name", await File.ReadAllTextAsync(path));
+            Assert.DoesNotContain("password", await File.ReadAllTextAsync(path));
+            await RegionalProxyHealth.RefreshAsync(path, uri, Check, clock, default);
+            Assert.Equal(1, calls);
+            clock.Now += TimeSpan.FromMinutes(11);
+            await RegionalProxyHealth.RefreshAsync(path, uri, Check, clock, default);
+            Assert.Equal(2, calls);
+            Assert.False(File.Exists(path));
+        }
+        finally { directory.Delete(true); }
+    }
+
     private static RegionalProxyEndpoint Endpoint(int index) => new(new($"socks5://8.8.{index}.1:1080"), "SE", index);
     private static RegionalPlaybackPool Pool(IReadOnlyList<RegionalProxyEndpoint> endpoints, Func<Uri, ISoundCloudPlaybackSource> create, TimeProvider? clock = null) =>
         new(_ => Task.FromResult(endpoints), _ => Task.FromResult("publicId"), (uri, clientId) =>

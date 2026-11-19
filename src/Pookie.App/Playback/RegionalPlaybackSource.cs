@@ -31,6 +31,12 @@ internal sealed class RegionalPlaybackSource : ISoundCloudPlaybackSource, IDispo
         return new() { Proxy = target, UseProxy = true, UseCookies = false, AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli };
     }
+    internal async Task<bool> CheckConnectionAsync(CancellationToken token)
+    {
+        using var response = await http.GetAsync("https://soundcloud.com/robots.txt",
+            HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        return response.StatusCode == HttpStatusCode.OK && response.Content.Headers.ContentType?.MediaType == "text/plain";
+    }
     public Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default) => api.GetTrackAsync(id, cancellationToken);
     public Task<SoundCloudStream?> ResolveTranscodingAsync(SoundCloudTrack track, Transcoding transcoding, CancellationToken cancellationToken = default) =>
         api.ResolveTranscodingAsync(track, transcoding, cancellationToken);

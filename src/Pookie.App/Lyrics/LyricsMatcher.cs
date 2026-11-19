@@ -8,8 +8,26 @@ public static partial class LyricsMatcher
 {
     // Fold styled Unicode letters before parsing tags or building provider queries.
     private static string CompatibleText(string? text) => (text ?? "").Normalize(NormalizationForm.FormKC);
-    public static string Normalize(string? text) => Whitespace().Replace(Punctuation().Replace(
-        CompatibleText(text).ToLowerInvariant().Replace('ё', 'е'), " "), " ").Trim();
+    public static string Normalize(string? text)
+    {
+        var value = CompatibleText(text).ToLowerInvariant().Replace('ё', 'е');
+        var normalized = new StringBuilder(value.Length);
+        var inWord = false;
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (Rune.IsLetterOrDigit(rune))
+            {
+                if (!inWord && normalized.Length > 0) normalized.Append(' ');
+                inWord = true;
+            }
+            else if (!inWord || Rune.GetUnicodeCategory(rune) is not
+                (UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark))
+            { inWord = false; continue; }
+            if (rune.IsBmp) normalized.Append((char)rune.Value);
+            else normalized.Append(rune.ToString());
+        }
+        return normalized.ToString();
+    }
     public static string SearchTitle(string text) => FoldSpeedTags(Production().Replace(CompatibleText(text), "")).Trim();
     public static string WithoutParentheses(string text)
     {
@@ -201,6 +219,77 @@ public static partial class LyricsMatcher
         return document with { Lines = document.Lines.Select(line => line with { Start = line.Start * factor }).ToArray() };
     }
 
+    // Query fragments retrieve candidates. Compare the complete titles before using one.
+    internal static IEnumerable<string> TitleFragments(string title)
+    {
+        var normalized = Normalize(WithoutParentheses(title));
+        if (normalized.Length is < 8 or > 240) yield break;
+        var words = normalized.Split(' ');
+        if (words.Length == 1)
+        {
+            // Titles in unspaced scripts still have character boundaries.
+            var letters = StringInfo.ParseCombiningCharacters(normalized);
+            if (letters.Length < 8) yield break;
+            var size = letters.Length / 2;
+            var first = normalized[..letters[size]];
+            var last = normalized[letters[^size]..];
+            yield return first;
+            if (last != first) yield return last;
+            yield break;
+        }
+        var half = words.Length / 2;
+        foreach (var part in new[] { string.Join(' ', words[..half]), string.Join(' ', words[^half..]) }.Distinct())
+            if (part.Length >= 4) yield return part;
+    }
+
+    internal static bool CloseTitle(string expected, string actual)
+    {
+        if (Versions(expected) != Versions(actual)) return false;
+        var left = Normalize(expected);
+        var right = Normalize(actual);
+        if (left == right) return left.Length != 0;
+        if (left.Length is < 6 or > 240 || right.Length is < 6 or > 240) return false;
+        var words = left.Split(' ');
+        var other = right.Split(' ');
+        if (words.Length != other.Length) return false;
+        var changed = false;
+        for (var i = 0; i < words.Length; i++)
+        {
+            if (words[i] == other[i]) continue;
+            if (changed || words[i].Any(char.IsDigit) || other[i].Any(char.IsDigit) ||
+                !OneLetterApart(words[i], other[i])) return false;
+            changed = true;
+        }
+        return changed;
+    }
+
+    internal static bool OneLetterApart(string left, string right)
+    {
+        var a = StringInfo.ParseCombiningCharacters(left);
+        var b = StringInfo.ParseCombiningCharacters(right);
+        if (Math.Min(a.Length, b.Length) < 4 || Math.Abs(a.Length - b.Length) > 1) return false;
+        int i = 0, j = 0, edits = 0;
+        while (i < a.Length && j < b.Length)
+        {
+            var endA = i + 1 < a.Length ? a[i + 1] : left.Length;
+            var endB = j + 1 < b.Length ? b[j + 1] : right.Length;
+            if (left.AsSpan(a[i], endA - a[i]).SequenceEqual(right.AsSpan(b[j], endB - b[j])))
+            { i++; j++; continue; }
+            if (++edits > 1) return false;
+            if (a.Length >= b.Length) i++;
+            if (b.Length >= a.Length) j++;
+        }
+        return edits + a.Length - i + b.Length - j == 1;
+    }
+
+    internal static LyricsCandidate? ChooseFragmentMatch(LyricsIdentity identity, LyricsQuery query, LyricsCandidate[] hits)
+    {
+        var matches = hits.Where(hit => Math.Abs(hit.Duration - identity.Duration) <= 2 &&
+            ArtistSimilarity(query.Artist, hit.ArtistName) == 1 && CloseTitle(query.Title, hit.TrackName)).ToArray();
+        if (matches.Select(hit => Normalize(hit.TrackName)).Distinct().Skip(1).Any()) return null;
+        return Choose(identity, matches);
+    }
+
     public static bool Matches(LyricsIdentity identity, LyricsCandidate candidate) => Score(identity, candidate) >= 0;
     public static bool IsExact(LyricsIdentity identity, LyricsCandidate candidate)
     {
@@ -273,8 +362,6 @@ public static partial class LyricsMatcher
         return Math.Max(edit, tokens);
     }
 
-    [GeneratedRegex(@"[^\p{L}\p{Nd}]+")]
-    private static partial Regex Punctuation();
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
     [GeneratedRegex(@"\([^()]*\)")]

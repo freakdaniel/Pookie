@@ -109,6 +109,14 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("The settings fixture did not prepare recommendations to test their cancellation.");
 
             await SelectSettingsTabAsync(SettingsSection.Playback);
+            await SetSettingsToggleAsync("restore_last_track", false);
+            SaveConfiguration(); await configuration.FlushAsync();
+            var disabledRestore = configuration.Load();
+            if (disabledRestore.RestoreLastTrack || disabledRestore.LastTrack != null)
+                throw new InvalidOperationException("Turning off restoration kept a stored player.");
+            await SetSettingsToggleAsync("restore_last_track", true);
+            if (preferences.LastTrack?.Id != source[0].Id)
+                throw new InvalidOperationException("Turning on restoration did not remember the currently playing track.");
             await SetSettingsChoiceAsync("maximum_volume", 2);
             volume.Value = 180;
             if (volumeSlider.Maximum != 200 || expandedVolumeSlider.Maximum != 200 || Math.Abs(audio.LastVolume - 180) > .01)
@@ -688,10 +696,17 @@ internal sealed partial class MainWindow
     private async Task RevealSettingsControlAsync(FrameworkElement control)
     {
         await WaitForSettingsLayoutAsync(() => control.ActualHeight > 0);
-        var offset = Math.Clamp(shellScroll.VerticalOffset + control.Bounds.Y - 88, 0, SmoothScroll.Maximum(shellScroll));
-        shellScroll.SetScrollOffsets(0, offset);
-        await WaitForSettingsLayoutAsync(() => control.Bounds.Y >= 64 - 1 &&
-            control.Bounds.Bottom <= settingsScroll.Bounds.Bottom + 1);
+        await WaitForSettingsLayoutAsync(() =>
+        {
+            var top = Math.Max(ShellHeader.HeaderHeight, settingsScroll.Bounds.Y);
+            var bottom = Math.Min(shellScroll.Bounds.Bottom, settingsScroll.Bounds.Bottom);
+            if (control.Bounds.Y >= top - 1 && control.Bounds.Bottom <= bottom + 1) return true;
+            // The outer heading collapses before the inner settings list scrolls.
+            // Read the new bounds after each arrange rather than assuming one offset moves both.
+            var offset = shellScroll.VerticalOffset + control.Bounds.Y - ShellHeader.HeaderHeight - 24;
+            shellScroll.SetScrollOffsets(0, Math.Clamp(offset, 0, SmoothScroll.Maximum(shellScroll)));
+            return false;
+        });
     }
 
     private void CheckSettingsTabBounds()

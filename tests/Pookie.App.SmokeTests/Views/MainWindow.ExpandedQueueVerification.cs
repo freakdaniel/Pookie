@@ -210,7 +210,8 @@ internal sealed partial class MainWindow
 
     private async Task VerifyQueuePaletteTransitionAsync()
     {
-        var original = expandedBackdrop.Target;
+        var palette = expandedBackdrop.Source;
+        var original = palette.Target;
         var rendered = new HashSet<PlayerPalette>();
         var stale = 0;
         var backdropTextures = new HashSet<object>();
@@ -229,9 +230,9 @@ internal sealed partial class MainWindow
         var waitingForSettled = false;
         void Sample()
         {
-            if (!expandedBackdrop.Running)
+            if (!palette.Running)
             {
-                if (waitingForSettled && expandedBackdrop.Target == interruptedTarget)
+                if (waitingForSettled && palette.Target == interruptedTarget)
                 {
                     settled = nativeSupported ? SamplePresentedBackdropPixels() : [];
                     settledReady.TrySetResult();
@@ -239,25 +240,25 @@ internal sealed partial class MainWindow
                 return;
             }
             rendered.Add(expandedQueueFade.RenderedPalette);
-            if (expandedQueueFade.RenderedGradient != expandedBackdrop.CurrentGradient) stale++;
-            lastRaster = baseField.GetValue(expandedBackdrop);
+            if (expandedQueueFade.RenderedGradient != palette.CurrentGradient) stale++;
+            lastRaster = baseField.GetValue(palette);
             if (lastRaster is { } texture) backdropTextures.Add(texture);
             if (fadeField.GetValue(expandedQueueFade) is { } fade) fadeTextures.Add(fade);
-            var stage = (int)(expandedBackdrop.BlendAmount * 8);
+            var stage = (int)(palette.BlendAmount * 8);
             if (nativeSupported && nativeStages.Add(stage))
             {
                 var native = SamplePresentedBackdropPixels();
                 for (var i = 0; i < native.Length; i++)
                 {
-                    var expected = expandedBackdrop.CurrentGradient.Sample((i + .5) / native.Length);
+                    var expected = palette.CurrentGradient.Sample((i + .5) / native.Length);
                     if (Math.Abs(native[i].R - expected.X) > 2 || Math.Abs(native[i].G - expected.Y) > 2 || Math.Abs(native[i].B - expected.Z) > 2)
-                        nativeMismatch ??= $"blend={expandedBackdrop.BlendAmount:F3}, expected={expected}, presented={native[i]}, sample={i}";
+                        nativeMismatch ??= $"blend={palette.BlendAmount:F3}, expected={expected}, presented={native[i]}, sample={i}";
                 }
             }
             var pixels = SampleExpandedBackdropPixels();
             for (var i = 0; i < pixels.Length; i++)
             {
-                var expected = expandedBackdrop.CurrentGradient.Sample((i + .5) / pixels.Length);
+                var expected = palette.CurrentGradient.Sample((i + .5) / pixels.Length);
                 if (Math.Abs(pixels[i].R - expected.X) > 2 || Math.Abs(pixels[i].G - expected.Y) > 2 || Math.Abs(pixels[i].B - expected.Z) > 2)
                     pixelMismatch++;
             }
@@ -265,7 +266,7 @@ internal sealed partial class MainWindow
             for (var i = 0; i < edges.Length; i++)
             {
                 var x = expandedQueueFade.Bounds.X - expandedBackdrop.Bounds.X + (i + .5) / edges.Length * expandedQueueFade.Bounds.Width;
-                var expected = expandedBackdrop.CurrentGradient.Sample(x / expandedBackdrop.ActualWidth);
+                var expected = palette.CurrentGradient.Sample(x / expandedBackdrop.ActualWidth);
                 if (Math.Abs(edges[i].R - expected.X) > 2 || Math.Abs(edges[i].G - expected.Y) > 2 || Math.Abs(edges[i].B - expected.Z) > 2)
                     pixelMismatch++;
             }
@@ -278,24 +279,24 @@ internal sealed partial class MainWindow
             if (OperatingSystem.IsWindows() && !ProbeSetWindowPos(Window.Handle, -1, 0, 0, 0, 0, 0x53))
                 throw new InvalidOperationException("Could not expose the native palette probe window.");
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
-            expandedBackdrop.SetPalette(new(Color.FromRgb(65, 22, 30), Color.FromRgb(50, 18, 35), Color.FromRgb(32, 18, 28)));
-            await WaitForLikedLayoutAsync(() => rendered.Count >= 4 && expandedBackdrop.BlendAmount > .2 && expandedBackdrop.CurrentGradient != PlayerGradient.FromPalette(original));
+            palette.SetPalette(new(Color.FromRgb(65, 22, 30), Color.FromRgb(50, 18, 35), Color.FromRgb(32, 18, 28)));
+            await WaitForLikedLayoutAsync(() => rendered.Count >= 4 && palette.BlendAmount > .2 && palette.CurrentGradient != PlayerGradient.FromPalette(original));
             nativeStages.Clear();
-            waitingForSettled = true; expandedBackdrop.SetPalette(interruptedTarget);
+            waitingForSettled = true; palette.SetPalette(interruptedTarget);
             await settledReady.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
-            if (rendered.Count < 4 || stale != 0 || expandedQueueFade.RenderedPalette != expandedBackdrop.Target)
+            if (rendered.Count < 4 || stale != 0 || expandedQueueFade.RenderedPalette != palette.Target)
                 throw new InvalidOperationException($"Queue edge fades did not follow the live background palette: intermediate={rendered.Count}, stale={stale}");
             if (backdropTextures.Count != 1)
                 throw new InvalidOperationException($"Player replaced its gradient image {backdropTextures.Count} times during animation.");
             if (fadeTextures.Count != 1)
                 throw new InvalidOperationException($"Queue edge fades replaced their texture {fadeTextures.Count} times during color animation.");
-            if (lastRaster == null || !ReferenceEquals(lastRaster, baseField.GetValue(expandedBackdrop)))
+            if (lastRaster == null || !ReferenceEquals(lastRaster, baseField.GetValue(palette)))
                 throw new InvalidOperationException("Completing the color transition replaced the displayed raster.");
             for (var i = 0; i < settled.Length; i++)
             {
-                var expected = PlayerGradient.FromPalette(expandedBackdrop.Target).Sample((i + .5) / settled.Length);
+                var expected = PlayerGradient.FromPalette(palette.Target).Sample((i + .5) / settled.Length);
                 if (Math.Abs(settled[i].R - expected.X) > 2 || Math.Abs(settled[i].G - expected.Y) > 2 || Math.Abs(settled[i].B - expected.Z) > 2)
-                    throw new InvalidOperationException($"Settled backdrop pixels differ from the transition target: sample={i}, expected={expected}, presented={settled[i]}, current={expandedBackdrop.CurrentGradient}, target={expandedBackdrop.Target}, bounds={expandedBackdrop.Bounds}, queue={expandedQueueFade.Bounds}.");
+                    throw new InvalidOperationException($"Settled backdrop pixels differ from the transition target: sample={i}, expected={expected}, presented={settled[i]}, current={palette.CurrentGradient}, target={palette.Target}, bounds={expandedBackdrop.Bounds}, queue={expandedQueueFade.Bounds}.");
             }
             if (pixelMismatch != 0)
                 throw new InvalidOperationException($"Rendered backdrop pixels disagreed with the displayed transition in {pixelMismatch} samples.");
@@ -307,8 +308,8 @@ internal sealed partial class MainWindow
         finally
         {
             WindowPresentation.FramePresented(Window) -= Sample;
-            expandedBackdrop.SetPalette(original);
-            await WaitForLikedLayoutAsync(() => !expandedBackdrop.Running);
+            palette.SetPalette(original);
+            await WaitForLikedLayoutAsync(() => !palette.Running);
             await WaitForLoginFrameAsync();
         }
         Console.WriteLine($"EXPANDED_QUEUE_PALETTE_OK: presented and GPU-rendered backdrop/edge pixels match intermediate/settled colors and an interrupted transition; native={nativeSupported}, retained images: backdrop={backdropTextures.Count}, edges={fadeTextures.Count}, color frames={rendered.Count}");

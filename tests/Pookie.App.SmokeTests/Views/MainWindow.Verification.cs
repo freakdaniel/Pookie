@@ -303,7 +303,7 @@ internal sealed partial class MainWindow
             CreatedAt = "2026-09-15T12:00:00Z", Genre = "Ambient",
             PermalinkUrl = "https://soundcloud.com/fixture/track-" + index,
             Title = index == 19 ? "needle / длинное название для проверки фильтра" : $"Трек {index + 1}",
-            User = new SoundCloudUser { Username = $"Исполнитель {index % 3}" }
+            User = new SoundCloudUser { Username = index % 3 == 2 ? "Север" : $"Исполнитель {index % 3}" }
         }).ToArray();
         localRecent.Clear();
         ReplaceTracks(new TrackPage(fixtures, null));
@@ -398,9 +398,11 @@ internal sealed partial class MainWindow
                 $"waveX={filteredRow.Waveform.Bounds.X:F2}, coverRight={filteredRow.Cover.Bounds.Right:F2}, " +
                 $"rowRight={filteredRow.Root.Bounds.Right:F2}, listRight={likedList.Bounds.Right:F2}, playHeight={filteredRow.PlayButton.ActualHeight:F2}");
         likedFilter.Text = "нет такого трека";
+        await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
         if (!likedEmpty.Value || likedGrid.ItemsSource.Count != 0 || likedList.ItemsSource.Count != 0)
             throw new InvalidOperationException("Likes empty filter state failed");
-        likedFilter.Text = "исполнитель 2";
+        likedFilter.Text = "север";
+        await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
         if (likedGrid.ItemsSource.Count != 10) throw new InvalidOperationException("Artist filtering failed");
         likedFilter.Text = "";
         await WaitForLikedLayoutAsync(() => likedRows.Values.Count(row => row.Track != null && row.Waveform.ActualWidth > 100) >= 3);

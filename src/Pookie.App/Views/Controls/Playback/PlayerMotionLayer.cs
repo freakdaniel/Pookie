@@ -12,23 +12,31 @@ internal sealed class PlayerMotionLayer : Panel
     private Rect contentBounds;
     internal double OffsetX { get; private set; }
     internal double OffsetY { get; private set; }
+    private Matrix3x2 childTransform = Matrix3x2.Identity;
+    private readonly UIElement fadeTarget;
     private double inkStrength = 1;
     internal double InkStrength
     {
         get => inkStrength;
-        set { if (inkStrength == value) return; inkStrength = value; Opacity = Math.Clamp(value, 0, 1); }
+        set { if (inkStrength == value) return; inkStrength = value; fadeTarget.Opacity = Math.Clamp(value, 0, 1); }
     }
 
-    internal PlayerMotionLayer(FrameworkElement child)
+    internal PlayerMotionLayer(FrameworkElement child, bool fadeClippedContent = false)
     {
+        // A clipped panel only needs an opacity surface the size of its viewport.
+        // The artwork shadow can extend beyond the card and uses the layer's full bounds.
+        fadeTarget = fadeClippedContent ? child : this;
         SkipViewportCull = true;
         Add(child);
     }
 
-    internal void Move(double x, double y, bool interactive)
+    internal void Move(double x, double y, bool interactive, double scale = 1, Point origin = default)
     {
         IsHitTestVisible = interactive;
-        if (OffsetX == x && OffsetY == y) return;
+        var transform = new Matrix3x2((float)scale, 0, 0, (float)scale,
+            (float)(x + origin.X * (1 - scale)), (float)(y + origin.Y * (1 - scale)));
+        if (childTransform == transform) return;
+        childTransform = transform;
         OffsetX = x; OffsetY = y;
         InvalidateVisual();
     }
@@ -57,7 +65,7 @@ internal sealed class PlayerMotionLayer : Panel
 
     protected override bool TryGetChildTransform(out Matrix3x2 transform)
     {
-        transform = Matrix3x2.CreateTranslation((float)OffsetX, (float)OffsetY);
+        transform = childTransform;
         return !transform.IsIdentity;
     }
 }

@@ -94,7 +94,7 @@ internal sealed partial class MainWindow
             if (row.Track is not { } item) return;
             if (open != null) { open(); return; }
             if (queueRow) (select ?? SelectLibraryTrack)(item);
-            else Run(() => OpenTrackPageAsync(item));
+            else Run(() => OpenTrackFromRowAsync(item, root));
         };
         like.Click += () => { if (row.Track is { } item) Run(() => ToggleTrackLikeAsync(item)); };
         root.MouseEnter += () => { row.Hovered = true; RefreshCompactTrackRow(row); };

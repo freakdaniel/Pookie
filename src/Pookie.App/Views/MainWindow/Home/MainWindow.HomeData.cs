@@ -43,6 +43,7 @@ internal sealed partial class MainWindow
                 Recent = homePending.Contains("recent") ? previous.Recent : content.Recent,
                 Recommendations = homePending.Contains("recommendations") ? previous.Recommendations : content.Recommendations,
                 Releases = homePending.Contains("releases") ? previous.Releases : content.Releases,
+                Buzzing = previous.Buzzing,
                 Discover = homePending.Contains("mixes") ? previous.Discover : content.Discover,
                 Seeds = homePending.Contains("recommendations") ? previous.Seeds : content.Seeds
             };
@@ -99,6 +100,17 @@ internal sealed partial class MainWindow
         }
         await Task.WhenAll(Recent(), Recommendations(), Releases(), Discover());
         if (!Current()) return;
+        if (HomeItems("recommendations").Length == 0 && HomeItems("releases").Length == 0 &&
+            HomeItems("mixes").Length == 0 && HomeItems("made-for-you").Length == 0)
+        {
+            homePending.Add("buzzing");
+            homeContent = homeContent! with { Buzzing = previous?.Buzzing ?? [] };
+            RenderHome();
+            var playlists = await Read("buzzing", () => api.GetBuzzingPlaylistsAsync(token), homeContent.Buzzing);
+            if (!Current()) return;
+            homeContent = homeContent! with { Buzzing = playlists };
+        }
+        else homeContent = homeContent! with { Buzzing = null };
         homeLoadedAt = homeErrors.Count == 0 ? DateTimeOffset.UtcNow : default;
         homePending.Clear(); RenderHome();
     }

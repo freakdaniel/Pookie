@@ -38,6 +38,7 @@ internal sealed partial class MainWindow
                 if (libraryLikes != null) ReplaceTracks(libraryLikes);
                 RefreshLibraryCards();
                 RefreshOverviewSections();
+                RestoreNavigationScroll(0);
                 Run(RefreshOverviewDataAsync);
             }),
             LibraryTab("Лайки", Page.LibraryTracks, ShowLibraryTracks),

@@ -106,7 +106,8 @@ internal sealed partial class MainWindow : IDisposable
 
         api = new(http) { RequireSessionTransport = true };
         lyricSearch = new(http);
-        regionalPlayback = RegionalPlaybackPool.FromEnvironment(enabledByDefault: !isolatedRun);
+        regionalPlayback = RegionalPlaybackPool.FromEnvironment(enabledByDefault: !isolatedRun,
+            cacheDirectory: !isolatedRun && options.AudioEnabled ? dataPaths.Cache : null);
         playbackResolver = new(api) { RegionalResolver = regionalPlayback };
         InitializePlaybackQueue();
         InitializeLyrics();
@@ -199,7 +200,7 @@ internal sealed partial class MainWindow : IDisposable
                 shareWidgetColorPopup.HandleKey(e);
                 return;
             }
-            if (HandleShareResetKey(e) || HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
+            if (HandleShareAccessKey(e) || HandleShareTimeKey(e) || shareDialog.HandleKey(e)) return;
             if (playlistDialog.HandleKey(e)) return;
             if (InAppPopup.HandleKey(Window, e)) return;
             if (chatVideoOpen.Value && chatVideoShowingImage && e.Key == Key.Escape)
@@ -339,6 +340,7 @@ internal sealed partial class MainWindow : IDisposable
         catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
         if (me != null)
         {
+            RestoreLastPlayerTrack();
             Run(() => StartupLog.RunAsync("startup.page", () => NavigateAsync(preferences.StartupPage == "library" ? Page.Library : Page.Home)));
         }
     }
@@ -444,25 +446,39 @@ internal sealed partial class MainWindow : IDisposable
         RefreshLikedViews();
     }
 
-    private async Task PlayAsync(SoundCloudTrack track, bool queueAdvance = false, int unavailableSkips = 0)
+    private void RememberPlayerTrack(SoundCloudTrack track)
     {
-        if (!CanUseWorkspace) return;
-        if (player == null) { status.Value = audioStatus.Value; return; }
-        var selectionStarted = System.Diagnostics.Stopwatch.GetTimestamp();
-        CancelSeek();
-        var generation = ++playGeneration;
-        playLoading?.Cancel(); playLoading?.Dispose();
-        playLoading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        var token = playLoading.Token;
+        if (!preferences.RestoreLastTrack || me is not { Id: > 0 } account) return;
+        var snapshot = new LastPlayerTrack(account.Id, track.Id, track.Title, track.Duration, track.FullDuration,
+            track.ArtworkUrl, track.PermalinkUrl, track.User?.Id ?? 0, track.Author, track.User?.PermalinkUrl, track.User?.AvatarUrl,
+            track.Sharing, track.PublisherMetadata);
+        if (preferences.LastTrack == snapshot) return;
+        preferences = preferences with { LastTrack = snapshot };
+        SaveConfiguration();
+    }
 
-        // Selection is immediate; resolving and preparing audio must not hold back the UI.
-        var queueEntry = SelectPlaybackTrack(track);
-        playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
+    private void RestoreLastPlayerTrack()
+    {
+        if (current != null || !preferences.RestoreLastTrack || me is not { Id: > 0 } account ||
+            preferences.LastTrack is not { Id: > 0 } saved || saved.AccountId != account.Id ||
+            string.IsNullOrWhiteSpace(saved.Title) || !ValidDuration(saved.Duration) || !ValidDuration(saved.FullDuration)) return;
+        static bool ValidDuration(double milliseconds) => milliseconds >= 0 && milliseconds < TimeSpan.MaxValue.TotalMilliseconds;
+        var track = new SoundCloudTrack { Id = saved.Id, Title = saved.Title, Duration = saved.Duration, FullDuration = saved.FullDuration,
+            Sharing = saved.Sharing, PublisherMetadata = saved.PublisherMetadata,
+            ArtworkUrl = saved.ArtworkUrl, PermalinkUrl = saved.PermalinkUrl,
+            User = new() { Id = saved.ArtistId, Username = saved.Artist, PermalinkUrl = saved.ArtistUrl, AvatarUrl = saved.AvatarUrl } };
+        var entry = SelectPlaybackTrack(track);
+        playbackQueue.SetPreparation(entry.EntryId, PlaybackPreparation.Stopped);
+        PresentPlayerTrack(track, ++playGeneration, prepareAudio: false);
+    }
+
+    private void PresentPlayerTrack(SoundCloudTrack track, long generation, bool prepareAudio)
+    {
         current = track;
         RefreshPlayerRepostState();
         BeginLyricsTrack(track);
-        audioPreparing = true; audioReady = false;
-        paused = false; isPlaying.Value = true; playbackLoading.Value = true;
+        audioPreparing = prepareAudio; audioReady = false;
+        paused = !prepareAudio; isPlaying.Value = playbackLoading.Value = prepareAudio;
         RefreshPlayerTimeline();
         advancing = false;
         title.Value = track.Title; artist.Value = track.Author;
@@ -482,6 +498,23 @@ internal sealed partial class MainWindow : IDisposable
         // suppress loading the full-size cover used by fullscreen and cards.
         if (fullArtwork == null) Run(() => LoadArtworkAsync(track, generation));
         UpdateSystemMedia();
+    }
+
+    private async Task PlayAsync(SoundCloudTrack track, bool queueAdvance = false, int unavailableSkips = 0)
+    {
+        if (!CanUseWorkspace) return;
+        if (player == null) { status.Value = audioStatus.Value; return; }
+        var selectionStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        CancelSeek();
+        var generation = ++playGeneration;
+        playLoading?.Cancel(); playLoading?.Dispose();
+        playLoading = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var token = playLoading.Token;
+
+        // Selection is immediate; resolving and preparing audio must not hold back the UI.
+        var queueEntry = SelectPlaybackTrack(track);
+        playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
+        PresentPlayerTrack(track, generation, prepareAudio: true);
         Run(() => queueLoader.EnsureAheadAsync());
         if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
         AppLog.For("Pookie.Playback").Debug("Выбор трека {TrackId}: обновление интерфейса {DurationMs:F1} мс",
@@ -529,6 +562,7 @@ internal sealed partial class MainWindow : IDisposable
             RefreshHomeShortcuts();
             RefreshOverviewSections();
             audioReady = true;
+            RememberPlayerTrack(track);
             if (trackDetailState?.Track.Id == track.Id)
             {
                 RenderTrackDetailHeader();
@@ -658,6 +692,7 @@ internal sealed partial class MainWindow : IDisposable
         signedIn.Value = true;
         UpdateProfileAvatar(me);
         profileOpen.Value = false;
+        RestoreLastPlayerTrack();
         await ShowWorkspaceAsync();
         Run(LoadLikedIdsAsync); Run(LoadRepostedIdsAsync);
         var saved = false;
@@ -696,6 +731,11 @@ internal sealed partial class MainWindow : IDisposable
             closedBrowser?.Dispose();
             ++playGeneration;
             ResetChats();
+            if (forgetAccount && preferences.LastTrack is { } saved && saved.AccountId == me?.Id)
+            {
+                preferences = preferences with { LastTrack = null };
+                SaveConfiguration();
+            }
             api.Session = null; me = null;
             ClearLibraryData();
             ResetNavigationHistory();
@@ -716,7 +756,7 @@ internal sealed partial class MainWindow : IDisposable
             progress.Value = 0; progress.Maximum = 1;
             bufferedTrack.Reset();
             expandedBuffer.Reset();
-            artwork.Source = Icons.Source("music-notes");
+            ResetMiniArtwork();
             playerBackdrop.Reset();
             page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
             ReplaceTracks(new TrackPage([], null));
@@ -863,7 +903,7 @@ internal sealed partial class MainWindow : IDisposable
         descriptionFavicons?.Dispose();
         DisposeSystemMedia();
         queueLoader.Dispose();
-        CloseShare(true); shareTimePopup?.Dispose(); shareResetPopup?.Dispose(); shareWidgetColorPopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
+        CloseShare(true); shareTimePopup?.Dispose(); shareAccessPopup?.Dispose(); shareWidgetColorPopup?.Dispose(); shareTimeMotion.Stop(); shareSearchTimer.Dispose(); ClosePlaylistPicker(); ResetPlaylistEditor(); DisposeLyrics(); ResetReposts(); ResetFollowing(); DisposeChats();
         DetachBrowserNotifications();
         Window.FrameRendered -= DismissUnfocusedShellMenus;
         Window.FrameRendered -= ObserveChatPopups;

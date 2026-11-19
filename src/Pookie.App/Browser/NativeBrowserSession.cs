@@ -12,7 +12,7 @@ namespace Pookie.App.Browser;
 // One live website per account. Secrets travel through stdin, never through argv or logs.
 internal sealed class NativeBrowserSession(WebSession account, string? fixtureUri = null, string? profilePath = null) : IDisposable, IAsyncDisposable, ISoundCloudBrowserTransport, ISoundCloudSessionVerifier, IBrowserAudioSession
 {
-    public SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.All;
+    public SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.All & ~SoundCloudTransportCapabilities.SystemPlaylistPrivacy;
     // A token rotation must preserve the identity used by in-flight UI operations.
     private WebSession account = account.SessionId == null ? account with { SessionId = Guid.NewGuid().ToString("N") } : account;
     private readonly BrowserRequestLog requestLog = new();

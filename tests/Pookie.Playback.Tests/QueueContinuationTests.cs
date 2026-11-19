@@ -121,6 +121,20 @@ public sealed class QueueContinuationTests
         Assert.Equal(2, calls); Assert.True(queue.Snapshot.RecommendationsExhausted); Assert.Null(queue.Next());
     }
     [Fact]
+    public async Task PreviewListedSeedCanContinueWithFullTracks()
+    {
+        var seed = Track(42) with { Policy = "SNIP" };
+        var queue = new PlaybackQueue();
+        queue.StartContext(new("track:42", seed.Title, ""), [seed], 0);
+        var batch = await new QueueContinuation().FetchAsync(queue.Snapshot, _ => true, (id, _, _) =>
+        {
+            Assert.Equal(seed.Id, id);
+            return Task.FromResult(new TrackPage([Track(8) with { Access = "blocked" }, Track(9)], null));
+        }, default);
+        Assert.Equal(9, Assert.Single(batch.Tracks).Id);
+    }
+
+    [Fact]
     public async Task FiltersReuploadsWithoutReorderingSoundCloudPagesOrCollapsingSpeedEdits()
     {
         var seed = Track(1, "Artist — Song");

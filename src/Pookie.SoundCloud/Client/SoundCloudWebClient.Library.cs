@@ -34,7 +34,8 @@ public sealed partial class SoundCloudWebClient
         foreach (var original in page.Items)
         {
             var item = original;
-            if (item.Playlist is { } playlist && string.IsNullOrEmpty(item.ArtworkUrl))
+            if (item.Playlist is { } playlist && (string.IsNullOrEmpty(item.ArtworkUrl) ||
+                playlist.ArtworkFieldMissing && !playlist.UsesTrackArtwork && item.ArtworkUrl == playlist.User?.AvatarUrl))
             {
                 var path = playlist.Urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal)
                     ? "system-playlists/" + Uri.EscapeDataString(playlist.Urn)
@@ -43,9 +44,9 @@ public sealed partial class SoundCloudWebClient
                 {
                     try
                     {
-                        var full = LibraryData.ParsePlaylist(await GetLibraryMetadataAsync(path, cancellationToken));
+                        var full = LibraryData.ParsePlaylist(await GetLibraryMetadataAsync(path, cancellationToken), knownOwner: playlist.User);
                         item = LibraryData.FromPlaylist(full) with { Key = original.Key };
-                        if (string.IsNullOrEmpty(item.ArtworkUrl) && full.Tracks?.FirstOrDefault(t => t.Id > 0) is { } first)
+                        if (full.UsesTrackArtwork && string.IsNullOrEmpty(item.ArtworkUrl) && full.Tracks?.FirstOrDefault(t => t.Id > 0) is { } first)
                         {
                             var coverTrack = first;
                             if (string.IsNullOrEmpty(first.ArtworkUrl))

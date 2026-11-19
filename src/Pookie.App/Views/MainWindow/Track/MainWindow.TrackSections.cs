@@ -44,7 +44,7 @@ internal sealed partial class MainWindow
     private Task OpenTrackSectionAsync(TrackSection section)
     {
         if (trackDetailState is not { } state || trackDetailSection.Value == section) return Task.CompletedTask;
-        return NavigateRouteAsync(new(Page.Track, Track: state.Track, TrackSection: section), async generation =>
+        return NavigateRouteAsync(navigationHistory[navigationIndex].Route with { Track = state.Track, TrackSection = section }, async generation =>
         {
             trackDetailState = state with { SectionLoading = false, SectionError = "" };
             trackDetailSection.Value = section; failedTrackSectionCursor = null;

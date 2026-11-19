@@ -76,6 +76,7 @@ internal sealed partial class MainWindow
             .Take(2).Select(LibraryItem.FromTrack).ToArray();
         var history = localRecent.Concat(HomeItems("recent")).Where(item => item.Track != null || item.Playlist != null)
             .DistinctBy(item => item.Key).Take(2).ToArray();
+        homeShortcuts.IsVisible = count > 0 || likes.Length > 0 || history.Length > 0;
         var latestHistoryTitle = history.FirstOrDefault()?.Title ?? "Недавние прослушивания";
         if (homeHistoryTitle == null)
         {

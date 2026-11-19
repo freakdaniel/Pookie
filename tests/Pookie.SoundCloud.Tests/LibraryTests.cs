@@ -97,6 +97,40 @@ public sealed class LibraryTests
     }
 
     [Fact]
+    public async Task MissingPlaylistCoverUsesOwnerAvatarWhileSparseSummariesCanStillResolveAnExplicitCover()
+    {
+        const string avatar = "https://i1.sndcdn.com/avatars-owner.jpg";
+        const string cover = "https://i1.sndcdn.com/artworks-custom.jpg";
+        var calls = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            calls.Add(path);
+            var body = path switch
+            {
+                "/me/library/all" => $$"""
+                    {"collection":[
+                      {"kind":"playlist","id":1,"title":"Без обложки","artwork_url":null,"calculated_artwork_url":"https://i1.sndcdn.com/derived.jpg",
+                       "user":{"id":7,"avatar_url":"{{avatar}}"},"tracks":[{"id":8,"artwork_url":"https://i1.sndcdn.com/track.jpg"}]},
+                      {"kind":"playlist","id":2,"title":"Краткий ответ","user":{"id":7,"avatar_url":"{{avatar}}"},"tracks":[]}
+                    ]}
+                    """,
+                "/playlists/1" => """{"id":1,"artwork_url":null,"user":{"id":7,"username":"Автор"},"tracks":[]}""",
+                "/playlists/2" => $$"""{"id":2,"title":"Полный ответ","artwork_url":"{{cover}}","tracks":[]}""",
+                _ => throw new InvalidOperationException(path)
+            };
+            return new(HttpStatusCode.OK) { Content = new StringContent(body) };
+        }));
+        var api = new SoundCloudWebClient(http) { Session = new("publicid", "web-token", "Pookie test") };
+        var page = await api.GetLibraryAsync("collections", 42);
+        Assert.Equal(new[] { avatar, cover }, page.Items.Select(item => item.ArtworkUrl));
+        Assert.Equal(new[] { "/me/library/all", "/playlists/2" }, calls);
+        var detail = await api.GetCollectionDetailAsync(page.Items[0]);
+        Assert.Equal(avatar, detail.Item.ArtworkUrl);
+        Assert.Equal("Автор", detail.Item.Playlist?.User?.Username);
+    }
+
+    [Fact]
     public async Task ShortPlaylistsLoadFullMetadataAndUseFirstTrackArtwork()
     {
         var calls = new List<string>();

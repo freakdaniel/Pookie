@@ -49,6 +49,8 @@ internal sealed partial class MainWindow
             SettingsChoice("maximum_volume", "Максимальная громкость", "Верхняя граница ползунка громкости аудиоплеера",
                 () => preferences.MaximumVolume, value => UpdatePreferences(p => p with { MaximumVolume = value }),
                 ("100%", 100), ("150%", 150), ("200%", 200)),
+            SettingsToggle("restore_last_track", "Восстанавливать последний трек", "При запуске показывать последний трек в плеере на паузе",
+                () => preferences.RestoreLastTrack, value => UpdatePreferences(p => p with { RestoreLastTrack = value })),
             SettingsToggle("auto_continue", "Продолжать похожими треками", "Подбирать музыку, когда закончится текущая очередь; текущий трек и добавленные вручную сохраняются",
                 () => preferences.AutoContinue, value => UpdatePreferences(p => p with { AutoContinue = value })),
             SettingsToggle("normalization", "Выравнивать громкость треков", "Приблизительная поправка по звуковой волне трека; применяется со следующего трека",

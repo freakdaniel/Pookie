@@ -50,11 +50,25 @@ internal sealed partial class MainWindow
     private long trackResizeCoalescingStarted;
     private bool trackTimelineVisible;
 
-    private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview, bool reload = false)
+    private Task OpenTrackFromRowAsync(SoundCloudTrack track, FrameworkElement source)
+    {
+        ChartOrigin? origin = null;
+        if (page.Value == Page.Home && homeChartDetail is { } chart && homeChart.IsAncestorOf(source))
+            origin = new(chart, null);
+        else if (page.Value == Page.LibraryCollection && CollectionTrackView.IsAncestorOf(source) &&
+            displayedCollection?.Playlist?.Urn.Contains(":trending-by-genre:", StringComparison.Ordinal) == true && activeCollection is { } collection)
+        {
+            var tracks = collection.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray();
+            origin = new(new(displayedCollection, new(tracks, collection.NextHref)), PagePlaybackFilter);
+        }
+        return OpenTrackPageAsync(track, originChart: origin);
+    }
+
+    private Task OpenTrackPageAsync(SoundCloudTrack track, TrackSection section = TrackSection.Overview, bool reload = false, ChartOrigin? originChart = null)
     {
         if (!reload && page.Value == Page.Track && trackDetailState?.Track.Id == track.Id)
             return OpenTrackSectionAsync(section);
-        return NavigateRouteAsync(new(Page.Track, Track: track, TrackSection: section), async generation =>
+        return NavigateRouteAsync(new NavigationRoute(Page.Track, Track: track, TrackSection: section) { OriginChart = originChart }, async generation =>
         {
             var token = loading!.Token;
             trackDetailSection.Value = section; failedTrackSectionCursor = null;
@@ -560,7 +574,7 @@ internal sealed partial class MainWindow
         {
             if (args.Button != MouseButton.Left || track() is not { } item) return;
             args.Handled = true;
-            Run(() => OpenTrackPageAsync(item));
+            Run(() => OpenTrackFromRowAsync(item, title));
         };
     }
 }

@@ -4,12 +4,13 @@ using Aprillz.MewUI.Controls;
 namespace Pookie.App;
 
 // The cover and its details remain one retained subtree throughout the transition.
-internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionLayer panel, Border cover, Thickness coverShadowPadding) : Panel
+internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionLayer panel, Border cover, Button miniArtwork, Thickness coverShadowPadding) : Panel
 {
     private double sideAmount, revealAmount, sideTarget, panelReveal;
     private double coverSize, panelWidth, gap;
     private double center, split;
 
+    internal bool ReduceMotion { get; set; }
     internal double SideAmount => sideAmount;
 
     internal void SetSideTarget(double target)
@@ -24,7 +25,7 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         revealAmount = reveal;
         sideAmount = side;
         panelReveal = panelAmount;
-        card.InkStrength = reveal;
+        card.InkStrength = ReduceMotion ? reveal : reveal > 0 ? 1 : 0;
         panel.InkStrength = panelAmount * reveal;
         ApplyMotion();
     }
@@ -33,9 +34,18 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
     {
         var restingX = center + (split - center) * sideTarget;
         var animatedX = center + (split - center) * sideAmount;
-        var y = 40 * (1 - revealAmount);
+        var y = ReduceMotion ? 0 : 40 * (1 - revealAmount);
         var settled = Math.Abs(sideTarget - sideAmount) < .000001 && revealAmount > .999999;
-        card.Move(animatedX - restingX, y, settled);
+        var from = miniArtwork.Bounds;
+        var to = cover.Bounds;
+        var remaining = 1 - revealAmount;
+        if (!ReduceMotion && from.Width > 0 && to.Width > 0)
+        {
+            var x = (animatedX - restingX) * revealAmount + (from.X - to.X) * remaining;
+            var scale = revealAmount + from.Width / to.Width * remaining;
+            card.Move(x, (from.Y - to.Y) * remaining, settled, scale, new Point(to.X, to.Y));
+        }
+        else card.Move(animatedX - restingX, y, settled);
         // Keep room between the cover and the panel throughout the same spring
         // in either direction. No delayed fade is needed to hide an intersection.
         var closedOffset = Math.Max(36, center - split - gap + 24);
@@ -68,10 +78,15 @@ internal sealed class ExpandedPlayerLayout(PlayerMotionLayer card, PlayerMotionL
         // repaint region large enough for both endpoints and the vertical reveal,
         // with a margin for device-pixel rounding and antialiased edges.
         var bounceMargin = Math.Max(24, Math.Abs(center - split) * .1);
+        var mini = miniArtwork.Bounds;
+        var miniScale = mini.Width / coverSize;
+        var miniCardBounds = new Rect(mini.X, mini.Y, mini.Width, cardHeight * miniScale)
+            .Inflate(coverShadowPadding * miniScale);
         card.ArrangeWithin(
             new Rect(Bounds.X + Math.Min(center, split), Bounds.Y + y,
                 coverSize + Math.Abs(center - split), cardHeight + 40).Inflate(bounceMargin, 2)
-                .Inflate(new Thickness(coverShadowPadding.Left, coverShadowPadding.Top, coverShadowPadding.Right, 0)),
+                .Inflate(new Thickness(coverShadowPadding.Left, coverShadowPadding.Top, coverShadowPadding.Right, 0))
+                .Union(miniCardBounds),
             new Rect(Bounds.X + x, Bounds.Y + y, coverSize, cardHeight));
         var panelX = Bounds.X + split + coverSize + gap;
         var panelHeight = Math.Max(0, finalSize.Height - 32);

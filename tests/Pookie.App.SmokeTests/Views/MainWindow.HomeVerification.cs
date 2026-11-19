@@ -24,12 +24,21 @@ internal sealed partial class MainWindow
             }
             Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
             var transport = new HomeFixtureTransport { ChartReady = new(TaskCreationOptions.RunContinuationsAsynchronously) };
-            api.Session = new("homefixture", "fixture-token", "Test"); api.BrowserTransport = transport;
-            me = new() { Id = 42, Username = "Home fixture" }; signedIn.Value = true;
+            api.Session = new("newfixture", "fixture-token", "Test"); api.BrowserTransport = transport;
+            me = new() { Id = 43 }; signedIn.Value = true;
             await imageDiskCache.WriteAsync(HomeFixtureTransport.Artwork, ArtworkFixtureBitmap(500), lifetime.Token);
             SeedHomeMixArtwork();
             await ShowWorkspaceAsync();
             Window.Activate();
+            if (!libraryMixesUiSmoke)
+            {
+                await VerifyNewAccountHomeAsync(transport);
+                ClearLibraryData();
+                SeedHomeMixArtwork();
+                transport.NewAccount = false;
+                likedIdsReady = false;
+            }
+            api.Session = new("homefixture", "fixture-token", "Test"); me = new() { Id = 42, Username = "Home fixture" };
             var load = NavigateHomeAsync();
             await WaitForLikedLayoutAsync(() => HomeItems("recent").Length == 6 && homePending.Contains("recommendations"));
             if (!homeSections.Single(section => section.Key == "recommendations").Loading.Skeleton.IsVisible)
@@ -40,7 +49,7 @@ internal sealed partial class MainWindow
             if (homeChartStatus.IsVisible || !homeChart.IsVisible || homeChartRows.Count != 0)
                 throw new InvalidOperationException("Slow trends must show row skeletons without a loading label or stale tracks.");
             transport.ChartReady.SetResult();
-            await WaitForLikedLayoutAsync(() => homeSections.All(section => section.Root.IsVisible) && libraryColumns == 6 &&
+            await WaitForLikedLayoutAsync(() => homeSections.All(section => section.Root.IsVisible == (section.Key != "buzzing")) && libraryColumns == 6 &&
                 collectionCards.Keys.Any(root => homeSections[0].Cards!.IsAncestorOf(root) && root.ActualWidth > 100));
             if (HomeItems("recommendations").Length != 12 || HomeItems("releases").Length != 6 || HomeItems("mixes").Length != 7 ||
                 !HomeItems("made-for-you").Select(item => item.Title).SequenceEqual(new[] { "Daily Drops", "Weekly Wave" }) ||
@@ -59,6 +68,7 @@ internal sealed partial class MainWindow
             {
                 await ShowTrendsInViewportAsync();
                 await VerifyTrendingActionsAsync(homeChartRows[0]);
+                await VerifyTrendingQueueOriginAsync();
                 return;
             }
             if (homeMixCarousel.VisibleCoverCount != 5 || homeMixSection.Children.OfType<Button>().Any())
@@ -140,6 +150,7 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Home did not default to the general chart in SoundCloud order.");
             CaptureUiPreview("home-trending");
             await VerifyTrendingActionsAsync(homeChartRows[0]);
+            await VerifyTrendingQueueOriginAsync();
             await VerifyHomeChartRefreshAsync(transport, picker);
             var chartScroll = shellScroll.VerticalOffset;
             transport.ChartReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -265,12 +276,88 @@ internal sealed partial class MainWindow
         }
     }
 
+    private async Task VerifyNewAccountHomeAsync(HomeFixtureTransport transport)
+    {
+        transport.NewAccount = true;
+        var buzzing = homeSections.Single(section => section.Key == "buzzing");
+        await NavigateHomeAsync(force: true);
+        if (!buzzing.Root.IsVisible || buzzing.BoundItems.Length != 4 || buzzing.BoundItems[0].Title != "Buzzing Electronic" ||
+            homeSections.Any(section => section != buzzing && section.Root.IsVisible) ||
+            homeShortcuts.IsVisible || homeMixSection.IsVisible || homeChart.IsVisible || !homeGenres.IsVisible)
+            throw new InvalidOperationException("A first visit must show public playlists without empty personal shelves.");
+        var card = collectionPlaybackViews.Single(pair => buzzing.Root.IsAncestorOf(pair.Key) && pair.Value.Item?.Playlist?.Id == 701).Value;
+        await WaitForLikedLayoutAsync(() => !buzzing.Loading.Skeleton.IsVisible && card.Cover.Source != null && card.Title.ActualWidth > 0);
+        CaptureUiPreview("home-new-account");
+        Window.WindowSize = WindowSize.Resizable(1000, 680, minWidth: 1000, minHeight: 680);
+        await WaitForLikedLayoutAsync(() => Window.ClientSize.Width == 1000 && card.Title.Bounds.Bottom <= Window.ClientSize.Height);
+        CaptureUiPreview("home-new-account-narrow");
+        var reads = transport.BuzzingReads;
+        ClickHomeElement(card.Title);
+        await WaitForLikedLayoutAsync(() => page.Value == Page.LibraryCollection && activeCollection?.Items.FirstOrDefault()?.Track?.Id == 601);
+        await NavigateHomeAsync();
+        if (reads != transport.BuzzingReads) throw new InvalidOperationException("Cached Home fetched Buzzing again.");
+        transport.FailBuzzing = true;
+        await NavigateHomeAsync(force: true);
+        if (buzzing.BoundItems.Length != 4 || !homeBuzzingRetry.IsVisible)
+            throw new InvalidOperationException("Refreshing an unavailable catalog lost the cached playlist.");
+        ClearHome();
+        await NavigateHomeAsync(force: true);
+        if (!homeGenres.IsVisible || !homeBuzzingRetry.IsVisible || buzzing.BoundItems.Length != 0)
+            throw new InvalidOperationException("An unavailable catalog left a new listener without discovery actions.");
+        transport.FailBuzzing = false;
+        await WaitForLoginFrameAsync();
+        ClickHomeElement(homeBuzzingRetry);
+        await WaitForLikedLayoutAsync(() => buzzing.BoundItems.Length == 4 && !homeBuzzingRetry.IsVisible);
+        transport.EmptyBuzzing = true;
+        await NavigateHomeAsync(force: true);
+        if (buzzing.Root.IsVisible || !homeGenres.IsVisible)
+            throw new InvalidOperationException("An empty catalog must offer genre search.");
+        await WaitForLoginFrameAsync();
+        ClickHomeElement(homeGenres.Children.OfType<StackPanel>().Single().Children.OfType<Button>().First());
+        await WaitForLikedLayoutAsync(() => page.Value == Page.Search && transport.GenreSearched);
+        Window.WindowSize = WindowSize.Resizable(1400, 980, minWidth: 1000, minHeight: 680);
+        Console.WriteLine("HOME_NEW_ACCOUNT_OK: public playlists, cached refresh, retry and genre search");
+    }
+
     private async Task ShowTrendsInViewportAsync()
     {
         var chartTop = startupHeader.Bounds.Bottom + 20;
         shellScroll.SetScrollOffsets(0, shellScroll.VerticalOffset + homeChart.Bounds.Y - chartTop);
         await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && !homeMixCarousel.MotionActive && Math.Abs(homeChart.Bounds.Y - chartTop) < 2 &&
             homeChartOpen.Bounds.Y > startupHeader.Bounds.Bottom && homeChartOpen.Bounds.Bottom < homeScroll.Bounds.Bottom);
+    }
+
+    private async Task VerifyTrendingQueueOriginAsync()
+    {
+        var chart = homeChartDetail!;
+        const int index = 1;
+        var tracks = chart.Tracks.Tracks.ToArray();
+        tracks[index] = tracks[index] with { Policy = "SNIP", Access = "preview" };
+        SetHomeChartDetail(chart with { Tracks = chart.Tracks with { Tracks = tracks } });
+        var row = homeChartRows[index];
+        MoveActionPointer(row.Cover.Bounds.Center);
+        await WaitForLikedLayoutAsync(() => row.Overlay.Opacity > .999);
+        if (!row.PlaybackButton.IsEnabled) throw new InvalidOperationException("Chart metadata disabled a resolvable track.");
+        ClickHomeElement(row.PlaybackButton);
+        void VerifyQueue()
+        {
+            var queue = playbackQueue.Snapshot;
+            if (queue.Context?.Key != chart.Item.Key || queue.Current?.Track.Id != tracks[index].Id ||
+                !queue.ContextUpcoming.Select(entry => entry.Track.Id).SequenceEqual(tracks.Skip(index + 1).Select(track => track.Id)))
+                throw new InvalidOperationException("Starting a preview-listed track lost the following chart tracks.");
+        }
+        VerifyQueue();
+        playbackQueue.Clear();
+        ClickHomeElement(row.Title);
+        await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState?.Track.Id == tracks[index].Id && shellPageScroll.IsReady);
+        if (playbackQueue.Current != null) throw new InvalidOperationException("Opening chart track details started playback.");
+        ClickHomeElement(trackDetailPlay);
+        VerifyQueue();
+        await MoveNavigationAsync(-1);
+        await WaitForLikedLayoutAsync(() => page.Value == Page.Home && shellPageScroll.IsReady);
+        SetHomeChartDetail(chart);
+        playbackQueue.Clear(); RefreshQueue();
+        Console.WriteLine("TRENDING_QUEUE_ORIGIN_OK: preview-listed selection and following chart tracks from the row and detail page");
     }
 
     private async Task VerifyHomeChartRefreshAsync(HomeFixtureTransport transport, MaterialSelect picker)
@@ -376,7 +463,23 @@ internal sealed partial class MainWindow
     {
         internal const string Artwork = "https://i1.sndcdn.com/home-fixture-t500x500.jpg";
         internal static string MixArtwork(int index) => $"https://i1.sndcdn.com/home-mix-{index}-t500x500.jpg";
+        public SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.Read |
+            SoundCloudTransportCapabilities.TrackLikes | SoundCloudTransportCapabilities.SystemPlaylistPrivacy;
+        internal bool MixPublic, FailMixPrivacy;
+        internal long MixListener = 42;
+        internal int MixPrivacyWrites;
+        internal TaskCompletionSource? MixWriteGate;
+        public async Task SetSystemPlaylistPublicAsync(string urn, bool isPublic, CancellationToken token = default)
+        {
+            if (urn != "soundcloud:system-playlists:your-moods:42:1") throw new InvalidOperationException("Unexpected mix");
+            MixPrivacyWrites++;
+            if (MixWriteGate is { } gate) await gate.Task.WaitAsync(token);
+            if (FailMixPrivacy) throw new HttpRequestException("Fixture: mix privacy update failed");
+            MixPublic = isPublic;
+        }
         internal bool FailMixes, FailChart;
+        internal bool NewAccount, FailBuzzing, EmptyBuzzing, GenreSearched;
+        internal int BuzzingReads;
         internal int HomeReads, ChartReads, MixReads;
         internal TaskCompletionSource RelatedReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource? ChartReady;
@@ -392,6 +495,30 @@ internal sealed partial class MainWindow
         public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
         {
             var path = uri.AbsolutePath;
+            if (NewAccount)
+            {
+                if (path is "/me/track_likes/ids" or "/me/playlist_likes/ids" or "/me/playlist_reposts/ids" or "/users/43/followings/ids")
+                    return JsonDocument.Parse("[]");
+                if (path is "/me/play-history/contexts" or "/me/play-history/tracks" or "/users/43/likes" or "/stream" or "/mixed-selections")
+                    return Tracks([]);
+                if (path == "/resolve" && Uri.UnescapeDataString(uri.Query).Contains("https://soundcloud.com/buzzing-playlists"))
+                {
+                    BuzzingReads++;
+                    if (FailBuzzing) throw new HttpRequestException("Fixture: catalog unavailable");
+                    return JsonDocument.Parse("""{"kind":"user","id":77,"username":"Buzzing"}""");
+                }
+                if (path == "/users/77/playlists_without_albums")
+                    return EmptyBuzzing ? Tracks([]) : JsonSerializer.SerializeToDocument(new { collection =
+                        new[] { "Electronic", "Hip Hop", "Pop", "R&B" }.Select((genre, index) => new {
+                            kind = "playlist", id = 701 + index, title = "Buzzing " + genre, track_count = 12, artwork_url = MixArtwork(index + 1) }) });
+                if (path == "/playlists/701") return JsonSerializer.SerializeToDocument(new SoundCloudPlaylist {
+                    Id = 701, Title = "Buzzing Electronic", Tracks = Chart, TrackCount = Chart.Length, ArtworkUrl = MixArtwork(1) }, SoundCloudJson.Default.SoundCloudPlaylist);
+                if (path is "/search/playlists" or "/search/playlists_without_albums")
+                {
+                    GenreSearched = Uri.UnescapeDataString(uri.Query).Contains("q=Hip Hop");
+                    return Tracks([]);
+                }
+            }
             if (path is "/me/play-history/contexts" or "/me/play-history/tracks" or "/users/42/likes" or "/me/track_likes/ids" or "/stream" or "/mixed-selections") HomeReads++;
             if (path is "/me/play-history/contexts" or "/me/play-history/tracks" or "/users/42/likes") return Tracks(Recent);
             if (path == "/me/track_likes/ids") return JsonDocument.Parse("[101,102,103,104,105,106]");
@@ -440,7 +567,8 @@ internal sealed partial class MainWindow
                 var entries = hipHop ? Chart.Reverse().ToArray() : general ? Chart : Recent;
                 var artwork = urn.Contains(":your-moods:") && int.TryParse(urn.Split(':')[^1], out var mixIndex) ? MixArtwork(mixIndex) : Artwork;
                 var mix = new SoundCloudPlaylist { Urn = urn, Title = hipHop ? "Hip Hop" : general ? "All Genres" : "Your Mix " + urn.Split(':')[^1],
-                    Tracks = entries, TrackCount = entries.Length, ArtworkUrl = artwork,
+                    Tracks = entries, TrackCount = entries.Length, ArtworkUrl = artwork, IsPublic = MixPublic,
+                    MadeFor = new() { Id = MixListener, Username = "Слушатель" }, Permalink = urn["soundcloud:system-playlists:".Length..],
                     Genre = "Electronic", TagList = "\"Alternative Rock\" ambient electronic",
                     Description = "Исполнитель 1, Исполнитель 2, Исполнитель 3", ShortDescription = "Fixture artists" };
                 return JsonDocument.Parse(JsonSerializer.Serialize(mix, SoundCloudJson.Default.SoundCloudPlaylist));

@@ -59,7 +59,7 @@ internal sealed partial class MainWindow
         if (homeMixCarousel == null) return;
         if (Window?.ClientSize.Width is > 0 and var width) homeMixCarousel.SetViewportWidth(width);
         homeMixCarousel.SetMotionActive(!disposed && page.Value == Page.Home && Window is { IsActive: true, WindowState: not WindowState.Minimized } &&
-            workspace.IsVisible && !expandedOpen && homeMixSection.IsVisible && homeMixCarousel.ActualWidth > 0 &&
+            workspace.IsVisible && expandedHost?.IsVisible != true && homeMixSection.IsVisible && homeMixCarousel.ActualWidth > 0 &&
             homeMixCarousel.Bounds.Bottom > startupHeader.Bounds.Bottom && homeMixCarousel.Bounds.Y < homeScroll.Bounds.Bottom);
     }
 }

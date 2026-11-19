@@ -9,6 +9,42 @@ public sealed class PlaylistSharingTests
 {
     private static SoundCloudPlaylist Playlist => new() { Id = 11, User = new() { Id = 42 }, Sharing = "private", PermalinkUrl = "https://soundcloud.com/artist/sets/mix" };
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task MixVisibilityUsesTheSystemPlaylistEndpoint(bool makePublic)
+    {
+        const string urn = "soundcloud:system-playlists:your-moods:42:1";
+        var visible = !makePublic;
+        var writes = 0;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri!.AbsolutePath);
+            if (request.Method == HttpMethod.Put)
+            {
+                Assert.Equal("/system-playlists/" + urn + "/privacy", path);
+                using var body = JsonDocument.Parse(request.Content!.ReadAsStream());
+                Assert.Equal(makePublic, body.RootElement.GetProperty("is_public").GetBoolean());
+                Assert.Single(body.RootElement.EnumerateObject());
+                writes++; visible = makePublic;
+                return new(HttpStatusCode.NoContent);
+            }
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/system-playlists/" + urn, path);
+            var mix = new SoundCloudPlaylist { Urn = urn, IsPublic = visible, Permalink = "your-moods:42:1",
+                Sharing = "private", SecretToken = "s-unused", MadeFor = new() { Id = 42 } };
+            return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(mix, SoundCloudJson.Default.SoundCloudPlaylist)) };
+        }));
+        var session = new WebSession("web", "fixture-token", "Test");
+        using var transport = new SoundCloudHttpTransport(http, () => session);
+        var api = new SoundCloudWebClient(http) { Session = session, Transport = transport };
+        await transport.SetSystemPlaylistPublicAsync(urn, makePublic);
+        var resolved = await api.GetMixForSharingAsync(urn);
+        Assert.Equal(makePublic ? "https://soundcloud.com/discover/sets/your-moods:42:1" : null, PlaylistSharing.ShareUri(resolved)?.AbsoluteUri);
+        Assert.Null(PlaylistSharing.EmbedUri(resolved));
+        Assert.Equal(1, writes);
+    }
+
     [Fact]
     public void PrivatePlaylistNeverFallsBackToPublicAddress()
     {

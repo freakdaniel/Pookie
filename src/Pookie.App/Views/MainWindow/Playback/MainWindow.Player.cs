@@ -23,6 +23,10 @@ internal sealed partial class MainWindow
     private readonly LoadingTrack loadingTrack = new();
     private readonly BufferedTrack bufferedTrack = new();
     private readonly PlayerBackdrop playerBackdrop = new();
+    private readonly TransitionContentControl miniArtworkFade = new() { IsHitTestVisible = false };
+    private readonly Image outgoingMiniArtwork = new Image().StretchMode(Stretch.UniformToFill);
+    private Border outgoingMiniCover = null!;
+    private (IImageSource Source, long Generation)? queuedMiniArtwork;
     private Border playerArtworkOverlay = null!;
     private Button playerArtworkButton = null!;
     private Button playerPlayButton = null!;
@@ -70,6 +74,14 @@ internal sealed partial class MainWindow
         var share = playerShareButton = PlayerButton(Icons.View("arrow-square-out", 19, Color.White),
             () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }).BindIsEnabled(playerVisible).Hint("Поделиться");
 
+        outgoingMiniCover = new Border().Child(outgoingMiniArtwork);
+        miniArtworkFade.TransitionCompleted += () =>
+        {
+            outgoingMiniArtwork.Source = null;
+            if (queuedMiniArtwork is { } next && next.Generation == playGeneration && !disposed)
+                SetMiniArtwork(next.Source, next.Generation);
+            else queuedMiniArtwork = null;
+        };
         playerArtworkOverlay = new Border().Background(Color.FromArgb(140, 0, 0, 0))
             .Child(Icons.View("arrows-out", 23, Color.White).Center());
         playerArtworkOverlay.Opacity = 0;
@@ -77,14 +89,14 @@ internal sealed partial class MainWindow
         playerArtworkButton = new Button().Background(Color.FromRgb(59, 59, 59)).BorderThickness(0).Padding(0)
             .CornerRadius(6).Width(48).Height(48)
             .Content(new Border().CornerRadius(6).ClipToBounds()
-                .Child(new Grid().Columns("*").Rows("*").Children(artwork, playerArtworkOverlay)))
+                .Child(new Grid().Columns("*").Rows("*").Children(artwork, miniArtworkFade, playerArtworkOverlay)))
+            .Hint("Развернуть плеер")
             .OnMouseEnter(() => playerArtworkOverlay.Opacity = 1)
             .OnMouseLeave(() => playerArtworkOverlay.Opacity = 0)
-            .OnGotFocus(() => playerArtworkOverlay.Opacity = 1)
+            .OnGotFocus(() => playerArtworkOverlay.Opacity = KeyboardFocusFeedback.IsVisible(playerArtworkButton) || playerArtworkButton.IsMouseOver ? 1 : 0)
             .OnLostFocus(() => playerArtworkOverlay.Opacity = 0)
             .OnClick(() => SetExpandedPlayer(true));
 
-        ShortcutHint(playerArtworkButton, ShortcutAction.Expand);
         playerTrackTitle = new CommentTextBlock().BindText(title).FontSize(13).Bold().Foreground(TrackButtons.OnSurface)
             .Height(18).TextTrimming(TextTrimming.CharacterEllipsis);
         playerTrackArtist = new CommentTextBlock().BindText(artist).FontSize(11).Foreground(PlayerSecondaryText)
@@ -112,12 +124,9 @@ internal sealed partial class MainWindow
         volumeSlider = ThinSlider().Minimum(0).Maximum(preferences.MaximumVolume).BindValue(volume).Width(72).CenterVertical()
             .OnValueChanged(value => { muted.Value = value == 0; RunSync(ApplyMusicVolume); });
         const double playButtonSize = 34, playGlyphSize = 19;
-        // The play path spans x=64..240 in a 256-unit viewBox.
-        const double playInkOffset = playGlyphSize * (152 - 128) / 256;
         playerPlayButton = new ExpandedGlassButton(null, playerBackdrop: playerBackdrop)
             .Initialize(new Grid().Width(playButtonSize).Height(playButtonSize).Columns("*").Rows("*").Children(
-                Icons.View("play-solid", playGlyphSize, TrackButtons.OnSurface).Center().Margin(0, 0, playInkOffset * 2, 0)
-                    .BindIsVisible(isPlaying, value => !value),
+                Icons.View("play-solid", playGlyphSize, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying, value => !value),
                 Icons.View("pause-solid", playGlyphSize, TrackButtons.OnSurface).Center().BindIsVisible(isPlaying)))
             .Width(playButtonSize).Height(playButtonSize).CornerRadius(playButtonSize / 2).OnClick(() => Run(ToggleAsync));
         ShortcutHint(playerPlayButton, ShortcutAction.Play);

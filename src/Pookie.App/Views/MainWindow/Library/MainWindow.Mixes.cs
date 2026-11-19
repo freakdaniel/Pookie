@@ -49,8 +49,7 @@ internal sealed partial class MainWindow
         libraryMixEmpty.Text = error ?? (me == null && !demo ? "Войди в SoundCloud, чтобы открыть миксы." : "SoundCloud пока не подготовил для тебя миксы.");
     }
 
-    private static bool IsSystemCollection(LibraryItem? item) => item?.Playlist is { } playlist &&
-        (playlist.IsSystemPlaylist || playlist.Urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal));
+    private static bool IsSystemCollection(LibraryItem? item) => item?.Playlist?.IsSystemMix == true;
 
     private static string[] MixTags(SoundCloudPlaylist playlist, SoundCloudTrack[] tracks)
     {
@@ -69,16 +68,5 @@ internal sealed partial class MainWindow
         if (!string.IsNullOrWhiteSpace(playlist.ShortDescription)) return playlist.ShortDescription.Trim();
         return string.Join(", ", tracks.Select(track => track.User?.Username).Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(5));
-    }
-
-    private void RefreshMixTags(string[] tags)
-    {
-        collectionMixTags.Clear();
-        foreach (var tag in tags)
-            collectionMixTags.Add(new Border().CornerRadius(11).Background(TrackButtons.GlassSurface)
-                .BorderBrush(Color.FromArgb(28, 255, 255, 255)).BorderThickness(1).Padding(9, 3).Hint(tag)
-                .Child(new TextBlock().Text("#" + tag).FontSize(11).Foreground(TrackButtons.OnSurface)
-                    .MaxWidth(136).TextTrimming(TextTrimming.CharacterEllipsis)));
-        collectionMixTags.IsVisible = tags.Length > 0;
     }
 }

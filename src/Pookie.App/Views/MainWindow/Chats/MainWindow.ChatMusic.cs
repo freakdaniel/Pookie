@@ -128,8 +128,9 @@ internal sealed partial class MainWindow
             if (disposed || generation != chatMusicGeneration || chatRecipient?.Id != peer) return;
             foreach (var item in items)
             {
-                var url = tracks ? item.Track?.PermalinkUrl : item.Playlist?.PermalinkUrl;
-                var isPrivate = !tracks && item.Playlist is { IsPrivate: true, Id: > 0 };
+                var url = tracks ? item.Track?.PermalinkUrl : item.Playlist is { IsSystemMix: true } mix
+                    ? PlaylistSharing.ShareUri(mix)?.AbsoluteUri : item.Playlist?.PermalinkUrl;
+                var isPrivate = !tracks && item.Playlist is { IsSystemMix: false, IsPrivate: true, Id: > 0 };
                 if (!isPrivate && (url == null || !ChatMusicLink.IsMusicUrl(url))) continue;
                 var cover = new Image().Width(44).Height(44).StretchMode(Stretch.UniformToFill);
                 SetCollectionArtwork(cover, item);
@@ -181,18 +182,18 @@ internal sealed partial class MainWindow
         bool Current() => !disposed && !token.IsCancellationRequested && generation == chatMusicGeneration &&
             chatRecipient?.Id == peer && chatMusicDialog.IsOpen && CanAttachChat();
         if (!Current() || !chatMusicChoices.IsEnabled) return;
-        if (item.Playlist is { IsPrivate: true } playlist)
+        if (item.Playlist is { } playlist && (playlist.IsSystemMix || playlist.IsPrivate))
         {
             chatMusicChoices.IsEnabled = false;
-            subtitle.Text = "Загружаем секретную ссылку…";
+            subtitle.Text = playlist.IsSystemMix ? "Проверяем доступ к миксу…" : "Загружаем секретную ссылку…";
             try
             {
-                var resolved = await FetchPlaylistForSharingAsync(playlist, token);
+                var resolved = playlist.IsSystemMix ? await api.GetMixForSharingAsync(playlist.Urn, token) : await FetchPlaylistForSharingAsync(playlist, token);
                 if (!Current()) return;
-                url = resolved.IsPrivate ? PlaylistSharing.ShareUri(resolved)?.AbsoluteUri : null;
+                url = resolved.IsSystemMix || resolved.IsPrivate ? PlaylistSharing.ShareUri(resolved)?.AbsoluteUri : null;
                 if (url == null)
                 {
-                    subtitle.Text = "Секретная ссылка недоступна. Попробуй ещё раз.";
+                    subtitle.Text = playlist.IsSystemMix ? "Публичная ссылка на микс недоступна." : "Секретная ссылка недоступна. Попробуй ещё раз.";
                     return;
                 }
                 item = LibraryData.FromPlaylist(resolved);

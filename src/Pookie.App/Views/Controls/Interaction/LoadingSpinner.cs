@@ -16,6 +16,7 @@ internal sealed class LoadingSpinner : Control
     private bool disposed;
     internal double Phase { get; private set; }
     internal bool Running => motion.IsRunning;
+    internal Func<bool>? CanAnimate { get; init; }
 
     public bool IsActive { get => GetValue(IsActiveProperty); set => SetValue(IsActiveProperty, value); }
 
@@ -41,7 +42,7 @@ internal sealed class LoadingSpinner : Control
 
     private void RefreshAnimation()
     {
-        var visible = !disposed && IsActive && window != null && window.WindowState != WindowState.Minimized;
+        var visible = !disposed && IsActive && window != null && window.WindowState != WindowState.Minimized && CanAnimate?.Invoke() != false;
         for (Element? element = this; visible && element != null; element = element.Parent)
             if (element is UIElement { IsVisible: false } or UIElement { Opacity: <= 0 }) visible = false;
         if (visible && !motion.IsRunning) { phaseOrigin = Phase; motion.Start(); }

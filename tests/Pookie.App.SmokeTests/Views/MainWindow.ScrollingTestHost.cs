@@ -56,6 +56,7 @@ internal sealed partial class MainWindow
                     likesMode.Value = listView ? TrackViewMode.Waveform : TrackViewMode.Cards;
                     ResetPageScrolling();
                     ReplaceTracks(new(fixtures.Take(30).ToArray(), "https://api-v2.soundcloud.com/users/42/likes?cursor=scroll"));
+                    RestoreNavigationScroll(0);
                     await WaitForLikedLayoutAsync(() => NavigationScroll() is { ViewportHeight: > 100 } scroll &&
                         SmoothScroll.Maximum(scroll) > 1000 && smoothScrolls.ContainsKey(scroll));
                     var viewer = NavigationScroll()!;
@@ -88,10 +89,45 @@ internal sealed partial class MainWindow
                 }
             }
             finally { api.Session = previousSession; api.BrowserTransport = previousTransport; }
+            await VerifyScrolledPageNavigationAsync(fixtures);
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("SCROLLING_UI_FAILED: " + error); }
         finally { Window.Close(); }
+    }
+
+    private async Task VerifyScrolledPageNavigationAsync(SoundCloudTrack[] tracks)
+    {
+        ShowLibraryTracks();
+        likesMode.Value = TrackViewMode.Waveform;
+        ReplaceTracks(new(tracks, null));
+        await WaitForLikedLayoutAsync(() => NavigationScroll() != null && SmoothScroll.Maximum(shellScroll) > 500);
+        shellScroll.SetScrollOffsets(0, 320);
+        await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && PageContentScroll()!.VerticalOffset > 0);
+        var savedOffset = shellScroll.VerticalOffset;
+        var visibleRow = likedRows.Values.First(row => row.Track != null &&
+            row.Cover.Bounds.Center.Y > ShellHeader.HeaderHeight && row.Cover.Bounds.Center.Y < shellScroll.Bounds.Bottom);
+        var openedId = visibleRow.Track!.Id;
+        var movedBeforeSwitch = false;
+        void ObserveDeparture()
+        {
+            if (page.Value == Page.LibraryTracks && Math.Abs(shellScroll.VerticalOffset - savedOffset) > 1)
+                movedBeforeSwitch = true;
+        }
+        shellScroll.ScrollChanged += ObserveDeparture;
+        try { RouteWaveformClick(visibleRow.Cover.Bounds.Center); }
+        finally { shellScroll.ScrollChanged -= ObserveDeparture; }
+        if (movedBeforeSwitch)
+            throw new InvalidOperationException("The likes page scrolled before the clicked track opened.");
+        await WaitForLoginFrameAsync();
+        if (page.Value != Page.Track || trackDetailState?.Track.Id != openedId ||
+            shellScroll.VerticalOffset > 1 || trackDetailScroll.VerticalOffset > 1)
+            throw new InvalidOperationException("The clicked track did not open at the top.");
+        await MoveNavigationAsync(-1);
+        await WaitForLikedLayoutAsync(() => NavigationScroll() != null);
+        if (Math.Abs(shellScroll.VerticalOffset - savedOffset) > 1)
+            throw new InvalidOperationException("Back lost the likes scroll position");
+        Console.WriteLine("SCROLLED_NAVIGATION_OK: track cover click and history scroll restoration");
     }
 
     private async Task VerifyPrecisionWheelAsync(ScrollViewer viewer)

@@ -102,8 +102,12 @@ internal sealed partial class MainWindow
         if (!shareDialog.IsOpen || shareClosing || shareTab.Value != 1 || shareRecipient != null) return;
         StopShareSearch();
         var revision = shareSearchRevision; var generation = shareGeneration; var session = api.Session; var account = me?.Id;
-        ClearShareRecipientChoices();
-        if (session == null || account == null) { SetShareMessage("Войди в SoundCloud, чтобы выбрать получателя."); return; }
+        if (session == null || account == null)
+        {
+            ClearShareRecipientChoices();
+            SetShareMessage("Войди в SoundCloud, чтобы выбрать получателя.");
+            return;
+        }
         shareSearch = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = shareSearch.Token;
         var query = shareRecipientSearch.Text.Trim();
@@ -128,9 +132,8 @@ internal sealed partial class MainWindow
                 shareRecipientChoices.Add(button); LoadShareAvatar(avatar, user);
             }
             shareRecipientResults.IsVisible = shareRecipientChoices.Children.Count > 0;
-            FitShareContent();
         }
-        void Empty(bool noMatches)
+        void ShowEmptyIfNeeded(bool noMatches)
         {
             if (shareRecipientChoices.Children.Count == 0)
             {
@@ -139,18 +142,19 @@ internal sealed partial class MainWindow
                 shareRecipientEmptyTitle.Text = noMatches ? "А тут тупик" : "Кому отправим?";
                 shareRecipientEmptyText.Text = noMatches ? "Я искал вдоль и поперек, но никого не нашел..." : "Найди получателя по имени — введи хотя бы два символа.";
             }
-            FitShareContent();
         }
         ShowUsers(local);
+        if (query.Length < 2) ShowEmptyIfNeeded(false);
         SetShareMessage("");
-        if (query.Length < 2) { Empty(false); return; }
+        if (query.Length < 2) return;
         ShareSearchLoading(true);
         try
         {
             var result = await api.SearchResultsAsync(query, SearchSection.People, token);
             if (disposed || revision != shareSearchRevision || generation != shareGeneration || api.Session != session || me?.Id != account || shareTab.Value != 1 || shareRecipient != null) return;
             ShowUsers(local.Concat(result.Items.Select(i => i.User).OfType<SoundCloudUser>()));
-            Empty(true);
+            ShowEmptyIfNeeded(true);
+            FitShareContent();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) { if (!disposed && revision == shareSearchRevision && generation == shareGeneration) SetShareMessage(FriendlyError(error)); }

@@ -69,6 +69,7 @@ internal sealed partial class MainWindow
         playlistDialog.Opened = playlistDialogContent.RevealTrack;
         playlistDialog.Closed = () =>
         {
+            UpdatePageCacheForOverlay();
             playlistPickerClosing = false;
             playlistDialogContent.FreezeSize();
             playlistDialogContent.ResetTrack(); playlistPickerPreview.ResetPalette();
@@ -152,6 +153,7 @@ internal sealed partial class MainWindow
         var token = playlistPickerRequest.Token;
         playlistDialog.InvalidateTransitionSnapshot();
         playlistDialog.Show();
+        UpdatePageCacheForOverlay();
         if (alreadyOpen) playlistDialogContent.RevealTrack();
         Run(() => LoadPlaylistPickerArtworkAsync(artwork, generation, token));
         if (demo || me is not { } user || api.Session is not { } session)

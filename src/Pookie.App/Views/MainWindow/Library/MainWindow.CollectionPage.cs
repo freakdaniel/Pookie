@@ -1,6 +1,7 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
+using Aprillz.MewUI.Text;
 using Pookie.SoundCloud;
 using Pookie.App.Playback;
 
@@ -21,14 +22,13 @@ internal sealed partial class MainWindow
     private TextBlock collectionTitle = null!, collectionAuthor = null!, collectionMeta = null!, collectionDescription = null!;
     private Button collectionPlay = null!, collectionShare = null!, collectionDescriptionToggle = null!;
     private TrackPageColumns collectionHero = null!;
-    private Grid collectionTitleBlock = null!, collectionMetadataLine = null!, collectionHeroContent = null!, collectionHeading = null!;
-    private StackPanel collectionMixTags = null!;
-    private TextBlock collectionMixStats = null!;
-    private StackPanel collectionMixInfo = null!;
+    private Grid collectionTitleBlock = null!, collectionMetadataLine = null!, collectionTools = null!;
+    private TextBlock collectionTags = null!, collectionCount = null!, collectionCountLabel = null!, collectionDuration = null!;
+    private ExpandedGlassSurface collectionStats = null!;
     private Border collectionHeroFrame = null!, collectionScrim = null!;
     private CardShadow collectionHeroShadow = null!;
     private ArtworkGlassSheen collectionSheen = null!;
-    private Button collectionAuthorLink = null!, collectionFollow = null!, collectionMore = null!, collectionMixQueue = null!;
+    private Button collectionFollow = null!, collectionMore = null!, collectionMixQueue = null!;
     private FrameworkElement collectionSocialActions = null!;
     private TextBox collectionFilter = null!;
     private DebouncedAction collectionFilterDebounce = null!;
@@ -94,35 +94,45 @@ internal sealed partial class MainWindow
         collectionTrackWaves = CreateCollectionTrackWaves();
         collectionMode.Changed += () => { RefreshCollectionTracks(); CollectionScroll?.SetScrollOffsets(0, 0); };
         collectionCover = new Image().StretchMode(Stretch.UniformToFill);
-        collectionMixTags = new StackPanel().Horizontal().Spacing(6).IsVisible(false);
-        collectionMixStats = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(false);
+        collectionTags = new TextBlock().FontSize(16).SemiBold().Foreground(Color.FromArgb(184, 255, 255, 255))
+            .TextAlignment(TextAlignment.Right).TextWrapping(TextWrapping.Wrap).MaxHeight(44).TextTrimming(TextTrimming.CharacterEllipsis).Right().Top();
+        collectionCount = new TextBlock().LineBoxTrim(LineBoxTrim.CapAndBaseline).FontSize(28).Bold().CenterHorizontal();
+        collectionCountLabel = new TextBlock().LineBoxTrim(LineBoxTrim.CapAndBaseline).FontSize(11).Bold().CenterHorizontal();
+        // The «р» in every count label paints 2 DIPs below its trimmed baseline.
+        collectionDuration = new TextBlock().LineBoxTrim(LineBoxTrim.CapAndBaseline).FontSize(13).SemiBold().Opacity(.72).Margin(0, 2, 0, 0).CenterHorizontal();
+        collectionStats = new ExpandedGlassSurface().Width(100).Height(100).CornerRadius(50).Padding(0)
+            .Background(TrackButtons.GlassSurface).BorderThickness(0).Right().Bottom().IsHitTestVisible(false)
+            .Content(new StackPanel().Vertical().Spacing(6).Center().Children(collectionCount, collectionCountLabel, collectionDuration));
         collectionBackdrop = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
         collectionBackdrop.Transitions = [Transition.Create(UIElement.OpacityProperty, 240)];
         collectionTitle = new CommentTextBlock().FontSize(28).Bold().TextWrapping(TextWrapping.Wrap).MaxHeight(70).TextTrimming(TextTrimming.CharacterEllipsis);
-        collectionAuthor = new TextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
-        collectionMeta = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        collectionAuthor = DetailSubtitle();
+        collectionMeta = DetailSubtitle();
         collectionDescription = new TextBlock().FontSize(14).FontWeight(FontWeight.Normal).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(48).TextTrimming(TextTrimming.CharacterEllipsis);
         collectionPlayIcon = Icons.View("play-solid", 28, TrackButtons.OnSurface).Center();
         collectionPlay = TrackButtons.Icon(collectionPlayIcon,
             () => Run(PlayDisplayedCollectionAsync), TrackButtons.Glass, 64);
-        var author = collectionAuthorLink = TrackButtons.Action(collectionAuthor, () =>
+        AttachUserLink(collectionAuthor, () => CollectionAuthor);
+        collectionAuthor.Focusable = collectionAuthor.IsTabStop = true;
+        collectionAuthor.KeyDown += e =>
         {
-            if (CollectionAuthor is { } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, "Исполнитель", user.AvatarUrl, User: user)));
-        }, TrackButtons.Text, 20).Padding(0).Left();
+            if (e.Handled || e.Key is not (Key.Enter or Key.Space) || CollectionAuthor is not { Id: > 0 } user) return;
+            e.Handled = true; Run(() => OpenUserProfileAsync(user));
+        };
         collectionDescriptionToggle = TrackButtons.Action(new TextBlock().Text("Подробнее").FontSize(13), () =>
         {
             collectionDescriptionExpanded = !collectionDescriptionExpanded;
             RefreshCollectionDescription();
         }, TrackButtons.Text, 32).Padding(0).Left();
-        var titleBlock = collectionTitleBlock = new Grid().Columns("64,*").Rows("Auto").Spacing(18).Children(collectionPlay.Column(0).Top(),
-            collectionHeading = new Grid().Columns("*").Rows("Auto").Column(1).Children(
-                new StackPanel().Vertical().Spacing(7).Children(collectionTitle,
-                    collectionMetadataLine = new Grid().Columns("Auto,*").Rows("Auto").Spacing(6).Children(author.Column(0).CenterVertical(),
-                        collectionMeta.Column(1).CenterVertical()))));
+        collectionMetadataLine = new Grid().Columns("Auto,*").Rows("Auto").Height(21).Spacing(6).Children(
+            collectionAuthor.Column(0).Left().CenterVertical(), collectionMeta.Column(1).CenterVertical());
+        var titleBlock = collectionTitleBlock = DetailPageHeading(collectionPlay, collectionTitle, collectionMetadataLine);
         var coverFrame = ArtworkPreviewButton(collectionCover, () => displayedCollection?.Title,
             () => displayedCollection is { } item ? CollectionArtworkUrl(item) : null, out collectionCoverMenu);
+        collectionCoverMenu.HideUnavailableItems = true;
         var more = collectionMore = TrackButtons.Icon(Icons.View("dots-three", 22), () => { }, TrackButtons.Glass, 44);
         var menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
+        menu.HideUnavailableItems = true;
         void MenuItem(string id, string label, string icon, Action execute, Func<bool> enabled)
         {
             var command = PopupAppearance.MenuCommand("pookie.collection." + id, label, icon);
@@ -138,18 +148,21 @@ internal sealed partial class MainWindow
         CreateCollectionActionButtons();
         collectionMixQueue = TrackButtons.Icon(Icons.View("queue", 20), EnqueueDisplayedCollection, TrackButtons.Glass, 44)
             .Hint("Добавить микс в очередь").CenterVertical().IsVisible(false);
+        var details = new Grid().Columns("3*,*").Rows("*,100").Spacing(12);
+        details.ColumnDefinitions[1].MaxWidth = 168;
         var hero = collectionHero = new TrackPageColumns(
-            collectionHeroContent = new Grid().Columns("*").Rows("Auto,*,44").Children(titleBlock.Row(0),
-                collectionMixInfo = new StackPanel().Vertical().Spacing(10).Row(1).CenterVertical().IsVisible(false)
-                    .Children(collectionMixStats, collectionMixTags),
-                new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Row(2).Left().Children(
-                    collectionSocialActions = TrackButtons.Connected(collectionLike, collectionRepost),
-                    collectionShare = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться").CenterVertical(),
-                    collectionFollow = ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44).CenterVertical(), collectionMixQueue, more.CenterVertical())),
+            details.Children(
+                titleBlock.Column(0).Top(), collectionTags.Column(1),
+                new Grid().Columns("*,100").Rows("*").ColumnSpan(2).Row(1).Spacing(12).Children(
+                    new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Column(0).Left().Bottom().Children(
+                        collectionSocialActions = TrackButtons.Connected(collectionLike, collectionRepost),
+                        collectionShare = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться").CenterVertical(),
+                        collectionFollow = ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44).CenterVertical(), collectionMixQueue, more.CenterVertical()),
+                    collectionStats.Column(1))),
             coverFrame, true, collectionBackdrop,
             collectionScrim = new Border().Background(ArtworkBackdrop.CardScrim),
             collectionSheen = new ArtworkGlassSheen())
-            { HeroArtworkMinWidth = 176, HeroArtworkMaxWidth = 208 }.Initialize();
+            { HeroArtworkMinWidth = 224, HeroArtworkMaxWidth = 280 }.Initialize();
         collectionGlass = AttachCardGlass(hero);
         var header = collectionHeroShadow = new CardShadow(collectionHeroFrame = new Border().CornerRadius(20).ClipToBounds().BorderThickness(0).Background(Raised).Child(hero))
             .Margin(-12, -8, -12, -16);
@@ -168,14 +181,14 @@ internal sealed partial class MainWindow
             });
         collectionFilter.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; collectionFilterDebounce.Flush(); } });
         collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
-        var tools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
+        collectionTools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
             new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
             TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter, liveGlass: true, activity: collectionFilterGlyph).Column(2));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
             .Children(collectionDescriptionScroll,
                 collectionDescriptionToggle);
-        return new DockPanel().LastChildFill().Spacing(18).Children(header.DockTop(), collectionDescriptionHost.DockTop(), tools.DockTop(),
+        return new DockPanel().LastChildFill().Spacing(18).Children(header.DockTop(), collectionDescriptionHost.DockTop(), collectionTools.DockTop(),
             new Grid().Columns("*").Rows("*").Children(collectionTrackList, collectionTrackCards, collectionTrackWaves, collectionEmpty));
     }
 
@@ -237,16 +250,20 @@ internal sealed partial class MainWindow
 
     private void RefreshCollectionDescription()
     {
-        RefreshCollectionDescriptionGeometry();
         collectionDescription.MaxHeight = collectionDescriptionExpanded ? double.PositiveInfinity : 48;
         collectionDescriptionToggle.IsVisible = collectionDescription.Text.Length > 180 || collectionDescription.Text.Count(c => c == '\n') > 1;
         ((TextBlock)collectionDescriptionToggle.Content!).Text = collectionDescriptionExpanded ? "Свернуть" : "Подробнее";
+        RefreshCollectionDescriptionGeometry();
     }
 
     private void RefreshCollectionDescriptionGeometry()
     {
-        if (collectionDescriptionScroll?.Bounds.Y is > 0)
-            collectionDescriptionScroll.MaxHeight = Math.Clamp(Window.ClientSize.Height - collectionDescriptionScroll.Bounds.Y - 180, 48, 180);
+        if (collectionDescriptionHost.Parent is not DockPanel panel || panel.ActualHeight <= 0 || collectionTools.ActualHeight <= 0) return;
+        var toggleHeight = collectionDescriptionToggle.IsVisible ? collectionDescriptionToggle.Height + collectionDescriptionHost.Spacing : 0;
+        var spaceBelow = panel.Bounds.Bottom - collectionDescriptionScroll.Bounds.Y;
+        // Keep two compact track rows visible below the filter when the description opens.
+        var reserved = toggleHeight + 2 * panel.Spacing + collectionTools.ActualHeight + 2 * collectionTrackList.ItemHeight;
+        collectionDescriptionScroll.MaxHeight = Math.Clamp(spaceBelow - reserved, 48, 180);
     }
 
     private void EnqueueDisplayedCollection() =>
@@ -268,39 +285,34 @@ internal sealed partial class MainWindow
         collectionTitle.Text = item!.Title; collectionAuthor.Text = item.Playlist?.User?.Username ?? item.Subtitle;
         var playlist = item.Playlist!;
         var system = IsSystemCollection(item);
-        collectionHero.HeroArtworkLeading = false;
-        collectionHero.HeroFitContent = false;
-        collectionHero.HeroArtworkMinWidth = 176;
-        collectionHero.HeroArtworkMaxWidth = 208;
-        collectionHeroContent.Rows("Auto,*,44");
-        collectionMixInfo.IsVisible = collectionMixStats.IsVisible = system;
-        collectionHeroFrame.CornerRadius = 20;
-        collectionHero.InvalidateMeasure();
         collectionTitle.FontSize = 28;
         collectionTitle.Height = system ? 36 : double.NaN;
         collectionTitle.MaxHeight = system ? 36 : 70;
         collectionTitle.TextWrapping = system ? TextWrapping.NoWrap : TextWrapping.Wrap;
         collectionTitle.TextTrimming = TextTrimming.CharacterEllipsis;
         collectionPlay.IsVisible = true;
-        collectionAuthorLink.IsVisible = !system;
+        collectionAuthor.IsVisible = !system;
         collectionFollow.IsVisible = collectionMore.IsVisible = !system;
         collectionSocialActions.IsVisible = !system && !playlist.IsPrivate;
         collectionMixQueue.IsVisible = system;
-        collectionTitleBlock.Columns("64,*").Spacing(18);
         collectionMetadataLine.Spacing(system ? 0 : 6);
-        collectionMeta.FontSize = system ? 14 : 12;
         var data = activeCollection?.Items.Select(entry => entry.Track).OfType<SoundCloudTrack>().ToArray() ?? [];
-        RefreshMixTags(system ? MixTags(playlist, data) : []);
+        var tags = string.Join("  ", MixTags(playlist, data).Select(tag => "#" + tag));
+        collectionTags.Text = tags;
+        collectionTags.IsVisible = tags.Length > 0;
+        collectionTitleBlock.ColumnSpan(collectionTags.IsVisible ? 1 : 2);
+        collectionTags.Hint(tags);
         var count = Math.Max(playlist.TrackCount, data.Length);
         var milliseconds = playlist.Duration > 0 ? playlist.Duration : data.Sum(track => track.Duration);
-        collectionMeta.Text = (system ? "" : "· ") + string.Join(" · ", new[] { system ? null : playlist.Genre,
-            count + " " + RussianPlural(count, "трек", "трека", "треков"),
-            milliseconds > 0 ? FormatTime(milliseconds / 1000) : null,
-            playlist.Sharing == "private" ? "Приватный" : null,
-            DetailAge(playlist.CreatedAt ?? playlist.LastModified) }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        collectionCount.Text = count.ToString();
+        collectionCount.FontSize = count < 10000 ? 28 : count < 1000000 ? 21 : 14;
+        collectionCountLabel.Text = RussianPlural(count, "Трек", "Трека", "Треков");
+        collectionDuration.Text = milliseconds > 0 || count == 0 ? FormatTime(milliseconds / 1000) : "";
+        collectionDuration.IsVisible = collectionDuration.Text.Length > 0;
         var artists = system ? MixArtists(playlist, data) : "";
-        collectionMixStats.Text = system ? collectionMeta.Text : "";
-        if (system) collectionMeta.Text = artists;
+        var details = string.Join(" · ", new[] { playlist.IsPrivate ? "Приватный" : null, DetailAge(playlist.CreatedAt ?? playlist.LastModified) }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        collectionMeta.Text = system ? artists : details.Length > 0 ? "· " + details : "";
         collectionDescription.Text = playlist.Description ?? playlist.ShortDescription ?? "";
         collectionDescriptionHost.IsVisible = collectionDescription.IsVisible = !string.IsNullOrWhiteSpace(collectionDescription.Text) &&
             (!system || collectionDescription.Text.Trim() != artists);

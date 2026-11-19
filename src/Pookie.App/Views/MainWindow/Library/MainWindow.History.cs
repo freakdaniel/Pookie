@@ -9,7 +9,8 @@ internal sealed partial class MainWindow
     // A collection's identity and a search's query belong to the route, not just its page type.
     private sealed record NavigationRoute(Page Page, string? Search = null, LibraryItem? Item = null, SearchSection Section = SearchSection.All, SoundCloudTrack? Track = null, TrackSection TrackSection = TrackSection.Overview, SettingsSection SettingsSection = SettingsSection.General, UserSection UserSection = UserSection.Overview)
     {
-        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && TrackSection == other.TrackSection && SettingsSection == other.SettingsSection && UserSection == other.UserSection;
+        internal ChartOrigin? OriginChart { get; init; }
+        public bool Matches(NavigationRoute other) => Page == other.Page && Search == other.Search && Item?.Key == other.Item?.Key && Section == other.Section && Track?.Id == other.Track?.Id && OriginChart?.Chart.Item.Key == other.OriginChart?.Chart.Item.Key && OriginChart?.Filter == other.OriginChart?.Filter && TrackSection == other.TrackSection && SettingsSection == other.SettingsSection && UserSection == other.UserSection;
     }
     private sealed record NavigationSnapshot(TrackPage Tracks, string Heading, string Eyebrow, string Status,
         LibraryPage? Collection, string Source, string CollectionTitle, string CollectionStatus, bool CollectionRetry,
@@ -81,7 +82,13 @@ internal sealed partial class MainWindow
     {
         if (!CanUseWorkspace) return;
         var generation = BeginNavigation(route, pending: true);
-        try { await action(generation); }
+        try
+        {
+            // Route actions install the new content or its loading view before their first await.
+            var load = action(generation);
+            if (generation == navigationGeneration && !disposed) RestoreNavigationScroll(0);
+            await load;
+        }
         // Late replies/errors from a page we already left cannot replace the new page.
         catch (Exception) when (generation != navigationGeneration || disposed) { return; }
         catch (Exception error)
@@ -126,7 +133,7 @@ internal sealed partial class MainWindow
         if (entry.Pending || entry.Snapshot == null)
         {
             // A page left before its response arrived needs a fresh load, using the same history entry.
-            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection, reload: true);
+            if (entry.Route.Track is { } track) await OpenTrackPageAsync(track, entry.Route.TrackSection, reload: true, originChart: entry.Route.OriginChart);
             else if (entry.Route.Page == Page.UserProfile && entry.Route.Item?.User is { } profileUser) await OpenUserProfileAsync(profileUser, entry.Route.UserSection);
             else if (entry.Route.Item is { } item) await OpenLibraryItemAsync(item);
             else if (entry.Route.Search is { } search) { query.Value = search; await SearchAsync(entry.Route.Section); }
@@ -200,10 +207,13 @@ internal sealed partial class MainWindow
 
     private void RestoreNavigationScroll(double offset)
     {
-        if (page.Value == Page.Chats) return;
         pendingNavigationScroll = offset;
         try
         {
+            if (offset == 0 && shellScroll.VerticalOffset != 0) shellScroll.SetScrollOffsets(0, 0);
+            // Select the destination's inner viewer before arranging either viewport.
+            shellPageScroll.Refresh(scheduleFrame: false);
+            if (offset == 0) return;
             // The shell can only clamp against the new page after its virtualized
             // list has been arranged. Settle both scroll viewers before painting.
             for (var pass = 0; pass < 8; pass++)
@@ -232,6 +242,7 @@ internal sealed partial class MainWindow
         query.Value = ""; likedFilter.Text = "";
         ReplaceTracks(new([], null));
         eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
+        RestoreNavigationScroll(0);
         RefreshNavVisuals(); RefreshHistoryButtons();
     }
 

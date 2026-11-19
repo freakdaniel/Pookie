@@ -108,10 +108,14 @@ internal sealed partial class MainWindow
                 likedTiles.Values.Any(tile => tile.Track?.Id == 80));
             if (likedTiles.Values.Single(item => item.Track?.Id == 80).Root.Bounds.Bottom > contentBottomFade.Bounds.Y + 1)
                 throw new InvalidOperationException("The last track cannot scroll clear of the player-edge fade.");
-            foreach (var (width, height) in new[] { (1000, 680), (1600, 900) })
+            var wide = VerificationWindowSize(1600, 900);
+            if (wide.Width <= 1000 || wide.Height < 680)
+                throw new InvalidOperationException("Shell layout verification requires room for both compact and wide windows.");
+            foreach (var (width, height) in new[] { (1000, 680), wide })
             {
                 Window.WindowSize = WindowSize.Resizable(width, height, minWidth: 1000, minHeight: 680);
-                await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 / Window.DpiScale && Math.Abs(shellScroll.ActualWidth - width) < 1 / Window.DpiScale &&
+                await WaitForLikedLayoutAsync(() => Math.Abs(Window.ClientSize.Width - width) < 1 / Window.DpiScale && Math.Abs(Window.ClientSize.Height - height) < 1 / Window.DpiScale &&
+                    Math.Abs(shellScroll.ActualWidth - width) < 1 / Window.DpiScale &&
                     Math.Abs(shellScroll.Bounds.Bottom - playerChrome.Bounds.Y) < 1 && !shellPageScroll.IsMeasureDirty);
                 CaptureUiPreview($"shell-chrome-{width}x{height}");
                 CheckShellScrollBarBounds();
@@ -177,7 +181,7 @@ internal sealed partial class MainWindow
             playerVisible.Value = false;
             await WaitForLikedLayoutAsync(() => Math.Abs(shellScroll.ActualHeight - Window.ClientSize.Height) < 1 &&
                 contentBottomFade.IsVisible && contentBottomFade.Strength == 1);
-            Console.WriteLine("UI_SHELL_CHROME_OK: three live glass cards, clear gaps over page content, native scrollbar track/hit area below header and full-range dragging, one-to-one scroll, square viewport, pixel-verified compact persistent fade with visible content at player edge, animated opacity, readable final track, 1000x680/1600x900 bounds, glass search input/dismissal and compact connected history input without a stuck focus cue");
+            Console.WriteLine($"UI_SHELL_CHROME_OK: three live glass cards, clear gaps over page content, native scrollbar track/hit area below header and full-range dragging, one-to-one scroll, square viewport, pixel-verified compact persistent fade with visible content at player edge, animated opacity, readable final track, 1000x680/{wide.Width}x{wide.Height} bounds, glass search input/dismissal and compact connected history input without a stuck focus cue");
         }
         catch (Exception error)
         {

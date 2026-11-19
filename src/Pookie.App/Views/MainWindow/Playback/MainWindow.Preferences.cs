@@ -7,6 +7,11 @@ internal sealed partial class MainWindow
 {
     private void ApplyPlaybackPreferences(AppConfiguration before)
     {
+        if (before.RestoreLastTrack != preferences.RestoreLastTrack)
+        {
+            if (!preferences.RestoreLastTrack) preferences = preferences with { LastTrack = null };
+            else if (audioReady && current != null) RememberPlayerTrack(current);
+        }
         if (before.MaximumVolume != preferences.MaximumVolume)
         {
             previousVolume = Math.Min(previousVolume, preferences.MaximumVolume);

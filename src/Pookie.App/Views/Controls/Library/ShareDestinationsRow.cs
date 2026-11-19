@@ -7,12 +7,12 @@ namespace Pookie.App;
 internal sealed class ShareDestinationsRow : Panel
 {
     private const double ButtonSize = 56;
-    internal ShareDestinationsRow() { Height = 80; }
+    internal ShareDestinationsRow() { Height = 80; CacheMode = new BitmapCache(); }
 
     protected override Size MeasureContent(Size availableSize)
     {
         var width = 0d;
-        foreach (var child in Children.OfType<FrameworkElement>())
+        foreach (var child in Children)
         {
             child.Measure(new(double.PositiveInfinity, availableSize.Height));
             width += Math.Max(ButtonSize, child.DesiredSize.Width) + 8;
@@ -22,11 +22,11 @@ internal sealed class ShareDestinationsRow : Panel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        var items = Children.OfType<FrameworkElement>().ToArray();
-        var step = items.Length > 1 ? Math.Max(0, finalSize.Width - ButtonSize) / (items.Length - 1) : 0;
-        for (var index = 0; index < items.Length; index++)
+        var count = Children.Count;
+        var step = count > 1 ? Math.Max(0, finalSize.Width - ButtonSize) / (count - 1) : 0;
+        for (var index = 0; index < count; index++)
         {
-            var child = items[index];
+            var child = Children[index];
             child.Arrange(new(Bounds.X + ButtonSize / 2 + step * index - child.DesiredSize.Width / 2,
                 Bounds.Y, child.DesiredSize.Width, child.DesiredSize.Height));
         }

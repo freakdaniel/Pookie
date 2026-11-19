@@ -18,11 +18,13 @@ internal sealed partial class MainWindow
     private IClipboardService? shareClipboard;
     private Border shareFocusAnchor = null!;
     private CopyFeedbackGlyph shareCopyIcon = null!;
+    private Grid shareLinkRow = null!;
     private GlassCard shareLinkGlass = null!;
     private Button shareCopy = null!;
     private StackPanel shareForm = null!;
     private DialogPageDeck sharePages = null!;
-    private FrameworkElement shareLinksPanel = null!, shareComposePanel = null!, shareEmbedPanel = null!;
+    private StackPanel shareLinksPanel = null!;
+    private FrameworkElement shareComposePanel = null!, shareEmbedPanel = null!;
     private readonly ObservableValue<int> shareTab = new(0);
     private Button playerShareButton = null!, expandedShareButton = null!;
     private readonly List<Button> shareDestinations = [];
@@ -33,6 +35,16 @@ internal sealed partial class MainWindow
     private bool shareClosing;
     private bool sharePreparingClose;
     private Button[] shareSectionTabs = [];
+
+    private void UpdatePageCacheForOverlay()
+    {
+        // Reuse the page and its header glass sample while a foreground layer moves.
+        // A change to the underlying page invalidates the bitmap normally.
+        if (shareDialog.IsVisible || playlistDialog.IsVisible)
+            contentSurface.CacheMode ??= new BitmapCache();
+        else
+            contentSurface.CacheMode = null;
+    }
 
     private void ShareTrack(SoundCloudTrack track) => OpenShare(LibraryItem.FromTrack(track));
 
@@ -50,6 +62,8 @@ internal sealed partial class MainWindow
         sharePreview = TrackDialogChrome.Preview(ArtworkLayer(shareCover), shareTitle, shareAuthor, shareTrackStats);
         shareLink = new TextBlock().FontSize(13).TextTrimming(TextTrimming.CharacterEllipsis).Height(26)
             .VerticalTextAlignment(TextAlignment.Center).IsHitTestVisible(false);
+        mixLinkPlaceholder = new TextBlock().FontSize(13).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis)
+            .VerticalTextAlignment(TextAlignment.Center).Height(26).IsHitTestVisible(false).IsVisible(false);
         shareCopyIcon = new CopyFeedbackGlyph { Reverted = () => shareCopy.Hint("Скопировать ссылку") };
         shareCopy = TrackButtons.Icon(shareCopyIcon, CopyShareLink, TrackButtons.Glass, 48).Hint("Скопировать ссылку");
         ((MaterialTrackButton)shareCopy).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
@@ -58,7 +72,8 @@ internal sealed partial class MainWindow
         shareLinkGlass = new GlassCard { HoverEnabled = false, ShadowEnabled = false }.CornerRadius(24)
             .Background(GlassSheen.LightControlTint(TrackButtons.GlassSurface)).Padding(0).Child(
                 new Grid().Columns("*,Auto").Rows("48").Children(
-                    shareLink.CenterVertical().Margin(16, 0, 8, 0), time.Column(1), ShareResetButton().Column(1)));
+                    shareLink.Column(0).CenterVertical().Margin(16, 0, 8, 0), mixLinkPlaceholder.Column(0).CenterVertical().Margin(16, 0, 8, 0),
+                    time.Column(1), ShareAccessButton().Column(1)));
         shareMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         var destinations = new ShareDestinationsRow();
         foreach (var (label, service, icon, color) in new[]
@@ -79,7 +94,7 @@ internal sealed partial class MainWindow
             shareDestinations.Add(button);
         }
         shareLinksPanel = new StackPanel().Vertical().Spacing(16).Children(
-            new Grid().Columns("*,Auto").Rows("48").Spacing(12).Children(
+            shareLinkRow = new Grid().Columns("*,Auto").Rows("48").Spacing(12).Children(
                 shareLinkGlass, shareCopy.Column(1)), SharePrivateView(), shareDestinationsPanel = destinations);
         shareComposePanel = ShareComposeView().IsVisible(false);
         shareEmbedPanel = ShareEmbedView().IsVisible(false).Margin(0, 0, 18, 0);
@@ -105,6 +120,7 @@ internal sealed partial class MainWindow
         shareDialog.Opened = shareContent.RevealTrack;
         shareDialog.Closed = () =>
         {
+            UpdatePageCacheForOverlay();
             if (!shareSending) { shareSendBusyHeld = false; RefreshShareCompose(snap: true); }
             shareWidgetPreview.Close();
             shareClosing = false; shareContent.FreezeSize(); shareContent.ResetTrack(); sharePreview.ResetPalette();
@@ -150,24 +166,28 @@ internal sealed partial class MainWindow
         shareClosing = sharePreparingClose = false; shareWidgetPreview.ResumeFromPopup(); shareContent.IsHitTestVisible = true;
         shareSendBusyHeld = false;
         shareTarget = item;
-        shareResetConfirmation = false;
-        sharePrivateLoading = !demo && item.Playlist is { Id: > 0, IsPrivate: true };
-        shareUri = sharePrivateLoading ? null : item.Playlist is { } playlist ? PlaylistSharing.ShareUri(playlist) : TrackLink(item.Track?.PermalinkUrl);
-        RefreshPrivateShare();
-        shareTitle.Text = item.Title; shareAuthor.Text = item.Track?.Author ?? item.Playlist?.User?.Username ?? item.Subtitle;
+        shareAccessAction = ShareAccessAction.None;
+        var mix = IsSystemCollection(item);
+        mixShareLoading = mix && !demo;
+        sharePrivateLoading = !mix && !demo && item.Playlist is { Id: > 0, IsPrivate: true };
+        shareUri = sharePrivateLoading || mixShareLoading ? null : item.Playlist is { } playlist ? PlaylistSharing.ShareUri(playlist) : TrackLink(item.Track?.PermalinkUrl);
+        RefreshPrivateShare(opening: true);
+        shareTitle.Text = item.Title; shareAuthor.Text = item.Track?.Author ?? item.Playlist?.MadeFor?.Username ?? item.Playlist?.User?.Username ?? item.Subtitle;
         RefreshShareTrackStats();
         shareStartSeconds = null; UpdateShareTimeLabel(false);
         shareTimeAction.IsVisible = item.Track != null;
         ResetShareCompose(); ResetShareEmbed(); SelectShareTab(0, animate: false);
         RefreshShareLink();
-        SetCardArtwork(shareCover, null, item.ArtworkUrl, item.Track != null ? Icons.MissingTrackArtwork : "music-notes");
+        SetCollectionArtwork(shareCover, item);
         shareRequest = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         var token = shareRequest.Token;
         FitShareContent();
         shareDialog.InvalidateTransitionSnapshot();
         shareDialog.Show();
+        UpdatePageCacheForOverlay();
         if (reopening) shareContent.RevealTrack();
         Run(() => LoadShareArtworkAsync(item, generation, token));
+        if (mixShareLoading) Run(() => LoadMixSharingAsync(item.Playlist!.Urn, generation, token));
         if (sharePrivateLoading && item.Playlist is { } privatePlaylist) Run(() => ResolveSharePlaylistAsync(privatePlaylist, generation, token));
         if (shareUri == null && item.Track is { Id: > 0 } track) Run(() => ResolveShareTrackAsync(track, generation, token));
     }
@@ -175,7 +195,8 @@ internal sealed partial class MainWindow
     private void ResetShareRequest()
     {
         shareCopyIcon.Reset();
-        shareTimePopup?.Close(true, false); shareResetPopup?.Close(true, false);
+        shareActionsFade.Stop();
+        shareTimePopup?.Close(true, false); shareAccessPopup?.Close(true, false);
         ++shareGeneration; StopShareSearch(); shareRequest?.Cancel(); shareRequest?.Dispose(); shareRequest = null;
     }
 
@@ -217,7 +238,7 @@ internal sealed partial class MainWindow
 
     private async Task LoadShareArtworkAsync(LibraryItem item, long generation, CancellationToken token)
     {
-        var image = await FetchImageAsync(item.ArtworkUrl, token, maximumSide: 256);
+        var image = CachedCollectionArtwork(item) ?? await FetchImageAsync(item.ArtworkUrl, token, maximumSide: 256);
         if (disposed || generation != shareGeneration || !shareDialog.IsOpen) return;
         SetCardArtwork(shareCover, image, item.ArtworkUrl, item.Track != null ? Icons.MissingTrackArtwork : "music-notes", finished: true);
         if (image == null) return;
@@ -235,7 +256,8 @@ internal sealed partial class MainWindow
         shareTimeAction.IsEnabled = shareCopy.IsEnabled && shareTarget?.Track is { DurationSeconds: > 0 } track && double.IsFinite(track.DurationSeconds);
         foreach (var button in shareDestinations) button.IsEnabled = shareCopy.IsEnabled;
         if (shareTab.Value != 2)
-            SetShareMessage(sharePrivateLoading ? "Загружаем секретную ссылку…" : shareUri == null ?
+            SetShareMessage(IsSystemCollection(shareTarget) ? "" :
+                sharePrivateLoading ? "Загружаем секретную ссылку…" : shareUri == null ?
                 shareTarget?.Playlist?.IsPrivate == true ? "Не удалось получить секретную ссылку. Открой окно заново." : "У этого трека или плейлиста пока нет ссылки для отправки." : "");
         RefreshShareCompose(); RefreshShareEmbed();
     }
@@ -286,7 +308,8 @@ internal sealed partial class MainWindow
 
     private void SelectShareTab(int tab, bool animate = true)
     {
-        shareTimePopup?.Close(true, false); shareResetPopup?.Close(true, false);
+        if (IsSystemCollection(shareTarget) && (tab == 2 || tab == 1 && !shareSectionTabs[1].IsEnabled)) return;
+        shareTimePopup?.Close(true, false); shareAccessPopup?.Close(true, false);
         if (tab != 1) StopShareSearch();
         if (tab != 2) shareWidgetColorPopup?.Close(true, false);
         shareTab.Value = tab;
@@ -317,6 +340,11 @@ internal sealed partial class MainWindow
         shareForm.Measure(new(width, double.PositiveInfinity));
         // Opening already animates the whole dialog. Settle its initial size
         // before that capture; only tab/content changes resize an open dialog.
-        shareContent.FitCreation(shareForm.DesiredSize.Height, animate: shareDialog?.IsOpen == true);
+        var height = shareForm.DesiredSize.Height;
+        // Keep painting the outgoing row in its full page viewport while the card
+        // moves toward the already-collapsed layout. Detaching it then costs no height.
+        if (selected == shareLinksPanel && !shareActionsShown && shareDestinationsPanel.IsVisible)
+            height -= shareDestinationsPanel.DesiredSize.Height + shareLinksPanel.Spacing;
+        shareContent.FitCreation(height, animate: shareDialog?.IsOpen == true);
     }
 }

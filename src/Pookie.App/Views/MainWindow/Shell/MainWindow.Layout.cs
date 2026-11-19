@@ -86,6 +86,7 @@ internal sealed partial class MainWindow
             var inset = page.Value == Page.Chats ? 16 : 36;
             contentFrame.Padding = new Thickness(inset, ShellHeader.HeaderHeight + 30, inset, 0);
             UpdateLibraryCardSize(Window?.ClientSize.Width ?? contentSurface.ActualWidth);
+            RefreshPendingOverview();
         };
         contentTopFade = new ContentEdgeFade(Surface, fromTop: true) { Strength = .85 };
         contentTopFade.Height(ShellHeader.HeaderHeight + 32).Top().IsHitTestVisible(false);
@@ -216,7 +217,9 @@ internal sealed partial class MainWindow
                 topNavigationMotion.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
             new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(ChatHeaderButton(), settingsButton, profileButton),
             () => OperatingSystem.IsWindows() && page.Value == Page.Track,
-            () => OperatingSystem.IsWindows() && page.Value == Page.Track && TrackScrollInMotion());
+            () => OperatingSystem.IsWindows() && page.Value == Page.Track && TrackScrollInMotion(),
+            () => expandedAnimation.IsRunning || contentSurface.CacheMode is BitmapCache
+                ? WindowPresentation.SubtreeContentVersion(contentSurface) : null);
     }
 
     private Button Nav(string icon, string label, Page target, Action? action = null)
@@ -365,6 +368,7 @@ internal sealed partial class MainWindow
         eyebrow.Value = "ТВОЯ КОЛЛЕКЦИЯ";
         heading.Value = "Понравившиеся треки";
         RefreshLikedViews();
+        RestoreNavigationScroll(0);
     }
 
     private void RefreshLibraryCards()

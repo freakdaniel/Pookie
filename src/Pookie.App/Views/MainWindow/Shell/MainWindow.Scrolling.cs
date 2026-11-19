@@ -50,6 +50,7 @@ internal sealed partial class MainWindow
         CollectionTrackEntry entry => ("collection-track", entry.Position),
         Pookie.SoundCloud.LibraryItem entry => entry.Key,
         Pookie.SoundCloud.FeedEntry entry => entry.Key,
+        UserActivityEntry entry => entry.Key,
         SearchBlock block => (block.Kind, block.Kind switch
         {
             SearchBlockKind.Hero => "hero",
@@ -85,7 +86,9 @@ internal sealed partial class MainWindow
         ClearUnboundExpandedQueueRows();
         if (expandedQueueAnchor == null && !expandedQueueStartPending) expandedQueuePositions.Clear();
         RefreshHomeMixMotion();
-        if (!workspace.IsVisible) { trackTimelineVisible = false; return; }
+        // The expanded player owns input throughout its reveal. Resume page
+        // maintenance when the underlying viewport is interactive again.
+        if (!workspace.IsVisible || expandedAnimation.IsRunning) { trackTimelineVisible = false; return; }
         shellPageScroll.Refresh();
         RefreshTrackTimelineViewport();
         contentBottomFade.IsVisible = page.Value != Page.Chats;
@@ -217,7 +220,6 @@ internal sealed partial class MainWindow
 
     private void ResetPageScrolling()
     {
-        shellScroll.SetScrollOffsets(0, 0);
         trackDetailSectionSkeleton?.SetActive(false);
         likedEditPositions.Clear();
         foreach (var motion in likedItemMotions.Keys) motion.ResetMotion();

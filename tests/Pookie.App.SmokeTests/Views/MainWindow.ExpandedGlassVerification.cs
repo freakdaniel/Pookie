@@ -15,10 +15,15 @@ internal sealed partial class MainWindow
         var feedback = buttons.Where(button => button.IsConnected &&
             (button.SelectionTint == Color.FromRgb(75, 28, 44) || button.SelectionTint == TrackButtons.RepostedSurface))
             .OrderBy(button => button.Bounds.X).ToArray();
-        var modes = buttons.Where(button => button.IsConnected && button.SelectionTint==Color.FromRgb(28,76,76)).OrderBy(button=>button.Bounds.X).ToArray();
-        if(modes.Length!=2 || Math.Abs(modes[1].Bounds.X-modes[0].Bounds.Right-2)>1 ||
-            Math.Abs(modes[0].Bounds.Y-modes[1].Bounds.Y)>1 || modes.Any(button=>button.ToolTip!=null || TooltipHints.TextFor(button)!=null) || feedback.Any(button=>button.ToolTip!=null || TooltipHints.TextFor(button)!=null))
-            throw new InvalidOperationException("Playback modes did not form a teal connected pair without tooltips.");
+        var modes = buttons.Where(button => button.IsConnected && button.SelectionTint == Color.FromRgb(28, 76, 76))
+            .OrderBy(button => button.Bounds.X).ToArray();
+        if (modes.Length != 2 || Math.Abs(modes[1].Bounds.X - modes[0].Bounds.Right - 2) > 1 ||
+            Math.Abs(modes[0].Bounds.Y - modes[1].Bounds.Y) > 1)
+            throw new InvalidOperationException("Playback modes did not form a teal connected pair.");
+        if (modes.Concat(feedback).Any(button => button.ToolTip != null) ||
+            modes.Any(button => TooltipHints.TextFor(button) == null) || feedback.Length != 2 ||
+            TooltipHints.TextFor(feedback[0]) == null || TooltipHints.TextFor(feedback[1]) != null)
+            throw new InvalidOperationException("Fullscreen controls did not use their assigned app shortcut hints.");
         var transportButtons = buttons.Where(button => button.Height is 42 or 60).ToArray();
         if (transportButtons.Length != 3 || transportButtons.Max(button => button.Bounds.Y + button.ActualHeight / 2) -
             transportButtons.Min(button => button.Bounds.Y + button.ActualHeight / 2) > 1)

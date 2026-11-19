@@ -109,7 +109,7 @@ internal sealed partial class MainWindow
         if (shareEmbedCode == null || shareEmbedCopy == null) return;
         shareEmbedLayout.Select(shareEmbedVisual);
         RefreshShareWidgetColors();
-        var embedUri = shareUri == null ? null : shareTarget?.Playlist is { IsPrivate: true } playlist ? PlaylistSharing.EmbedUri(playlist) : shareUri;
+        var embedUri = shareUri == null ? null : shareTarget?.Playlist is { } playlist ? PlaylistSharing.EmbedUri(playlist) : shareUri;
         shareEmbedCode.Text = embedUri == null ? "" : BuildShareEmbed(embedUri, shareEmbedVisual, shareTarget?.Playlist != null, shareEmbedColor.Text);
         shareEmbedCopy.IsEnabled = shareEmbedCode.Text.Length > 0;
         shareEmbedCopyGlyph.Reset(); shareEmbedCopy.Hint("Скопировать код");

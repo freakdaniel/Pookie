@@ -31,6 +31,7 @@ internal sealed partial class MainWindow
     private AnimatedContextMenu CreatePlaylistCardMenu(CollectionCardView card)
     {
         var menu = PopupAppearance.CreateMenu();
+        menu.HideUnavailableItems = true;
         Uri? Link() => TrackLink(card.Item?.Playlist?.PermalinkUrl);
         void Item(string id, string label, string icon, Action<LibraryItem> action, Func<bool>? enabled = null)
         {

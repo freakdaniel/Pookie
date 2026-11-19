@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
     private StackPanel userSidebarLikes = null!, userSidebarFollowing = null!;
     private AvatarGroup userSidebarFollowers = null!;
     private FrameworkElement userLikesSection = null!, userFollowersSection = null!, userFollowingSection = null!, userSidebarAboutSection = null!;
-    private LibraryItem[]? renderedUserActivity, renderedUserLikes, renderedUserFollowers, renderedUserFollowing;
+    private LibraryItem[]? renderedUserLikes, renderedUserFollowers, renderedUserFollowing;
     private readonly List<CompactTrackRow> userSidebarRows = [];
     private DescriptionLinks userBioLinks = null!;
     private long renderedUserId;
@@ -95,14 +95,15 @@ internal sealed partial class MainWindow
         userHero = new CardShadow(new Border().Background(Raised).CornerRadius(20).ClipToBounds().Child(userHeader))
             .Margin(-12, -8, -12, -12);
         userTabs = new StackPanel().Horizontal().Spacing(22).Padding(8, 0).Children(
-            Enum.GetValues<UserSection>().Where(section => section <= UserSection.About).Select(section => (Element)SectionTab(
+            new[] { UserSection.Overview, UserSection.Tracks, UserSection.Albums, UserSection.Playlists, UserSection.Reposts,
+                UserSection.Likes, UserSection.Comments, UserSection.About }.Select(section => (Element)SectionTab(
                 UserSectionTitle(section), userSection, section, () => Run(() => OpenUserSectionAsync(section)))).ToArray());
         userSectionHeading = new TextBlock().FontSize(22).Bold();
         userNotice = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         userRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), RetryUserProfile, TrackButtons.Tonal, 32).Left();
         userEmpty = new TextBlock().FontSize(14).Foreground(Muted).Margin(8, 16).TextWrapping(TextWrapping.Wrap);
         userTrackList = CreateUserTrackList(); userCardGrid = CreateCollectionGrid(false);
-        userActivityEmpty = new TextBlock().Text("Здесь появятся публикации и репосты пользователя").FontSize(14).Foreground(Muted).IsVisible(false);
+        userActivityEmpty = new TextBlock().Text("Пока нет публикаций, репостов и комментариев").FontSize(14).Foreground(Muted).IsVisible(false);
         userOverviewBody = new StackPanel().Vertical().Children(UserPublicationListView(), userActivityEmpty);
         userOverviewLoading = CreateLibraryLoadingView(userOverviewBody, preview: true);
         userOverviewLoading.Skeleton.Preview = false;

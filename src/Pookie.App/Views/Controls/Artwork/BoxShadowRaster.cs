@@ -25,23 +25,8 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
                 Color.FromArgb((byte)Math.Round(color.A * opacity), color.R, color.G, color.B), offsetY: offset);
             return;
         }
-        var graphics = Application.Current.GraphicsFactory;
         var targetScale = context.DpiScale;
-        var nextScale = rasterScale > 0 ? rasterScale : targetScale;
-        var corner = nextRadius + blur;
-        var side = corner * 2 + 1;
-        var patch = new Size(Math.Min(side, bounds.Width), Math.Min(side, bounds.Height));
-        if (raster == null || factory != graphics || radius != nextRadius || scale != nextScale || patchSize != patch)
-        {
-            Dispose(); factory = graphics; radius = nextRadius; scale = nextScale; patchSize = patch;
-            var size = new Size(patch.Width + blur * 2, patch.Height + blur * 2);
-            raster = new DecorationRaster(graphics, CreateMask(patch, size));
-            left = Math.Min((raster.Image.PixelWidth - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
-            top = Math.Min((raster.Image.PixelHeight - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
-            right = raster.Image.PixelWidth - left - 1;
-            bottom = raster.Image.PixelHeight - top - 1;
-        }
-        var image = raster.Image;
+        var image = Prepare(nextRadius, rasterScale > 0 ? rasterScale : targetScale, bounds.Size);
         var transform = context.GetTransform();
         var x1 = Math.Round((bounds.X - blur + transform.M31) * targetScale) / targetScale - transform.M31;
         var y1 = Math.Round((bounds.Y - blur + offset + transform.M32) * targetScale) / targetScale - transform.M32;
@@ -67,6 +52,26 @@ internal sealed class BoxShadowRaster(double blur, double offset, Color color, b
                         new Rect(sx[x], sy[y], sx[x + 1] - sx[x], sy[y + 1] - sy[y]));
         }
         finally { context.GlobalAlpha = alpha; }
+    }
+
+    internal IImage Prepare(double nextRadius, double nextScale, Size? bounds = null)
+    {
+        var graphics = Application.Current.GraphicsFactory;
+        var corner = nextRadius + blur;
+        var side = corner * 2 + 1;
+        var patch = bounds is { } available
+            ? new Size(Math.Min(side, available.Width), Math.Min(side, available.Height)) : new Size(side, side);
+        if (raster != null && factory == graphics && radius == nextRadius && scale == nextScale && patchSize == patch)
+            return raster.Image;
+
+        Dispose(); factory = graphics; radius = nextRadius; scale = nextScale; patchSize = patch;
+        var size = new Size(patch.Width + blur * 2, patch.Height + blur * 2);
+        raster = new DecorationRaster(graphics, CreateMask(patch, size));
+        left = Math.Min((raster.Image.PixelWidth - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
+        top = Math.Min((raster.Image.PixelHeight - 1) / 2, (int)Math.Ceiling((blur + corner) * scale));
+        right = raster.Image.PixelWidth - left - 1;
+        bottom = raster.Image.PixelHeight - top - 1;
+        return raster.Image;
     }
 
     private WriteableBitmap CreateMask(Size patch, Size size)

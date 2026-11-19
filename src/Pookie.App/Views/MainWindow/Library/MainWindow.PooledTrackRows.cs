@@ -12,7 +12,8 @@ internal sealed partial class MainWindow
         TrackRowAppearance appearance, bool pooled, Func<TextBlock, FrameworkElement>? byline = null)
     {
         var publication = appearance == TrackRowAppearance.Publication;
-        var row = new LikedTrackRow(select, track => Run(() => OpenTrackPageAsync(track)),
+        LikedTrackRow row = null!;
+        row = new LikedTrackRow(select, track => Run(() => OpenTrackFromRowAsync(track, row.Root)),
             track => Run(() => ToggleTrackLikeAsync(track)), track => Run(() => ToggleTrackRepostAsync(track)),
             track => Run(() => OpenPlaylistPickerAsync(track)), seek, ArtworkLayer,
             glass: appearance != TrackRowAppearance.ProfileTrack, publication: publication,

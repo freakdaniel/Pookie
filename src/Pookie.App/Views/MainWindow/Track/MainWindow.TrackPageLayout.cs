@@ -5,16 +5,22 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private static TextBlock DetailSubtitle() => new CommentTextBlock().FontSize(14).FontWeight(FontWeight.Normal)
+        .Foreground(Muted).VerticalTextAlignment(TextAlignment.Center).TextTrimming(TextTrimming.CharacterEllipsis);
+
+    private static Grid DetailPageHeading(Button play, TextBlock title, FrameworkElement subtitle) =>
+        new Grid().Columns("Auto,*").Rows("Auto").Spacing(18).Children(play.Column(0).CenterVertical(),
+            new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(title, subtitle));
+
     private FrameworkElement TrackDetailPageView()
     {
         trackDetailCover = new Image().StretchMode(Stretch.UniformToFill);
         trackDetailBackdrop = new Image().StretchMode(Stretch.UniformToFill);
         trackDetailBackdrop.IsHitTestVisible = false;
-        // One title line plus the metadata line always occupies the play button's 64px header.
         trackDetailTitle = new CommentTextBlock().FontSize(28).Bold().Height(36).TextWrapping(TextWrapping.NoWrap).TextTrimming(TextTrimming.CharacterEllipsis);
-        trackDetailAuthor = new CommentTextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        trackDetailAuthor = DetailSubtitle();
         AttachUserLink(trackDetailAuthor, () => trackDetailState?.Track.User);
-        trackDetailMeta = new CommentTextBlock().FontSize(14).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
+        trackDetailMeta = DetailSubtitle();
         trackDetailHd = Icons.View("high-definition", 24, MutedIcon).Width(28).Height(21).IsVisible(false);
         trackDetailHdGroup = new StackPanel().Horizontal().Spacing(6).Height(21).IsVisible(false).Children(
             new CommentTextBlock().Text("·").FontSize(14).Foreground(Muted).CenterVertical(), trackDetailHd);
@@ -35,9 +41,7 @@ internal sealed partial class MainWindow
         trackDetailWaveformLayer.SizeChanged += _ => PositionTrackCommentMarkers();
         var waveform = new Grid().Columns("*,42").Rows("Auto").Spacing(8).Children(trackDetailWaveformLayer.Column(0),
             new StackPanel().Vertical().Spacing(12).Margin(0, 91, 0, 0).Column(1).Children(trackDetailPosition, trackDetailDuration));
-        var titleBlock = new Grid().Columns("64,*").Rows("Auto").Spacing(18).Children(trackDetailPlay.Column(0).Top(),
-            new StackPanel().Vertical().Spacing(7).Column(1).Children(trackDetailTitle,
-                trackDetailMetadataLine));
+        var titleBlock = DetailPageHeading(trackDetailPlay, trackDetailTitle, trackDetailMetadataLine);
         trackDetailHeart = Icons.View("heart", 18, TrackButtons.OnSurface).CenterVertical();
         trackDetailLikeCount = new TextBlock().FontSize(14).Bold().CenterVertical();
         trackDetailLike = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(trackDetailHeart, trackDetailLikeCount),

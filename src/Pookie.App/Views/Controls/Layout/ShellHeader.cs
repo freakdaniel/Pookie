@@ -24,7 +24,7 @@ internal sealed class ShellHeader : Grid
     internal void ResumeBlurCapture() => glass.ResumeCapture();
 
     internal ShellHeader(Func<FrameworkElement> page, FrameworkElement history, FrameworkElement navigation, FrameworkElement account,
-        Func<bool> deferResizeCapture, Func<bool>? paceCapture = null)
+        Func<bool> deferResizeCapture, Func<bool> paceCapture, Func<int?> pageSampleVersion)
     {
         HistoryCard = Card(history, 12, HistoryInset).Left();
         NavigationCard = Card(navigation, NavigationInset, NavigationInset).Width(NavigationWidth + 2 * NavigationInset).CenterHorizontal();
@@ -36,7 +36,8 @@ internal sealed class ShellHeader : Grid
         // strip once, then refract each card at its own screen coordinates.
         glass = new LiveGlassBackdrop(this, (context, _) => page().Render(context), tint: GlassTint,
             captureArea: GlassBounds, maximumSampleSide: 2048, sampleDensity: OperatingSystem.IsWindows() ? .375 : .5,
-            reuseStrip: OperatingSystem.IsWindows(), deferResizeCapture: deferResizeCapture, paceCapture: paceCapture);
+            reuseStrip: OperatingSystem.IsWindows(), deferResizeCapture: deferResizeCapture, paceCapture: paceCapture,
+            sourceVersion: pageSampleVersion);
         HistoryCard.UseLiveBackdrop(glass);
         NavigationCard.UseLiveBackdrop(glass);
         AccountCard.UseLiveBackdrop(glass);

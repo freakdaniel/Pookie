@@ -10,7 +10,7 @@ namespace Pookie.App;
 internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphicsContext, Element> renderBehind,
     ChatPopupLayer? popup = null, Color? tint = null, Func<Rect>? captureArea = null, double maximumSampleSide = 512,
     double sampleDensity = .5, bool reuseStrip = false, Func<bool>? deferResizeCapture = null,
-    Func<bool>? paceCapture = null, bool staticBackdrop = false, Func<bool>? resizing = null) : IDisposable
+    Func<bool>? paceCapture = null, bool staticBackdrop = false, Func<bool>? resizing = null, Func<int?>? sourceVersion = null) : IDisposable
 {
     private static readonly HashSet<LiveGlassBackdrop> active = [];
     private static readonly HashSet<Window> warming = [];
@@ -35,7 +35,9 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
     internal bool IsOpticsCurrent(GlassCard card) => cards.TryGetValue(card, out var ink) &&
         ink.Version == Version && ink.PaintedBounds == PresentedBounds(card.Bounds);
     internal bool Ready => sample != null && (capturedBounds == SampleBounds || resizeBounds == SampleBounds);
-    private bool CanReuseStaticSample => staticBackdrop && Ready && capturedBounds == SampleBounds &&
+    private int? capturedSourceVersion;
+    private bool CanReuseStaticSample => (staticBackdrop || capturedSourceVersion is { } version && sourceVersion?.Invoke() == version) &&
+        Ready && capturedBounds == SampleBounds &&
         window is { } owner && captureViewport == owner.ClientSize && captureDpi == owner.DpiScale;
     internal bool HasGpuOptics => Ready && cards.Values.Any(ink => ink.Version == Version && ink.Output?.Image != null);
     internal Rect CaptureBounds => Ready ? capturedBounds : Rect.Empty;
@@ -264,6 +266,7 @@ internal sealed class LiveGlassBackdrop(FrameworkElement surface, Action<IGraphi
             }
             sample.Blur(20);
             lastCapture = Stopwatch.GetTimestamp();
+            capturedSourceVersion = sourceVersion?.Invoke();
             capturedBounds = requested;
             resizeBounds = Rect.Empty;
             Version++;

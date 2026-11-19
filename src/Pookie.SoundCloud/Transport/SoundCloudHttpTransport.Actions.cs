@@ -21,6 +21,12 @@ public sealed partial class SoundCloudHttpTransport
             validate: root => { if (!request.Confirms(root)) throw new SoundCloudException("SoundCloud не подтвердил создание плейлиста."); }).ConfigureAwait(false);
     }
 
+    public Task SetSystemPlaylistPublicAsync(string urn, bool isPublic, CancellationToken token = default) =>
+        ActionAsync(HttpMethod.Put, "/" + SoundCloudWebClient.SystemPlaylistPath(urn) + "/privacy", Json(writer =>
+        {
+            writer.WriteStartObject(); writer.WriteBoolean("is_public", isPublic); writer.WriteEndObject();
+        }), null, token);
+
     private readonly object identityGate = new();
     private string? identityToken;
     private Task<long>? identity;

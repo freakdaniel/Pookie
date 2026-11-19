@@ -1,6 +1,5 @@
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
-using Pookie.App.Home;
 using Pookie.App.Playback;
 using Pookie.SoundCloud;
 
@@ -218,7 +217,7 @@ internal sealed partial class MainWindow
             if (!Equals(row.Track, track))
             {
                 BindCompactTrackRow(row, track);
-                row.PlaybackButton.IsEnabled = HomeRecommendations.Playable(track);
+                row.PlaybackButton.IsEnabled = IsChartTrack(track);
             }
             homeChartRows.Add(row);
         }
@@ -248,13 +247,23 @@ internal sealed partial class MainWindow
             ? rows * (ChartRowHeight + ChartRowSpacing) - ChartRowSpacing : 0;
     }
 
+    // Chart metadata describes the listing's connection. Only playback resolves the actual stream.
+    private static bool IsChartTrack(SoundCloudTrack track) => track.Id > 0 && !string.IsNullOrWhiteSpace(track.Title);
+
+    private sealed record ChartOrigin(CollectionDetail Chart, string? Filter);
+
+    private void SetChartQueue(CollectionDetail chart, SoundCloudTrack track, string? filter = null)
+    {
+        StartQueueContext(new(chart.Item.Key, chart.Item.Title, "Чарт SoundCloud", chart.Tracks.NextHref,
+            Kind: PlaybackContextKind.Playlist, ResourceUrn: PlaybackHistoryContextUrn(chart.Item), Filter: filter),
+            chart.Tracks.Tracks.Where(IsChartTrack).ToArray(), track, preserveManual: true);
+    }
+
     private async Task PlayHomeChartTrackAsync(SoundCloudTrack track)
     {
-        if (homeChartDetail is not { } chart || !HomeRecommendations.Playable(track)) return;
+        if (homeChartDetail is not { } chart || !IsChartTrack(track)) return;
         if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
-        var tracks = chart.Tracks.Tracks.Where(HomeRecommendations.Playable).ToArray();
-        StartQueueContext(new(chart.Item.Key, chart.Item.Title, "Чарт SoundCloud", chart.Tracks.NextHref,
-            Kind: PlaybackContextKind.Playlist, ResourceUrn: PlaybackHistoryContextUrn(chart.Item)), tracks, track, preserveManual: true);
+        SetChartQueue(chart, track);
         await PlayAsync(track, queueAdvance: true);
     }
 }

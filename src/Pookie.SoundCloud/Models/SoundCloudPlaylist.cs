@@ -9,6 +9,9 @@ public sealed record SoundCloudPlaylist
     public string Title { get; init; } = "";
     public string? ArtworkUrl { get; init; }
     public string? CalculatedArtworkUrl { get; init; }
+    [JsonIgnore] internal bool ArtworkFieldMissing { get; init; }
+    [JsonIgnore] internal bool UsesTrackArtwork => IsAlbum || PlaylistType?.ToLowerInvariant() is "album" or "ep" or "single" or "compilation" ||
+        IsSystemPlaylist || Urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal);
     public string? ShortTitle { get; init; }
     public string? ShortDescription { get; init; }
     public SoundCloudUser? MadeFor { get; init; }
@@ -24,6 +27,8 @@ public sealed record SoundCloudPlaylist
     public string? License { get; init; }
     public string? PlaylistType { get; init; }
     public bool IsAlbum { get; init; }
+    public bool? IsPublic { get; init; }
+    [JsonIgnore] public bool IsSystemMix => IsSystemPlaylist || Urn?.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal) == true;
     public bool IsSystemPlaylist { get; init; }
     public int TrackCount { get; init; }
     public double Duration { get; init; }

@@ -47,10 +47,13 @@ internal sealed partial class MainWindow
                 await WaitForLikedLayoutAsync(() => Window.IsActive);
                 field.Focus();
                 await WaitForLikedLayoutAsync(() => field.IsFocused);
-                SetInputFixtureText(field, "prefix to replace");
+                ((ITextInputClient)field).HandleTextInput(new("prefix to replace"));
                 field.SelectAll();
+                if (field.SelectedText != "prefix to replace")
+                    throw new InvalidOperationException($"Could not select the original text in {(field == topSearchInput ? "search" : "the likes filter")}.");
                 SendCharacter(display, 'v', 4);
                 await WaitForInputAsync(field, ClipboardFixture.Text);
+                if (field == likedFilter) await WaitForLikedLayoutAsync(() => !likedFilterDebounce.Pending);
                 if (field == topSearchInput && query.Value != ClipboardFixture.Text ||
                     field == likedFilter && likedFilterText != ClipboardFixture.Text)
                     throw new InvalidOperationException($"Pasted text bypassed search binding/filter: top={field == topSearchInput}, query='{query.Value}', filter='{likedFilterText}'");
@@ -107,7 +110,7 @@ internal sealed partial class MainWindow
             if (field.Text == expected) return;
             await Task.Delay(25, lifetime.Token);
         }
-        throw new InvalidOperationException($"Search input mismatch: expected '{expected}', got '{field.Text}', active={Window.IsActive}, focused={field.IsFocused}");
+        throw new InvalidOperationException($"Input mismatch in {(field == topSearchInput ? "search" : "the likes filter")}: expected '{expected}', got '{field.Text}', active={Window.IsActive}, focused={field.IsFocused}");
     }
 
     private void SendCharacter(nint display, char character, uint extraModifiers = 0)

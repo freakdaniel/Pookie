@@ -7,7 +7,8 @@ public enum SoundCloudTransportCapabilities
 {
     None = 0, Read = 1, TrackLikes = 2, TrackDetails = 4, Comments = 8,
     Chats = 16, Playlists = 32, Following = 64, History = 128, FollowSigning = 256,
-    All = Read | TrackLikes | TrackDetails | Comments | Chats | Playlists | Following | History | FollowSigning
+    SystemPlaylistPrivacy = 512,
+    All = SystemPlaylistPrivacy | Read | TrackLikes | TrackDetails | Comments | Chats | Playlists | Following | History | FollowSigning
 }
 
 public interface ISoundCloudTransport
@@ -17,6 +18,8 @@ public interface ISoundCloudTransport
     // negotiate features before presenting an action, rather than catching an
     // unexpected NotSupportedException after a user invokes it.
     SoundCloudTransportCapabilities Capabilities => SoundCloudTransportCapabilities.Read | SoundCloudTransportCapabilities.TrackLikes;
+    Task SetSystemPlaylistPublicAsync(string urn, bool isPublic, CancellationToken token = default) =>
+        throw new NotSupportedException("This transport does not support system playlist privacy.");
     Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("This transport does not support playlist editing.");
     Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default) =>

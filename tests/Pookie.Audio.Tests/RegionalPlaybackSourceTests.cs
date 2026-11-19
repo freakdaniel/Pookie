@@ -44,6 +44,23 @@ public sealed class RegionalPlaybackSourceTests
     }
 
     [Theory]
+    [InlineData(200, "text/plain", true)]
+    [InlineData(200, "text/html", false)]
+    [InlineData(407, "text/plain", false)]
+    public async Task BackgroundConnectionCheckUsesOnlyPublicResource(int status, string contentType, bool expected)
+    {
+        using var source = new RegionalPlaybackSource(new Handler(request =>
+        {
+            Assert.Equal("https://soundcloud.com/robots.txt", request.RequestUri!.AbsoluteUri);
+            Assert.Null(request.Headers.Authorization);
+            Assert.False(request.Headers.Contains("Cookie"));
+            return new HttpResponseMessage((HttpStatusCode)status)
+                { Content = new StringContent("", System.Text.Encoding.UTF8, contentType) };
+        }));
+        Assert.Equal(expected, await source.CheckConnectionAsync(default));
+    }
+
+    [Theory]
     [InlineData("file:///proxy")]
     [InlineData("ftp://proxy.test")]
     [InlineData("http://proxy.test/#fragment")]

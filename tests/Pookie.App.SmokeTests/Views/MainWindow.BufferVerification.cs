@@ -134,10 +134,10 @@ internal sealed partial class MainWindow
     private sealed class BufferFixturePlayer : IAudioPlayer
     {
         public AudioState State = new(0, 0, false, false, false);
-        public int SeekCount;
+        public int SeekCount, PlayCount;
         public AudioState Poll() => State;
         public Task PlayAsync(AudioSource source, CancellationToken cancellationToken = default)
-        { State = new(0, source.Duration, true, false, false); return Task.CompletedTask; }
+        { PlayCount++; State = new(0, source.Duration, true, false, false); return Task.CompletedTask; }
         public Task SeekAsync(double seconds, CancellationToken cancellationToken = default)
         { SeekCount++; State = State with { Position = seconds, BufferedStart = seconds, BufferedEnd = Math.Min(State.Duration, seconds + 20) }; return Task.CompletedTask; }
         public void Pause(bool paused) => State = State with { Playing = !paused };

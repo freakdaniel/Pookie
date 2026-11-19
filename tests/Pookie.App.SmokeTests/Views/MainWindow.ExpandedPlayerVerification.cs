@@ -2,22 +2,65 @@ using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
 using Pookie.SoundCloud;
+using System.Diagnostics;
 
 namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private async Task MeasurePlayerTransitionAsync(bool open)
+    {
+        var frames = new List<(long Time, double Reveal, long Index)>();
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cachedPage = false;
+        void Presented()
+        {
+            if (settled.Task.IsCompleted) return;
+            frames.Add((Stopwatch.GetTimestamp(), expandedReveal, Window.LastFramePerformanceStats.FrameIndex));
+            cachedPage |= contentSurface.CacheMode != null;
+            if (!expandedAnimation.IsRunning && expandedHost.IsVisible == open) settled.TrySetResult();
+        }
+
+        WindowPresentation.FramePresented(Window) += Presented;
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            RouteWaveformClick(SettingsCenter(open ? playerArtworkButton : (Button)expandedHeader.Children[1]));
+            var input = Stopwatch.GetElapsedTime(started);
+            await settled.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
+            if (cachedPage || !frames.Any(frame => frame.Reveal is > 0 and < 1))
+                throw new InvalidOperationException("Player transition skipped the motion or captured a full-page bitmap.");
+            var intervals = frames.Select((frame, i) =>
+                Stopwatch.GetElapsedTime(i == 0 ? started : frames[i - 1].Time, frame.Time).TotalMilliseconds).ToArray();
+            var worst = Array.IndexOf(intervals, intervals.Max());
+            Console.WriteLine($"PLAYER_TRANSITION open={open} panel={expandedPanelMode} input_ms={input.TotalMilliseconds:F1} " +
+                $"first_ms={intervals[0]:F1} max_ms={intervals[worst]:F1} worst_reveal={frames[worst].Reveal:F3} " +
+                $"last_ms={intervals[^1]:F1} frames={frames.Count} worst_frame={frames[worst].Index}");
+        }
+        finally { WindowPresentation.FramePresented(Window) -= Presented; }
+    }
+
     private async Task VerifyExpandedPlayerAsync()
     {
         var original = player;
         var fixture = new BufferFixturePlayer();
         var frames = new List<(double Reveal, double Side, double X, double Gap, double PanelReveal, double PanelX)>();
+        var sawCoverInFlight = false;
+        var sawStaggeredText = false;
         var frameIntervals = new List<double>();
-        long previousMotionFrame = 0;
+        long previousMotionFrame = 0, previousRevealFrame = 0;
+        var revealIntervals = new List<double>();
         var escapedMotionBounds = 0;
         string? escapedMotionDetail = null;
         void Sample()
         {
+            if (expandedAnimation.IsRunning)
+            {
+                var now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (previousRevealFrame != 0) revealIntervals.Add(System.Diagnostics.Stopwatch.GetElapsedTime(previousRevealFrame, now).TotalMilliseconds);
+                previousRevealFrame = now;
+            }
+            else previousRevealFrame = 0;
             if (panelAnimation.IsRunning)
             {
                 var now = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -28,6 +71,13 @@ internal sealed partial class MainWindow
             else previousMotionFrame = 0;
             var cardLayer = (PlayerMotionLayer)expandedLayout.Children[0];
             var panelLayer = (PlayerMotionLayer)expandedLayout.Children[1];
+            if (expandedAnimation.IsRunning && expandedReveal is > 0 and < 1 && expandedCover.ActualWidth > 0)
+            {
+                var cover = expandedCover.TranslateRect(new Rect(Point.Zero, expandedCover.Bounds.Size), Window);
+                sawCoverInFlight |= cover.Width > playerArtworkButton.ActualWidth + 1 && cover.Width < expandedCover.ActualWidth - 1 &&
+                    cover.Y > expandedCover.Bounds.Y + 1 && cover.Y < playerArtworkButton.Bounds.Y - 1;
+                sawStaggeredText |= expandedMetadata.Opacity > expandedTimeline.Opacity && expandedMetadata.Opacity is > 0 and < 1;
+            }
             if (panelAnimation.IsRunning)
             {
                 foreach (var layer in new[] { cardLayer, panelLayer })
@@ -77,6 +127,8 @@ internal sealed partial class MainWindow
             fixture.State = new(40, 180, true, false, false) { BufferedEnd = 120 };
             Poll();
             await WaitForLikedLayoutAsync(() => !progressAnimation.IsRunning && playerChrome.Height == PlayerBarHeight);
+            await MeasurePlayerTransitionAsync(true);
+            await MeasurePlayerTransitionAsync(false);
             RouteWaveformClick(SettingsCenter(playerShareButton));
             await WaitForLikedLayoutAsync(() => shareDialog.IsOpen && !shareDialog.Running);
             if (shareTarget?.Track?.Id != current?.Id || expandedHost.IsVisible)
@@ -100,6 +152,9 @@ internal sealed partial class MainWindow
                 expandedArtwork.Source != artwork.Source || expandedProgress.Value != progress.Value ||
                 frames.Count(frame => frame.Reveal is > 0 and < 1) < 3)
                 throw new InvalidOperationException("Expanded player did not open with animation and retain playback state.");
+            if (expandedLayout.ReduceMotion ? sawCoverInFlight : !sawCoverInFlight || !sawStaggeredText)
+                throw new InvalidOperationException($"Missing artwork travel or staged metadata: travel={sawCoverInFlight}, metadata={sawStaggeredText}.");
+            Console.WriteLine($"EXPANDED_REVEAL_OK: reduced={expandedLayout.ReduceMotion}, moving cover={sawCoverInFlight}, staggered metadata={sawStaggeredText}");
             var centeredX = expandedCover.Bounds.X;
             var centerError = Math.Abs(expandedCover.Bounds.X + expandedCover.ActualWidth / 2 - Window.ClientSize.Width / 2);
             if (centerError > 1) throw new InvalidOperationException($"Cover is not centered: {centerError}");
@@ -197,16 +252,30 @@ internal sealed partial class MainWindow
             if (expandedProgress.Value != 78 || Math.Abs(expandedBuffer.EndFraction - 145d / 180) > .00001)
                 throw new InvalidOperationException("Expanded progress and buffer stopped following playback.");
             SetExpandedPlayer(false);
-            await WaitForLoginFrameAsync();
+            await WaitForLikedLayoutAsync(() => expandedReveal is > .01 and < .99);
+            var revealBeforeReversal = expandedReveal;
             SetExpandedPlayer(true);
+            if (Math.Abs(expandedReveal - revealBeforeReversal) > .001)
+                throw new InvalidOperationException("Reopening the moving player jumped to a different position.");
             await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
             if (!expandedOpen || !expandedHost.IsVisible) throw new InvalidOperationException("Interrupted close hid the reopened player.");
             await VerifyExpandedCoverHoverAsync();
-            SetExpandedPlayer(false);
+            var closePoint = SettingsCenter((Button)expandedHeader.Children[1]);
+            RouteExpandedPointer(closePoint);
+            RouteWaveformClick(closePoint);
             await WaitForLikedLayoutAsync(() => !expandedHost.IsVisible && Window.WindowState == previous);
             await WaitForLikedLayoutAsync(() => playerArtworkOverlay.Opacity == 0);
-            if (!playerArtworkButton.IsFocused)
-                throw new InvalidOperationException("Closing fullscreen lost the artwork's keyboard focus.");
+            await Task.Delay(MaterialTooltipLayer.HoverDelayMs + 100);
+            if (!playerArtworkButton.IsFocused || KeyboardFocusFeedback.IsVisible(playerArtworkButton) ||
+                tooltipLayer.IsOpen && tooltipLayer.Owner == playerArtworkButton)
+                throw new InvalidOperationException("Closing fullscreen must restore focus without showing an artwork hint.");
+            RouteExpandedPointer(SettingsCenter(playerArtworkButton));
+            await WaitForLikedLayoutAsync(() => tooltipLayer.IsOpen && tooltipLayer.Owner == playerArtworkButton);
+            if (tooltipLayer.Text != "Развернуть плеер")
+                throw new InvalidOperationException($"Mini-player artwork displayed the wrong hint: {tooltipLayer.Text}");
+            RouteExpandedPointer(new Point(1, 1));
+            await MeasurePlayerTransitionAsync(true);
+            await MeasurePlayerTransitionAsync(false);
             Window.WindowState = WindowState.Maximized;
             await WaitForLoginFrameAsync();
             SetExpandedPlayer(true);
@@ -217,6 +286,9 @@ internal sealed partial class MainWindow
             playerVisible.Value = false;
             if (expandedHost.IsVisible || expandedAnimation.IsRunning || panelAnimation.IsRunning)
                 throw new InvalidOperationException("Reset left a fullscreen overlay or animation alive.");
+            revealIntervals.Sort();
+            if (revealIntervals.Count > 0)
+                Console.WriteLine($"PLAYER_REVEAL_TIMING: p95_ms={revealIntervals[(revealIntervals.Count - 1) * 95 / 100]:F1}; frames={revealIntervals.Count}; max_ms={revealIntervals[^1]:F1}");
             frameIntervals.Sort();
             if (escapedMotionBounds != 0)
                 throw new InvalidOperationException($"Animated drawing escaped its repaint region in {escapedMotionBounds} rendered samples: {escapedMotionDetail}");

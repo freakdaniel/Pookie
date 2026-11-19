@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Pookie.App.Playback;
+using Pookie.SoundCloud;
 using System.Text.Json.Serialization;
 
 namespace Pookie.App.Storage;
@@ -32,6 +33,8 @@ internal sealed record AppConfiguration
     public int LastSearchSection { get; set; }
     public string CommentSort { get; set; } = "NEWEST";
     public bool ShowCommentMarkers { get; set; } = true;
+    public bool RestoreLastTrack { get; set; } = true;
+    public LastPlayerTrack? LastTrack { get; set; }
     public bool AutoContinue { get; set; } = true;
     public bool NormalizeVolume { get; set; } = true;
     public bool LyricsEnabled { get; set; } = true;
@@ -64,6 +67,11 @@ internal sealed record AppConfiguration
         CommentSort = CommentSort is "NEWEST" or "OLDEST" or "TIMESTAMP" ? CommentSort : "NEWEST",
     };
 }
+
+// Only the metadata used to display the paused player belongs on disk.
+internal sealed record LastPlayerTrack(long AccountId, long Id, string Title, double Duration, double FullDuration,
+    string? ArtworkUrl, string? PermalinkUrl, long ArtistId, string Artist, string? ArtistUrl, string? AvatarUrl,
+    string? Sharing, PublisherMetadata? PublisherMetadata);
 
 internal sealed class ConfigurationStore(AppDataPaths paths)
 {

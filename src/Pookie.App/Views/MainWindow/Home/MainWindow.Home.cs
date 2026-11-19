@@ -15,7 +15,9 @@ internal sealed partial class MainWindow
     private readonly List<HomeSection> homeSections = [];
     private readonly HashSet<string> homePending = [], homeErrors = [];
     private ScrollViewer homeScroll = null!;
-    private TextBlock homeEmpty = null!;
+    private FrameworkElement homeShortcuts = null!;
+    private StackPanel homeGenres = null!;
+    private Button homeBuzzingRetry = null!;
     private HomeContent? homeContent;
     private WebSession? homeSession;
     private DateTimeOffset homeLoadedAt;
@@ -46,12 +48,25 @@ internal sealed partial class MainWindow
         var recommendations = Section("recommendations", "Открытия для тебя", "По твоим лайкам и недавним прослушиваниям");
         var madeForYou = Section("made-for-you", "Сделано для тебя");
         var releases = Section("releases", "Новое от подписок", "Свежие треки за последние 30 дней", () => Run(() => NavigateAsync(Page.Feed)));
-        homeEmpty = new TextBlock().Text("Здесь появится твоя музыка\nНайди и послушай несколько треков — подберём следующие.")
-            .FontSize(18).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(0, 24).IsVisible(false);
+        var buzzing = Section("buzzing", "На подъёме в SoundCloud");
+        buzzing.Error.Text = "Не удалось загрузить плейлисты SoundCloud.";
+        homeBuzzingRetry = TrackButtons.Action(new TextBlock().Text("Загрузить подборки ещё раз"),
+            () => Run(() => NavigateHomeAsync(force: true)), TrackButtons.Text, 36).Left().IsVisible(false);
+        buzzing.Root.Add(homeBuzzingRetry);
+        var genres = new StackPanel().Horizontal().Spacing(8);
+        foreach (var (label, term) in new[] { ("Хип-хоп", "Hip Hop"), ("Электроника", "Electronic"), ("Инди", "Indie"), ("R&B", "R&B") })
+            genres.Add(TrackButtons.Action(new TextBlock().Text(label).SemiBold(), () =>
+            {
+                query.Value = term;
+                Run(() => SearchAsync(SearchSection.Playlists));
+            }, TrackButtons.Tonal, 36));
+        homeGenres = new StackPanel().Vertical().Spacing(12).Children(
+            new TextBlock().Text("Найти плейлисты по жанру").FontSize(22).Bold(), genres);
+        homeShortcuts = HomeShortcutsView();
         homeScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(
             new StackPanel().Vertical().Spacing(28).Padding(0, 8, 0, 24).Children(HomeMixCarouselView(),
-                HomeShortcutsView(),
-                HomeChartView(), recommendations.Root, madeForYou.Root, releases.Root, homeEmpty));
+                buzzing.Root, homeGenres, homeShortcuts,
+                HomeChartView(), recommendations.Root, madeForYou.Root, releases.Root));
         RenderHome(); return homeScroll;
     }
 
@@ -59,7 +74,8 @@ internal sealed partial class MainWindow
     {
         "recent" => homeContent.Recent, "recommendations" => homeContent.Recommendations,
         "releases" => homeContent.Releases, "mixes" => homeContent.Discover?.Mixes ?? [],
-        "made-for-you" => homeContent.Discover?.MadeForYou ?? [], "trends" => homeContent.Discover?.Trending ?? [], _ => []
+        "made-for-you" => homeContent.Discover?.MadeForYou ?? [], "trends" => homeContent.Discover?.Trending ?? [],
+        "buzzing" => homeContent.Buzzing ?? [], _ => []
     };
 
     private void BindHomeSectionItems(HomeSection section)
@@ -81,7 +97,7 @@ internal sealed partial class MainWindow
 
     private void RenderHome(bool refreshChart = false)
     {
-        if (homeEmpty == null) return;
+        if (homeScroll == null) return;
         RenderHomeMixCarousel(HomeItems("mixes"));
         RenderHomeChart(HomeItems("trends"), refreshChart);
         foreach (var section in homeSections)
@@ -97,7 +113,8 @@ internal sealed partial class MainWindow
                 : "По твоим лайкам и недавним прослушиваниям";
         }
         RefreshHomeShortcuts();
-        homeEmpty.IsVisible = homePending.Count == 0 && !homeMixSection.IsVisible && !homeChart.IsVisible && homeSections.All(section => !section.Root.IsVisible);
+        homeGenres.IsVisible = homeContent?.Buzzing != null && HomeItems("trends").Length == 0;
+        homeBuzzingRetry.IsVisible = homeErrors.Contains("buzzing") && !homePending.Contains("buzzing");
     }
 
     private void RefreshCachedHome()

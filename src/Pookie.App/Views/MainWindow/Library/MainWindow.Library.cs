@@ -291,6 +291,11 @@ internal sealed partial class MainWindow
     }
 
     private bool overviewRefreshPending;
+    private void RefreshPendingOverview()
+    {
+        if (overviewRefreshPending && page.Value == Page.Library) RefreshOverviewSections();
+    }
+
     private void RefreshOverviewSections()
     {
         if (expandedHost?.IsVisible == true) { overviewRefreshPending = true; return; }

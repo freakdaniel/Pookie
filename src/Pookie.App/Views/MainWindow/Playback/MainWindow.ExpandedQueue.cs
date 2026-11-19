@@ -23,6 +23,7 @@ internal sealed partial class MainWindow
     private bool expandedQueueLayoutQueued;
     private long? expandedCurrentEntry;
     private long expandedSourceVersion = -1;
+    private bool expandedRowsNeedCleanup;
     private string queueOriginTitle = "Очередь воспроизведения", queueOriginKind = "Сейчас играет";
 
     private void CaptureQueueOrigin(bool recent = false)
@@ -98,6 +99,7 @@ internal sealed partial class MainWindow
             // The presenter unbinds before *every* rebind, including the same
             // retained item. Clear genuinely recycled rows after layout settles.
             expandedQueueBlocks[context.Get<QueueRowMotion>("motion")] = null;
+            expandedRowsNeedCleanup = true;
         });
         expandedQueueScroll = (ScrollViewer)expandedQueue.FindVisualChild<ScrollViewer>()!;
         ((IVisualTreeHost)expandedQueueScroll).VisitChildren(element =>
@@ -114,6 +116,8 @@ internal sealed partial class MainWindow
 
     private void ClearUnboundExpandedQueueRows()
     {
+        if (!expandedRowsNeedCleanup) return;
+        expandedRowsNeedCleanup = false;
         foreach (var (motion, block) in expandedQueueBlocks)
         {
             if (block != null || motion.RetainedKey == null) continue;

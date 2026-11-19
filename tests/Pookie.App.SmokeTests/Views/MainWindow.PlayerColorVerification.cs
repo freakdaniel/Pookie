@@ -102,7 +102,7 @@ internal sealed partial class MainWindow
 
         SetPlayerArtwork(null, playGeneration, pending: true);
         await Task.Delay(200, lifetime.Token);
-        if (playerBackdrop.Target != redPalette || playerBackdrop.Current != redPalette || expandedBackdrop.Target != redPalette)
+        if (playerBackdrop.Target != redPalette || playerBackdrop.Current != redPalette || expandedBackdrop.Source.Target != redPalette)
             throw new InvalidOperationException("Loading the next cover introduced an intermediate gray colour transition");
 
         // An old cover finishing after the next selection must not recolour the current track.

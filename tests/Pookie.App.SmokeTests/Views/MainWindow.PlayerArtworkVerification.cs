@@ -38,6 +38,7 @@ internal sealed partial class MainWindow
             VerifyExpandedArtworkPixels(); CaptureUiPreview("artwork-reopened");
             SetExpandedPlayer(false); await WaitForLikedLayoutAsync(() => !expandedAnimation.IsRunning);
 
+            await VerifyMiniArtworkFadeAsync(track, shared);
             // A compact-row cache from earlier playback cannot lock in a thumbnail.
             var next = track with { Id = 79002 };
             coverCache[next.Id] = ImageSource.FromBytes(ArtworkFixtureBitmap(100));
@@ -120,10 +121,69 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("A stale cover replaced the selected track.");
             await VerifyPlayerColorsAsync();
             CaptureUiPreview("artwork-missing-fullscreen");
+            await VerifyPausedPlayerRestoreAsync(track, audio);
             Console.WriteLine("ARTWORK_UI_OK: full-size shared sources, sharp fullscreen textures, delayed and rapid cover crossfades, queue thumbnail reveal, thumbnail-cache upgrades and stale completion rejection");
         }
         catch (Exception error) { VerificationFailure = error; Environment.ExitCode = 1; Console.Error.WriteLine("ARTWORK_UI_FAILED: " + error); }
         finally { player = original; Window.Close(); }
+    }
+
+    private async Task VerifyMiniArtworkFadeAsync(SoundCloudTrack track, ImageSource original)
+    {
+        const string url = "https://i1.sndcdn.com/mini-fade-fixture-large.jpg";
+        var reply = new TaskCompletionSource<ImageSource?>();
+        artworkRequests[url] = reply.Task;
+        var next = track with { Id = 79007, ArtworkUrl = url };
+        StartQueueContext(new("mini-artwork", "Проверка очереди", ""), [track, next], track);
+        await SkipAsync(1, naturalEnd: true);
+        await WaitForLoginFrameAsync();
+        if (!ReferenceEquals(artwork.Source, original) || miniArtworkFade.ContentOpacity != 0)
+            throw new InvalidOperationException("A pending mini cover replaced the displayed artwork.");
+        var incoming = ImageSource.FromBytes(ArtworkFixtureBitmap(256));
+        reply.SetResult(incoming);
+        await WaitForLikedLayoutAsync(() => ReferenceEquals(artwork.Source, incoming) && miniArtworkFade.ContentOpacity is > 0 and < 1);
+        if (!ReferenceEquals(outgoingMiniArtwork.Source, original))
+            throw new InvalidOperationException("The mini cover fade did not retain the previous artwork.");
+        var newer = ImageSource.FromBytes(ArtworkFixtureBitmap(64));
+        SetPlayerArtwork(newer, ++playGeneration);
+        SetPlayerArtwork(original, playGeneration - 1);
+        await WaitForLikedLayoutAsync(() => ReferenceEquals(artwork.Source, newer) && miniArtworkFade.ContentOpacity == 0);
+        if (outgoingMiniArtwork.Source != null) throw new InvalidOperationException("Mini cover retained the faded image.");
+        SetPlayerArtwork(null, playGeneration);
+        await WaitForLikedLayoutAsync(() => ReferenceEquals(artwork.Source, Icons.Source(Icons.MissingTrackArtwork)) && miniArtworkFade.ContentOpacity == 0);
+        Console.WriteLine("MINI_ARTWORK_FADE_OK: delayed, rapid, stale and missing covers");
+    }
+
+    private async Task VerifyPausedPlayerRestoreAsync(SoundCloudTrack track, BufferFixturePlayer audio)
+    {
+        var owner = new SoundCloudUser { Id = 71, Username = "Fixture" };
+        me = owner;
+        if (!preferences.RestoreLastTrack) throw new InvalidOperationException("Restore must default to on.");
+        await PlayAsync(track);
+        await configuration.FlushAsync();
+        var saved = configuration.Load();
+        if (saved.LastTrack?.Id != track.Id) throw new InvalidOperationException("Played track did not persist.");
+        EndPlayback();
+        current = null; playerVisible.Value = false; playbackQueue.Clear();
+        me = owner with { Id = 72 };
+        preferences = saved;
+        RestoreLastPlayerTrack();
+        if (current != null) throw new InvalidOperationException("Another account restored the saved player.");
+        me = owner;
+        preferences = saved with { RestoreLastTrack = false };
+        RestoreLastPlayerTrack();
+        if (current != null) throw new InvalidOperationException("Disabled restoration opened the player.");
+        preferences = saved;
+        var plays = audio.PlayCount;
+        RestoreLastPlayerTrack(); Poll();
+        if (audio.PlayCount != plays || audio.State.Playing || audioReady || audioPreparing || !paused || isPlaying.Value ||
+            !playerVisible.Value || current?.Id != track.Id || title.Value != track.Title || artist.Value != track.Author ||
+            playbackQueue.Current?.Track.Id != track.Id || progress.Value != 0 || totalTime.Value != FormatTime(track.DurationSeconds))
+            throw new InvalidOperationException("Restoring must show the last track without preparing or starting audio.");
+        await ToggleAsync();
+        if (audio.PlayCount != plays + 1 || !audioReady || !isPlaying.Value || current?.Id != track.Id)
+            throw new InvalidOperationException("Play did not start the restored track.");
+        Console.WriteLine("PLAYER_RESTORE_OK: persisted selection, account isolation, opt-out, paused startup and explicit play");
     }
 
     private async Task VerifyMainPlaybackGlassAsync()
@@ -156,24 +216,24 @@ internal sealed partial class MainWindow
             var pixels = CaptureSectionButton(playerPlayButton);
             var width = (int)Math.Ceiling(bounds.Width * scale);
             var height = (int)Math.Ceiling(bounds.Height * scale);
-            var left = width;
-            var right = -1;
-            var top = height;
-            var bottom = -1;
-            // Exclude the circular glass rim and measure the light glyph ink.
-            for (var y = height / 4; y < height * 3 / 4; y++)
-            for (var x = width / 4; x < width * 3 / 4; x++)
+            var count = 0;
+            double sumX = 0, sumY = 0;
+            // The bright area of a triangle has its center left of its bounding-box midpoint.
+            for (var y = height / 6; y < height * 5 / 6; y++)
+            for (var x = width / 6; x < width * 5 / 6; x++)
             {
                 var offset = (y * width + x) * 4;
                 if (pixels[offset] < 200 || pixels[offset + 1] < 200 || pixels[offset + 2] < 200) continue;
-                left = Math.Min(left, x); right = Math.Max(right, x);
-                top = Math.Min(top, y); bottom = Math.Max(bottom, y);
+                count++;
+                sumX += x + .5;
+                sumY += y + .5;
             }
-            var centerX = (left + right + 1) / 2d;
-            var centerY = (top + bottom + 1) / 2d;
-            if (right < left || Math.Abs(centerX - bounds.Width * scale / 2) > 1 ||
+            var centerX = sumX / count;
+            var centerY = sumY / count;
+            if (count == 0 || Math.Abs(centerX - bounds.Width * scale / 2) > 1 ||
                 Math.Abs(centerY - bounds.Height * scale / 2) > 1)
                 throw new InvalidOperationException($"Player {name} ink is off center: {centerX}, {centerY} in {width}x{height} pixels.");
+            Console.WriteLine($"PLAYER_GLYPH_CENTER {name} scale={scale:F2} dx_px={centerX - bounds.Width * scale / 2:F2} dy_px={centerY - bounds.Height * scale / 2:F2}");
         }
 
         async Task<Color> SampleAsync(Color color)

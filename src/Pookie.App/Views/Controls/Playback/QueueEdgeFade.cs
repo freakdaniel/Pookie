@@ -8,7 +8,7 @@ namespace Pookie.App;
 // constant. Cross-fading translucent masks would pulse their combined alpha.
 internal sealed class QueueEdgeFade : Control
 {
-    private readonly PlayerBackdrop backdrop;
+    private readonly ExpandedPlayerBackdrop backdrop;
     private WriteableBitmap? source;
     private IImage? image;
     private IGraphicsFactory? factory;
@@ -26,10 +26,10 @@ internal sealed class QueueEdgeFade : Control
     internal PlayerPalette RenderedPalette => gradient.ToPalette();
     internal PlayerGradient RenderedGradient => gradient;
 
-    internal QueueEdgeFade(PlayerBackdrop backdrop)
+    internal QueueEdgeFade(ExpandedPlayerBackdrop backdrop)
     {
         this.backdrop = backdrop;
-        backdrop.PaletteChanged += InvalidateVisual;
+        backdrop.Source.PaletteChanged += InvalidateVisual;
     }
 
     protected override void OnRender(IGraphicsContext context)
@@ -55,9 +55,9 @@ internal sealed class QueueEdgeFade : Control
             for (var x = 0; x < width; x++)
                 grain[y * width + x] = (float)PlayerGradient.Noise((int)Math.Round(origin * dpi) + x, y);
         }
-        if (geometryChanged || gradient != backdrop.CurrentGradient)
+        if (geometryChanged || gradient != backdrop.Source.CurrentGradient)
         {
-            gradient = backdrop.CurrentGradient;
+            gradient = backdrop.Source.CurrentGradient;
             using var write = source!.LockForWrite();
             var pixels = write.PixelsBgra32;
             for (var x = 0; x < width; x++)
@@ -84,7 +84,7 @@ internal sealed class QueueEdgeFade : Control
     private void ClearRaster() { image?.Dispose(); image = null; source?.Dispose(); source = null; }
     protected override void OnDispose()
     {
-        backdrop.PaletteChanged -= InvalidateVisual;
+        backdrop.Source.PaletteChanged -= InvalidateVisual;
         ClearRaster(); base.OnDispose();
     }
 }

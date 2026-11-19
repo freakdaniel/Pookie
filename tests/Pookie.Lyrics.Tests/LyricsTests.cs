@@ -85,6 +85,70 @@ public sealed class LyricsTests : IDisposable
         Assert.False(LyricsMatcher.Matches(identity, Candidate() with { TrackName = "Другая песня", ArtistName = "Исполнитель" }));
     }
 
+    [Fact] public async Task FragmentRecoversMisspellingAfterCachedMissWithoutBroadeningTheArtist()
+    {
+        var identity = new LyricsIdentity(1745121285, "Даже моя бейби не знает", "Poshlaya Molly", 208.065);
+        var hit = Candidate(11045564) with { TrackName = "Даже моя бэйби не знает", ArtistName = identity.Artist, Duration = 208 };
+        var provider = new Provider { SearchResult = (title, artist) => title == "даже моя" && artist == identity.Artist
+            ? [hit with { Id = 1, ArtistName = "Another Artist" }, hit with { Id = 2, Duration = 213 }, hit] : [] };
+        var cache = Path.Combine(root, "Cache");
+        var clock = new Clock();
+        using var service = new LyricsService(provider, cache, clock);
+        await File.WriteAllTextAsync(Path.Combine(cache, $"{identity.TrackId}-{identity.Fingerprint}.json"),
+            JsonSerializer.Serialize(new LyricsCacheRecord(identity.Fingerprint, clock.GetUtcNow(), new(LyricsStatus.NotFound),
+                SelectionVersion: 3), LyricsJson.Default.LyricsCacheRecord));
+        Assert.Equal(hit.Id, (await service.ResolveAsync(identity, default)).Document?.ProviderId);
+        Assert.Equal(("даже моя", identity.Artist), provider.Searches.Last());
+    }
+
+    [Theory]
+    [InlineData("Ma dernière chansson", "Ma dernière chanson", true)]
+    [InlineData("さくらが咲いている", "さくらの咲いている", true)]
+    [InlineData("Album track 12", "Album track 13", false)]
+    [InlineData("Goodnight moon", "Goodnight moon (Live)", false)]
+    [InlineData("Sun", "Son", false)]
+    public void SpellingComparisonUsesTheWholeTitle(string expected, string actual, bool close)
+        => Assert.Equal(close, LyricsMatcher.CloseTitle(expected, actual));
+
+    [Fact] public void UnspacedTitleFragmentsRetainWholeCharacters()
+        => Assert.Equal(new[] { "𠮷野の桜", "咲いてる" }, LyricsMatcher.TitleFragments("𠮷野の桜が咲いてる"));
+
+    [Fact] public void CombiningMarksRemainPartOfWords()
+        => Assert.Equal("तेरी कहानी", LyricsMatcher.Normalize("तेरी कहानी"));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LyricPhraseHitsMustIdentifyOneRecording(bool ambiguous)
+    {
+        var identity = new LyricsIdentity(1745121285, "Даже моя бейби не знает", "Poshlaya Molly", 208.065);
+        var calls = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var uri = request.RequestUri!;
+            calls.Add(uri.PathAndQuery);
+            if (uri.AbsolutePath == "/search.json")
+            {
+                var hits = new List<LrcRedHit>();
+                if (uri.Query.StartsWith("?in=lyrics"))
+                {
+                    hits.Add(new("Другая песня", "Пошлая Молли", "RUZZZ2600001", 208));
+                    hits.Add(new("Даже моя бэйби не знает", "Другой артист", "RUZZZ2600002", 208));
+                    hits.Add(new("Даже моя бэйби не знает", "Пошлая Молли", "RUZZZ2600003", 220));
+                    hits.Add(new("Даже моя бэйби не знает", "Пошлая Молли", "FR59R2697892", 208));
+                    if (ambiguous) hits.Add(new("Даже моя бейба не знает", "Пошлая Молли", "RUZZZ2600004", 207));
+                }
+                return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new LrcRedResults([.. hits]), LrcRedJson.Default.LrcRedResults)) };
+            }
+            Assert.Equal("/s/FR59R2697892.lrc", uri.AbsolutePath);
+            return new(HttpStatusCode.OK) { Content = new StringContent("[00:02]Test") };
+        }));
+        var result = await new LrcRedSearch(http).FindLyricsAsync(identity, false, default);
+        if (ambiguous) Assert.Null(result); else Assert.Equal(LyricsStatus.Synced, result?.Status);
+        Assert.Single(calls.Where(path => path.StartsWith("/search.json?in=lyrics")));
+        Assert.Equal(ambiguous ? 3 : 4, calls.Count);
+    }
+
     [Fact] public void BrokenSyncedDataDoesNotOutrankValidTimestamps()
     {
         Assert.Equal(2, LyricsMatcher.Choose(track, [Candidate() with { SyncedLyrics = "Без меток" }, Candidate(2) with { Duration = 181 }])!.Id);

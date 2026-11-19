@@ -55,7 +55,7 @@ internal sealed partial class MainWindow
             if (current == null) { systemMedia.Clear(); return; }
             var duration = Math.Max(0, audio?.Duration > 0 ? audio.Duration : current.DurationSeconds);
             var position = Math.Clamp(audio?.Position ?? progress.Value, 0, duration);
-            var state = !audioReady && !audioPreparing ? MediaPlayback.Stopped :
+            var state = !audioReady && !audioPreparing ? (paused ? MediaPlayback.Paused : MediaPlayback.Stopped) :
                 audioPreparing || audio?.Buffering == true ? MediaPlayback.Loading :
                 (audio?.Playing ?? !paused) ? MediaPlayback.Playing : MediaPlayback.Paused;
             systemMedia.Update(new(current.Id.ToString(CultureInfo.InvariantCulture), current.Title, current.Author,

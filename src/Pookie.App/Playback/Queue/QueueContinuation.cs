@@ -41,8 +41,9 @@ internal sealed class QueueContinuation
             token.ThrowIfCancellationRequested();
             if (stream == null || stream.Finished && stream.Buffer.Count == 0)
             {
-                var next = seeds.FirstOrDefault(entry => !started.Contains(entry.Track.Id) &&
-                    HomeRecommendations.Playable(entry.Track));
+                // Related tracks are looked up by ID. A preview flag on the seed does not
+                // prevent SoundCloud from returning playable recommendations for it.
+                var next = seeds.FirstOrDefault(entry => entry.Track.Id > 0 && !started.Contains(entry.Track.Id) && allowed(entry.Track));
                 if (next == null) return new(result.ToArray(), Exhausted: true);
                 stream = new(next.Track.Id); started.Add(next.Track.Id);
             }

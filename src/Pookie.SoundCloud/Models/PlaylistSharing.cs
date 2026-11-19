@@ -26,6 +26,15 @@ public static class PlaylistSharing
 
     public static Uri? ShareUri(SoundCloudPlaylist playlist)
     {
+        if (playlist.IsSystemMix)
+        {
+            if (playlist.IsPublic != true) return null;
+            if (System.Uri.TryCreate(playlist.PermalinkUrl, UriKind.Absolute, out var mix) &&
+                mix.Scheme == "https" && mix.Host == "soundcloud.com" && mix.IsDefaultPort && mix.UserInfo.Length == 0 &&
+                mix.AbsolutePath.StartsWith("/discover/sets/", StringComparison.Ordinal)) return mix;
+            return playlist.Permalink is { Length: > 0 } slug && slug.All(c => char.IsAsciiLetterOrDigit(c) || c is ':' or '-' or '_')
+                ? new Uri("https://soundcloud.com/discover/sets/" + slug) : null;
+        }
         if (!System.Uri.TryCreate(playlist.PermalinkUrl, UriKind.Absolute, out var uri) ||
             uri.Scheme != "https" || uri.Host != "soundcloud.com" || uri.UserInfo.Length != 0) return null;
         if (!playlist.IsPrivate) return uri;
@@ -36,7 +45,7 @@ public static class PlaylistSharing
         return new UriBuilder(uri) { Path = "/" + string.Join('/', parts.Take(3)) + "/" + token, Query = "", Fragment = "" }.Uri;
     }
 
-    public static Uri? EmbedUri(SoundCloudPlaylist playlist) => !playlist.IsPrivate ? ShareUri(playlist) :
+    public static Uri? EmbedUri(SoundCloudPlaylist playlist) => playlist.IsSystemMix ? null : !playlist.IsPrivate ? ShareUri(playlist) :
         playlist.Id > 0 && Token(playlist) is { } token
             ? new Uri($"https://api.soundcloud.com/playlists/{playlist.Id}?secret_token={System.Uri.EscapeDataString(token)}") : null;
 

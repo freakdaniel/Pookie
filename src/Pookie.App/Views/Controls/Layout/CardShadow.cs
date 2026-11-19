@@ -36,6 +36,12 @@ internal sealed class CardShadow : Panel
 
     protected override void ArrangeContent(Rect bounds) => child.Arrange(bounds.Deflate(shadowPadding));
 
+    internal void PrepareShadow(double scale)
+    {
+        using var scope = Application.Current.GraphicsFactory.AcquireBackgroundRenderScope();
+        shadow.Prepare(radius, scale);
+    }
+
     protected override void OnRender(IGraphicsContext context)
     {
         if (!DrawShadow || child.Bounds.Width <= 0 || child.Bounds.Height <= 0) return;

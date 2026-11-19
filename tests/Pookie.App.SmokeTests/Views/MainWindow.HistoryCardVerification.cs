@@ -44,14 +44,20 @@ internal sealed partial class MainWindow
         RouteWaveformPointer(point);
         await WaitForLikedLayoutAsync(() => next.Playback.Opacity > .999 && next.Playback.PlaybackButton is { IsHitTestVisible: true });
         RouteWaveformClick(SettingsCenter(next.Playback.PlaybackButton!));
+        // Playing a history track moves it to the front and can rebind the same card views.
+        RouteWaveformPointer(new Point(2, 2));
+        TrackArtworkOverlay? PlaybackFor(long id) => collectionCards.Values.FirstOrDefault(card =>
+            card.Item.Track?.Id == id && collectionGrid.IsAncestorOf(card.Frame)).Playback;
         await WaitForLikedLayoutAsync(() => current?.Id == fixtures[1].Id && isPlaying.Value && !playbackLoading.Value &&
-            next.Playback.ShowsPause && next.Playback.Opacity > .999 && active.Playback.Opacity < .001);
+            PlaybackFor(fixtures[1].Id) is { ShowsPause: true, Opacity: > .999 } && PlaybackFor(active.Item.Track!.Id) is { Opacity: < .001 });
         if (!playbackQueue.Snapshot.Source.Select(entry => entry.Track.Id).SequenceEqual(activeCollection!.Items.Where(item => item.Track != null).Select(item => item.Track!.Id)))
             throw new InvalidOperationException("Clicking history did not preserve the history playback queue");
-        RouteWaveformClick(point);
-        await WaitForLikedLayoutAsync(() => !isPlaying.Value && !next.Playback.ShowsPause);
+        var playingCard = PlaybackFor(fixtures[1].Id)!;
+        RouteWaveformPointer(SettingsCenter(playingCard.PlaybackButton!));
+        RouteWaveformClick(SettingsCenter(playingCard.PlaybackButton!));
+        await WaitForLikedLayoutAsync(() => !isPlaying.Value && !playingCard.ShowsPause);
         RouteWaveformPointer(new Point(2, 2));
-        if (next.Playback.Opacity < .999) throw new InvalidOperationException("Paused current history track lost its active overlay");
+        if (playingCard.Opacity < .999) throw new InvalidOperationException("Paused current history track lost its active overlay");
         CaptureUiPreview("history-paused");
         await ToggleAsync();
         await ShowLibrarySectionAsync(Page.LibraryPlaylists);

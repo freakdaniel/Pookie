@@ -76,19 +76,25 @@ internal sealed partial class MainWindow
                 var texture = body.OpticalImage; var backdrop = playlistDialog.BackdropVersion;
                 var allocations = playlistDialog.OpticalAllocations; var reflections = body.ReflectionRasterizations;
                 var lostGlass = false;
+                var actionComplete = false;
+                var presented = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 void Frame()
                 {
                     var now = Stopwatch.GetTimestamp(); intervals.Add(Stopwatch.GetElapsedTime(previous, now).TotalMilliseconds); previous = now;
                     sizes.Add(Math.Round(playlistDialogContent.BodyBounds.Height, 2));
                     if (!playlistDialog.HasGlassBackdrop || texture != null &&
                         (!ReferenceEquals(texture, body.OpticalImage) || !body.IsOpticsCurrent)) lostGlass = true;
+                    if (actionComplete && !playlistDialogContent.Resizing && !playlistDialogPages.Animating && !playlistPickerLoading.Skeleton.IsVisible)
+                        presented.TrySetResult();
                 }
                 Window.FrameRendered += Frame;
                 try
                 {
                     await action();
-                    await WaitForLikedLayoutAsync(() => !playlistDialogContent.Resizing && !playlistDialogPages.Animating && !playlistPickerLoading.Skeleton.IsVisible);
-                    await WaitForLoginFrameAsync();
+                    actionComplete = true;
+                    // End on the actual settled frame. Polling and forcing an extra
+                    // repaint would count up to 50 ms of idle time as a dropped frame.
+                    await presented.Task.WaitAsync(TimeSpan.FromSeconds(4), lifetime.Token);
                 }
                 finally { Window.FrameRendered -= Frame; }
                 var tail = Percentile95(intervals);

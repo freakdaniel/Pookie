@@ -16,7 +16,8 @@ internal sealed class PlaylistDialogContent : Panel
     private readonly FrameworkElement body;
     private readonly RisingTrack track;
     private readonly AnimationClock reveal = new(TimeSpan.FromMilliseconds(420), Easing.CubicBezier(.16, 1, .3, 1));
-    private readonly AnimationClock resize = new(TimeSpan.FromMilliseconds(280), Easing.CubicBezier(.2, 0, 0, 1));
+    internal static AnimationClock CreateResizeClock() => new(TimeSpan.FromMilliseconds(280), Easing.CubicBezier(.2, 0, 0, 1));
+    private readonly AnimationClock resize = CreateResizeClock();
     private double bodyHeight = PreferredBodyHeight;
     internal double TargetBodyHeight { get; private set; } = PreferredBodyHeight;
     internal double BodyHeightLimit { get; set; } = MaximumBodyHeight;
@@ -48,14 +49,19 @@ internal sealed class PlaylistDialogContent : Panel
     {
         if (animate && TargetBodyHeight == height && (resize.IsRunning || bodyHeight == height)) return;
         resize.Stop(); TargetBodyHeight = height;
-        if (!animate || FindVisualRoot() is not Window) { ApplyHeight(height); return; }
+        if (!animate || FindVisualRoot() is not Window window) { ApplyHeight(height); return; }
         var from = bodyHeight;
-        resize.TickCallback = t => ApplyHeight(from + (height - from) * t);
+        var scale = window.DpiScale;
+        resize.TickCallback = t => ApplyHeight(Math.Round((from + (height - from) * t) * scale) / scale);
         resize.CompletedCallback = () => ApplyHeight(height);
         resize.Start();
     }
     private void ApplyHeight(double height)
-    { bodyHeight = height; body.Height = height; InvalidateMeasure(); }
+    {
+        if (bodyHeight == height) return;
+        bodyHeight = height; body.Height = height;
+        InvalidateMeasure();
+    }
     internal void ResetTrack()
     {
         reveal.Stop(); hidden = null; amount = track.Opacity = 0; track.Move(92);

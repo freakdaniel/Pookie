@@ -50,6 +50,10 @@ internal sealed partial class MainWindow
             CaptureUiPreview("user-profile-activity-reveal");
             fixture.SidebarHold.SetResult(); await opening;
             await WaitForLikedLayoutAsync(() => !userOverviewLoading.Skeleton.IsVisible && !userCommentsLoading.Skeleton.IsVisible);
+            var timeline = Enumerable.Range(0, userPublicationList.ItemsSource.Count).Select(userPublicationList.ItemsSource.GetItem).OfType<UserActivityEntry>().ToArray();
+            if (timeline.Length < 3 || timeline[0].Publication?.Track?.Id != fixture.Tracks[0].Id ||
+                timeline[1].Comment?.Comment.Id != 50000 || timeline[2].Publication?.Playlist?.Id != 101)
+                throw new InvalidOperationException("The comment must appear between the newer track and the older playlist.");
             var sidebarRow = userSidebarRows.Single(); RenderUserProfile();
             if (!ReferenceEquals(sidebarRow, userSidebarRows.Single())) throw new InvalidOperationException("An unrelated profile render rebuilt ready sidebar rows");
             CaptureUiPreview("user-profile-avatar-gradient");
@@ -118,12 +122,29 @@ internal sealed partial class MainWindow
                 Math.Abs(playlistActions.Like.Bounds.Y - playlistActions.Queue.Bounds.Y) > 1 || playlistActions.Repost.Bounds.Right > playlistActions.Queue.Bounds.X)
                 throw new InvalidOperationException("Playlist artwork/actions do not share the library grid and a single footer row");
             await LoadUserPlaylistActionsAsync();
+            var playlistView = userPublicationViews.Values.Single(view => view.Item?.Playlist != null);
+            if (playlistView.Count.Text != "Все 19 треков" || playlistView.Count.Parent is not Button countButton ||
+                countButton.Bounds.X + 7 > playlistView.Count.Bounds.X || countButton.Bounds.Right - 7 < playlistView.Count.Bounds.Right ||
+                Math.Abs(playlistView.Count.Bounds.X - playlistActions.Root.Bounds.X) > 1)
+                throw new InvalidOperationException("The track-count highlight must extend past both edges of its aligned label.");
             if (!playlistActions.Like.IsEnabled || !playlistActions.Repost.IsEnabled) throw new InvalidOperationException("Profile playlist actions did not load their server state");
             var likePlaylist = TogglePlaylistActionAsync(playlistActions.Item.Playlist!, false);
+            if (playlistActions.Like.StyleName != TrackButtons.Selected || likedPlaylistIds.Contains(101))
+                throw new InvalidOperationException("Playlist like must appear before the server confirms it.");
             await TogglePlaylistActionAsync(playlistActions.Item.Playlist!, false); await likePlaylist;
             if (fixture.PlaylistLikeWrites != 1 || !likedPlaylistIds.Contains(101)) throw new InvalidOperationException("Playlist like lost confirmation or duplicate suppression");
-            await TogglePlaylistActionAsync(playlistActions.Item.Playlist!, true);
+            var repost = TogglePlaylistActionAsync(playlistActions.Item.Playlist!, true);
+            if (playlistActions.Repost.StyleName != TrackButtons.Reposted || repostedPlaylistIds.Contains(101))
+                throw new InvalidOperationException("Playlist repost must appear before the server confirms it.");
+            await repost;
             if (fixture.PlaylistRepostWrites != 1 || !repostedPlaylistIds.Contains(101)) throw new InvalidOperationException("Profile playlist repost did not update its shared state");
+            fixture.RejectPlaylistRepost = true;
+            var undoRepost = TogglePlaylistActionAsync(playlistActions.Item.Playlist!, true);
+            if (playlistActions.Repost.StyleName != TrackButtons.Glass) throw new InvalidOperationException("Undo must appear immediately.");
+            try { await undoRepost; throw new InvalidOperationException("Expected a rejected playlist write."); }
+            catch (SoundCloudException) { }
+            if (playlistActions.Repost.StyleName != TrackButtons.Reposted || !playlistActions.Repost.IsEnabled)
+                throw new InvalidOperationException("A rejected repost did not restore the confirmed state.");
             CaptureUiPreview("user-profile-playlist-actions");
             var playlistItem = userPublications.Single(entry => entry.Item.Playlist != null).Item;
             await PlayUserPlaylistTrackAsync(playlistItem, fixture.Tracks[1]);
@@ -133,7 +154,15 @@ internal sealed partial class MainWindow
             await EnqueueUserPlaylistAsync(playlistItem);
             if (!playbackQueue.Snapshot.ManualUpcoming.Skip(manualBefore).Select(entry => entry.Track.Id).SequenceEqual(fixture.Tracks.Take(19).Select(track => track.Id)))
                 throw new InvalidOperationException("Playlist queue action enqueued only its preview instead of the full collection");
-            await OpenUserSectionAsync(UserSection.Comments);
+            shellScroll.SetScrollOffsets(0, 0);
+            await WaitForLoginFrameAsync();
+            var commentsTab = ((StackPanel)userTabs).Children.OfType<Button>().Single(button => button.Content is StackPanel content && content.Children.OfType<TextBlock>().Any(label => label.Text == "Комментарии"));
+            await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady && shellScroll.VerticalOffset < 1 && !commentsTab.IsArrangeDirty);
+            var tabPoint = commentsTab.TranslatePoint(new Point(commentsTab.ActualWidth / 2, commentsTab.ActualHeight / 2), Window);
+            if (!ReferenceEquals(Window.HitTest(tabPoint), commentsTab))
+                throw new InvalidOperationException($"Comments tab cannot be clicked at {tabPoint}, bounds={commentsTab.Bounds}, hit={Window.HitTest(tabPoint)?.GetType().Name}, offset={shellScroll.VerticalOffset}");
+            RouteWaveformClick(tabPoint);
+            await WaitForLikedLayoutAsync(() => userSection.Value == UserSection.Comments);
             await WaitForLikedLayoutAsync(() => userCommentsBody.Children.Count == 30 && shellPageScroll.IsReady);
             shellScroll.SetScrollOffsets(0, SmoothScroll.Maximum(shellScroll));
             await WaitForLikedLayoutAsync(() => userProfileState!.Comments?.Comments.Length == 35 && userCommentsBody.Children.Count == 35);
@@ -234,7 +263,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => !profileOpen.Value && page.Value == Page.UserProfile && userProfileState?.User.Id == me!.Id);
             if (KeyboardFocusFeedback.IsVisible(profileButton)) throw new InvalidOperationException("Mouse navigation left the avatar focus ring active.");
             await VerifyProfileChangesAsync(fixture);
-            Console.WriteLine("USER_PROFILE_UI_OK: independent loading skeletons, stable column geometry, avatar palette, banner crossfade/cache, shared bottom fade, hydrated hero, banner/avatar, overview, seven tabs and follower navigation, virtualized deduplicated pagination, source-preserving linked biography, retry, history/scroll restoration, responsive widths, confirmed follow and stale response isolation");
+            Console.WriteLine("USER_PROFILE_UI_OK: chronological comments and publications, comments tab and pagination, playlist action feedback and rollback, responsive layout, cached artwork, history and account isolation");
         }
         catch (Exception error)
         { VerificationFailure = error; Environment.ExitCode = 1; CaptureUiPreview("user-profile-failure"); Console.Error.WriteLine("USER_PROFILE_UI_FAILED: " + error); }
@@ -297,7 +326,7 @@ internal sealed partial class MainWindow
             PermalinkUrl = "https://soundcloud.com/kurokovvv", Visuals = new([new("https://i1.sndcdn.com/user-profile-banner.jpg")]) };
         internal SoundCloudTrack[] Tracks { get; }
         private static readonly JsonSerializerOptions json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
-        internal bool FailLikes;
+        internal bool FailLikes, RejectPlaylistRepost;
         internal int OwnLikesReads;
         internal TaskCompletionSource? OwnLikesHold;
         internal readonly List<SoundCloudTrack> OwnLikes = [];
@@ -354,7 +383,7 @@ internal sealed partial class MainWindow
             {
                 var next = uri.Query.Contains("cursor=");
                 return JsonSerializer.SerializeToDocument(new { collection = Enumerable.Range(next ? 29 : 0, next ? 6 : 30).Select(i => new {
-                    id = 50000 + i, body = "Этот момент очень нравится 🎧 — " + i, created_at = "2026-10-22T13:00:00Z", user = User, track = Tracks[i % Tracks.Length], timestamp = 15000
+                    id = 50000 + i, body = "Этот момент очень нравится 🎧 — " + i, created_at = new DateTimeOffset(2026, 10, 22, 9, 0, 0, TimeSpan.Zero).AddDays(-i * 3).ToString("O"), user = User, track = Tracks[i % Tracks.Length], timestamp = 15000
                 }), next_href = next ? null : "https://api-v2.soundcloud.com/users/7/comments?cursor=next" }, json);
             }
             if (path == "/users/7/tracks")
@@ -380,8 +409,8 @@ internal sealed partial class MainWindow
         }
         public async Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken token = default)
         { PlaylistLikeWrites++; await Task.Delay(80, token); }
-        public Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken token = default)
-        { PlaylistRepostWrites++; return Task.CompletedTask; }
+        public async Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken token = default)
+        { PlaylistRepostWrites++; await Task.Delay(80, token); if (RejectPlaylistRepost) throw new SoundCloudException("Fixture: rejected", 403); }
         public Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default)
         {
             OwnLikes.RemoveAll(track => track.Id == trackId);

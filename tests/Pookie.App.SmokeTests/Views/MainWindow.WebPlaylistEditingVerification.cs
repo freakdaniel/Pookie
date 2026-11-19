@@ -22,9 +22,17 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => compactTrackRows.Any(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window));
         if (!CanEditDisplayedPlaylist() || !HasCompletePlaylistOrder()) throw new InvalidOperationException("Owned web playlist has no editing actions.");
         var row = compactTrackRows.First(row => row.CollectionRow && row.Track?.Id == 9000 && row.Root.FindVisualRoot() == Window);
-        foreach (var id in new[] { "remove", "up", "down" })
-            if (!row.Root.ContextMenu!.Items.OfType<MenuItem>().Any(entry => entry.Command?.Id == "pookie.playlist." + id))
-                throw new InvalidOperationException("Missing playlist track menu command: " + id);
+        var rowMenu = PopupAppearance.MenuFor(row.Root);
+        rowMenu.Show(row.Root);
+        if (!rowMenu.Buttons.Select(button => button.Command?.Id).Where(id => id?.StartsWith("pookie.playlist.") == true)
+            .SequenceEqual(["pookie.playlist.remove", "pookie.playlist.down"]))
+            throw new InvalidOperationException("The first owned playlist row should offer removal and moving down.");
+        rowMenu.Close(true);
+        var menu = PopupAppearance.MenuFor(collectionMore);
+        menu.Show(collectionMore);
+        if (!menu.Buttons.Any(button => button.Command?.Id == "pookie.collection.edit"))
+            throw new InvalidOperationException("The owner's edit action is missing.");
+        menu.Close(true);
         OpenPlaylistEditor();
         await WaitForLikedLayoutAsync(() => playlistEditor.IsOpen && !playlistEditor.Running);
         if (playlistEditSave.IsVisible || playlistEditSave.IsEnabled || !playlistEditFocus.IsFocused || !playlistEditor.HasGlassBackdrop || !playlistEditor.UsesCachedTransition)

@@ -215,6 +215,7 @@ internal sealed partial class MainWindow
     private void AttachPlaylistTrackEdits(FrameworkElement root, Func<SoundCloudTrack?> track, Func<int> position)
     {
         if (root.ContextMenu is not { } menu) return;
+        PopupAppearance.MenuFor(root).HideUnavailableItems = true;
         void Item(string id, string label, string icon, Action action, Func<bool> enabled)
         {
             var command = PopupAppearance.MenuCommand("pookie.playlist." + id, label, icon);

@@ -34,6 +34,10 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => lyricsResult.Status == LyricsStatus.Synced && lyricsList.ActualHeight > 100 && lyricsRequest == null);
             await VerifyLyricsLoadingFadeAsync("lyrics-transition");
             audio.State = new(12, 3000, false, false, false); Poll(); await Task.Delay(900, lifetime.Token);
+            var allocated = GC.GetAllocatedBytesForCurrentThread();
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (var i = 0; i < 2000; i++) TickLyrics(12, false);
+            Console.WriteLine($"LYRICS_STEADY_TICKS: repeats=2000; elapsed_ms={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F2}; bytes={GC.GetAllocatedBytesForCurrentThread() - allocated}");
             var active = lyricsRows.Single(pair => pair.Value.Row?.Index == 4);
             if (lyricsActiveLine != 4 || Math.Abs(active.Key.Bounds.Y + active.Key.ActualHeight / 2 - lyricsScroll.Bounds.Y - lyricsScroll.ActualHeight * .4) > 4 || active.Value.Text.Foreground.A / 255d < .99)
                 throw new InvalidOperationException("Active lyric was not centered/highlighted.");
@@ -47,7 +51,21 @@ internal sealed partial class MainWindow
                 throw new InvalidOperationException("Inactive dots were not thicker, aligned and shaded like lyric lines.");
             await Task.Delay(300, lifetime.Token); Poll();
             if (lyricsActiveLine != 4) throw new InvalidOperationException("Paused lyrics advanced with wall time.");
-            await VerifyLyricsFollowAcrossWrappedLinesAsync(audio);
+            var lineFrames = new List<double>();
+            long previousFrame = 0;
+            void SampleLineScroll()
+            {
+                if (!smoothScrolls[lyricsScroll].IsRunning) { previousFrame = 0; return; }
+                var now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (previousFrame != 0) lineFrames.Add(System.Diagnostics.Stopwatch.GetElapsedTime(previousFrame, now).TotalMilliseconds);
+                previousFrame = now;
+            }
+            Window.FrameRendered += SampleLineScroll;
+            try { await VerifyLyricsFollowAcrossWrappedLinesAsync(audio); }
+            finally { Window.FrameRendered -= SampleLineScroll; }
+            lineFrames.Sort();
+            if (lineFrames.Count > 0)
+                Console.WriteLine($"LYRICS_FOLLOW_TIMING: p95_ms={lineFrames[(lineFrames.Count - 1) * 95 / 100]:F1}; frames={lineFrames.Count}; max_ms={lineFrames[^1]:F1}");
 
             Window.Activate();
             await WaitForLikedLayoutAsync(() => Window.IsActive);

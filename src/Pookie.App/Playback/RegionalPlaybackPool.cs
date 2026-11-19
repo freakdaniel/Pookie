@@ -21,7 +21,7 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
     private DateTimeOffset clientIdExpires;
     internal event Action<string, string, int, string>? ProbeCompleted;
 
-    internal static RegionalPlaybackPool? FromEnvironment(bool enabledByDefault = true)
+    internal static RegionalPlaybackPool? FromEnvironment(bool enabledByDefault = true, string? cacheDirectory = null)
     {
         var configured = Environment.GetEnvironmentVariable("POOKIE_REGIONAL_PROXY");
         if (string.Equals(configured, "off", StringComparison.OrdinalIgnoreCase) || !enabledByDefault && string.IsNullOrWhiteSpace(configured)) return null;
@@ -31,9 +31,16 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
         var http = new HttpClient(new HttpClientHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.All }) { Timeout = TimeSpan.FromSeconds(10) };
         var catalog = new RegionalProxyCatalog(http);
-        return new(fixedProxy == null ? catalog.GetAsync : _ => Task.FromResult<IReadOnlyList<RegionalProxyEndpoint>>([new(fixedProxy, "", 0)]),
+        var pool = new RegionalPlaybackPool(fixedProxy == null ? catalog.GetAsync : _ => Task.FromResult<IReadOnlyList<RegionalProxyEndpoint>>([new(fixedProxy, "", 0)]),
             token => new SoundCloudWebClient(http).GetClientIdAsync(token), (proxy, clientId) => new RegionalPlaybackSource(proxy, clientId),
             discoveryHttp: http);
+        if (cacheDirectory != null)
+        {
+            var token = pool.lifetime.Token;
+            _ = Task.Run(() => RegionalProxyHealth.MonitorAsync(cacheDirectory, async cancellation =>
+                fixedProxy ?? (await catalog.GetAsync(cancellation).ConfigureAwait(false)).FirstOrDefault(p => p.MaintainedRelay)?.Address, token));
+        }
+        return pool;
     }
 
     internal RegionalPlaybackPool(Func<CancellationToken, Task<IReadOnlyList<RegionalProxyEndpoint>>> candidates,
@@ -50,6 +57,11 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(40));
         var token = deadline.Token;
+        var available = 0;
+        var attempted = 0;
+        var restricted = 0;
+        var failed = 0;
+        var full = 0;
         await resolution.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -57,7 +69,9 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
             var clientTask = GetPublicClientIdAsync(token);
             await Task.WhenAll(listTask, clientTask).ConfigureAwait(false);
             var list = Order(await listTask.ConfigureAwait(false), trackId);
+            available = list.Count;
             var clientId = await clientTask.ConfigureAwait(false);
+            AppLog.For("Pookie.RegionalPlayback").Debug("Трек {TrackId}: начинаем проверку подключений, отобрано {Candidates}", trackId, available);
             using var race = CancellationTokenSource.CreateLinkedTokenSource(token);
             var pending = new ConcurrentQueue<RegionalProxyEndpoint>(list);
             // A worker stops immediately after finding a complete, validated playback link.
@@ -88,8 +102,10 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
                     ISoundCloudPlaybackSource? source = null;
                     try
                     {
+                        Interlocked.Increment(ref attempted);
                         source = createSource(endpoint.Address, clientId);
                         var playback = await new SoundCloudStreamResolver(source).ResolveAsync(trackId, attempt.Token, protocols).ConfigureAwait(false);
+                        Interlocked.Increment(ref full);
                         ProbeCompleted?.Invoke(endpoint.Country, endpoint.Address.Scheme, 200, "full-stream");
                         race.Cancel();
                         return (endpoint.Address, playback);
@@ -100,15 +116,25 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
                         ProbeCompleted?.Invoke(endpoint.Country, endpoint.Address.Scheme, (error as SoundCloudException)?.StatusCode ?? 0,
                             error is SoundCloudException { TrackUnavailable: true } ? "restricted" : error.GetType().Name);
                         // A regional restriction belongs to this track; a network failure belongs to the exit.
-                        if (error is not SoundCloudException { TrackUnavailable: true })
+                        if (error is SoundCloudException { TrackUnavailable: true }) Interlocked.Increment(ref restricted);
+                        else
+                        {
+                            Interlocked.Increment(ref failed);
                             cooldowns[endpoint.Address] = clock.GetUtcNow().AddMinutes(2);
+                        }
                     }
                     finally { (source as IDisposable)?.Dispose(); }
                 }
                 return null;
             }
         }
-        finally { resolution.Release(); }
+        finally
+        {
+            resolution.Release();
+            AppLog.For("Pookie.RegionalPlayback").Debug(
+                "Трек {TrackId}: кандидатов {Candidates}, начато {Attempted}, ограничено {Restricted}, ошибок {Failed}, полных потоков {Full}, отмена {Cancelled}, таймаут {TimedOut}",
+                trackId, available, attempted, restricted, failed, full, cancellationToken.IsCancellationRequested, deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested && !lifetime.IsCancellationRequested);
+        }
     }
 
     private IReadOnlyList<RegionalProxyEndpoint> Order(IReadOnlyList<RegionalProxyEndpoint> list, long trackId)

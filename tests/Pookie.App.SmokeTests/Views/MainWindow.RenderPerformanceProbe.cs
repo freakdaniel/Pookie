@@ -19,7 +19,7 @@ internal sealed partial class MainWindow
         ToggleExpandedPanel(PlayerPanel.Lyrics);
         CancelLyricsRequest();
         ApplyLyrics(new(LyricsStatus.Synced, new LyricsFixtureProvider().Record.ToDocument()));
-        await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && !lyricsReveal.IsRunning && !expandedBackdrop.Running);
+        await WaitForLikedLayoutAsync(() => !panelAnimation.IsRunning && !lyricsReveal.IsRunning && !playerBackdrop.Running);
 
         async Task Sample(string label)
         {

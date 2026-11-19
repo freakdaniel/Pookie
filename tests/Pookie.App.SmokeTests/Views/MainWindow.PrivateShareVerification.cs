@@ -26,7 +26,7 @@ internal sealed partial class MainWindow
             await TogglePlaylistActionAsync(fixture.Playlist, true);
             OpenShare(item);
             await WaitForLikedLayoutAsync(() => !sharePrivateLoading && !shareDialog.Running && !shareContent.Resizing);
-            if (!sharePrivatePanel.IsVisible || shareDestinationsPanel.IsVisible || !shareResetLink.IsVisible ||
+            if (!sharePrivatePanel.IsVisible || !shareDestinationsPanel.IsVisible || shareDestinations.Any(button => !button.IsEnabled) || !shareAccessButton.IsVisible ||
                 !shareLink.Text.EndsWith("/s-old") || !shareCopy.IsEnabled) throw new InvalidOperationException("Private share lost its secret link or owner actions.");
             CopyShareLink();
             if (clipboard.Text != shareLink.Text) throw new InvalidOperationException("Private copy used another address.");
@@ -34,41 +34,41 @@ internal sealed partial class MainWindow
             if (!shareEmbedCode.Text.Contains("secret_token%3Ds-old")) throw new InvalidOperationException("Widget lost the private token.");
             SelectShareTab(0, false);
             await WaitForLikedLayoutAsync(() => !shareContent.Resizing);
-            if (sharePrivateHint.Text.EndsWith('.') || shareResetLink.Width != 48 ||
-                !shareLinkGlass.IsAncestorOf(shareResetLink) || shareTimeAction.IsVisible)
+            if (sharePrivateHint.Text.EndsWith('.') || shareAccessButton.Width != 48 ||
+                !shareLinkGlass.IsAncestorOf(shareAccessButton) || shareTimeAction.IsVisible)
                 throw new InvalidOperationException("Private reset is not an icon inside the link field or the hint retained its final dot.");
             Window.Activate(); await WaitForLikedLayoutAsync(() => Window.IsActive);
             CaptureUiPreview("share-private-playlist");
-            RouteWaveformClick(SettingsCenter(shareResetLink));
-            if (!shareResetConfirmation || fixture.Writes != 0) throw new InvalidOperationException("Reset skipped confirmation.");
-            await WaitForLikedLayoutAsync(() => shareResetPopup?.Reveal == 1 && shareResetCancel.IsFocused);
+            RouteWaveformClick(SettingsCenter(shareAccessButton));
+            if (shareAccessAction != ShareAccessAction.ResetSecret || fixture.Writes != 0) throw new InvalidOperationException("Reset skipped confirmation.");
+            await WaitForLikedLayoutAsync(() => shareAccessPopup?.Reveal == 1 && shareAccessCancel.IsFocused);
             var bodyBounds = shareContent.Bounds;
             RouteShareKey(Key.Tab);
-            if (!shareResetConfirm.IsFocused) throw new InvalidOperationException("Reset popup lost its keyboard focus loop.");
+            if (!shareAccessConfirm.IsFocused) throw new InvalidOperationException("Reset popup lost its keyboard focus loop.");
             RouteShareKey(Key.Escape);
-            if (shareResetPopup!.IsOpen || !shareDialog.IsOpen || fixture.Writes != 0)
+            if (shareAccessPopup!.IsOpen || !shareDialog.IsOpen || fixture.Writes != 0)
                 throw new InvalidOperationException("Escape reset the secret or closed the parent dialog.");
-            await WaitForLikedLayoutAsync(() => !shareResetPopup.IsVisible);
-            RouteWaveformClick(SettingsCenter(shareResetLink));
-            await WaitForLikedLayoutAsync(() => shareResetPopup.Reveal == 1);
+            await WaitForLikedLayoutAsync(() => !shareAccessPopup.IsVisible);
+            RouteWaveformClick(SettingsCenter(shareAccessButton));
+            await WaitForLikedLayoutAsync(() => shareAccessPopup.Reveal == 1);
             if (shareContent.Bounds != bodyBounds) throw new InvalidOperationException("Reset popup resized its parent dialog.");
             CaptureUiPreview("share-private-confirmation");
             fixture.ResetHold = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            RouteWaveformClick(SettingsCenter(shareResetConfirm));
-            if (shareResetPopup!.IsOpen || shareCopy.IsEnabled || shareSend.IsEnabled || shareEmbedCopy.IsEnabled) throw new InvalidOperationException("Old secret remained shareable while resetting.");
+            RouteWaveformClick(SettingsCenter(shareAccessConfirm));
+            if (shareAccessPopup!.IsOpen || shareCopy.IsEnabled || shareSend.IsEnabled || shareEmbedCopy.IsEnabled || shareDestinations.Any(button => button.IsEnabled)) throw new InvalidOperationException("Old secret remained shareable while resetting.");
             CloseShare(true); OpenShare(item);
             if (shareCopy.IsEnabled) throw new InvalidOperationException("Reopening exposed an old secret during reset.");
             fixture.ResetHold.SetResult();
             await WaitForLikedLayoutAsync(() => !sharePrivateLoading && !shareSecretResetting && shareCopy.IsEnabled);
             if (fixture.Writes != 1 || !shareLink.Text.EndsWith("/s-new")) throw new InvalidOperationException("Reset was replayed or reopening retained stale metadata.");
-            fixture.Fail = true; shareResetConfirmation = true;
+            fixture.Fail = true; shareAccessAction = ShareAccessAction.ResetSecret;
             await ResetShareSecretAsync();
-            if (shareCopy.IsEnabled || shareEmbedCopy.IsEnabled || shareResetLink.IsEnabled) throw new InvalidOperationException("Uncertain reset re-enabled a stale link or another reset.");
+            if (shareCopy.IsEnabled || shareEmbedCopy.IsEnabled || shareAccessButton.IsEnabled) throw new InvalidOperationException("Uncertain reset re-enabled a stale link or another reset.");
             fixture.Fail = false;
             CloseShare(true); OpenShare(source);
             await WaitForLikedLayoutAsync(() => !shareDialog.Running);
-            if (sharePrivatePanel.IsVisible || !shareDestinationsPanel.IsVisible) throw new InvalidOperationException("Public sharing retained private controls.");
-            Console.WriteLine("PRIVATE_SHARE_UI_OK: hidden social actions, secret copy/embed, owner confirmation, reset/reopen race and uncertain response");
+            if (sharePrivatePanel.IsVisible || !shareDestinationsPanel.IsVisible || shareDestinations.Any(button => !button.IsEnabled)) throw new InvalidOperationException("Public sharing retained private controls.");
+            Console.WriteLine("PRIVATE_SHARE_UI_OK: social destinations for private and public playlists, secret copy/embed, owner confirmation, reset/reopen race and uncertain response");
         }
         finally { CloseShare(true); api.BrowserTransport = previous; shareClipboard = previousClipboard; SetCollectionPresentation(source); RefreshCollectionActions(); }
     }

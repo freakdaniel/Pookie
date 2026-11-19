@@ -17,6 +17,8 @@ internal sealed partial class MainWindow
     private long lyricsGeneration;
     private double lyricsPosition;
     private int lyricsActiveLine = -1;
+    private Button? lyricsFollowButton;
+    private bool lyricsDotsPlaying;
     private bool lyricsFollow = true, lyricsPlaying;
     private double lyricsFontSize = 40, lyricsSpacer;
     private double? lyricsFollowTarget;
@@ -34,6 +36,7 @@ internal sealed partial class MainWindow
         internal string? CreditProvider;
         internal LyricsDisplayRow? Row;
         internal bool Hovered, Pressed;
+        internal byte? TargetAlpha;
     }
     private readonly Dictionary<Button, LyricsRowVisual> lyricsRows = [];
     private ItemsControl lyricsList = null!;
@@ -282,7 +285,12 @@ internal sealed partial class MainWindow
         var opacity = row.Index == -3 ? .5 : row.Index < 0 ? 0 : view.Pressed ? .75 :
             view.Hovered || row.Index == lyricsActiveLine ? 1 : lyricsResult.Status == LyricsStatus.Plain ? .85 :
             Math.Abs(row.Index - lyricsActiveLine) == 1 ? .48 : .23;
-        view.Text.Foreground = view.Dots.Foreground = Color.FromArgb((byte)Math.Round(opacity * 255), 255, 255, 255);
+        var alpha = (byte)Math.Round(opacity * 255);
+        if (view.TargetAlpha != alpha)
+        {
+            view.TargetAlpha = alpha;
+            view.Text.Foreground = view.Dots.Foreground = Color.FromArgb(alpha, 255, 255, 255);
+        }
         view.Dots.SetActive(view.Dots.IsVisible && row.Index == lyricsActiveLine && expandedOpen && expandedPanelMode == PlayerPanel.Lyrics &&
             lyricsPlaying && isPlaying.Value && !playbackLoading.Value);
     }
@@ -291,8 +299,20 @@ internal sealed partial class MainWindow
     {
         lyricsPosition = position;
         if (playing.HasValue) lyricsPlaying = playing.Value;
+        var previous = lyricsActiveLine;
         lyricsActiveLine = lyricsResult.Document?.ActiveLine(position) ?? -1;
-        foreach (var view in lyricsRows.Values) RefreshLyricsRow(view);
+        var animateDots = lyricsPlaying && isPlaying.Value && !playbackLoading.Value;
+        var playbackChanged = lyricsDotsPlaying != animateDots;
+        lyricsDotsPlaying = animateDots;
+        if (!expandedOpen || expandedPanelMode != PlayerPanel.Lyrics ||
+            previous == lyricsActiveLine && !playbackChanged) return;
+        foreach (var view in lyricsRows.Values)
+        {
+            if (view.Row is not { Index: >= 0 } row) continue;
+            if (previous == lyricsActiveLine ? row.Index == lyricsActiveLine :
+                Math.Abs(row.Index - previous) <= 1 || Math.Abs(row.Index - lyricsActiveLine) <= 1)
+                RefreshLyricsRow(view);
+        }
     }
 
     private void UpdateLyricsFrame()
@@ -308,7 +328,13 @@ internal sealed partial class MainWindow
         }
         if (!preferences.LyricsAutoScroll || !lyricsFollow || lyricsResult.Status != LyricsStatus.Synced) return;
         var index = Math.Max(0, lyricsActiveLine);
-        var selected = lyricsRows.FirstOrDefault(pair => pair.Value.Row?.Index == index).Key;
+        if (lyricsFollowButton == null || lyricsRows[lyricsFollowButton].Row?.Index != index)
+        {
+            lyricsFollowButton = null;
+            foreach (var (button, view) in lyricsRows)
+                if (view.Row?.Index == index) { lyricsFollowButton = button; break; }
+        }
+        var selected = lyricsFollowButton;
         var scroll = smoothScrolls[lyricsScroll];
         if (selected == null)
         {

@@ -48,7 +48,12 @@ internal sealed partial class MainWindow
             await presented.Task.WaitAsync(lifetime.Token);
         }
         finally { Window.FrameRendered -= OnRendered; }
-        await Task.Delay(StartupMinimumVisibleDurationMs, lifetime.Token);
+        // GTK settings and the cover's fixed-size shadow are cold on the first reveal.
+        // Prepare them inside the existing splash dwell, after the logo has settled.
+        var minimum = Task.Delay(StartupMinimumVisibleDurationMs, lifetime.Token);
+        expandedLayout.ReduceMotion = DesktopMotion.PrefersReducedMotion();
+        expandedCoverShadow.PrepareShadow(Window.DpiScale);
+        await minimum;
     }
 
     private async Task HideStartupSplashAsync()

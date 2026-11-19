@@ -9,15 +9,19 @@ internal sealed partial class MainWindow
 {
     private enum PlayerPanel { None, Lyrics, Queue }
     private const double CoverHeaderButtonSize = 38, CoverHeaderInset = 14, CoverHeaderGap = 8, ExpandedVolumeMaxWidth = 160;
-    private readonly PlayerBackdrop expandedBackdrop = new();
-    private readonly AnimationClock expandedAnimation = new(TimeSpan.FromMilliseconds(380), Easing.CubicBezier(.16, 1, .3, 1));
+    private ExpandedPlayerBackdrop expandedBackdrop = null!;
+    private const int ExpandedDurationMs = 440;
+    private readonly AnimationClock expandedAnimation = new(TimeSpan.FromMilliseconds(ExpandedDurationMs), Easing.CubicBezier(.77, 0, .175, 1));
     private readonly AnimationClock panelAnimation = new(TimeSpan.FromMilliseconds(460), PanelSpring);
     private readonly ObservableValue<bool> expandedQueueActive = new(false), expandedLyricsActive = new(false);
     private readonly BufferedTrack expandedBuffer = new();
     private readonly LoadingTrack expandedLoading = new();
     private Grid expandedHost = null!, expandedHeader = null!;
+    private StackPanel expandedMetadata = null!;
+    private Grid expandedTimeline = null!;
     private ExpandedPlayerLayout expandedLayout = null!;
     private Border expandedCover = null!;
+    private CardShadow expandedCoverShadow = null!;
     private Image expandedArtwork = null!;
     private Image outgoingExpandedArtwork = null!;
     private Image stagedExpandedArtwork = null!;
@@ -52,6 +56,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ExpandedPlayer()
     {
+        expandedBackdrop = new(playerBackdrop);
         expandedArtwork = new Image().StretchMode(Stretch.UniformToFill);
         outgoingExpandedArtwork = new Image().StretchMode(Stretch.UniformToFill).IsHitTestVisible(false);
         stagedExpandedArtwork = new Image().StretchMode(Stretch.UniformToFill);
@@ -122,16 +127,16 @@ internal sealed partial class MainWindow
                 if (!syncingExpandedProgress) progress.Value = value;
             });
         var shadowPadding = new Thickness(shadowBlur, shadowBlur - shadowOffset, shadowBlur, shadowBlur + shadowOffset);
-        var coverShadow = new CardShadow(expandedCover, shadowBlur, shadowOffset, coverRadius, Color.FromArgb(90, 0, 0, 0), softFalloff: true)
+        expandedCoverShadow = new CardShadow(expandedCover, shadowBlur, shadowOffset, coverRadius, Color.FromArgb(90, 0, 0, 0), softFalloff: true)
             .Margin(shadowPadding * -1);
         var card = new StackPanel().Vertical().Spacing(0).Children(
-            coverShadow,
-            new StackPanel().Vertical().Spacing(5).Margin(0, 22, 0, 20).Children(
+            expandedCoverShadow,
+            new StackPanel().Vertical().Spacing(5).Margin(0, 22, 0, 20).Ref(out expandedMetadata).Children(
                 new TextBlock().BindText(title).Foreground(Color.White).FontSize(20).Bold().CenterHorizontal()
                     .TextTrimming(TextTrimming.CharacterEllipsis),
                 new TextBlock().BindText(artist).Foreground(PlayerSecondaryText).FontSize(14).CenterHorizontal()
                     .TextTrimming(TextTrimming.CharacterEllipsis)),
-            new Grid().Columns("*").Rows("12,24").Children(
+            new Grid().Columns("*").Rows("12,24").Ref(out expandedTimeline).Children(
                 new Grid().Columns("*").Rows("*").Row(0).Children(expandedBuffer, expandedProgress, expandedLoading),
                 new Grid().Columns("*,*").Rows("*").Row(1).Children(
                     new TextBlock().BindText(currentTime).FontSize(11).Foreground(PlayerSecondaryText).Column(0).Ref(out expandedPositionLabel),
@@ -154,12 +159,13 @@ internal sealed partial class MainWindow
         };
         var panelViewport = new Border().ClipToBounds().Child(expandedPanel);
         var cardLayer = new PlayerMotionLayer(card);
-        var panelLayer = new PlayerMotionLayer(panelViewport);
-        expandedLayout = new ExpandedPlayerLayout(cardLayer, panelLayer, expandedCover, shadowPadding);
+        var panelLayer = new PlayerMotionLayer(panelViewport, fadeClippedContent: true);
+        expandedLayout = new ExpandedPlayerLayout(cardLayer, panelLayer, expandedCover, playerArtworkButton, shadowPadding);
         expandedLayout.Add(cardLayer); expandedLayout.Add(panelLayer);
         expandedHeader = new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
             Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
-            ShortcutHint(ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false), ShortcutAction.Expand).Right().Column(1));
+            ShortcutHint(ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false),
+                ShortcutAction.Expand, "Свернуть плеер").Right().Column(1));
         expandedHost = new Grid().Columns("*").Rows("84,*").ClipToBounds().Children(
             expandedBackdrop.Row(0).RowSpan(2), expandedHeader,
             expandedLayout.Row(1).Margin(24, 0, 24, 32));
@@ -170,13 +176,17 @@ internal sealed partial class MainWindow
         expandedAnimation.CompletedCallback = () =>
         {
             ApplyExpandedReveal(expandedTo);
-            if (expandedOpen) { workspace.IsVisible = false; return; }
+            if (expandedOpen)
+            {
+                workspace.IsVisible = false;
+                return;
+            }
             expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
-            if (overviewRefreshPending) RefreshOverviewSections();
+            RefreshPendingOverview();
             workspace.IsHitTestVisible = workspace.IsEnabled;
             expandedLoading.SetLoading(false);
-            playerArtworkButton.Focus();
-            playerArtworkOverlay.Opacity = 0;
+            KeyboardFocusFeedback.Restore(playerArtworkButton, keyboard: false);
+            playerArtworkOverlay.Opacity = playerArtworkButton.IsMouseOver ? 1 : 0;
         };
         panelAnimation.TickCallback = amount =>
         {
@@ -198,6 +208,11 @@ internal sealed partial class MainWindow
         // Blend the background brush directly. Grouping it with the foreground
         // allocates and composites a window-sized opacity layer on every tick.
         expandedReveal = expandedBackdrop.Reveal = expandedHeader.Opacity = reveal;
+        playerContentFrame.Opacity = expandedLayout.ReduceMotion ? 1 - reveal : Math.Clamp(1 - reveal / .32, 0, 1);
+        // The moving cover takes over the mini cover at its original bounds.
+        playerArtworkButton.Opacity = expandedLayout.ReduceMotion || reveal == 0 ? 1 : 0;
+        expandedMetadata.Opacity = Math.Clamp((reveal - .38) / .50, 0, 1);
+        expandedTimeline.Opacity = Math.Clamp((reveal - .58) / .42, 0, 1);
         expandedLayout.SetMotion(reveal, expandedLayout.SideAmount, panelReveal);
     }
 
@@ -251,12 +266,15 @@ internal sealed partial class MainWindow
     {
         if (disposed || expandedOpen == open || open && (!playerVisible.Value || current == null)) return;
         expandedAnimation.Stop();
+        if (!expandedHost.IsVisible) expandedLayout.ReduceMotion = DesktopMotion.PrefersReducedMotion();
         expandedOpen = open;
+        tooltipLayer.Dismiss();
         SetLyricsPanelActive(open && expandedPanelMode == PlayerPanel.Lyrics);
         if (open)
         {
             ResetTrackCommentPreview();
-            if (expandedPanelMode != PlayerPanel.None) SetExpandedPanelContent(expandedPanelMode, animate: false);
+            if (expandedPanelMode != PlayerPanel.None && expandedPanel.ContentOpacity < 1)
+                SetExpandedPanelContent(expandedPanelMode, animate: false);
             if (!expandedHost.IsVisible)
             {
                 expandedPositionLabel.Opacity = expandedDurationLabel.Opacity = 0;
@@ -266,15 +284,21 @@ internal sealed partial class MainWindow
             queueOpen.Value = profileOpen.Value = false;
             playerArtworkOverlay.Opacity = 0;
             SyncExpandedTimeline();
-            if (expandedPanelMode == PlayerPanel.Queue) RefreshExpandedQueue();
         }
         else
         {
-            workspace.IsVisible = true; CancelSeek(); SetExpandedVolumeOpen(false);
+            if (!workspace.IsVisible)
+            {
+                workspace.IsVisible = true;
+                // Descendant damage can stop at a hidden page. Sample its header glass again on return.
+                contentSurface.InvalidateVisual();
+            }
+            CancelSeek(); SetExpandedVolumeOpen(false);
             if (expandedArtworkFade.ContentOpacity == 0) CompleteExpandedArtworkFade();
         }
         expandedFrom = expandedReveal;
         expandedTo = open ? 1 : 0;
+        expandedAnimation.Duration = TimeSpan.FromMilliseconds(Math.Max(1, (expandedLayout.ReduceMotion ? 150 : ExpandedDurationMs) * Math.Abs(expandedTo - expandedFrom)));
         expandedAnimation.Start();
     }
 
@@ -341,8 +365,8 @@ internal sealed partial class MainWindow
         expandedLayout.SetMotion(0, 0, 0);
         ApplyExpandedReveal(0);
         expandedHost.IsVisible = expandedHost.IsHitTestVisible = false;
-        if (!disposed && overviewRefreshPending) RefreshOverviewSections();
-        expandedLoading.SetLoading(false); expandedBuffer.Reset(); expandedBackdrop.Reset();
+        if (!disposed) RefreshPendingOverview();
+        expandedLoading.SetLoading(false); expandedBuffer.Reset();
         ResetExpandedArtwork();
         workspace.IsHitTestVisible = workspace.IsEnabled;
     }

@@ -31,16 +31,45 @@ internal sealed partial class LrcRedSearch
         {
             if (query.Length > 240) continue;
             var hits = await SearchAsync(query, token, byLyrics: false).ConfigureAwait(false);
-            foreach (var hit in hits.Where(hit => MatchesRecording(hit, identity, titleKeys, artistKeys))
-                         .OrderBy(hit => Math.Abs(hit.Duration - identity.Duration)))
+            var document = await ReadMatchesAsync(hits.Where(hit => MatchesRecording(hit, identity, titleKeys, artistKeys))).ConfigureAwait(false);
+            if (document != null || candidatesLeft == 0) return document;
+        }
+
+        // The title may be a line in the song. The search rank alone says nothing
+        // about which recording it is, so validate the hit before fetching its LRC.
+        if (primary.Title.Length < 6 || !double.IsFinite(identity.Duration) || identity.Duration <= 0) return null;
+        var lyricHits = await SearchAsync(primary.Title, token, byLyrics: true).ConfigureAwait(false);
+        var matches = lyricHits.Where(hit => hit != null && !string.IsNullOrWhiteSpace(hit.Title) && !string.IsNullOrWhiteSpace(hit.Artist) &&
+            hit.Duration > 0 && Math.Abs(hit.Duration - identity.Duration) <= 2 && LyricsMatcher.CloseTitle(primary.Title, hit.Title) &&
+            Artists(primary.Artist).Any(expected => Artists(hit.Artist).Any(actual => SameLyricArtist(expected, actual)))).ToArray();
+        if (matches.Select(hit => (TitleKey(hit.Title), MatchKey(hit.Artist))).Distinct().Skip(1).Any()) return null;
+        return await ReadMatchesAsync(matches).ConfigureAwait(false);
+
+        async Task<LyricsDocument?> ReadMatchesAsync(IEnumerable<LrcRedHit> matches)
+        {
+            foreach (var hit in matches.OrderBy(hit => Math.Abs(hit.Duration - identity.Duration)))
             {
                 if (NormalizeIsrc(hit.Isrc) is not { } candidate || !tried.Add(candidate)) continue;
+                candidatesLeft--;
                 var document = await ReadLyricsAsync(candidate, identity, allowPlain, token).ConfigureAwait(false);
-                if (document != null) return document;
-                if (--candidatesLeft == 0) return null;
+                if (document != null || candidatesLeft == 0) return document;
             }
+            return null;
         }
-        return null;
+    }
+
+    private static bool SameLyricArtist(string expected, string actual)
+    {
+        var left = MatchKey(expected);
+        var right = MatchKey(actual);
+        if (left is "" or "unknown" or "unknownartist") return false;
+        if (left == right) return true;
+        // A long transliterated credit can have a different spelling at the
+        // label (e.g. Молли / Molly). Keep same-script artist names strict.
+        var transliteratedLeft = left != LyricsMatcher.Normalize(expected).Replace(" ", "");
+        var transliteratedRight = right != LyricsMatcher.Normalize(actual).Replace(" ", "");
+        return transliteratedLeft != transliteratedRight && Math.Min(left.Length, right.Length) >= 10 &&
+            LyricsMatcher.OneLetterApart(left, right);
     }
 
     private static bool MatchesRecording(LrcRedHit? hit, LyricsIdentity identity, HashSet<string> titles, HashSet<string> artists)

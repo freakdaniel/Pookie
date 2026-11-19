@@ -7,6 +7,13 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private static void VerifyDetailHeadingCentered(Button play, TextBlock title, FrameworkElement subtitle)
+    {
+        var textCenter = (title.Bounds.Y + subtitle.Bounds.Bottom) / 2;
+        if (Math.Abs(textCenter - play.Bounds.Center.Y) > 1 || title.Bounds.Bottom > subtitle.Bounds.Y)
+            throw new InvalidOperationException($"Detail heading is misaligned: title={title.Bounds}, subtitle={subtitle.Bounds}, play={play.Bounds}.");
+    }
+
     private async Task VerifyTrackPageUiAsync()
     {
         var oldSession = api.Session; var oldTransport = api.BrowserTransport;
@@ -51,6 +58,7 @@ internal sealed partial class MainWindow
             await WaitForLikedLayoutAsync(() => page.Value == Page.Track && trackDetailState is { CommentsLoading: false, RelatedLoading: false, SidebarLoading: false } &&
                 !navigationHistory[navigationIndex].Pending && trackDetailWaveform.HasSamples && trackDetailCover.Source is ImageSource &&
                 trackDetailWaveform.ActualWidth > 100 && trackDetailMarkerLayer.ActualHeight > 0 && !trackDetailScroll.IsArrangeDirty);
+            VerifyDetailHeadingCentered(trackDetailPlay, trackDetailTitle, trackDetailMetadataLine);
             if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROBE") == "1")
             { await ProbeDetailScrollingAsync(); return; }
             if (Environment.GetEnvironmentVariable("POOKIE_TRACK_QUALITY_ONLY") == "1")

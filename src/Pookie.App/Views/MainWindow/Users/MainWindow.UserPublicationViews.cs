@@ -6,6 +6,8 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
+    private sealed record UserActivityEntry(string Key, DateTimeOffset Date, LibraryItem? Publication = null, UserComment? Comment = null);
+
     private sealed class UserPublicationView
     {
         internal LibraryItem? Item;
@@ -25,10 +27,10 @@ internal sealed partial class MainWindow
 
     private FrameworkElement UserPublicationListView()
     {
-        userPublicationList = new ItemsControl().Items(Array.Empty<LibraryItem>(), item => item.Key)
+        userPublicationList = new ItemsControl().Items(Array.Empty<UserActivityEntry>(), item => item.Key)
             .VariableHeightPresenter().ItemHeight(TrackRowLayout.Stride).Background(Color.Transparent).BorderThickness(0).Padding(0)
             .ItemPadding(new Thickness(0, 0, 0, 36));
-        userPublicationList.ItemTemplate = new DelegateTemplate<LibraryItem>(context =>
+        userPublicationList.ItemTemplate = new DelegateTemplate<UserActivityEntry>(context =>
         {
             var host = new StackPanel().Vertical();
             userPublicationViews.Add(host, new()); context.Register("host", host); return host;
@@ -45,9 +47,16 @@ internal sealed partial class MainWindow
         return new(author, actor, new TextBlock().FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis), false);
     }
 
-    private void BindUserPublication(StackPanel host, LibraryItem item)
+    private void BindUserPublication(StackPanel host, UserActivityEntry entry)
     {
         ClearUserPublication(host);
+        if (entry.Comment is { } comment)
+        {
+            host.Clear();
+            host.Add(UserCommentView(comment, preview: false, activity: true));
+            return;
+        }
+        var item = entry.Publication!;
         var view = userPublicationViews[host]; view.Item = item;
         var revision = ++view.Revision; var user = userProfileState!.User; var generation = navigationGeneration;
         bool Current() => view.Item != null && view.Revision == revision && IsUserProfileCurrent(user.Id, generation);
@@ -82,10 +91,10 @@ internal sealed partial class MainWindow
         view.Title.MouseDown += args => { if (args.Button == MouseButton.Left) { args.Handled = true; Open(); } };
         view.Author = new TextBlock().FontSize(12).SemiBold().Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachUserLink(view.Author, () => view.Item?.Playlist?.User);
-        view.Play = Icons.View("play-solid", 22, TrackButtons.OnPrimary).Center();
-        var play = TrackButtons.Icon(view.Play, () => { if (view.Item is { } item) Run(() => PlayLibraryCollectionAsync(item)); }, TrackButtons.Filled, 40);
+        view.Play = Icons.View("play-solid", 20, TrackButtons.OnSurface).Center();
+        var play = TrackButtons.Icon(view.Play, () => { if (view.Item is { } item) Run(() => PlayLibraryCollectionAsync(item)); }, TrackButtons.Glass, TrackRowLayout.ActionSize);
         view.PlaylistByline = PooledUserByline(view.Author);
-        var heading = new Grid().Columns("40,*").Rows("40").Spacing(10).Children(play.Column(0),
+        var heading = new Grid().Columns("36,*").Rows("36").Spacing(10).Children(play.Column(0),
             new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(view.PlaylistByline, view.Title));
         var artwork = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Child(ArtworkLayer(view.Cover))).OnClick(Open);
@@ -97,12 +106,19 @@ internal sealed partial class MainWindow
             view.Preview.Add(row); preview.Add(row.Root);
         }
         view.Count = new TextBlock().FontSize(12).SemiBold();
-        var more = TrackButtons.Action(view.Count, Open, TrackButtons.Text, 28).Padding(0).Left();
+        var more = TrackButtons.Action(view.Count, Open, TrackButtons.Text, 28).Padding(8, 0).Margin(-8, 0).Left();
         var actions = UserPlaylistActions(view.Item!, view.Actions, currentItem: () => view.Item);
         var root = new Grid().Columns($"{TrackRowLayout.CoverSize},*").Rows("Auto").Spacing(TrackRowLayout.ColumnGap).Children(artwork.Column(0).Margin(0, 8, 0, 0).Top(),
             new StackPanel().Vertical().Spacing(10).Margin(TrackRowLayout.ContentInset, 8, TrackRowLayout.ContentInset, 0).Column(1)
                 .Children(heading, preview, more, actions));
-        VisualTree.Visit(root, element => { if (element is MaterialTrackButton button) button.RetainDecorationOnDetach = true; });
+        VisualTree.Visit(root, element =>
+        {
+            if (element is MaterialTrackButton button)
+            {
+                if (button.StyleName == TrackButtons.Glass) button.UseCardGlassFallback();
+                button.RetainDecorationOnDetach = true;
+            }
+        });
         return root;
     }
 
@@ -110,12 +126,12 @@ internal sealed partial class MainWindow
     {
         var item = view.Item!; var playlist = item.Playlist!;
         view.Title.Text = item.Title; view.Author.Text = playlist.User?.Username ?? item.Subtitle;
-        view.Play.Source = Icons.Source(playbackQueue.Context?.Key == item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
+        view.Play.Source = Icons.Source(playbackQueue.Context?.Key == item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
         userPlaylistPlayIcons.Add((item, view.Play)); userPublicationCovers.Add(view.Cover);
         foreach (var actions in view.Actions) { actions.Item = item; userPlaylistActionViews.Add(actions); }
         RefreshUserPlaylistActions(); SetCollectionArtwork(view.Cover, item);
         var count = UserPlaylistTrackCount(playlist);
-        view.Count.Text = $"{(count == 1 ? "Всего" : "Все")} {count:N0} {RussianPlural(count, "трек", "трека", "треков")}" + (playlist.Duration > 0 ? " · " + FormatTime(playlist.Duration / 1000) : "");
+        view.Count.Text = $"{(count == 1 ? "Всего" : "Все")} {count:N0} {RussianPlural(count, "трек", "трека", "треков")}";
         void Preview(SoundCloudTrack[] tracks)
         {
             var values = tracks.Where(track => !string.IsNullOrWhiteSpace(track.Title)).Take(3).ToArray();
@@ -146,7 +162,8 @@ internal sealed partial class MainWindow
 
     private void ClearUserPublication(StackPanel host)
     {
-        if (!userPublicationViews.TryGetValue(host, out var view) || view.Item == null) return;
+        if (!userPublicationViews.TryGetValue(host, out var view)) return;
+        if (view.Item == null) { host.Clear(); return; }
         userPublications.RemoveAll(entry => ReferenceEquals(entry.Root, view.Track?.Root) || ReferenceEquals(entry.Root, view.Playlist));
         view.Item = null; ++view.Revision;
         if (view.Track is { } track) { ClearLibraryTrackRow(track); userPublicationRows.Remove(track); }

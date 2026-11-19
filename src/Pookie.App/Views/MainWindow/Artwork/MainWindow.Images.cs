@@ -68,7 +68,8 @@ internal sealed partial class MainWindow
     {
         if (generation != playGeneration) return;
         var display = source != null ? (IImageSource)source : Icons.Source(Icons.MissingTrackArtwork);
-        artwork.Source = display;
+        if (!pending || source != null || !playerVisible.Value)
+            SetMiniArtwork(display, generation);
         if (source != null || !pending || expandedArtwork.Source == null)
             SetExpandedArtwork(display, generation);
         if (source == null)
@@ -77,7 +78,6 @@ internal sealed partial class MainWindow
             // neutral here would reverse the colour transition when it arrives.
             if (pending) return;
             playerBackdrop.SetPalette(PlayerPalette.Neutral);
-            expandedBackdrop.SetPalette(PlayerPalette.Neutral);
             return;
         }
         Run(async () =>
@@ -88,12 +88,43 @@ internal sealed partial class MainWindow
                 catch (Exception error) when (error is ArgumentException or InvalidOperationException or NotSupportedException)
                 { return PlayerPalette.Neutral; }
             }, lifetime.Token));
-            if (!disposed && generation == playGeneration && ReferenceEquals(artwork.Source, source))
-            {
+            if (!disposed && generation == playGeneration && ReferenceEquals(queuedMiniArtwork?.Source ?? artwork.Source, source))
                 playerBackdrop.SetPalette(palette);
-                expandedBackdrop.SetPalette(palette);
-            }
         });
+    }
+
+    private void SetMiniArtwork(IImageSource source, long generation)
+    {
+        if (miniArtworkFade.ContentOpacity > 0)
+        {
+            queuedMiniArtwork = (source, generation);
+            return;
+        }
+        queuedMiniArtwork = null;
+        if (ReferenceEquals(artwork.Source, source)) return;
+        if (playerVisible.Value && workspace.IsVisible && artwork.Source is { } previous)
+            FadeOutgoingArtwork(miniArtworkFade, outgoingMiniCover, outgoingMiniArtwork, previous, Color.FromRgb(59, 59, 59));
+        artwork.Source = source;
+    }
+
+    private void ResetMiniArtwork()
+    {
+        queuedMiniArtwork = null;
+        miniArtworkFade.Transition = ContentTransition.CreateNone();
+        miniArtworkFade.Content = outgoingMiniCover;
+        miniArtworkFade.Content = null;
+        outgoingMiniArtwork.Source = null;
+        artwork.Source = Icons.Source(Icons.MissingTrackArtwork);
+    }
+
+    private static void FadeOutgoingArtwork(TransitionContentControl fade, Border cover, Image outgoing, IImageSource previous, Color background)
+    {
+        outgoing.Source = previous;
+        cover.Background = previous is ImageSource { HasAlpha: false } ? Color.Transparent : background;
+        fade.Transition = ContentTransition.CreateNone();
+        fade.Content = cover;
+        fade.Transition = ExpandedArtworkFade;
+        fade.Content = null;
     }
 
     private void SetExpandedArtwork(IImageSource source, long generation)
@@ -139,13 +170,7 @@ internal sealed partial class MainWindow
 
         queuedExpandedArtwork = null;
         var previous = expandedArtwork.Source;
-        outgoingExpandedArtwork.Source = previous;
-        outgoingExpandedCover.Background = previous is ImageSource { HasAlpha: true } ? Raised : Color.Transparent;
-        expandedArtworkFade.Transition = ContentTransition.CreateNone();
-        expandedArtworkFade.Content = outgoingExpandedCover;
-        expandedArtworkFade.Transition = ExpandedArtworkFade;
-        // Keep the new image opaque beneath the fading outgoing image.
-        expandedArtworkFade.Content = null;
+        if (previous != null) FadeOutgoingArtwork(expandedArtworkFade, outgoingExpandedCover, outgoingExpandedArtwork, previous, Raised);
         expandedArtwork.Source = next.Source;
         expandedGlassBackdrop.BeginBlend(stagedExpandedGlass, () => expandedArtworkFade.ContentOpacity);
         stagedExpandedArtwork.Source = null;
@@ -297,7 +322,7 @@ internal sealed partial class MainWindow
             {
                 coverCache[track.Id] = source;
             }
-            SetPlayerArtwork(source, generation);
+            SetPlayerArtwork(source ?? coverCache.GetValueOrDefault(track.Id), generation);
         }
     }
 }

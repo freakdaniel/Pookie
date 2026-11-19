@@ -163,7 +163,7 @@ internal sealed partial class MainWindow
     private void RefreshFeedPlayback()
     {
         foreach (var view in feedViews.Values)
-            if (view.Entry.Item.Playlist != null && view.Play != null) view.Play.Source = Icons.Source(playbackQueue.Context?.Key == view.Entry.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnPrimary);
+            if (view.Entry.Item.Playlist != null && view.Play != null) view.Play.Source = Icons.Source(playbackQueue.Context?.Key == view.Entry.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
     }
 
     private void DisposeFeed()
