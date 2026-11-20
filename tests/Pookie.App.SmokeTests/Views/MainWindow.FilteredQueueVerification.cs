@@ -120,6 +120,7 @@ internal sealed partial class MainWindow
     {
         await WaitForLikedLayoutAsync(() => shellPageScroll.IsReady);
         shellScroll.SetScrollOffsets(0, SmoothScroll.Maximum(shellScroll));
+        await WaitForLoginFrameAsync();
         Button? button = null; Image? cover = null;
         await WaitForLikedLayoutAsync(() =>
         {
@@ -142,8 +143,12 @@ internal sealed partial class MainWindow
             }
             return button is { ActualWidth: > 0, ActualHeight: > 0 } && button.Bounds.IntersectsWith(shellScroll.Bounds);
         });
-        RouteWaveformPointer(cover?.Bounds.Center ?? button!.Bounds.Center);
-        if (cover != null) await WaitForLikedLayoutAsync(() => button!.IsHitTestVisible);
+        await WaitForLikedLayoutAsync(() =>
+        {
+            RouteWaveformPointer(cover?.Bounds.Center ?? button!.Bounds.Center);
+            var hit = Window.HitTest(button!.Bounds.Center);
+            return hit == button || hit != null && button.IsAncestorOf(hit);
+        });
         RouteWaveformClick(button!.Bounds.Center);
     }
 }

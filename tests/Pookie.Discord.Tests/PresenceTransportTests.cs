@@ -11,7 +11,10 @@ public sealed class PresenceTransportTests
     public async Task LocalRpcHandshakesPreservesActivityAnswersPingAndClearsExplicitly()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var token = timeout.Token; var name = "pookie-discord-" + Guid.NewGuid().ToString("N");
+        var token = timeout.Token;
+        var name = "pookie-discord-" + Guid.NewGuid().ToString("N");
+        // Unix named pipes use a socket path. macOS runner TMPDIRs can exhaust sun_path.
+        if (!OperatingSystem.IsWindows()) name = Path.Combine("/tmp", name);
         await using var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         using var client = new PresenceRpcClient("fixture", async stop =>
         {

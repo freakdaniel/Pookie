@@ -22,7 +22,10 @@ public sealed class MemoryOwnershipTests
                 using var canceled=new CancellationTokenSource();
                 var queries=Enumerable.Range(0,10000).Select(_=>history.SearchAsync("query",token:canceled.Token)).ToArray();
                 canceled.Cancel();
-                await Task.WhenAll(queries.Select(async query=>await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>query))).WaitAsync(TimeSpan.FromSeconds(5));
+                // The worker stays blocked until finally. The timeout only guards against a deadlock.
+                Task allQueries = Task.WhenAll(queries);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => allQueries.WaitAsync(TimeSpan.FromSeconds(30)));
+                Assert.All(queries, query => Assert.True(query.IsCanceled));
                 Assert.False(blocking.IsCompleted);
             }
             finally { release.Set();await blocking; }
