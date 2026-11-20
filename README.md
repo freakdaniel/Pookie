@@ -14,6 +14,7 @@
 
 ## Inside the player
 
+| | |
 | --- | --- |
 | **Native App** | Pookie runs as a native desktop app on Windows, Linux and macOS. Pause playback or skip a track from your system’s media controls while you work in another app |
 | **Discovery** | Browse your feed and personal mixes. Search for tracks, people and playlists, or look up a lyric with [lrc.red](https://lrc.red) |
