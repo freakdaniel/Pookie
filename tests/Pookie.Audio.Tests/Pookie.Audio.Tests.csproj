@@ -5,6 +5,9 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+    <Compile Remove="WidevineRuntimeTests.cs;CdmInteropTests.cs" />
+  </ItemGroup>
   <ItemGroup>
     <None Include="../Fixtures/Media/*" Link="Fixtures/Media/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

@@ -18,6 +18,7 @@ public sealed class DrmLicenseFailureTests
     public void GenericRejectionDoesNotInventAHostVerificationFailure(string body, string category) =>
         Assert.Equal(category, DrmLicenseFailure.Classify(Encoding.UTF8.GetBytes(body)));
 
+#if !WINDOWS
     [Theory]
     [InlineData("080212025000", "PLATFORM_UNVERIFIED")]
     [InlineData("120250020802", "PLATFORM_SOFTWARE_VERIFIED")]
@@ -28,6 +29,7 @@ public sealed class DrmLicenseFailureTests
     [InlineData("0802120250ff", null)] // Truncated status varint.
     public void ReadOnlyExplicitPlatformVerificationStatus(string envelope, string? expected) =>
         Assert.Equal(expected, WidevineVerificationStatus.Read(Convert.FromHexString(envelope)));
+#endif
 
     [Theory]
     [InlineData("{\"code\":403}", "403")]

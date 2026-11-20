@@ -51,14 +51,14 @@ public sealed class WidevineRuntimeTests : IDisposable
     {
         var bytes = Archive();
         using var handler = new Handler(bytes); using var http = new HttpClient(handler);
-        handler.Block = true;
+        handler.ResponseGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using var cancellation = new CancellationTokenSource();
         var pending = Install(http, Package(bytes), cancellation.Token);
         await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
         NoTemporaryFiles();
-        handler.Block = false;
+        handler.ResponseGate.SetResult();
         Assert.True(File.Exists(await Install(http, Package(bytes))));
     }
 
@@ -150,8 +150,17 @@ public sealed class WidevineRuntimeTests : IDisposable
     public async Task ConcurrentPlaybackRequestsInstallTheModuleOnlyOnce()
     {
         var bytes = Archive();
-        using var handler = new Handler(bytes); using var http = new HttpClient(handler);
-        var paths = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => Install(http, Package(bytes))));
+        var package = Package(bytes);
+        await new WidevineConsent(root).AcceptAsync(LicenseText, CancellationToken.None);
+
+        var response = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var handler = new Handler(bytes) { ResponseGate = response };
+        using var http = new HttpClient(handler);
+        var installs = Enumerable.Range(0, 5)
+            .Select(_ => WidevineRuntime.InstallAsync(http, root, package, LicenseText, CancellationToken.None))
+            .ToArray();
+        response.SetResult();
+        var paths = await Task.WhenAll(installs);
         Assert.Single(paths.Distinct());
         Assert.Equal(1, handler.Requests);
         NoTemporaryFiles();
@@ -444,7 +453,8 @@ public sealed class WidevineRuntimeTests : IDisposable
     private sealed class Handler(byte[] bytes) : HttpMessageHandler
     {
         public int Requests;
-        public bool Offline, Block;
+        public bool Offline;
+        public TaskCompletionSource? ResponseGate;
         public byte[] Bytes = bytes;
         public string? Metadata, RequestBody;
         public Uri? Redirect, RequestUri;
@@ -456,7 +466,7 @@ public sealed class WidevineRuntimeTests : IDisposable
             Interlocked.Increment(ref Requests);
             RequestUri = request.RequestUri; HeaderNames = request.Headers.Select(header => header.Key).ToArray();
             Started.TrySetResult();
-            if (Block) await Task.Delay(Timeout.Infinite, token);
+            if (ResponseGate is { } gate) await gate.Task.WaitAsync(token);
             if (Offline) throw new HttpRequestException("fixture offline");
             if (request.RequestUri!.Host == "update.googleapis.com")
             {
