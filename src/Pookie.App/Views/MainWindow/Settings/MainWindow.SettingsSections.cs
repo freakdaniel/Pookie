@@ -130,7 +130,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement AboutSettingsView() => SettingsGroups(
         SettingsGroup("Pookie",
-            SettingsValue(UiText.Get("common.version"), UiText.Get("settings.about.tagline"), () => typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "—"),
+            SettingsValue(UiText.Get("common.version"), UiText.Get("settings.about.tagline"), () => PookieVersion.Display),
             SettingsValue(UiText.Get("settings.about.platform"), "", () => System.Runtime.InteropServices.RuntimeInformation.OSDescription),
             SettingsValue(UiText.Get("common.audio"), UiText.Get("settings.playback.outputDeviceDescription"), () => audioStatus.Value),
             SettingsAction(UiText.Get("settings.about.sourceCode"), "github.com/freakdaniel/Pookie", UiText.Get("settings.about.openProject"), () => OpenSettingsUrl("https://github.com/freakdaniel/Pookie"), externalLink: true)),

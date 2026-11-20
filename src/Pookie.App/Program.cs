@@ -11,6 +11,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args is ["--version"])
+        {
+            Console.WriteLine(Pookie.PookieVersion.Display);
+            return;
+        }
         var preferredLanguage = args.Contains("--demo") ? null : ConfigurationStore.Read(
             Path.Combine(AppDataPaths.DefaultRoot(), "Config", ConfigurationStore.FileName)).InterfaceLanguage;
         SystemLanguage.Initialize(preferredLanguage);

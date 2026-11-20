@@ -84,7 +84,7 @@ internal sealed partial class MainWindow
 
     private void CopySettingsDiagnostics()
     {
-        CopyText($"Pookie {typeof(MainWindow).Assembly.GetName().Version}\n{System.Runtime.InteropServices.RuntimeInformation.OSDescription}\n{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n{audioStatus.Value}");
+        CopyText($"Pookie {PookieVersion.Display}\n{System.Runtime.InteropServices.RuntimeInformation.OSDescription}\n{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n{audioStatus.Value}");
         settingsMessage.Value = UiText.Get("settings.diagnostics.copied");
     }
 }

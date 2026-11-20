@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Pookie.App.Browser;
 using Pookie.App.Storage;
 using Pookie.App.Playback;
@@ -19,23 +20,27 @@ internal static class StorageSmokeTest
                 AppDataPaths.ResolveRoot("macos", "/Users/test", "/ignored", null) != Path.Combine("/Users/test", "Library", "Application Support", "Pookie") ||
                 AppDataPaths.ResolveRoot("windows", "/ignored", "/LocalAppData", null) != Path.Combine("/LocalAppData", "Pookie"))
                 throw new InvalidOperationException("Platform-specific path resolution failed");
+            File.WriteAllText(Path.Combine(root, "pookie.portable"), "");
+            if (AppDataPaths.ResolveRoot("windows", "/ignored", "/LocalAppData", null, root) != Path.Combine(root, "Data") ||
+                AppDataPaths.ResolveRoot("linux", "/home/test", "/ignored", "/xdg", root) != Path.Combine("/xdg", "Pookie"))
+                throw new InvalidOperationException("Portable ZIP data directory resolution failed");
             var store = new ConfigurationStore(paths);
             var saved = new AppConfiguration(34, 86, false, true, true, RepeatMode.Track);
             store.Save(saved);
             var reopened = new ConfigurationStore(paths).Load();
-            if (reopened != saved.Normalize() || reopened.Volume != 34 || reopened.PreviousVolume != 86 || reopened.DiscordEnabled ||
+            if (!SameSettings(reopened, saved.Normalize()) || reopened.Volume != 34 || reopened.PreviousVolume != 86 || reopened.DiscordEnabled ||
                 !reopened.Shuffle || !reopened.LikesAsList || reopened.LikesView != TrackViewMode.Waveform || reopened.Repeat != RepeatMode.Track)
                 throw new InvalidOperationException("Settings did not survive reopening and normalization");
             var asynchronous = saved with { Volume = 48, LikesView = TrackViewMode.Cards, LikesAsList = false };
             await store.SaveAsync(asynchronous);
             await store.FlushAsync();
             var afterFlush = new ConfigurationStore(paths).Load();
-            if (afterFlush != asynchronous.Normalize() || afterFlush.Volume != 48 || afterFlush.LikesAsList || afterFlush.LikesView != TrackViewMode.Cards)
+            if (!SameSettings(afterFlush, asynchronous.Normalize()) || afterFlush.Volume != 48 || afterFlush.LikesAsList || afterFlush.LikesView != TrackViewMode.Cards)
                 throw new InvalidOperationException("Async settings save/flush did not persist the new snapshot");
             store.Save(saved with { Repeat = (RepeatMode)999 });
             if (store.Load().Repeat != RepeatMode.Off) throw new InvalidOperationException("Invalid repeat mode survived normalization");
             File.WriteAllText(Path.Combine(paths.Config, "settings.json"), "invalid-json");
-            if (store.Load() != new AppConfiguration()) throw new InvalidOperationException("Corrupt configuration did not fall back to defaults");
+            if (!SameSettings(store.Load(), new AppConfiguration())) throw new InvalidOperationException("Corrupt configuration did not fall back to defaults");
             var cache = new ImageDiskCache(paths);
             byte[] payload = [1, 2, 3];
             await cache.WriteAsync("https://i1.sndcdn.com/fixture.jpg", payload, default);
@@ -79,4 +84,8 @@ internal static class StorageSmokeTest
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    private static bool SameSettings(AppConfiguration actual, AppConfiguration expected) =>
+        JsonElement.DeepEquals(JsonSerializer.SerializeToElement(actual, StorageJson.Default.AppConfiguration),
+            JsonSerializer.SerializeToElement(expected, StorageJson.Default.AppConfiguration));
 }

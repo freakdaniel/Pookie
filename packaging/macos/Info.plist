@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleIdentifier</key><string>io.github.freakdaniel.Pookie</string>
+    <key>CFBundleName</key><string>Pookie</string>
+    <key>CFBundleExecutable</key><string>Pookie</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconFile</key><string>Pookie.icns</string>
+    <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+    <key>CFBundleVersion</key><string>@VERSION@</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
+    <key>NSMicrophoneUsageDescription</key><string>Pookie uses the microphone to record voice messages you send in chats.</string>
+</dict>
+</plist>

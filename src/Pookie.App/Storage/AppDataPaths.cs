@@ -21,10 +21,13 @@ internal sealed class AppDataPaths
         OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux",
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        Environment.GetEnvironmentVariable("XDG_DATA_HOME"));
+        Environment.GetEnvironmentVariable("XDG_DATA_HOME"), AppContext.BaseDirectory);
 
-    internal static string ResolveRoot(string platform, string home, string localData, string? xdgData) => platform switch
+    internal static string ResolveRoot(string platform, string home, string localData, string? xdgData,
+        string? executableDirectory = null) => platform switch
     {
+        "windows" when executableDirectory != null && File.Exists(Path.Combine(executableDirectory, "pookie.portable"))
+            => Path.Combine(executableDirectory, "Data"),
         "windows" => Path.Combine(localData, "Pookie"),
         "macos" => Path.Combine(home, "Library", "Application Support", "Pookie"),
         _ => Path.Combine(!string.IsNullOrWhiteSpace(xdgData) && xdgData.StartsWith('/')

@@ -1,6 +1,13 @@
 name: Build and package
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      release_version:
+        type: string
+        required: true
 
 jobs:
   reuse:
@@ -125,7 +132,65 @@ jobs:
           dotnet publish tests/Pookie.App.SmokeTests -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/video-smoke
           mv artifacts/video-smoke "artifacts/video smoke relocated"
           env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH -u VLC_PLUGIN_PATH "artifacts/video smoke relocated/Pookie.App.SmokeTests" --chat-video-smoke-test
+      - name: Prepare release packaging tools
+        if: inputs.release_version != '' && runner.os != 'macOS'
+        shell: bash
+        run: |
+          bash scripts/fetch-packaging-tools.sh "$RUNNER_TEMP/pookie-tools" "$RUNNER_OS"
+          echo "$RUNNER_TEMP/pookie-tools" >> "$GITHUB_PATH"
+      - name: Package Linux distributions
+        if: inputs.release_version != '' && runner.os == 'Linux'
+        env:
+          VERSION: ${{ inputs.release_version }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak desktop-file-utils rpm
+          scripts/package-linux.sh "$VERSION" artifacts/linux-x64 release
+          dpkg-deb --info "release/Pookie-$VERSION-linux-x64.deb"
+          rpm -qip "release/Pookie-$VERSION-linux-x64.rpm"
+      - name: Build Windows installer and portable ZIP
+        if: inputs.release_version != '' && runner.os == 'Windows'
+        env:
+          VERSION: ${{ inputs.release_version }}
+        run: node scripts/package-windows.cjs $env:VERSION artifacts/win-x64 release
+      - name: Verify Windows installation and removal
+        if: inputs.release_version != '' && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.release_version }}
+        run: |
+          $msi = (Resolve-Path "release/Pookie-$env:VERSION-win-x64.msi").Path
+          $install = Join-Path $env:RUNNER_TEMP "Pookie install test"
+          $process = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart INSTALLFOLDER=`"$install`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Install failed with code $($process.ExitCode)" }
+          try {
+            foreach ($file in @("Pookie.exe", "Pookie.dll", "licenses/THIRD-PARTY-NOTICES.txt")) {
+              if (!(Test-Path (Join-Path $install $file))) { throw "Missing installed file: $file" }
+            }
+            if (Test-Path (Join-Path $install "pookie.portable")) { throw "Portable marker in installed app" }
+          } finally {
+            $process = Start-Process msiexec.exe -ArgumentList "/x `"$msi`" /qn /norestart" -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Uninstall failed with code $($process.ExitCode)" }
+          }
+          if (Test-Path (Join-Path $install "Pookie.exe")) { throw "Uninstall left the executable behind" }
+      - name: Package and verify macOS release
+        if: inputs.release_version != '' && runner.os == 'macOS'
+        env:
+          VERSION: ${{ inputs.release_version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          mkdir -p release
+          node scripts/package-macos.cjs "$VERSION" "$RID" "artifacts/$RID" release
+          tar -czf "release/Pookie-$VERSION-$RID.tar.gz" -C artifacts "$RID"
       - uses: actions/upload-artifact@v4
+        if: inputs.release_version != ''
+        with:
+          name: release-${{ matrix.rid }}
+          path: release/
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: inputs.release_version == ''
         with:
           name: pookie-${{ matrix.rid }}
           path: artifacts/${{ matrix.rid }}/

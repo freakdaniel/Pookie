@@ -1,0 +1,30 @@
+name: pookie
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: Daniel Freak <whoisfreak@icloud.com>
+description: Native SoundCloud desktop client
+homepage: https://github.com/freakdaniel/Pookie
+license: BSD-3-Clause
+section: sound
+contents:
+  - src: ./usr
+    dst: /usr
+    type: tree
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libwebkit2gtk-4.1-0
+      - libsecret-1-0
+      - libgl1
+      - libasound2t64 | libasound2
+      - libssl3t64 | libssl3
+  rpm:
+    depends:
+      - glibc >= 2.35
+      - libwebkit2gtk-4.1.so.0()(64bit)
+      - libsecret-1.so.0()(64bit)
+      - libGL.so.1()(64bit)
+      - libasound.so.2()(64bit)
+      - libssl.so.3()(64bit)

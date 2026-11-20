@@ -154,7 +154,7 @@ internal sealed partial class LrcRedSearch(HttpClient http)
         var remaining = Interlocked.Read(ref retryAfter) - DateTimeOffset.UtcNow.UtcTicks;
         if (remaining > 0) throw new LyricsRateLimitException(TimeSpan.FromTicks(remaining));
         using var request = new HttpRequestMessage(HttpMethod.Get, Source + path);
-        request.Headers.UserAgent.ParseAdd("Pookie/0.1 (+https://github.com/freakdaniel/Pookie; contact whoisfreak@icloud.com)");
+        request.Headers.UserAgent.ParseAdd($"Pookie/{PookieVersion.Display} (+https://github.com/freakdaniel/Pookie; contact whoisfreak@icloud.com)");
         var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.TooManyRequests) return response;
         using (response)

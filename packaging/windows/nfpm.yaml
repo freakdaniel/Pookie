@@ -1,0 +1,25 @@
+name: Pookie
+arch: amd64
+platform: windows
+version: ${VERSION}
+vendor: Daniel Freak
+description: Native SoundCloud desktop client
+homepage: https://github.com/freakdaniel/Pookie
+license: BSD-3-Clause
+contents:
+  - src: .
+    dst: /
+    type: tree
+msi:
+  per_user: true
+  minimal_ui: true
+  # These bundled PE files ship without a Windows version resource.
+  file_versions:
+    /InfiniFrame.Native.dll: ""
+    /miniaudio.dll: ""
+    /soundflow-ffmpeg.dll: ""
+    /System.Diagnostics.EventLog.Messages.dll: ""
+  shortcuts:
+    - name: Pookie
+      target: /Pookie.exe
+      icon: Pookie.exe

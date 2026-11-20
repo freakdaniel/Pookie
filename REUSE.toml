@@ -28,8 +28,8 @@ SPDX-FileComment = "Apple Color Emoji artwork rasterized at 72px from samuelngs/
 path = [
   ".editorconfig", ".gitattributes", ".gitignore", ".github/**", "NuGet.config",
   "*.md", "*.json", "*.props", "*.targets", "*.slnx", "scripts/**", "tools/**",
-  "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.js", "src/**/*.md", "src/**/*.json", "tests/**",
-  "src/Pookie.App/Assets/logo.svg",
+  "src/**/*.cs", "src/**/*.csproj", "src/**/*.props", "src/**/*.targets", "src/**/*.js", "src/**/*.md", "src/**/*.json", "tests/**",
+  "src/Pookie.App/Assets/logo.svg", "packaging/*/nfpm.yaml", "packaging/macos/Info.plist",
 ]
 precedence = "closest"
 SPDX-FileCopyrightText = ["2023 Richard Habitzreuter", "2026 Daniel Freak"]

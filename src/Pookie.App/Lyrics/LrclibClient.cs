@@ -42,7 +42,7 @@ public sealed class LrclibClient(HttpClient http, TimeProvider? timeProvider = n
             var url = Source + "api/" + route + "?" + string.Join('&', values.Select(pair =>
                 Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.UserAgent.ParseAdd("Pookie/0.1 (+https://github.com/freakdaniel/Pookie)");
+            request.Headers.UserAgent.ParseAdd($"Pookie/{PookieVersion.Display} (+https://github.com/freakdaniel/Pookie)");
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NotFound) return null;
             if (response.StatusCode == HttpStatusCode.TooManyRequests)

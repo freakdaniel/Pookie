@@ -37,7 +37,7 @@ internal sealed class KlipyClient : IDisposable
             handler = native;
         }
         http = new(handler) { Timeout = TimeSpan.FromSeconds(25) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Pookie/1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"Pookie/{PookieVersion.Display}");
     }
     internal async Task<KlipyGif[]> SearchAsync(string query, CancellationToken token)
     {

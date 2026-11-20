@@ -20,7 +20,7 @@ internal sealed class ChatMediaHosting : IDisposable
             handler = native;
         }
         http = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(3) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Pookie/1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"Pookie/{PookieVersion.Display}");
     }
 
     internal async Task<ChatMediaReference> UploadAsync(ChatMediaPackage package, CancellationToken token)

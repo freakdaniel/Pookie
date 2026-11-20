@@ -1,6 +1,6 @@
 {
   "name": "pookie",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Native SoundCloud client built with .NET and MewUI",
   "license": "BSD-3-Clause",
   "private": true,
