@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: Release description (Markdown). Leave blank to generate release notes.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -77,6 +82,8 @@ jobs:
           sha256sum "${assets[@]}" > SHA256SUMS
       - name: Publish the tested commit
         working-directory: release
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           tag="v$VERSION"
           if git show-ref --verify --quiet "refs/tags/$tag"; then
@@ -96,9 +103,16 @@ jobs:
           if ! git show-ref --verify --quiet "refs/tags/$tag"; then
             git push origin "$GITHUB_SHA:refs/tags/$tag"
           fi
+          notes=(--generate-notes)
+          if [[ "$RELEASE_NOTES" =~ [^[:space:]] ]]; then
+            printf '%s' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"
+            notes=(--notes-file "$RUNNER_TEMP/release-notes.md")
+          fi
           if [[ -z "$existing" ]]; then
             gh release create "$tag" --verify-tag --target "$GITHUB_SHA" \
-              --draft --title "Pookie $VERSION" --generate-notes
+              --draft --title "Pookie $VERSION" "${notes[@]}"
+          elif [[ "${notes[0]}" == --notes-file ]]; then
+            gh release edit "$tag" "${notes[@]}"
           fi
           gh release upload "$tag" Pookie-* SHA256SUMS --clobber
           gh release edit "$tag" --draft=false
