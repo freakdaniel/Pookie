@@ -324,8 +324,8 @@ SoundCloud's related-track order and filter exclusions, unavailable tracks and
 likely reuploads. Explicit speed edits remain distinct. Exclusions from the
 former Wave profile are imported into the account's radio settings.
 
-`--mixes-ui-smoke-test --no-audio` focuses on the library's personal mixes: all
-mixes, Daily Drops and Weekly Wave in one overview shelf and a dedicated tab,
+`--mixes-ui-smoke-test --no-audio` checks the first seven personal mixes in one fitted overview row,
+the complete list including Daily Drops and Weekly Wave in the dedicated tab,
 shared discovery caching, the track-style header with right-hand artwork and
 playback beside the title, centered genre metadata and bottom glass actions,
 stable play/pause geometry, long-title trimming,
@@ -1237,8 +1237,8 @@ demuxer errors on corrupt input, and exception messages/inner exceptions/stacks
 in a temporary log. CI runs both development and relocated published video checks
 on Linux, Apple Silicon and Intel macOS. Windows builds carry the native package.
 
-`--chat-navigation-ui-smoke-test --no-audio` also checks chat folders and membership,
-local pins/favorites, ordered multiple selection, linked replies, idempotent reactions,
+`--chat-navigation-ui-smoke-test --no-audio` also checks restoration of workspaces with hidden favorites and folders,
+local pins, ordered multiple selection, linked replies, idempotent reactions,
 FTS search, docked/overlay details with Escape, 96/110/144/192 DPI layout passes,
 and voice drafts using synthetic PCM. It never captures a microphone or sends real messages.
 
@@ -1262,8 +1262,7 @@ Unknown envelopes remain visible text.
 Voice uses mono Opus when available, otherwise 16 kHz/16-bit PCM WAV, up to five
 minutes/16 MiB. The unit suite exercises encoding/restoring voice without capture devices.
 
-Chat visual regressions include a neutral conversation background, standalone local
-saved messages, inline thread search, sidebar message search, intermediate panel-width
+Chat visual regressions include a neutral conversation background, inline thread search, sidebar message search, intermediate panel-width
 animation frames, readable information panels, and scrim boundaries,
 idle loading controls, and centered microphone/send glyphs at every tested DPI.
 Preview captures use fixture conversations only.
@@ -1452,8 +1451,7 @@ the glass address field red without a validation footer or height change; other
 validation remains visible. Small Access glass surfaces are prepared before the
 modal animates, avoiding first-paint raster work during tab changes. All four tab
 transitions are timed in both directions, excluding idle waits after animation,
-checking frame cadence and retained glass textures/reflections. Deletion retains
-its explicit confirmation action. The card
+checking frame cadence and retained glass textures/reflections. The playlist menu resizes to show deletion confirmation and returns to its actions on cancel. The card
 measures each page and animates its height, including shrinking a track draft down
 to one row and interrupted tab changes, while retaining the glass backdrop. Complete lists have no count/help
 heading. Extended settings include
@@ -1584,3 +1582,5 @@ wheel gesture cancels a pending jump. No separate new-messages button is used.
 Inbox selection spans the full width beneath the overlay scrollbar. Voice
 messages use glass playback controls and translucent neutral-white waveforms
 and durations; both inline and pinned dates use the shared matte glass finish.
+
+`--language-ui-smoke-test <expected-culture>` checks the detected OS language, live switching through all supported languages, returning to the system language, and preserving search text, navigation, and the queue in an isolated profile. For example, on Linux run with `LC_ALL=de_AT.UTF-8` and `--language-ui-smoke-test de-AT`.

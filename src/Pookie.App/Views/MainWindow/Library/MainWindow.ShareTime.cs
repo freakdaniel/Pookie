@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
@@ -24,7 +25,7 @@ internal sealed partial class MainWindow
         shareTimeLabel = new TextBlock().FontSize(13).SemiBold().CenterVertical();
         shareTimePrefix = new Border().Width(0).Opacity(0).ClipToBounds().Child(shareTimeLabel);
         shareTimeAction = TrackButtons.Icon(new StackPanel().Horizontal().Center().Children(
-            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Text, 48).Hint("Таймкод");
+            shareTimePrefix, Icons.View("clock", 20)), ToggleShareTime, TrackButtons.Text, 48).Hint(UiText.Get("common.timestamp"));
         ((MaterialTrackButton)shareTimeAction).UseListStateLayer();
         return shareTimeAction;
     }
@@ -43,7 +44,7 @@ internal sealed partial class MainWindow
             shareTimeLabel.Width = shareTimeLabel.DesiredSize.Width;
             targetWidth = shareTimeLabel.DesiredSize.Width + 8;
         }
-        shareTimeAction.Hint(selected ? "Таймкод " + shareTimeLabel.Text + " · Изменить" : "Таймкод");
+        shareTimeAction.Hint(selected ? UiText.Compose($"{UiText.Get("common.timestampPrefix")}{shareTimeLabel.Text}{UiText.Get("shortcuts.edit.suffix")}") : UiText.Get("common.timestamp"));
         var fromWidth = shareTimePrefix.Width; var fromOpacity = shareTimePrefix.Opacity;
         void Present(double amount)
         {
@@ -88,16 +89,16 @@ internal sealed partial class MainWindow
         FrameworkElement Part(TextBox field, string label) => new StackPanel().Vertical().Spacing(6).Children(
             field, new TextBlock().Text(label).FontSize(11).Foreground(Muted).CenterHorizontal());
         TextBlock Colon() => new TextBlock().Text(":").FontSize(24).Height(56).VerticalTextAlignment(TextAlignment.Center).CenterHorizontal();
-        shareHoursPart = Part(shareHours, "Часы"); shareMinutesPart = Part(shareMinutes, "Минуты");
+        shareHoursPart = Part(shareHours, UiText.Get("units.hours")); shareMinutesPart = Part(shareMinutes, UiText.Get("units.minutes"));
         shareHoursColon = Colon(); shareMinutesColon = Colon();
         shareTimeGrid = new Grid().Columns("72,16,72,16,72").Children(shareHoursPart, shareHoursColon.Column(1),
-            shareMinutesPart.Column(2), shareMinutesColon.Column(3), Part(shareSeconds, "Секунды").Column(4));
+            shareMinutesPart.Column(2), shareMinutesColon.Column(3), Part(shareSeconds, UiText.Get("units.seconds")).Column(4));
         shareTimeFields = new ShareTimeFields(shareTimeGrid, shareHours, shareMinutes, shareSeconds).CenterHorizontal();
-        shareTimeReset = TrackButtons.Action(new TextBlock().Text("Сбросить").FontSize(13).Foreground(TrackButtons.OnSurface), () => ApplyShareTime(null), TrackButtons.Text);
-        shareTimeApply = TrackButtons.Action(new TextBlock().Text("Готово").FontSize(13).SemiBold().Foreground(TrackButtons.OnPrimary), CommitShareTime, TrackButtons.Filled);
+        shareTimeReset = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.reset")).FontSize(13).Foreground(TrackButtons.OnSurface), () => ApplyShareTime(null), TrackButtons.Text);
+        shareTimeApply = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.done")).FontSize(13).SemiBold().Foreground(TrackButtons.OnPrimary), CommitShareTime, TrackButtons.Filled);
         var card = new GlassCard { HoverEnabled = false }.MaxWidth(300).Background(PopupAppearance.Surface).BorderThickness(1)
             .BorderBrush(TrackButtons.TonalSurface).CornerRadius(20).Padding(20).Child(
-                new StackPanel().Vertical().Spacing(16).Children(new TextBlock().Text("Таймкод").FontSize(16).SemiBold().CenterHorizontal(),
+                new StackPanel().Vertical().Spacing(16).Children(new TextBlock().Text(UiText.Get("common.timestamp")).FontSize(16).SemiBold().CenterHorizontal(),
                     shareTimeFields,
                     new StackPanel().Horizontal().Spacing(8).CenterHorizontal().Children(shareTimeReset, shareTimeApply)));
         shareTimePopup = new InAppPopup();

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -46,7 +47,7 @@ internal static class ChatProtocol
     {
         var body = "p2:" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(envelope, ChatProtocolJson.Default.ChatEnvelope))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        if (body.Length > (hosted ? MaxHostedContent : ChatRequest.MaxBodyLength)) throw new ArgumentException("Сообщение с ответом слишком длинное.");
+        if (body.Length > (hosted ? MaxHostedContent : ChatRequest.MaxBodyLength)) throw new ArgumentException(UiText.Get("chats.reply.combinedTooLong"));
         return body;
     }
     internal static ChatMessageProjection Project(ChatMessage message, long account, long peer)
@@ -62,7 +63,7 @@ internal static class ChatProtocol
     private static ChatMessageProjection ProjectCore(ChatMessage message,long account,long peer)
     {
         var hosted = ChatEnvelopeHosting.IsReference(message.Body);
-        var plain = new ChatMessageProjection(message, hosted ? "Сообщение Pookie" : message.Body, null, false, null, null);
+        var plain = new ChatMessageProjection(message, hosted ? UiText.Get("chats.message.pookie") : message.Body, null, false, null, null);
         var body = hosted ? message.ClientContent : message.Body;
         if (message.SenderId != account && message.SenderId != peer || body == null || !body.StartsWith("p2:", StringComparison.Ordinal) ||
             body.Length > (hosted ? MaxHostedContent : ChatRequest.MaxBodyLength)) return plain;
@@ -78,7 +79,7 @@ internal static class ChatProtocol
                 return new(message, envelope.Text, new(peer, envelope.TargetId, envelope.Preview), false, null, eventIdentity.ToString("N"), envelope.TargetId);
             if (envelope.Type == "reaction" && envelope.Text == null && envelope.Preview == null &&
                 (envelope.Emoji == null || Reactions.Contains(envelope.Emoji) || ChatEmojiCatalog.IsEmoji(envelope.Emoji)))
-                return new(message, "Реакция " + (envelope.Emoji ?? "снята"), null, true, envelope.Emoji, eventIdentity.ToString("N"), envelope.TargetId);
+                return new(message, UiText.Compose($"{UiText.Get("chats.reaction.prefix")}{(envelope.Emoji ?? UiText.Get("chats.reaction.removed"))}"), null, true, envelope.Emoji, eventIdentity.ToString("N"), envelope.TargetId);
         }
         catch (Exception error) when (error is JsonException or FormatException or ArgumentException) { }
         return plain;

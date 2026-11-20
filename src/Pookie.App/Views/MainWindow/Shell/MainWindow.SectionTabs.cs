@@ -19,15 +19,15 @@ internal sealed partial class MainWindow
         return sheet;
     }
 
-    private static Button SectionTab<T>(string title, ObservableValue<T> selected, T target, Action action, bool animate = true)
+    private static Button SectionTab<T>(string title, ObservableValue<T> selected, T target, Action action, bool animateSelection = true)
     {
         bool Active(T value) => EqualityComparer<T>.Default.Equals(value, target);
         var label = new TextBlock().Text(title).FontSize(16).SemiBold()
             .Foreground(Active(selected.Value) ? Color.White : Muted).IsHitTestVisible(false);
-        label.Transitions = animate ? [Transition.Create(Control.ForegroundProperty, 180)] : [];
+        label.Transitions = [Transition.Create(Control.ForegroundProperty, 180)];
         var underline = new Border().Height(2).Background(Color.White)
             .Bind(UIElement.OpacityProperty, selected, value => Active(value) ? 1d : 0d).IsHitTestVisible(false);
-        underline.Transitions = animate ? [Transition.Create(UIElement.OpacityProperty, 180)] : [];
+        underline.Transitions = animateSelection ? [Transition.Create(UIElement.OpacityProperty, 180)] : [];
         var button = new Button().StyleSheet(sectionButtonStyles).StyleName("section-button")
             .Background(Color.Transparent).BorderThickness(0).Padding(0).Left()
             .BindIsEnabled(selected, value => !Active(value))
@@ -36,7 +36,14 @@ internal sealed partial class MainWindow
         void RefreshInk() => label.Foreground = Active(selected.Value) || button.IsMouseOver ? Color.White : Muted;
         button.MouseEnter += RefreshInk;
         button.MouseLeave += RefreshInk;
-        selected.Changed += RefreshInk;
+        var hoverTransition = label.Transitions;
+        selected.Changed += () =>
+        {
+            // Dialogs reset selection synchronously on reopen, and animate their pages separately.
+            if (!animateSelection) label.Transitions = [];
+            RefreshInk();
+            if (!animateSelection) label.Transitions = hoverTransition;
+        };
         return button;
     }
 }

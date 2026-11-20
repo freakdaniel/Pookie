@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Home;
@@ -37,7 +38,7 @@ internal sealed partial class MainWindow
             }
             var description = new TextBlock().Text(caption ?? "").FontSize(13).Foreground(Muted)
                 .TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(caption != null);
-            var error = new TextBlock().Text("Не удалось загрузить эту секцию. Повторим при следующем открытии главной.")
+            var error = new TextBlock().Text(UiText.Get("home.shelf.loadFailed"))
                 .FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
             FrameworkElement heading = open == null ? new TextBlock().Text(title).FontSize(22).Bold() : SectionHeader(title, open);
             var root = new StackPanel().Vertical().Spacing(16).Children(
@@ -45,23 +46,23 @@ internal sealed partial class MainWindow
             var section = new HomeSection(key, root, cards, shelf, loading, description, error);
             homeSections.Add(section); return section;
         }
-        var recommendations = Section("recommendations", "Открытия для тебя", "По твоим лайкам и недавним прослушиваниям");
-        var madeForYou = Section("made-for-you", "Сделано для тебя");
-        var releases = Section("releases", "Новое от подписок", "Свежие треки за последние 30 дней", () => Run(() => NavigateAsync(Page.Feed)));
-        var buzzing = Section("buzzing", "На подъёме в SoundCloud");
-        buzzing.Error.Text = "Не удалось загрузить плейлисты SoundCloud.";
-        homeBuzzingRetry = TrackButtons.Action(new TextBlock().Text("Загрузить подборки ещё раз"),
+        var recommendations = Section("recommendations", UiText.Get("home.discoveries"), UiText.Get("mixes.personalized.description"));
+        var madeForYou = Section("made-for-you", UiText.Get("home.madeForYou"));
+        var releases = Section("releases", UiText.Get("feed.newFromFollowing"), UiText.Get("home.releases.description"), () => Run(() => NavigateAsync(Page.Feed)));
+        var buzzing = Section("buzzing", UiText.Get("home.trending.heading"));
+        buzzing.Error.Text = UiText.Get("library.playlists.loadFailed");
+        homeBuzzingRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("home.collections.reload")),
             () => Run(() => NavigateHomeAsync(force: true)), TrackButtons.Text, 36).Left().IsVisible(false);
         buzzing.Root.Add(homeBuzzingRetry);
         var genres = new StackPanel().Horizontal().Spacing(8);
-        foreach (var (label, term) in new[] { ("Хип-хоп", "Hip Hop"), ("Электроника", "Electronic"), ("Инди", "Indie"), ("R&B", "R&B") })
+        foreach (var (label, term) in new[] { (UiText.Get("genre.hipHop"), "Hip Hop"), (UiText.Get("genre.electronic"), "Electronic"), (UiText.Get("genre.indie"), "Indie"), ("R&B", "R&B") })
             genres.Add(TrackButtons.Action(new TextBlock().Text(label).SemiBold(), () =>
             {
                 query.Value = term;
                 Run(() => SearchAsync(SearchSection.Playlists));
             }, TrackButtons.Tonal, 36));
         homeGenres = new StackPanel().Vertical().Spacing(12).Children(
-            new TextBlock().Text("Найти плейлисты по жанру").FontSize(22).Bold(), genres);
+            new TextBlock().Text(UiText.Get("search.playlists.byGenre")).FontSize(22).Bold(), genres);
         homeShortcuts = HomeShortcutsView();
         homeScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(
             new StackPanel().Vertical().Spacing(28).Padding(0, 8, 0, 24).Children(HomeMixCarouselView(),
@@ -109,8 +110,8 @@ internal sealed partial class MainWindow
             section.Loading.Root.IsVisible = hasItems || homePending.Contains(section.Key);
             section.Root.IsVisible = hasItems || homePending.Contains(section.Key) || section.Error.IsVisible;
             if (section.Key == "recommendations") section.Caption.Text = homeContent?.Seeds.Length > 0
-                ? "Похоже на " + string.Join(" и ", homeContent.Seeds.Select(title => "«" + title + "»"))
-                : "По твоим лайкам и недавним прослушиваниям";
+                ? UiText.Compose($"{UiText.Get("track.related.similarPrefix")}{UiText.Join(UiText.Get("common.conjunctionAnd"), homeContent.Seeds.Select(title => "«" + title + "»"))}")
+                : UiText.Get("mixes.personalized.description");
         }
         RefreshHomeShortcuts();
         homeGenres.IsVisible = homeContent?.Buzzing != null && HomeItems("trends").Length == 0;
@@ -145,8 +146,8 @@ internal sealed partial class MainWindow
         var data = HomeItems(section?.Key ?? "").Select(item => item.Track).OfType<SoundCloudTrack>().ToArray();
         if (section == null || data.Length == 0) { SelectLibraryTrack(track); return; }
         StartQueueContext(new("home:" + section.Key, section.Key switch
-        { "releases" => "Новое от подписок", _ => "Для тебя" },
-            "Сейчас играет с главной", Kind: PlaybackContextKind.Recommendations), data, track);
+        { "releases" => UiText.Get("feed.newFromFollowing"), _ => UiText.Get("home.forYou") },
+            UiText.Get("queue.source.home"), Kind: PlaybackContextKind.Recommendations), data, track);
         await PlayAsync(track);
     }
 }

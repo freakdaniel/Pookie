@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -20,7 +21,7 @@ internal sealed class DialogSearchField : GlassCard
             .IsHitTestVisible(false).CenterVertical().Left();
         Glyph = new SearchActivityGlyph(iconColor).Center();
         ClearButton = TrackButtons.Icon(Icons.View("x", 16, iconColor), () => { Input.Text = ""; Input.Focus(); }, TrackButtons.Text, 28)
-            .Hint("Очистить поиск").IsVisible(false);
+            .Hint(UiText.Get("search.clear")).IsVisible(false);
         Child(new Grid().Columns("20,*,Auto").Rows("*").Spacing(10).Children(Glyph,
             new Grid().Columns("*").Rows("*").Column(1).Children(Input.CenterVertical(), PlaceholderLabel),
             ClearButton.Column(2).CenterVertical()));

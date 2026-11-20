@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Platform;
@@ -49,7 +50,7 @@ internal sealed partial class MainWindow
     private void ShareTrack(SoundCloudTrack track) => OpenShare(LibraryItem.FromTrack(track));
 
     private Button ShareTrackButton(Func<SoundCloudTrack?> track, string style = TrackButtons.Glass, double size = 44) =>
-        TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (track() is { } value) OpenShare(LibraryItem.FromTrack(value)); }, style, size).Hint("Поделиться");
+        TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (track() is { } value) OpenShare(LibraryItem.FromTrack(value)); }, style, size).Hint(UiText.Get("common.share"));
 
     private FrameworkElement ShareView()
     {
@@ -58,14 +59,14 @@ internal sealed partial class MainWindow
         shareCover = new Image().Width(56).Height(56).StretchMode(Stretch.UniformToFill);
         shareTrackDuration = new TextBlock().FontSize(13).Foreground(Muted).Right();
         shareTrackPlays = new TextBlock().FontSize(12).Foreground(Muted).Right();
-        shareTrackStats = new StackPanel().Vertical().Spacing(5).Children(shareTrackDuration, shareTrackPlays);
+        shareTrackStats = new StackPanel().Vertical().Spacing(5).Children(shareTrackDuration, PlayCountLine(shareTrackPlays, 12, MutedIcon));
         sharePreview = TrackDialogChrome.Preview(ArtworkLayer(shareCover), shareTitle, shareAuthor, shareTrackStats);
         shareLink = new TextBlock().FontSize(13).TextTrimming(TextTrimming.CharacterEllipsis).Height(26)
             .VerticalTextAlignment(TextAlignment.Center).IsHitTestVisible(false);
         mixLinkPlaceholder = new TextBlock().FontSize(13).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis)
             .VerticalTextAlignment(TextAlignment.Center).Height(26).IsHitTestVisible(false).IsVisible(false);
-        shareCopyIcon = new CopyFeedbackGlyph { Reverted = () => shareCopy.Hint("Скопировать ссылку") };
-        shareCopy = TrackButtons.Icon(shareCopyIcon, CopyShareLink, TrackButtons.Glass, 48).Hint("Скопировать ссылку");
+        shareCopyIcon = new CopyFeedbackGlyph { Reverted = () => shareCopy.Hint(UiText.Get("share.link.copy")) };
+        shareCopy = TrackButtons.Icon(shareCopyIcon, CopyShareLink, TrackButtons.Glass, 48).Hint(UiText.Get("share.link.copy"));
         ((MaterialTrackButton)shareCopy).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
         ((MaterialTrackButton)shareCopy).UseGlassAccentStateLayer();
         var time = ShareTimeButton();
@@ -79,10 +80,10 @@ internal sealed partial class MainWindow
         foreach (var (label, service, icon, color) in new[]
         {
             ("Telegram", "telegram", "SimpleIcons.social-telegram", Color.FromRgb(38, 165, 228)),
-            ("ВКонтакте", "vk", "SimpleIcons.social-vk", Color.FromRgb(0, 119, 255)),
+            (UiText.Get("share.platform.vk"), "vk", "SimpleIcons.social-vk", Color.FromRgb(0, 119, 255)),
             ("X", "x", "SimpleIcons.social-x", Color.Black),
             ("Snapchat", "snapchat", "snapchat", Color.FromRgb(255, 252, 0)),
-            ("Почта", "email", "envelope", Color.FromRgb(227, 113, 53))
+            (UiText.Get("share.platform.email"), "email", "envelope", Color.FromRgb(227, 113, 53))
         })
         {
             var foreground = service == "snapchat" ? Color.Black : Color.White;
@@ -101,9 +102,9 @@ internal sealed partial class MainWindow
         shareLinksPanel.Margin(0, 0, 18, 0);
         // These tabs reset while their modal is hidden. Framework property
         // transitions can otherwise retain the previous tab's animated value.
-        shareSectionTabs = [SectionTab("Ссылка", shareTab, 0, () => SelectShareTab(0), animate: false),
-            SectionTab("Сообщение", shareTab, 1, () => SelectShareTab(1), animate: false),
-            SectionTab("Виджет", shareTab, 2, () => SelectShareTab(2), animate: false)];
+        shareSectionTabs = [SectionTab(UiText.Get("share.tabs.link"), shareTab, 0, () => SelectShareTab(0), animateSelection: false),
+            SectionTab(UiText.Get("share.tabs.message"), shareTab, 1, () => SelectShareTab(1), animateSelection: false),
+            SectionTab(UiText.Get("playlist.edit.widget"), shareTab, 2, () => SelectShareTab(2), animateSelection: false)];
         var tabs = new StackPanel().Horizontal().Spacing(24).Children(shareSectionTabs).Margin(0, 0, 18, 0);
         shareFocusAnchor = new Border { Focusable = true, IsTabStop = false }.Background(Color.Transparent).BorderThickness(0).Child(tabs);
         sharePages = new DialogPageDeck(shareLinksPanel, shareComposePanel, shareEmbedPanel);
@@ -251,14 +252,14 @@ internal sealed partial class MainWindow
     {
         shareDialog?.InvalidateTransitionSnapshot();
         var link = shareUri == null ? "" : new UriBuilder(shareUri) { Fragment = shareStartSeconds is { } seconds && shareTarget?.Track != null ? "t=" + FormatTime(seconds) : "" }.Uri.AbsoluteUri;
-        shareLink.Text = link; shareCopyIcon.Reset(shareDialog?.IsOpen == true); shareCopy.Hint("Скопировать ссылку");
+        shareLink.Text = link; shareCopyIcon.Reset(shareDialog?.IsOpen == true); shareCopy.Hint(UiText.Get("share.link.copy"));
         shareCopy.IsEnabled = link.Length > 0;
         shareTimeAction.IsEnabled = shareCopy.IsEnabled && shareTarget?.Track is { DurationSeconds: > 0 } track && double.IsFinite(track.DurationSeconds);
         foreach (var button in shareDestinations) button.IsEnabled = shareCopy.IsEnabled;
         if (shareTab.Value != 2)
             SetShareMessage(IsSystemCollection(shareTarget) ? "" :
-                sharePrivateLoading ? "Загружаем секретную ссылку…" : shareUri == null ?
-                shareTarget?.Playlist?.IsPrivate == true ? "Не удалось получить секретную ссылку. Открой окно заново." : "У этого трека или плейлиста пока нет ссылки для отправки." : "");
+                sharePrivateLoading ? UiText.Get("share.link.loadingSecret") : shareUri == null ?
+                shareTarget?.Playlist?.IsPrivate == true ? UiText.Get("share.link.reopenAfterFailure") : UiText.Get("share.item.missingLink") : "");
         RefreshShareCompose(); RefreshShareEmbed();
     }
 
@@ -275,9 +276,9 @@ internal sealed partial class MainWindow
         if (!shareCopy.IsEnabled || shareLink.Text.Length == 0) return;
         var clipboard = shareClipboard ?? Application.Current.PlatformServices.Clipboard;
         var copied = clipboard?.TrySetText(shareLink.Text) == true;
-        status.Value = copied ? "Скопировано." : "Не удалось скопировать.";
+        status.Value = copied ? UiText.Get("clipboard.copiedStatus") : UiText.Get("clipboard.copyFailed");
         if (copied) shareCopyIcon.ShowCopied(); else shareCopyIcon.Reset(true);
-        shareCopy.Hint(copied ? "Скопировано" : "Не удалось скопировать. Повторить");
+        shareCopy.Hint(copied ? UiText.Get("clipboard.copied") : UiText.Get("clipboard.copyRetry"));
     }
 
     private void OpenShareDestination(string service)
@@ -290,7 +291,7 @@ internal sealed partial class MainWindow
             {
                 try { await Platform.ExternalBrowser.OpenMailAsync(title, body, lifetime.Token); }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-                catch (Exception error) { if (!disposed) SetShareMessage("Не удалось открыть почтовое приложение."); Pookie.Logging.AppLog.Failure("Pookie.Share", "Не удалось открыть почту", error); }
+                catch (Exception error) { if (!disposed) SetShareMessage(UiText.Get("share.email.launchFailed")); Pookie.Logging.AppLog.Failure("Pookie.Share", "Не удалось открыть почту", error); }
             });
             return;
         }
@@ -303,7 +304,7 @@ internal sealed partial class MainWindow
             "snapchat" => $"https://www.snapchat.com/share?link={link}",
             _ => null
         };
-        if (url != null) OpenExternalUrl(url, () => SetShareMessage("Не удалось открыть браузер."));
+        if (url != null) OpenExternalUrl(url, () => SetShareMessage(UiText.Get("browser.openFailed")));
     }
 
     private void SelectShareTab(int tab, bool animate = true)

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -22,7 +23,7 @@ internal sealed record WidevinePackage(string Version, string Rid, Uri Url, int 
         ("windows", Architecture.Arm64) => new("win", "arm64", "win-arm64", "_platform_specific/win_arm64/widevinecdm.dll"),
         ("macos", Architecture.X64) => new("mac", "x64", "osx-x64", "_platform_specific/mac_x64/libwidevinecdm.dylib"),
         ("macos", Architecture.Arm64) => new("mac", "arm64", "osx-arm64", "_platform_specific/mac_arm64/libwidevinecdm.dylib"),
-        _ => throw new DrmPlaybackException("Для этой ОС и архитектуры нет настроенного пакета Widevine. Обычные треки доступны без него.")
+        _ => throw new DrmPlaybackException(UiText.Get("drm.widevine.packageUnavailable"))
     };
 
     internal static async Task<WidevinePackage> LatestAsync(HttpClient http, WidevinePlatform platform, CancellationToken token)

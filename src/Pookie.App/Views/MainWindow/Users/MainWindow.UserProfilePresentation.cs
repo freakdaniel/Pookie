@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -42,7 +43,7 @@ internal sealed partial class MainWindow
         userCardGrid.IsVisible = section is not (UserSection.Overview or UserSection.About or UserSection.Tracks or UserSection.Comments);
         userSectionHeading.IsVisible = section is UserSection.Followers or UserSection.Following or UserSection.Comments;
         userSectionHeading.Text = UserSectionTitle(section);
-        userDescription.Text = string.IsNullOrWhiteSpace(user.Description) ? "Пользователь пока не добавил описание" : user.Description;
+        userDescription.Text = string.IsNullOrWhiteSpace(user.Description) ? UiText.Get("profile.bio.empty") : user.Description;
         userSidebarBiography.Text = user.Description ?? "";
         userSidebarAboutSection.IsVisible = !string.IsNullOrWhiteSpace(user.Description);
         userBioHeading.IsVisible = userSidebarAboutSection.IsVisible;
@@ -65,10 +66,10 @@ internal sealed partial class MainWindow
         userEmpty.IsVisible = !pending && section is not (UserSection.Overview or UserSection.About) && itemCount == 0 && !userNotice.IsVisible;
         userEmpty.Text = section switch
         {
-            UserSection.Tracks => "Пользователь пока не опубликовал треки", UserSection.Albums => "Альбомов пока нет",
-            UserSection.Playlists => "Открытых плейлистов пока нет", UserSection.Reposts => "Репостов пока нет",
-            UserSection.Comments => "Пользователь пока не оставил комментарии",
-            UserSection.Likes => "Открытых лайков пока нет", UserSection.Followers => "Подписчиков пока нет", _ => "Подписок пока нет"
+            UserSection.Tracks => UiText.Get("profile.tracks.empty"), UserSection.Albums => UiText.Get("profile.albums.empty"),
+            UserSection.Playlists => UiText.Get("profile.playlists.empty"), UserSection.Reposts => UiText.Get("profile.reposts.empty"),
+            UserSection.Comments => UiText.Get("profile.comments.empty"),
+            UserSection.Likes => UiText.Get("profile.likes.empty"), UserSection.Followers => UiText.Get("profile.followers.empty"), _ => UiText.Get("profile.following.empty")
         };
         if (section == UserSection.Tracks)
             SetPageItems(userTrackList, (data?.Items ?? []).Select(item => item.Track).OfType<SoundCloudTrack>(), LoadingRowStyle.Waveform);
@@ -146,7 +147,7 @@ internal sealed partial class MainWindow
                 siteIcons.Add(icon);
                 var thumbnail = new Border().Width(14).Height(14).CornerRadius(7).ClipToBounds().Child(icon).CenterVertical().Column(0);
                 host.Add(TrackButtons.Action(new Grid().Columns("20,*").Rows("Auto").Spacing(8).Children(thumbnail, text.Column(1)),
-                    () => OpenExternalUrl(link.Url, () => ShowUserProfileError("Не удалось открыть ссылку")), TrackButtons.Text, 32).Padding(0).Left());
+                    () => OpenExternalUrl(link.Url, () => ShowUserProfileError(UiText.Get("links.openFailed"))), TrackButtons.Text, 32).Padding(0).Left());
             }
         if (icons.Count > 0) Run(() => LoadUserLinkIconsAsync(state.Links, icons));
     }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -39,7 +40,7 @@ internal sealed class ChatMediaHosting : IDisposable
                 catch (Exception fallback) when (IsHostFailure(fallback, token))
                 {
                     LogUploadFailure('q', fallback);
-                    throw new InvalidOperationException($"Не удалось загрузить вложение. {DescribeFailure('p', error)}; {DescribeFailure('q', fallback)}. Файл не отправлен в чат.");
+                    throw new InvalidOperationException(UiText.Format("chats.attachment.uploadFailed", DescribeFailure('p', error), DescribeFailure('q', fallback)));
                 }
             }
             if (DiskCache is { } cache)
@@ -68,10 +69,10 @@ internal sealed class ChatMediaHosting : IDisposable
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestToken);
             byte[] body;
             try { body = await ReadBoundedAsync(response.Content, 4096, requestToken); }
-            catch (InvalidDataException) { throw new UploadFailure((int)response.StatusCode, "слишком большой ответ сервера"); }
-            if (!response.IsSuccessStatusCode) throw new UploadFailure((int)response.StatusCode, "сервер отклонил загрузку");
+            catch (InvalidDataException) { throw new UploadFailure((int)response.StatusCode, UiText.Get("chats.upload.responseTooLarge")); }
+            if (!response.IsSuccessStatusCode) throw new UploadFailure((int)response.StatusCode, UiText.Get("chats.upload.rejected"));
             return ParseUploadResponse(body, provider, key) ?? throw new UploadFailure((int)response.StatusCode,
-                "сервер не вернул поддерживаемый адрес вложения");
+                UiText.Get("chats.upload.missingUrl"));
         }
         finally { if (archive != null) CryptographicOperations.ZeroMemory(archive); }
     }
@@ -103,7 +104,7 @@ internal sealed class ChatMediaHosting : IDisposable
     // Do not expose arbitrary host responses: they may echo uploaded data or credentials.
     private static string HostName(char provider) => provider == 'p' ? "Pomf" : "qu.ax";
     private static string FailureReason(Exception error) => error is UploadFailure failure ? failure.Reason :
-        error is OperationCanceledException ? "тайм-аут загрузки" : "ошибка соединения";
+        error is OperationCanceledException ? UiText.Get("chats.upload.timeout") : UiText.Get("chats.upload.networkError");
     private static int? FailureStatus(Exception error) => error is UploadFailure failure ? failure.Status :
         error is HttpRequestException { StatusCode: { } status } ? (int)status : null;
     private static string DescribeFailure(char provider, Exception error) =>
@@ -136,7 +137,7 @@ internal sealed class ChatMediaHosting : IDisposable
     internal async Task<ChatMediaPreview?> DownloadPreviewAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token)
     {
         const int limit = ChatMediaCrypto.MaxPreviewBytes + 8192;
-        if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
+        if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException(UiText.Get("chats.attachment.invalidCode"));
         if (DiskCache is { } cache)
             foreach (var code in new[] { reference.Code + ":preview", reference.Code })
                 if (await cache.ReadPrefixAsync(code, limit, token) is { } bytes)
@@ -151,7 +152,7 @@ internal sealed class ChatMediaHosting : IDisposable
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
         response.EnsureSuccessStatusCode();
         if (response.StatusCode == HttpStatusCode.PartialContent && response.Content.Headers.ContentRange?.From != 0)
-            throw new InvalidDataException("Некорректный диапазон превью.");
+            throw new InvalidDataException(UiText.Get("audio.preview.invalidRange"));
         await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
         var prefix = new byte[limit]; var count = 0;
         try
@@ -183,7 +184,7 @@ internal sealed class ChatMediaHosting : IDisposable
 
     internal async Task<ChatMediaPackage> DownloadAsync(ChatMediaReference reference, long sender, long recipient, CancellationToken token, Func<ChatMediaPreview, Task>? previewReady = null, int maximumBytes = int.MaxValue)
     {
-        if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException("Некорректный код вложения.");
+        if (ChatMediaReference.Parse(reference.Code) == null) throw new InvalidDataException(UiText.Get("chats.attachment.invalidCode"));
         var cache=DiskCache;
         if(cache!=null && await cache.ReadAsync(reference.Code,token,maximumBytes) is {} cached)
         {
@@ -199,7 +200,7 @@ internal sealed class ChatMediaHosting : IDisposable
         if (reference.Provider == 'q') request.Headers.Referrer = new Uri($"https://qu.ax/{reference.ObjectId}");
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestToken);
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException(response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone
-            ? "Вложение больше недоступно на хостинге." : "Не удалось загрузить вложение. Попробуй ещё раз.");
+            ? UiText.Get("chats.attachment.hostUnavailable") : UiText.Get("chats.attachment.downloadFailed"));
         var previewDelivered = false;
         var bytes = await ReadBoundedAsync(response.Content, Math.Min(maximumBytes, reference.Provider == 'q' ? ChatMediaArchive.MaxArchiveBytes : ChatMediaArchive.MaxEncryptedBytes), requestToken, previewReady == null ? null : async prefix =>
         {
@@ -224,7 +225,7 @@ internal sealed class ChatMediaHosting : IDisposable
                 try{await cache.PutAsync(reference.Code,encrypted,token);}catch(Exception error)when(error is IOException or UnauthorizedAccessException){}
             return package;
         }
-        catch (CryptographicException) { throw new InvalidOperationException("Вложение повреждено или ключ не подходит к этой переписке."); }
+        catch (CryptographicException) { throw new InvalidOperationException(UiText.Get("chats.attachment.decryptionFailed")); }
         finally { CryptographicOperations.ZeroMemory(bytes); if (encrypted != null && encrypted != bytes) CryptographicOperations.ZeroMemory(encrypted); }
     }
 
@@ -245,12 +246,12 @@ internal sealed class ChatMediaHosting : IDisposable
 
     internal static async Task<byte[]> ReadBoundedAsync(HttpContent content, int limit, CancellationToken token, Func<ReadOnlyMemory<byte>, Task>? progress = null)
     {
-        if (content.Headers.ContentLength > limit) throw new InvalidDataException("Превышен допустимый размер данных.");
+        if (content.Headers.ContentLength > limit) throw new InvalidDataException(UiText.Get("data.limitExceeded"));
         await using var stream = await content.ReadAsStreamAsync(token);
         using var output = new MemoryStream();
         var buffer = new byte[16384]; int count;
         while ((count = await stream.ReadAsync(buffer, token)) > 0)
-        { if (output.Length + count > limit) throw new InvalidDataException("Превышен допустимый размер данных."); output.Write(buffer, 0, count);
+        { if (output.Length + count > limit) throw new InvalidDataException(UiText.Get("data.limitExceeded")); output.Write(buffer, 0, count);
           if (progress != null) await progress(output.GetBuffer().AsMemory(0, (int)Math.Min(output.Length, ChatMediaCrypto.MaxPreviewBytes + 8192))); }
         return output.ToArray();
     }

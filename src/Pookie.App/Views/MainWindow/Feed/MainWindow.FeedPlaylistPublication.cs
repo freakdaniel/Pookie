@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -57,7 +58,7 @@ internal sealed partial class MainWindow
         view.PlaylistAuthor.Text = playlist.User?.Username ?? item.Subtitle;
         view.PlaylistTitle.Text = item.Title;
         var count = UserPlaylistTrackCount(playlist);
-        view.PlaylistCount.Text = $"{count} {RussianPlural(count, "трек", "трека", "треков")}";
+        view.PlaylistCount.Text = UiText.Compose($"{count} {UiText.Plural(count, "collection.track")}");
         void Preview(SoundCloudTrack[] tracks)
         {
             var values = tracks.Where(track => !string.IsNullOrWhiteSpace(track.Title)).Take(3).ToArray();

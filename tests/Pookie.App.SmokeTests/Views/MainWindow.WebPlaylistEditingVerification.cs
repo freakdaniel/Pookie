@@ -187,15 +187,37 @@ internal sealed partial class MainWindow
         catch (SoundCloudException) { refusedPartialOrder = true; }
         if (!refusedPartialOrder || fixture.Playlist.TrackCount != 15)
             throw new InvalidOperationException("A partial web snapshot was overwritten during removal.");
-        OpenPlaylistEditor(deleting: true);
-        await WaitForLikedLayoutAsync(() => !playlistEditor.Running);
+        menu.Show(collectionMore);
+        await WaitForLikedLayoutAsync(() => menu.Reveal == 1);
+        var originalHeight = menu.Card.ActualHeight;
+        var delete = menu.Buttons.Single(b => b.Command?.Id == "pookie.collection.delete");
+        var menuHeights = new List<double>();
+        var sawScrollbar = false;
+        void SampleMenu()
+        {
+            menuHeights.Add(menu.Card.ActualHeight);
+            sawScrollbar |= VisualTree.Find(menu.Card, node => node is ScrollBar { IsVisible: true, Opacity: > 0 }) != null;
+        }
+        Window.FrameRendered += SampleMenu;
+        RouteWaveformClick(SettingsCenter(delete));
+        await WaitForLikedLayoutAsync(() => menu.Buttons.Count == 2 && double.IsNaN(menu.Card.Height) && menu.Card.ActualHeight < originalHeight);
+        if (!DesktopMotion.PrefersReducedMotion() && !menuHeights.Any(h => h < originalHeight - 1 && h > menu.Card.ActualHeight + 1))
+            throw new InvalidOperationException("The confirmation skipped intermediate menu sizes.");
+        if (playlistEditor.IsOpen || !menu.IsOpen || fixture.Deleted)
+            throw new InvalidOperationException("Deletion must first request confirmation in the open menu.");
+        RouteWaveformClick(SettingsCenter(menu.Buttons[0]));
+        await WaitForLikedLayoutAsync(() => menu.Buttons.Contains(delete) && Math.Abs(menu.Card.ActualHeight - originalHeight) < 1);
+        Window.FrameRendered -= SampleMenu;
+        if (sawScrollbar) throw new InvalidOperationException("A scrollbar appeared during the confirmation round trip.");
+        if (!menu.IsOpen || fixture.Deleted) throw new InvalidOperationException("Cancel must restore the playlist menu.");
+        RouteWaveformClick(SettingsCenter(delete));
+        await WaitForLikedLayoutAsync(() => menu.Buttons.Count == 2 && double.IsNaN(menu.Card.Height) && menu.Card.ActualHeight < originalHeight);
         CaptureUiPreview("web-playlist-delete-confirmation");
-        if (!playlistEditor.IsOpen || !playlistEditDeleting || !playlistEditDeleteConfirm.IsEnabled || playlistEditSave.IsVisible || fixture.Deleted)
-            throw new InvalidOperationException("Playlist deletion skipped its confirmation.");
-        await SavePlaylistEditorAsync();
+        RouteWaveformClick(SettingsCenter(menu.Buttons[1]));
+        await WaitForLikedLayoutAsync(() => fixture.Deleted && !pendingPlaylistEdits.Contains((api.Session!, fixture.Playlist.Id)));
         if (!fixture.Deleted || page.Value != Page.LibraryPlaylists || libraryPages["collections"].Items.Any(entry => entry.Playlist?.Id == fixture.Playlist.Id))
             throw new InvalidOperationException("Deleted playlist remained in the library.");
-        Console.WriteLine("WEB_PLAYLIST_EDIT_UI_OK: matte glass overlay, four sliding tabs, neutral focus, changed-only save, metadata/privacy confirmation, cancelable staged track edits, pending isolation, reorder/remove, hidden-track protection and deletion dialog/library refresh; fixture only");
+        Console.WriteLine("WEB_PLAYLIST_EDIT_UI_OK: matte glass overlay, four sliding tabs, neutral focus, changed-only save, metadata/privacy confirmation, cancelable staged track edits, pending isolation, reorder/remove, hidden-track protection and inline deletion confirmation/library refresh; fixture only");
     }
 
     private async Task VerifyPlaylistEditorMotionAsync(bool presented = false, nint nativeDisplay = 0)

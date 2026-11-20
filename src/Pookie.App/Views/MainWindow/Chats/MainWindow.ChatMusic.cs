@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.CompilerServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -26,12 +27,12 @@ internal sealed partial class MainWindow
     private long chatMusicGeneration;
     private FrameworkElement ChatMusicPickerView()
     {
-        chatMusicField = new DialogSearchField("Найти трек", MutedIcon);
+        chatMusicField = new DialogSearchField(UiText.Get("search.track.placeholder"), MutedIcon);
         chatMusicSearch.OnTextChanged(_ => { if (chatMusicDialog.IsOpen) Run(() => SearchChatMusicAsync(debounce: true)); });
         chatMusicSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; Run(() => SearchChatMusicAsync()); } });
         var tabs = new StackPanel().Horizontal().Spacing(24).Children(
-            SectionTab("Треки", chatMusicSection, SearchSection.Tracks, () => SelectChatMusicSection(SearchSection.Tracks), animate: false),
-            SectionTab("Плейлисты", chatMusicSection, SearchSection.Playlists, () => SelectChatMusicSection(SearchSection.Playlists), animate: false));
+            SectionTab(UiText.Get("common.tracks"), chatMusicSection, SearchSection.Tracks, () => SelectChatMusicSection(SearchSection.Tracks), animateSelection: false),
+            SectionTab(UiText.Get("library.playlists"), chatMusicSection, SearchSection.Playlists, () => SelectChatMusicSection(SearchSection.Playlists), animateSelection: false));
         chatMusicEmptyArt = new Image().Source(ImageSource.FromResource<MainWindow>("Pookie.App.Assets.Stickle.route.png"))
             .Width(104).Height(100).StretchMode(Stretch.Uniform).CenterHorizontal().IsVisible(false);
         chatMusicStatus = new TextBlock().FontSize(13).Foreground(Muted).CenterHorizontal()
@@ -46,7 +47,7 @@ internal sealed partial class MainWindow
         var content = new Grid().Columns("*").Rows("Auto,Auto,*").Spacing(16).Margin(24).Children(
             tabs, chatMusicField.Row(1), chatMusicLoading.Root.ClipToBounds().Row(2));
         var card = TrackDialogChrome.MatteBody(content).Width(PlaylistDialogContent.PreferredWidth).Height(PlaylistDialogContent.MaximumBodyHeight);
-        var close = TrackButtons.Icon(Icons.View("x", 20), CloseChatMusicPicker, TrackButtons.Glass).Top().Hint("Закрыть");
+        var close = TrackButtons.Icon(Icons.View("x", 20), CloseChatMusicPicker, TrackButtons.Glass).Top().Hint(UiText.Get("common.close"));
         ((MaterialTrackButton)close).UseLightGlassFinish();
         chatMusicDialog = new ModalDialog(card, chatMusicSearch, close, staticBackdrop: true, cacheTransition: true,
             backdropTint: TrackDialogChrome.MatteTint) { DismissRequested = CloseChatMusicPicker };
@@ -58,7 +59,7 @@ internal sealed partial class MainWindow
         CloseChatAttachMenu(true);
         chatInput.Focus();
         chatMusicSection.Value = SearchSection.Tracks;
-        chatMusicField.PlaceholderLabel.Text = "Найти трек";
+        chatMusicField.PlaceholderLabel.Text = UiText.Get("search.track.placeholder");
         chatMusicSearch.Text = "";
         chatMusicDialog.Show();
         return SearchChatMusicAsync();
@@ -66,7 +67,7 @@ internal sealed partial class MainWindow
     private void SelectChatMusicSection(SearchSection section)
     {
         chatMusicSection.Value = section;
-        chatMusicField.PlaceholderLabel.Text = section == SearchSection.Tracks ? "Найти трек" : "Найти плейлист";
+        chatMusicField.PlaceholderLabel.Text = section == SearchSection.Tracks ? UiText.Get("search.track.placeholder") : UiText.Get("search.playlist.placeholder");
         Run(() => SearchChatMusicAsync());
     }
 
@@ -109,10 +110,10 @@ internal sealed partial class MainWindow
             var query = chatMusicSearch.Text.Trim();
             if (debounce) await Task.Delay(350, token);
             IReadOnlyList<LibraryItem> items;
-            var emptyMessage = "Ничего не найдено";
+            var emptyMessage = UiText.Get("search.empty");
             if (query.Length == 0)
             {
-                emptyMessage = tracks ? "Пока нет понравившихся треков" : "Пока нет своих плейлистов";
+                emptyMessage = tracks ? UiText.Get("library.likes.empty") : UiText.Get("library.ownPlaylists.empty");
                 items = tracks
                     ? (await api.GetLikesAsync(account.Id, token)).Tracks.Take(20).Select(LibraryItem.FromTrack).ToArray()
                     : (await api.GetOwnedPlaylistsAsync(account.Id, token)).Take(20).ToArray();
@@ -121,8 +122,8 @@ internal sealed partial class MainWindow
             {
                 var resolved = await api.ResolveChatMusicAsync(query, token);
                 items = [resolved];
-                if (tracks && resolved.Playlist != null) emptyMessage = "Открой ссылку во вкладке «Плейлисты»";
-                if (!tracks && resolved.Track != null) emptyMessage = "Открой ссылку во вкладке «Треки»";
+                if (tracks && resolved.Playlist != null) emptyMessage = UiText.Get("search.links.openPlaylistTab");
+                if (!tracks && resolved.Track != null) emptyMessage = UiText.Get("search.links.openTrackTab");
             }
             else items = (await api.SearchResultsAsync(query, section, token)).Items;
             if (disposed || generation != chatMusicGeneration || chatRecipient?.Id != peer) return;
@@ -139,13 +140,13 @@ internal sealed partial class MainWindow
                     title = new DockPanel().LastChildFill().Spacing(6).Left().Children(
                         Icons.View("lock-simple", 14, MutedIcon).DockRight().CenterVertical(), title);
                 var subtitle = new TextBlock().Text(item.Playlist is { } list
-                    ? $"Плейлист · {list.TrackCount} {RussianPlural(list.TrackCount, "трек", "трека", "треков")}" : item.Subtitle)
+                    ? UiText.Format("chats.music.playlistSummary", list.TrackCount, UiText.Plural(list.TrackCount, "collection.track")): item.Subtitle)
                     .FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis);
                 var button = TrackButtons.Action(new Grid().Columns("44,*").Rows("52").Spacing(12).Children(
                     new Border().CornerRadius(7).ClipToBounds().Child(ArtworkLayer(cover)).CenterVertical(),
                     new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(title, subtitle)),
                     () => Run(() => AttachChatMusicAsync(item, url, subtitle, generation, peer, token)), TrackButtons.Text, 64);
-                if (isPrivate) button.Hint("Приватный плейлист");
+                if (isPrivate) button.Hint(UiText.Get("share.playlist.private"));
                 button.CornerRadius = 10; button.Padding = new Thickness(8, 0);
                 ((MaterialTrackButton)button).UseListStateLayer();
                 ((FrameworkElement)button.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -165,7 +166,7 @@ internal sealed partial class MainWindow
             }
         }
         catch (OperationCanceledException) { }
-        catch { if (generation == chatMusicGeneration) chatMusicStatus.Text = "Не удалось загрузить музыку. Попробуй ещё раз."; }
+        catch { if (generation == chatMusicGeneration) chatMusicStatus.Text = UiText.Get("chats.music.loadFailed"); }
         finally
         {
             if (generation == chatMusicGeneration)
@@ -185,7 +186,7 @@ internal sealed partial class MainWindow
         if (item.Playlist is { } playlist && (playlist.IsSystemMix || playlist.IsPrivate))
         {
             chatMusicChoices.IsEnabled = false;
-            subtitle.Text = playlist.IsSystemMix ? "Проверяем доступ к миксу…" : "Загружаем секретную ссылку…";
+            subtitle.Text = playlist.IsSystemMix ? UiText.Get("share.mix.checkingAccess") : UiText.Get("share.link.loadingSecret");
             try
             {
                 var resolved = playlist.IsSystemMix ? await api.GetMixForSharingAsync(playlist.Urn, token) : await FetchPlaylistForSharingAsync(playlist, token);
@@ -193,7 +194,7 @@ internal sealed partial class MainWindow
                 url = resolved.IsSystemMix || resolved.IsPrivate ? PlaylistSharing.ShareUri(resolved)?.AbsoluteUri : null;
                 if (url == null)
                 {
-                    subtitle.Text = playlist.IsSystemMix ? "Публичная ссылка на микс недоступна." : "Секретная ссылка недоступна. Попробуй ещё раз.";
+                    subtitle.Text = playlist.IsSystemMix ? UiText.Get("share.mix.publicLinkUnavailable") : UiText.Get("share.link.secretUnavailable");
                     return;
                 }
                 item = LibraryData.FromPlaylist(resolved);
@@ -201,7 +202,7 @@ internal sealed partial class MainWindow
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
             catch
             {
-                if (Current()) subtitle.Text = "Не удалось получить ссылку. Попробуй ещё раз.";
+                if (Current()) subtitle.Text = UiText.Get("share.link.getFailed");
                 return;
             }
             finally { if (generation == chatMusicGeneration) chatMusicChoices.IsEnabled = true; }
@@ -338,7 +339,7 @@ internal sealed partial class MainWindow
                 {
                     if (!view.IsCurrent()) return;
                     if (view.Item != null) SetCollectionArtwork(row.Cover, view.Item, finished: true);
-                    else { row.Title.Text = "Трек или плейлист"; row.Author.Text = "Не удалось загрузить предпросмотр"; SetCardArtwork(row.Cover, null, null, finished: true); }
+                    else { row.Title.Text = UiText.Get("share.item.trackOrPlaylist"); row.Author.Text = UiText.Get("media.preview.loadFailed"); SetCardArtwork(row.Cover, null, null, finished: true); }
                 }
                 finally { if (view.IsCurrent()) view.Loading.Show(); }
             });
@@ -372,8 +373,8 @@ internal sealed partial class MainWindow
         row.Title.Text = item.Title;
         if (item.Playlist is { } playlist)
         {
-            row.Author.Text = $"{(item.IsAlbum ? "Альбом" : "Плейлист")} · {playlist.TrackCount} {RussianPlural(playlist.TrackCount, "трек", "трека", "треков")} · {playlist.User?.Username ?? item.Subtitle}";
-            row.SetCollectionContext(track == null ? "В плейлисте пока нет доступных треков" : track.Author + " — " + track.Title);
+            row.Author.Text = UiText.Compose($"{(item.IsAlbum ? UiText.Get("common.album") : UiText.Get("common.playlist"))} · {playlist.TrackCount} {UiText.Plural(playlist.TrackCount, "collection.track")} · {playlist.User?.Username ?? item.Subtitle}");
+            row.SetCollectionContext(track == null ? UiText.Get("playlist.tracks.noneAvailable") : track.Author + " — " + track.Title);
             row.Refresh(selected, isPlaying.Value, false, false, selected ? likedPlaybackPosition : 0);
         }
         else { row.SetCollectionContext(null); RefreshLikedRow(row); }
@@ -391,7 +392,7 @@ internal sealed partial class MainWindow
         if (item.Playlist != null) { await PlayLibraryCollectionAsync(item); return; }
         if (item.Track is not { } track) return;
         if (current?.Id == track.Id) { await ToggleAsync(); return; }
-        StartQueueContext(new(view.Group.Key, "Чат с " + view.Group.Name, "Сейчас играет из чата"), [track], track, 0);
+        StartQueueContext(new(view.Group.Key, UiText.Compose($"{UiText.Get("chats.contact.titlePrefix")}{view.Group.Name}"), UiText.Get("queue.source.chat")), [track], track, 0);
         await PlayAsync(track);
     }
 

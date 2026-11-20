@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -31,10 +32,10 @@ internal sealed partial class MainWindow
             var button = MenuChoice(icon, label, () => ExecuteChatMenuAction(id)); button.Height = 36;
             chatMessageMenuActions.Add((button, id)); chatMessageMenuBody.Add(button);
         }
-        Action("reply", "arrow-bend-up-left", "Ответить"); Action("copy", "copy", "Копировать");
-        Action("favorite", "bookmark-simple", "В избранное"); Action("select", "selection", "Выделить");
-        Action("save", "download-simple", "Сохранить вложение"); Action("retry", "arrows-clockwise", "Повторить отправку");
-        Action("discard", "trash", "Убрать отправку");
+        Action("reply", "arrow-bend-up-left", UiText.Get("chats.reply.action")); Action("copy", "copy", UiText.Get("common.copy"));
+        Action("select", "selection", UiText.Get("common.select"));
+        Action("save", "download-simple", UiText.Get("chats.attachment.save")); Action("retry", "arrows-clockwise", UiText.Get("chats.send.retry"));
+        Action("discard", "trash", UiText.Get("chats.send.cancel"));
         var actionsCard = new GlassCard(Surface) { HoverEnabled = false }.Background(ChatGlassSurface).CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding).Width(224).Left().Child(chatMessageMenuBody);
         var content = new StackPanel().Vertical().Spacing(6).Width(288).Children(reactionCard, actionsCard);
         content.Focusable = true;
@@ -55,7 +56,7 @@ internal sealed partial class MainWindow
     }
     private void OpenChatMessageMenu(ChatBubbleRow row, Point point, bool toggle = false)
     {
-        if (row.Message is not { } message || !row.Bound || chatRecipient == null || chatFavoritesOpen) return;
+        if (row.Message is not { } message || !row.Bound || chatRecipient == null) return;
         if (toggle && chatMessageMenu.IsOpen && CurrentChatMenu(chatMenuContext) && chatMenuContext!.Message.Id == message.Id)
         { CloseChatMessageMenu(); return; }
         CloseChatGifs(); CloseChatAttachMenu(); CloseShellMenus();
@@ -64,11 +65,9 @@ internal sealed partial class MainWindow
         var pending = ChatOutgoing(message); var media = ChatMediaReference.Parse(message.Body) != null || pending?.HasMedia == true;
         foreach (var (button, action) in chatMessageMenuActions)
         {
-            button.IsVisible = action switch { "reply" or "favorite" => pending == null, "copy" => copy != null,
+            button.IsVisible = action switch { "reply" => pending == null, "copy" => copy != null,
                 "save" => media, "retry" => pending?.State == ChatDelivery.Failed, "discard" => pending != null, _ => true };
-            button.IsEnabled = action is "copy" or "select" or "favorite" || !chatSending;
-            if (action == "favorite" && button.Content is StackPanel line && line.Children.LastOrDefault() is TextBlock label)
-                label.Text = chatWorkspace.Favorites.Any(f => f.PeerId == chatRecipient.Id && f.Message.Id == message.Id) ? "Убрать из избранного" : "В избранное";
+            button.IsEnabled = action is "copy" or "select" || !chatSending;
         }
         foreach (var (button, emoji) in chatQuickReactions)
         {
@@ -88,7 +87,6 @@ internal sealed partial class MainWindow
         {
             case "reply": ReplyToChat(message); break;
             case "copy": if (context.Copy != null) CopyText(context.Copy); break;
-            case "favorite": ChatFavoriteMessage(message); break;
             case "select": if (chatMessageItems.Any(m => m.Id == message.Id)) ToggleChatSelection(message); break;
             case "save": Run(() => SaveChatAttachmentAsync(message.Id, 0)); break;
             case "retry": if (!chatSending && ChatOutgoing(message)?.State == ChatDelivery.Failed) Run(RetryChatOutgoingAsync); break;
@@ -112,7 +110,7 @@ internal sealed partial class MainWindow
     private void ObserveChatPopups()
     {
         if (chatEmojiPopup == null || chatMessageMenu == null) return;
-        if (!Window.IsActive || page.Value != Page.Chats || chatFavoritesOpen || expandedOpen)
+        if (!Window.IsActive || page.Value != Page.Chats || expandedOpen)
         { if (chatEmojiPopup.IsOpen) CloseChatGifs(); CloseChatMessageMenu(); return; }
         if (chatEmojiPopup.IsOpen && (chatEmojiAccount != chatAccountId || chatEmojiPeer != chatRecipient?.Id ||
             !chatEmojiPopup.IsFocusWithin && !chatGif.IsFocusWithin && !chatInput.IsFocusWithin)) CloseChatGifs();

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Browser;
 using Pookie.Audio;
 using Pookie.SoundCloud;
@@ -28,7 +29,7 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
             await native.PlayAsync(source, cancellationToken);
             return;
         }
-        var connected = session() ?? throw new InvalidOperationException("Для защищённого воспроизведения нужна активная сессия SoundCloud.");
+        var connected = session() ?? throw new InvalidOperationException(UiText.Get("drm.playback.signInRequired"));
         var id = Guid.NewGuid().ToString("N");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(90));
@@ -63,7 +64,7 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
         {
             if (playbackId == null) return;
             if (message.Kind == "audio-closed")
-                error = new InvalidOperationException("Браузерный проигрыватель закрыт. Включи трек ещё раз.");
+                error = new InvalidOperationException(UiText.Get("playback.browser.closed"));
             else if (message.Kind == "audio-state" && message.RequestId == playbackId && message.Audio is { } audio && audio.IsValid())
             {
                 state = new(audio.Position, audio.Duration, audio.Playing, audio.Buffering, audio.Ended)
@@ -76,12 +77,12 @@ internal sealed class WindowsAudioPlayer(IAudioPlayer native, Func<IBrowserAudio
 
     private static InvalidOperationException PlaybackError(string code) => new(code switch
     {
-        "license" or "expired" => "SoundCloud отклонил или завершил браузерную DRM-лицензию.",
-        "unsupported" => "Не удалось подготовить Widevine CDM в браузере Pookie. Проверь подключение к сети и перезапусти приложение.",
-        "network" => "Не удалось загрузить защищённый аудиопоток. Проверь соединение.",
-        "autoplay" => "WebView2 не разрешил запуск звука в приложении.",
-        "playlist" => "SoundCloud вернул неподдерживаемый защищённый плейлист.",
-        _ => "Браузерный проигрыватель не смог декодировать аудиопоток."
+        "license" or "expired" => UiText.Get("drm.browser.licenseEnded"),
+        "unsupported" => UiText.Get("drm.widevine.browserInitFailed"),
+        "network" => UiText.Get("drm.stream.loadFailed"),
+        "autoplay" => UiText.Get("browser.windows.audioDenied"),
+        "playlist" => UiText.Get("drm.playlist.unsupported"),
+        _ => UiText.Get("audio.browser.decodeFailed")
     });
 
     public Task SeekAsync(double seconds, CancellationToken cancellationToken = default)

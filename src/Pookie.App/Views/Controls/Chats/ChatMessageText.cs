@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
@@ -77,7 +78,7 @@ internal sealed class ChatMessageText : SelectableTextBlock
         var dpi = GetDpi();
         var style = new TextRunStyle(FontFamily, FontSize, FontWeight,FontStyle == FontStyle.Italic);
         var graphics = GetGraphicsFactory();
-        var culture = System.Globalization.CultureInfo.CurrentUICulture;
+        var culture = UiText.Language;
         if (layout != null && layoutWidth.Equals(width) && layoutDpi == dpi && layoutStyle == style &&
             layoutFactory == graphics && layoutSpacing.Equals(LineSpacing) && layoutAlignment == TextAlignment &&
             layoutTrim == LineBoxTrim && layoutCulture == culture.Name) return layout;

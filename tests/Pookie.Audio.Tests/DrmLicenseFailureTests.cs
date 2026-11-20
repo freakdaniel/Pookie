@@ -51,7 +51,7 @@ public sealed class DrmLicenseFailureTests
             Content = new StringContent("{\"message\":\"token expired\",\"token\":\"secret-token\",\"url\":\"https://example.test/?token=secret-token\"}")
         };
         var detail = await DrmLicenseFailure.ReadAsync(response, CancellationToken.None);
-        Assert.Contains("истечении авторизации", detail);
+        Assert.Contains(Pookie.Localization.UiText.Get("drm.license.expiredAuthorization").Trim(), detail);
         Assert.DoesNotContain("secret-token", detail);
         Assert.DoesNotContain("https://", detail);
     }

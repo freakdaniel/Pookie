@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -9,7 +10,7 @@ public sealed partial class SoundCloudWebClient
         if (userId <= 0) throw new ArgumentOutOfRangeException(nameof(userId));
         using var document = await GetJsonAsync(Api($"users/{userId}"), token).ConfigureAwait(false);
         return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser)
-            is { Id: > 0 } user && user.Id == userId ? user : throw new SoundCloudException("Профиль недоступен");
+            is { Id: > 0 } user && user.Id == userId ? user : throw new SoundCloudException(UiText.Get("profile.unavailable"));
     }
 
     public async Task<UserWebProfile[]> GetUserLinksAsync(long userId, CancellationToken token = default)
@@ -41,7 +42,7 @@ public sealed partial class SoundCloudWebClient
         };
         var uri = Api(path + "?limit=30&linked_partitioning=1");
         if (cursor != null && (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri) || uri.AbsolutePath != "/" + path))
-            throw new SoundCloudException("Неверная страница профиля");
+            throw new SoundCloudException(UiText.Get("profile.invalidPage"));
         using var document = await GetJsonAsync(uri!, token).ConfigureAwait(false);
         var page = await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         if (section is not ("activity" or "reposts")) return page;

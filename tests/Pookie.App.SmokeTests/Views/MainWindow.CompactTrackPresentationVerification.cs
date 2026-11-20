@@ -20,7 +20,8 @@ internal sealed partial class MainWindow
             BindCompactTrackRow(row, original with { Duration = seconds * 1000, PlaybackCount = 123456 });
             await WaitForLoginFrameAsync();
             if (Math.Abs(LikeX() - likeX) > 1 / Window.DpiScale || Math.Abs(row.Duration.Bounds.Right - right) > 1 / Window.DpiScale ||
-                row.Plays.Text != "123.5K" || row.Plays.Bounds.Y < row.Duration.Bounds.Bottom)
+                row.PlayCountLine.Children[0] is not Image { Source: not null, ActualWidth: > 0 } glyph ||
+                glyph.Bounds.Right >= row.Plays.Bounds.X || row.Plays.Text != "123.5K" || row.Plays.Bounds.Y < row.Duration.Bounds.Bottom)
                 throw new InvalidOperationException("Track statistics changed action columns or lost playback counts below the duration.");
         }
         BindCompactTrackRow(row, original);

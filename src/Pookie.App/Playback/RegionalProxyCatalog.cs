@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using System.Text.Json;
 using Pookie.Logging;
@@ -54,14 +55,14 @@ internal sealed partial class RegionalProxyCatalog(HttpClient http, Uri[]? feeds
     {
         using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength > maximum) throw new HttpRequestException("Источник списка прокси слишком большой.");
+        if (response.Content.Headers.ContentLength > maximum) throw new HttpRequestException(UiText.Get("network.proxy.listTooLarge"));
         await using var body = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var bytes = new MemoryStream();
         var buffer = new byte[16384];
         int count;
         while ((count = await body.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
         {
-            if (bytes.Length + count > maximum) throw new HttpRequestException("Источник списка прокси слишком большой.");
+            if (bytes.Length + count > maximum) throw new HttpRequestException(UiText.Get("network.proxy.listTooLarge"));
             bytes.Write(buffer, 0, count);
         }
         return bytes.ToArray();
@@ -70,7 +71,7 @@ internal sealed partial class RegionalProxyCatalog(HttpClient http, Uri[]? feeds
     internal static IReadOnlyList<RegionalProxyEndpoint> Parse(ReadOnlyMemory<byte> bytes)
     {
         using var json = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 16 });
-        if (json.RootElement.ValueKind != JsonValueKind.Array) throw new JsonException("Ожидался список прокси.");
+        if (json.RootElement.ValueKind != JsonValueKind.Array) throw new JsonException(UiText.Get("network.proxy.invalidList"));
         var result = new List<RegionalProxyEndpoint>();
         foreach (var row in json.RootElement.EnumerateArray().Take(16384))
         {

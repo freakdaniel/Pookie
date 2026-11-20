@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 
 namespace Pookie.App.Browser;
@@ -34,6 +35,6 @@ internal static class EmbeddedBrowserFactory
 #endif
         if (OperatingSystem.IsLinux()) return new WebKitLoginWindow.EmbeddedBrowser(events);
         if (OperatingSystem.IsMacOS()) return new MacEmbeddedBrowser(events);
-        throw new PlatformNotSupportedException("Встроенный вход поддерживает Windows, Linux и macOS.");
+        throw new PlatformNotSupportedException(UiText.Get("auth.platform.unsupported"));
     }
 }

@@ -27,6 +27,7 @@ internal sealed partial class MainWindow
             if (shareLink.Focusable || !shareFocusAnchor.IsFocused || !shareTimeAction.IsVisible || shareLink.Text != track.PermalinkUrl)
                 throw new InvalidOperationException("Share panel lost its target, private link, initial focus or read-only URL.");
             VerifyShareChrome();
+            await VerifyTabHoverFadeAsync(shareSectionTabs[1]);
             await VerifySharePageTransitionsAsync();
             if (shareStartSeconds != null || shareTimeAction.Width != 48 || shareTab.Value != 0 || shareDestinations.Count != 5)
                 throw new InvalidOperationException("Share retained playback position, another tab or missing destinations.");
@@ -406,7 +407,8 @@ internal sealed partial class MainWindow
             throw new InvalidOperationException("X lost its black background.");
         if (shareTrackDuration.Text != "3:00" || shareTrackPlays.Text != "65.4K" ||
             Math.Abs(shareTrackDuration.Bounds.Right - plaque.Right + 16) > .1 ||
-            shareTrackPlays.Bounds.Y <= shareTrackDuration.Bounds.Y)
+            shareTrackPlays.Parent is not StackPanel line || line.Children[0] is not Image { Source: not null, ActualWidth: > 0 } glyph ||
+            glyph.Bounds.Right >= shareTrackPlays.Bounds.X || shareTrackPlays.Bounds.Y <= shareTrackDuration.Bounds.Y)
             throw new InvalidOperationException("Share plaque lost right-aligned duration/play count or their order.");
         foreach (var name in new[] { "SimpleIcons.social-telegram", "SimpleIcons.social-vk", "SimpleIcons.social-x", "snapchat", "envelope" })
             if (Icons.Source(name).IntrinsicSize.Width <= 0) throw new InvalidOperationException("Share logo failed to load: " + name);

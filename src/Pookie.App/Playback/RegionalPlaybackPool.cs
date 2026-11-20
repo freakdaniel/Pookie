@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Collections.Concurrent;
 using System.Net;
 using Pookie.Logging;
@@ -91,7 +92,7 @@ internal sealed class RegionalPlaybackPool : ISoundCloudPlaybackResolver, IDispo
                 return success.Playback with { UsedRegionalSource = true };
             }
             token.ThrowIfCancellationRequested();
-            throw new SoundCloudException("В доступном пуле пока нет подключения с полным потоком этого трека. Повтори попытку позже.");
+            throw new SoundCloudException(UiText.Get("audio.region.poolUnavailable"));
 
             async Task<(Uri Proxy, ResolvedPlayback Playback)?> WorkerAsync()
             {

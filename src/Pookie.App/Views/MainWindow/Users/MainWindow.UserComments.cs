@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -28,7 +29,7 @@ internal sealed partial class MainWindow
         foreach (var entry in state.Comments?.Comments.Take(3) ?? []) userSidebarComments.Add(UserCommentView(entry, preview: true));
         foreach (var entry in state.Comments?.Comments ?? []) userCommentsBody.Add(UserCommentView(entry, preview: false));
         if (error.Length > 0)
-            userSidebarComments.Add(TrackButtons.Action(new TextBlock().Text("Повторить загрузку").FontSize(12),
+            userSidebarComments.Add(TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retryDownload")).FontSize(12),
                 () => Run(() => LoadUserSectionAsync(UserSection.Comments, navigationGeneration, loading!.Token, cachedProfile!.FailedCursors.GetValueOrDefault(UserSection.Comments))), TrackButtons.Text, 30).Padding(0).Left());
     }
 
@@ -40,7 +41,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement UserCommentView(UserComment entry, bool preview)
     {
-        var title = string.IsNullOrWhiteSpace(entry.Track?.Title) ? "На недоступном треке" : $"На треке «{entry.Track.Title}»";
+        var title = string.IsNullOrWhiteSpace(entry.Track?.Title) ? UiText.Get("comments.track.unavailable") : UiText.Format("comments.track.named", entry.Track.Title);
         var track = new TextBlock().Text(title).FontSize(preview ? 12 : 14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis);
         if (entry.Track?.Id is > 0) AttachTrackTitle(track, () => entry.Track);
         var date = new TextBlock().Text(UserPublicationDate(entry.Comment.CreatedAt)).FontSize(10).Foreground(Muted).CenterVertical();

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -119,7 +120,7 @@ internal sealed partial class MainWindow
             if (e.Handled || e.Key is not (Key.Enter or Key.Space) || CollectionAuthor is not { Id: > 0 } user) return;
             e.Handled = true; Run(() => OpenUserProfileAsync(user));
         };
-        collectionDescriptionToggle = TrackButtons.Action(new TextBlock().Text("Подробнее").FontSize(13), () =>
+        collectionDescriptionToggle = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.learnMore")).FontSize(13), () =>
         {
             collectionDescriptionExpanded = !collectionDescriptionExpanded;
             RefreshCollectionDescription();
@@ -138,16 +139,24 @@ internal sealed partial class MainWindow
             var command = PopupAppearance.MenuCommand("pookie.collection." + id, label, icon);
             more.Commands.Register(command, execute, enabled); menu.Item(command);
         }
-        MenuItem("queue", "Добавить в очередь", "queue", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
-        MenuItem("edit", "Редактировать плейлист", "text-align-left", () => OpenPlaylistEditor(), CanEditDisplayedPlaylist);
-        MenuItem("artwork", "Изменить обложку", "image", () => Run(PickPlaylistArtworkAsync), CanEditDisplayedPlaylist);
-        MenuItem("delete", "Удалить плейлист", "trash", () => OpenPlaylistEditor(deleting: true), CanEditDisplayedPlaylist);
-        MenuItem("open", "Открыть в SoundCloud", "arrow-square-out", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
+        MenuItem("queue", UiText.Get("queue.actions.add"), "queue", EnqueueDisplayedCollection, () => activeCollection?.Items.Any(item => item.Track != null) == true);
+        MenuItem("edit", UiText.Get("playlist.edit.action"), "text-align-left", () => OpenPlaylistEditor(), CanEditDisplayedPlaylist);
+        MenuItem("artwork", UiText.Get("playlist.actions.changeArtwork"), "image", () => Run(PickPlaylistArtworkAsync), CanEditDisplayedPlaylist);
+        var delete = PopupAppearance.MenuCommand("pookie.collection.delete", UiText.Get("playlist.delete.action"), "trash");
+        menu.ConfirmationCommand = delete;
+        more.Commands.Register(delete, () =>
+        {
+            if (!CanEditDisplayedPlaylist() || displayedCollection?.Playlist is not { } playlist || api.Session is not { } session) return;
+            menu.ShowConfirmation(UiText.Get("common.confirmation"), UiText.Format("playlist.delete.confirmation", playlist.Title), UiText.Get("common.delete"),
+                () => Run(() => DeletePlaylistAsync(playlist.Id, session)));
+        }, CanEditDisplayedPlaylist);
+        menu.Item(delete);
+        MenuItem("open", UiText.Get("links.openInSoundCloud"), "arrow-square-out", () => OpenSoundCloudPage(displayedCollection?.Playlist?.PermalinkUrl),
             () => TrackLink(displayedCollection?.Playlist?.PermalinkUrl) != null);
         PopupAppearance.Attach(more, menu); more.OnClick(() => menu.Toggle(more));
         CreateCollectionActionButtons();
         collectionMixQueue = TrackButtons.Icon(Icons.View("queue", 20), EnqueueDisplayedCollection, TrackButtons.Glass, 44)
-            .Hint("Добавить микс в очередь").CenterVertical().IsVisible(false);
+            .Hint(UiText.Get("queue.actions.addMix")).CenterVertical().IsVisible(false);
         var details = new Grid().Columns("3*,*").Rows("*,100").Spacing(12);
         details.ColumnDefinitions[1].MaxWidth = 168;
         var hero = collectionHero = new TrackPageColumns(
@@ -156,7 +165,7 @@ internal sealed partial class MainWindow
                 new Grid().Columns("*,100").Rows("*").ColumnSpan(2).Row(1).Spacing(12).Children(
                     new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Column(0).Left().Bottom().Children(
                         collectionSocialActions = TrackButtons.Connected(collectionLike, collectionRepost),
-                        collectionShare = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint("Поделиться").CenterVertical(),
+                        collectionShare = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () => { if (displayedCollection is { } item) OpenShare(item); }, TrackButtons.Glass, 44).Hint(UiText.Get("common.share")).CenterVertical(),
                         collectionFollow = ArtistFollowButton(() => CollectionAuthor, TrackButtons.Glass, 44).CenterVertical(), collectionMixQueue, more.CenterVertical()),
                     collectionStats.Column(1))),
             coverFrame, true, collectionBackdrop,
@@ -173,7 +182,7 @@ internal sealed partial class MainWindow
             CollectionScroll?.SetScrollOffsets(0, 0);
             collectionFilterGlyph.SetLoading(false);
         });
-        collectionFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю")
+        collectionFilter = new TextBox().Placeholder(UiText.Get("collection.filter.placeholder"))
             .OnTextChanged(value =>
             {
                 collectionFilterDebounce.Schedule(string.IsNullOrWhiteSpace(value));
@@ -182,7 +191,7 @@ internal sealed partial class MainWindow
         collectionFilter.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; collectionFilterDebounce.Flush(); } });
         collectionEmpty = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).Margin(8, 12, 0, 0).Top().IsVisible(false);
         collectionTools = new Grid().Columns("*,Auto,320").Rows("Auto").Spacing(16).Children(
-            new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
+            new TextBlock().Text(UiText.Get("common.tracks")).FontSize(22).Bold().Margin(8, 0, 0, 0).CenterVertical().Column(0),
             TrackViewSwitch(collectionMode).Column(1), MaterialSearchField.CreateGlass(collectionFilter, liveGlass: true, activity: collectionFilterGlyph).Column(2));
         collectionDescriptionScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).MaxHeight(180).Content(collectionDescription);
         collectionDescriptionHost = new StackPanel().Vertical().Spacing(4).Margin(24, 0, 24, 0)
@@ -242,7 +251,7 @@ internal sealed partial class MainWindow
         collectionTrackWaves.IsVisible = entries.Length > 0 && collectionMode.Value == TrackViewMode.Waveform;
         collectionLoadingView.Skeleton.CompactList = collectionMode.Value == TrackViewMode.List;
         collectionLoadingView.Skeleton.SetGeometry(collectionTrackArtworkSize, Math.Max(1, (int)(collectionTrackCards.ActualWidth / (collectionTrackArtworkSize + 24))), collectionMode.Value != TrackViewMode.Cards);
-        collectionEmpty.Text = filter.Length > 0 ? "По этому фильтру ничего не найдено." : "Здесь пока нет треков.";
+        collectionEmpty.Text = filter.Length > 0 ? UiText.Get("collection.filter.empty") : UiText.Get("collection.empty.tracks");
         collectionEmpty.IsVisible = entries.Length == 0;
         collectionPlay.IsEnabled = entries.Length > 0;
         RefreshCollectionPlayback();
@@ -252,7 +261,7 @@ internal sealed partial class MainWindow
     {
         collectionDescription.MaxHeight = collectionDescriptionExpanded ? double.PositiveInfinity : 48;
         collectionDescriptionToggle.IsVisible = collectionDescription.Text.Length > 180 || collectionDescription.Text.Count(c => c == '\n') > 1;
-        ((TextBlock)collectionDescriptionToggle.Content!).Text = collectionDescriptionExpanded ? "Свернуть" : "Подробнее";
+        ((TextBlock)collectionDescriptionToggle.Content!).Text = collectionDescriptionExpanded ? UiText.Get("common.collapse") : UiText.Get("common.learnMore");
         RefreshCollectionDescriptionGeometry();
     }
 
@@ -306,13 +315,13 @@ internal sealed partial class MainWindow
         var milliseconds = playlist.Duration > 0 ? playlist.Duration : data.Sum(track => track.Duration);
         collectionCount.Text = count.ToString();
         collectionCount.FontSize = count < 10000 ? 28 : count < 1000000 ? 21 : 14;
-        collectionCountLabel.Text = RussianPlural(count, "Трек", "Трека", "Треков");
+        collectionCountLabel.Text = UiText.Plural(count, "collection.trackLabel");
         collectionDuration.Text = milliseconds > 0 || count == 0 ? FormatTime(milliseconds / 1000) : "";
         collectionDuration.IsVisible = collectionDuration.Text.Length > 0;
         var artists = system ? MixArtists(playlist, data) : "";
-        var details = string.Join(" · ", new[] { playlist.IsPrivate ? "Приватный" : null, DetailAge(playlist.CreatedAt ?? playlist.LastModified) }
+        var details = UiText.Join(" · ", new[] { playlist.IsPrivate ? UiText.Get("privacy.private") : null, DetailAge(playlist.CreatedAt ?? playlist.LastModified) }
             .Where(value => !string.IsNullOrWhiteSpace(value)));
-        collectionMeta.Text = system ? artists : details.Length > 0 ? "· " + details : "";
+        collectionMeta.Text = system ? artists : details.Length > 0 ? UiText.Compose($"· {details}") : "";
         collectionDescription.Text = playlist.Description ?? playlist.ShortDescription ?? "";
         collectionDescriptionHost.IsVisible = collectionDescription.IsVisible = !string.IsNullOrWhiteSpace(collectionDescription.Text) &&
             (!system || collectionDescription.Text.Trim() != artists);
@@ -342,8 +351,8 @@ internal sealed partial class MainWindow
         if (collectionPlay == null || !playlistCollectionVisible.Value) return;
         var playing = playbackQueue.Context?.Key == displayedCollection?.Key && QueueMatchesPageFilter && isPlaying.Value;
         collectionPlayIcon.Source = Icons.Source(playing ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
-        var label = IsSystemCollection(displayedCollection) ? "микс" : "плейлист";
-        collectionPlay.Hint((playing ? "Приостановить " : "Воспроизвести ") + label);
+        var label = IsSystemCollection(displayedCollection) ? UiText.Get("collection.kind.mix") : UiText.Get("collection.kind.playlist");
+        collectionPlay.Hint(UiText.Compose($"{(playing ? UiText.Get("playback.pausePrefix") : UiText.Get("playback.playPrefix"))}{label}"));
         collectionPlay.IsEnabled = activeCollection?.Items.Any(item => item.Track != null && TrackFilter.Matches(item.Track, collectionFilterText)) == true;
         collectionMixQueue.IsEnabled = activeCollection?.Items.Any(item => item.Track != null) == true;
         foreach (var (tile, position) in collectionTrackTiles.Values)
@@ -360,6 +369,4 @@ internal sealed partial class MainWindow
         SetQueue(track, first.Value.index); await PlayAsync(track, queueAdvance: true);
     }
 
-    private static string RussianPlural(long count, string one, string few, string many) => count % 100 is >= 11 and <= 14
-        ? many : count % 10 == 1 ? one : count % 10 is >= 2 and <= 4 ? few : many;
 }

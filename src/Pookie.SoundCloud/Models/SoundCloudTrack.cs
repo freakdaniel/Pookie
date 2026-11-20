@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json.Serialization;
 
 namespace Pookie.SoundCloud;
@@ -34,7 +35,7 @@ public sealed record SoundCloudTrack
     // Restricted metadata can describe a 30-second preview in duration.
     // The track timeline still spans the full recording when it is known.
     public double DurationSeconds => (FullDuration > 0 ? FullDuration : Duration) / 1000;
-    public string Author => User?.Username ?? "Unknown artist";
+    public string Author => User?.Username ?? UiText.Get("track.artist.unknown");
 }
 
 public sealed record TrackVisuals(bool? Enabled, TrackVisual[]? Visuals);

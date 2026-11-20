@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -10,7 +11,7 @@ public sealed partial class SoundCloudWebClient
         var path = $"/users/{userId}/comments";
         var uri = Api(path.TrimStart('/') + "?limit=30&linked_partitioning=1");
         if (cursor != null && (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri) || uri.AbsolutePath != path))
-            throw new SoundCloudException("Неверная страница комментариев пользователя");
+            throw new SoundCloudException(UiText.Get("profile.comments.invalidPage"));
         using var document = await GetJsonAsync(uri!, token);
         var root = document.RootElement;
         var rows = root.ValueKind == JsonValueKind.Array ? root : root.GetProperty("collection");

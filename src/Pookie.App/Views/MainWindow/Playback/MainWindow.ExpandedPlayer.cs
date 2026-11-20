@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -166,7 +167,7 @@ internal sealed partial class MainWindow
         expandedHeader = new Grid().Columns("*,Auto").Rows("*").Padding(36, 20).Row(0).Children(
             Icons.LogoView(26, 25).Left().CenterVertical().Column(0),
             ShortcutHint(ExpandedActionButton(Icons.View("x", 24, Color.White), () => SetExpandedPlayer(false), 44, coverGlass: false),
-                ShortcutAction.Expand, "Свернуть плеер").Right().Column(1));
+                ShortcutAction.Expand, UiText.Get("player.collapse")).Right().Column(1));
         expandedHost = new(expandedBackdrop);
         expandedHost.Columns("*").Rows("84,*").ClipToBounds().Children(
             expandedBackdrop.Row(0).RowSpan(2), expandedHeader,

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -108,10 +109,10 @@ internal sealed partial class MainWindow
         if (TrackLink(track.PermalinkUrl) is { } url) { CopyText(url.AbsoluteUri); return; }
         Run(async () =>
         {
-            if (track.Id <= 0) { status.Value = "У этого трека нет ссылки."; return; }
+            if (track.Id <= 0) { status.Value = UiText.Get("share.track.missingUrl"); return; }
             var resolved = await api.GetTrackAsync(track.Id, lifetime.Token);
             if (TrackLink(resolved.PermalinkUrl) is { } link) CopyText(link.AbsoluteUri);
-            else status.Value = "Не удалось получить ссылку на трек.";
+            else status.Value = UiText.Get("share.track.linkFailed");
         });
     }
 
@@ -122,7 +123,7 @@ internal sealed partial class MainWindow
     private void CopyText(string text)
     {
         var clipboard = (Aprillz.MewUI.Platform.IClipboardService?)windowClipboard ?? nativeClipboard ?? Application.Current.PlatformServices.Clipboard;
-        status.Value = clipboard?.TrySetText(text) == true ? "Скопировано." : "Не удалось скопировать.";
+        status.Value = clipboard?.TrySetText(text) == true ? UiText.Get("clipboard.copiedStatus") : UiText.Get("clipboard.copyFailed");
     }
 
     private async Task LoadLikedWaveformAsync(LikedTrackRow row, SoundCloudTrack track)

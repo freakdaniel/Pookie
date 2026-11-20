@@ -125,10 +125,11 @@ internal sealed partial class MainWindow
         }
         finally { api.BrowserTransport = transport; }
         await NavigateAsync(Page.Library);
-        await WaitForLikedLayoutAsync(() => libraryMixItems.Length == 9 && libraryMixShelf.Scroll.ViewportWidth > 100 && !libraryMixLoading.Loading);
-        if (!libraryTabs.IsVisible || !libraryMixItems.Select(item => item.Key).SequenceEqual(mixes.Select(item => item.Key)))
-            throw new InvalidOperationException("Library overview did not bind every mix in a single shelf.");
-        shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + libraryMixShelf.Root.Bounds.Y - startupHeader.Bounds.Bottom - 80));
+        await WaitForLikedLayoutAsync(() => libraryMixGrid.Children.Count == 7 && libraryMixGrid.Children[^1].Bounds.Width > 0 && !libraryMixLoading.Loading);
+        if (!libraryTabs.IsVisible || !libraryMixItems.Select(item => item.Key).SequenceEqual(mixes.Take(7).Select(item => item.Key)) ||
+            libraryMixGrid.Children.Any(card => card.Bounds.Y != libraryMixGrid.Children[0].Bounds.Y || card.Bounds.Right > libraryMixGrid.Bounds.Right + 1))
+            throw new InvalidOperationException("The first seven mixes must fit in one overview row.");
+        shellScroll.SetScrollOffsets(0, Math.Max(0, shellScroll.VerticalOffset + libraryMixGrid.Bounds.Y - startupHeader.Bounds.Bottom - 80));
         await WaitForLoginFrameAsync();
         CaptureUiPreview("library-mixes-overview");
 

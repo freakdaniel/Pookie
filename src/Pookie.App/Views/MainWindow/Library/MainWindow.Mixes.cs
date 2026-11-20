@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -6,18 +7,19 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private HomeShelf libraryMixShelf = null!;
+    private const int OverviewMixCount = 7;
+    private TrackCollectionGrid libraryMixGrid = null!;
     private LibraryLoadingView libraryMixLoading = null!;
     private TextBlock libraryMixEmpty = null!;
     private LibraryItem[] libraryMixItems = [];
 
     private FrameworkElement LibraryMixOverview()
     {
-        libraryMixShelf = new HomeShelf(this);
+        libraryMixGrid = new TrackCollectionGrid(OverviewMixCount, minimumWidth: 0, gap: 12);
         libraryMixEmpty = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
-        libraryMixLoading = CreateLibraryLoadingView(libraryMixShelf.Root, preview: true);
+        libraryMixLoading = CreateLibraryLoadingView(libraryMixGrid, preview: true);
         return new StackPanel().Vertical().Spacing(18).Children(
-            SectionHeader("Миксы", () => Run(() => ShowLibrarySectionAsync(Page.LibraryMixes))),
+            SectionHeader(UiText.Get("library.mixes"), () => Run(() => ShowLibrarySectionAsync(Page.LibraryMixes))),
             libraryMixLoading.Root, libraryMixEmpty);
     }
 
@@ -34,19 +36,27 @@ internal sealed partial class MainWindow
 
     private void RefreshLibraryMixOverview()
     {
-        if (libraryMixShelf == null) return;
-        var items = LibraryItems("mixes");
+        if (libraryMixGrid == null) return;
+        var items = LibraryItems("mixes").Take(OverviewMixCount).ToArray();
         if (!libraryMixItems.SequenceEqual(items))
         {
             libraryMixItems = items;
-            libraryMixShelf.SetItems(items);
+            foreach (var button in libraryMixGrid.Children.OfType<Button>())
+            {
+                var card = CollectionCard(button);
+                card.Item = null;
+                StopCardArtwork(card.Cover);
+            }
+            libraryMixGrid.Clear();
+            foreach (var item in items)
+                libraryMixGrid.Add(CreateHomeShelfCard(item, responsive: true).Root);
         }
         var pending = overviewPending.Contains("mixes");
         var error = overviewErrors.GetValueOrDefault("mixes");
         libraryMixLoading.SetLoading(items.Length == 0 && pending);
         libraryMixLoading.Root.IsVisible = items.Length > 0 || pending;
         libraryMixEmpty.IsVisible = (items.Length == 0 && !pending) || error != null;
-        libraryMixEmpty.Text = error ?? (me == null && !demo ? "Войди в SoundCloud, чтобы открыть миксы." : "SoundCloud пока не подготовил для тебя миксы.");
+        libraryMixEmpty.Text = error ?? (me == null && !demo ? UiText.Get("auth.required.mixes") : UiText.Get("mixes.empty.personalized"));
     }
 
     private static bool IsSystemCollection(LibraryItem? item) => item?.Playlist?.IsSystemMix == true;

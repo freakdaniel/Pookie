@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -21,7 +22,7 @@ internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISession
         {
             if (!File.Exists(file)) return null;
             using var input = File.OpenRead(file);
-            if (input.Length is < 1 or > MaxSize) throw new InvalidOperationException("Некорректный размер сохранённой сессии.");
+            if (input.Length is < 1 or > MaxSize) throw new InvalidOperationException(UiText.Get("vault.session.invalidSize"));
             var encrypted = new byte[(int)input.Length];
             input.ReadExactly(encrypted);
             var plaintext = Transform(encrypted, encrypt: false);
@@ -33,13 +34,13 @@ internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISession
             finally { CryptographicOperations.ZeroMemory(plaintext); }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { throw new InvalidOperationException("Не удалось прочитать сохранённую сессию SoundCloud.", error); }
+        { throw new InvalidOperationException(UiText.Get("vault.session.readFailed"), error); }
     }
 
     public void Save(WebSession session)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        if (!session.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.", nameof(session));
+        if (!session.IsValid()) throw new ArgumentException(UiText.Get("auth.session.invalid"), nameof(session));
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(session, SoundCloudJson.Default.WebSession);
         byte[] encrypted;
         try { encrypted = Transform(plaintext, encrypt: true); }
@@ -55,7 +56,7 @@ internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISession
             finally { File.Delete(temporary); }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { throw new InvalidOperationException("Не удалось сохранить сессию SoundCloud.", error); }
+        { throw new InvalidOperationException(UiText.Get("vault.session.saveFailed"), error); }
     }
 
     public void Delete()
@@ -63,14 +64,14 @@ internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISession
         ObjectDisposedException.ThrowIf(disposed, this);
         try { File.Delete(file); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { throw new InvalidOperationException("Не удалось удалить сохранённую сессию SoundCloud.", error); }
+        { throw new InvalidOperationException(UiText.Get("vault.session.deleteFailed"), error); }
     }
 
     public void Dispose() => disposed = true;
 
     private static byte[] Transform(byte[] bytes, bool encrypt)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("DPAPI доступен только на Windows.");
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException(UiText.Get("vault.windows.unsupported"));
         var input = new DataBlob { Size = bytes.Length, Data = Marshal.AllocHGlobal(bytes.Length) };
         DataBlob output = default;
         try
@@ -79,9 +80,9 @@ internal sealed partial class WindowsSessionVault(AppDataPaths paths) : ISession
             var succeeded = encrypt
                 ? CryptProtectData(ref input, 0, 0, 0, 0, 1, out output)
                 : CryptUnprotectData(ref input, 0, 0, 0, 0, 1, out output);
-            if (!succeeded) throw new InvalidOperationException("Хранилище сессии Windows недоступно или данные повреждены.",
+            if (!succeeded) throw new InvalidOperationException(UiText.Get("vault.windows.storageUnavailable"),
                 new Win32Exception(Marshal.GetLastWin32Error()));
-            if (output.Size is < 1 or > MaxSize) throw new InvalidOperationException("Некорректный размер сессии Windows.");
+            if (output.Size is < 1 or > MaxSize) throw new InvalidOperationException(UiText.Get("vault.windows.invalidSize"));
             var result = new byte[output.Size];
             Marshal.Copy(output.Data, result, 0, result.Length);
             return result;

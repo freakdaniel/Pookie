@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -19,7 +20,7 @@ internal sealed partial class MainWindow
         { if (chatReply is { } reply) Run(() => JumpChatMessageAsync(reply.PeerId,reply.MessageId,keepDetails:true)); },TrackButtons.Text,40).Padding(0).CornerRadius(8);
         chatReplyQuote.HorizontalAlignment = HorizontalAlignment.Stretch;
         chatReplyCancel = TrackButtons.Icon(Icons.View("x-mark",18,ChatAccent), () =>
-        { chatReply = null; RefreshChatReply(); SaveChatDraft(); chatInput.Focus(); },TrackButtons.Text,36).Hint("Отменить ответ");
+        { chatReply = null; RefreshChatReply(); SaveChatDraft(); chatInput.Focus(); },TrackButtons.Text,36).Hint(UiText.Get("chats.reply.cancel"));
         chatReplyBar = new Grid().Columns("40,*,40").Rows("40").Spacing(4).Padding(0,4).Height(48).Children(
             Icons.View("arrow-bend-up-left",22,ChatAccent).Center().Column(0),quote.Column(1),chatReplyCancel.Center().Column(2)).IsVisible(false);
         return chatReplyBar;
@@ -42,7 +43,7 @@ internal sealed partial class MainWindow
         if (ChatMediaReference.Parse(message.Body) != null)
         {
             var summary = ChatMediaSummaryFor(message,peer);
-            return ChatPresentation.Preview(!string.IsNullOrWhiteSpace(summary?.Caption) ? summary.Caption : summary?.Label ?? "Вложение");
+            return ChatPresentation.Preview(!string.IsNullOrWhiteSpace(summary?.Caption) ? summary.Caption : summary?.Label ?? UiText.Get("chats.attachment.label"));
         }
         return ChatPresentation.Preview(ChatProtocol.Project(message,chatAccountId,peer).Text);
     }
@@ -53,12 +54,12 @@ internal sealed partial class MainWindow
         original ??= chatWorkspace.Favorites.FirstOrDefault(f => f.PeerId == reference.PeerId && f.Message.Id == reference.MessageId)?.Message;
         void Apply(ChatMessage? message)
         {
-            var author = message == null ? "Сообщение" : message.SenderId == account ? me?.Username ?? "Вы" :
-                chatConversations.FirstOrDefault(c => c.Recipient.Id == reference.PeerId)?.Recipient.Username ?? chatRecipient?.Username ?? "Собеседник";
+            var author = message == null ? UiText.Get("share.tabs.message") : message.SenderId == account ? me?.Username ?? UiText.Get("common.you") :
+                chatConversations.FirstOrDefault(c => c.Recipient.Id == reference.PeerId)?.Recipient.Username ?? chatRecipient?.Username ?? UiText.Get("chats.contact.label");
             var summary = message == null ? null : ChatMediaSummaryFor(message,reference.PeerId);
             var preview = message == null ? reference.Preview : ChatReplyPreview(message,reference.PeerId);
-            quote.Set(composer ? message == null ? "Ответ на сообщение" : "Ответ для "+author : author,
-                string.IsNullOrWhiteSpace(preview) ? "Сообщение" : preview,summary?.Thumbnail);
+            quote.Set(composer ? message == null ? UiText.Get("chats.reply.toMessage") : UiText.Compose($"{UiText.Get("chats.reply.toPrefix")}{author}") : author,
+                string.IsNullOrWhiteSpace(preview) ? UiText.Get("share.tabs.message") : preview,summary?.Thumbnail);
         }
         if (original != null) { Apply(original); return; }
         var store = chatHistory;

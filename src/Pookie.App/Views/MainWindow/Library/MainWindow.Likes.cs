@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -30,7 +31,7 @@ internal sealed partial class MainWindow
     private StackPanel libraryTabs = null!;
     private FrameworkElement LibraryTabs() => libraryTabs = new StackPanel().Horizontal().Spacing(22)
         .BindIsVisible(page, value => IsLibrary(value) && value != Page.LibraryCollection).Children(
-            LibraryTab("Обзор", Page.Library, () =>
+            LibraryTab(UiText.Get("library.overview"), Page.Library, () =>
             {
                 if (!demo && me != null && libraryLikes == null) { Run(() => LikesAsync()); return; }
                 BeginNavigation(new(Page.Library));
@@ -41,13 +42,13 @@ internal sealed partial class MainWindow
                 RestoreNavigationScroll(0);
                 Run(RefreshOverviewDataAsync);
             }),
-            LibraryTab("Лайки", Page.LibraryTracks, ShowLibraryTracks),
-            LibraryTab("Миксы", Page.LibraryMixes, () => Run(() => ShowLibrarySectionAsync(Page.LibraryMixes))),
-            LibraryTab("Плейлисты", Page.LibraryPlaylists, () => Run(() => ShowLibrarySectionAsync(Page.LibraryPlaylists))),
-            LibraryTab("Альбомы", Page.LibraryAlbums, () => Run(() => ShowLibrarySectionAsync(Page.LibraryAlbums))),
-            LibraryTab("Станции", Page.LibraryStations, () => Run(() => ShowLibrarySectionAsync(Page.LibraryStations))),
-            LibraryTab("Подписки", Page.LibraryFollowing, () => Run(() => ShowLibrarySectionAsync(Page.LibraryFollowing))),
-            LibraryTab("История", Page.LibraryHistory, () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory))));
+            LibraryTab(UiText.Get("library.likes"), Page.LibraryTracks, ShowLibraryTracks),
+            LibraryTab(UiText.Get("library.mixes"), Page.LibraryMixes, () => Run(() => ShowLibrarySectionAsync(Page.LibraryMixes))),
+            LibraryTab(UiText.Get("library.playlists"), Page.LibraryPlaylists, () => Run(() => ShowLibrarySectionAsync(Page.LibraryPlaylists))),
+            LibraryTab(UiText.Get("library.albums"), Page.LibraryAlbums, () => Run(() => ShowLibrarySectionAsync(Page.LibraryAlbums))),
+            LibraryTab(UiText.Get("library.stations"), Page.LibraryStations, () => Run(() => ShowLibrarySectionAsync(Page.LibraryStations))),
+            LibraryTab(UiText.Get("library.following"), Page.LibraryFollowing, () => Run(() => ShowLibrarySectionAsync(Page.LibraryFollowing))),
+            LibraryTab(UiText.Get("header.history"), Page.LibraryHistory, () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory))));
 
     private Button LibraryTab(string label, Page target, Action action) => SectionTab(label, page, target, action);
 
@@ -114,7 +115,7 @@ internal sealed partial class MainWindow
             if (page.Value == Page.LibraryTracks) { failedPageCursor = null; emptyPageStreak = 0; }
             RefreshLikedViews();
         });
-        likedFilter = new TextBox().Placeholder("Фильтр по треку или исполнителю").OnTextChanged(value =>
+        likedFilter = new TextBox().Placeholder(UiText.Get("collection.filter.placeholder")).OnTextChanged(value =>
         {
             likedFilterDebounce.Schedule(string.IsNullOrWhiteSpace(value));
             RefreshLikedFilterState();
@@ -131,7 +132,7 @@ internal sealed partial class MainWindow
             }
         };
         likedFilterStatus = new TextBlock().Foreground(Muted).FontSize(13).CenterVertical();
-        likedFilterRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13),
+        likedFilterRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retry")).FontSize(13),
             RetryLikedFilter, TrackButtons.Text, 32);
         likedFilterNotice = new StackPanel().Horizontal().Spacing(12).DockTop().IsVisible(false)
             .Children(likedFilterStatus, likedFilterRetry);
@@ -146,14 +147,14 @@ internal sealed partial class MainWindow
             likedFilterNotice,
             new Grid().Columns("*").Rows("*").Children(
                 likesLoadingView.Root,
-                new TextBlock().Text("По этому фильтру ничего не найдено.")
+                new TextBlock().Text(UiText.Get("collection.filter.empty"))
                     .Foreground(Muted).FontSize(14)
                     .TextWrapping(TextWrapping.Wrap).Top().Margin(0, 24).BindIsVisible(likedEmpty)));
     }
 
     private FrameworkElement TrackViewSwitch(ObservableValue<TrackViewMode> mode) =>
         new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
-            new TextBlock().Text("Вид").FontSize(13).SemiBold().Foreground(Muted).CenterVertical(),
+            new TextBlock().Text(UiText.Get("common.view")).FontSize(13).SemiBold().Foreground(Muted).CenterVertical(),
             new GlassToolGroup(new StackPanel().Horizontal().Spacing(4).Children(
                 TrackViewButton("squares-four", TrackViewMode.Cards, mode), TrackViewButton("waveform", TrackViewMode.Waveform, mode),
                 TrackViewButton("list-bullets", TrackViewMode.List, mode)), new Thickness(4)));
@@ -163,7 +164,7 @@ internal sealed partial class MainWindow
         var image = Icons.TintableView(icon, 20, out var ink);
         var button = new HeaderButton(new CornerRadius(16)).Width(40).Height(32)
             .Content(image.Center()).OnClick(() => mode.Value = selected)
-            .Hint(selected switch { TrackViewMode.Cards => "Квадратные карточки", TrackViewMode.Waveform => "Карточки с волной", _ => "Список" });
+            .Hint(selected switch { TrackViewMode.Cards => UiText.Get("library.layout.square"), TrackViewMode.Waveform => UiText.Get("library.layout.waveform"), _ => UiText.Get("library.layout.list") });
         button.UseAnimatedInk(ink, NavInk, NavHover, Color.White);
         void Refresh() => button.SetSelected(mode.Value == selected);
         mode.Changed += Refresh; Refresh();
@@ -194,7 +195,7 @@ internal sealed partial class MainWindow
         likedFilterGlyph.SetLoading(likesLoading || pending || incomplete && !failed);
         likedFilterNotice.IsVisible = !likesLoading && failed && !pending;
         likedFilterStatus.IsVisible = failed && !pending;
-        likedFilterStatus.Text = "Не удалось проверить оставшиеся лайки.";
+        likedFilterStatus.Text = UiText.Get("likes.verifyFailed");
         likedFilterRetry.IsVisible = failed && !pending;
         likedEmpty.Value = !pending && !likesLoading && !likesLoadingView.Skeleton.IsVisible && !paginationLoading.Value && !incomplete &&
             pageItems.TryGetValue(likedList, out var source) && source.DataCount == 0;

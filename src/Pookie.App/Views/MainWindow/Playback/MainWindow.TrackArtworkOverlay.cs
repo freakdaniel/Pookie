@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -34,7 +35,7 @@ internal sealed partial class MainWindow
             if (onPlay == null) { surface.Focusable = false; surface.IsHitTestVisible = false; }
             else
             {
-                PlaybackButton = surface.IsHitTestVisible(false).OnClick(onPlay).Hint("Воспроизвести");
+                PlaybackButton = surface.IsHitTestVisible(false).OnClick(onPlay).Hint(UiText.Get("playback.play"));
                 surface.GotFocus += Refresh;
                 surface.LostFocus += Refresh;
             }
@@ -56,7 +57,7 @@ internal sealed partial class MainWindow
             active = selected;
             play.IsVisible = !selected || !playing;
             pause.IsVisible = selected && playing;
-            PlaybackButton?.Hint(ShowsPause ? "Приостановить" : "Воспроизвести");
+            PlaybackButton?.Hint(ShowsPause ? UiText.Get("playback.pause") : UiText.Get("playback.play"));
             if (animate) Refresh();
             else { SetImmediately(TargetOpacity); QueueGlass(); }
         }

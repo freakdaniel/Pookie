@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -103,7 +104,7 @@ internal sealed partial class MainWindow
             button.IsVisible = !branded;
             view.Text.FontSize = row.Index == -3 ? 13 : lyricsFontSize;
             view.Text.FontWeight = row.Index == -3 ? FontWeight.Normal : FontWeight.Bold;
-            view.Text.Text = row.Index == -3 ? "Текст предоставлен " + row.Text : row.Text;
+            view.Text.Text = row.Index == -3 ? UiText.Compose($"{UiText.Get("lyrics.creditPrefix")}{row.Text}") : row.Text;
             var gap = row.Index >= 0 && row.Text.Length == 0 && lyricsResult.Status == LyricsStatus.Synced;
             view.Text.IsVisible = !gap; view.Dots.IsVisible = gap;
             button.Height = row.Spacer > 0 ? row.Spacer : double.NaN;
@@ -145,7 +146,7 @@ internal sealed partial class MainWindow
         };
         lyricsFade = new(expandedBackdrop) { IsHitTestVisible = false };
         lyricsSkeleton = new LyricsSkeleton();
-        lyricsMessage = new TextBlock().Text("Для текущего трека\nотсутствует текст").FontSize(40).Bold()
+        lyricsMessage = new TextBlock().Text(UiText.Get("lyrics.empty.track")).FontSize(40).Bold()
             .Foreground(Color.White).TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap)
             .CenterVertical().CenterHorizontal().Margin(12, 0);
         lyricsMessage.LineSpacing = 6;
@@ -167,8 +168,8 @@ internal sealed partial class MainWindow
         var mark = provider == LrcRedSearch.Name ? (FrameworkElement)LrcRedProviderMark() :
             new Image().Source(ImageSource.FromResource<MainWindow>("Pookie.App.Assets.Branding.lrclib.png"))
                 .Width(18).Height(18).StretchMode(Stretch.Uniform);
-        var credit = LyricsProviderCredit("Текст предоставлен", provider, mark,
-            () => OpenExternalUrl(url, () => status.Value = "Не удалось открыть сайт " + provider)).CenterHorizontal();
+        var credit = LyricsProviderCredit(UiText.Get("lyrics.credit"), provider, mark,
+            () => OpenExternalUrl(url, () => status.Value = UiText.Compose($"{UiText.Get("links.website.openFailedPrefix")}{provider}"))).CenterHorizontal();
         view.CreditProvider = provider;
         view.Credit = credit;
         view.Root.Add(credit);
@@ -181,7 +182,7 @@ internal sealed partial class MainWindow
                 new TextBlock().Text(label).FontSize(12).Foreground(Muted).CenterVertical(),
                 new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(mark.CenterVertical(),
                     new TextBlock().Text(provider).FontSize(12).Bold().Foreground(TrackButtons.OnSurface).CenterVertical())),
-            open, TrackButtons.Text, 26).Hint("Открыть " + provider);
+            open, TrackButtons.Text, 26).Hint(UiText.Compose($"{UiText.Get("links.openPrefix")}{provider}"));
 
     private void BeginLyricsTrack(SoundCloudTrack track)
     {
@@ -244,7 +245,7 @@ internal sealed partial class MainWindow
         if (lyricsList == null) return;
         lyricsFollowTarget = null;
         var document = lyricsResult.Document;
-        lyricsMessage.Text = preferences.LyricsEnabled ? "Для текущего трека\nотсутствует текст" : "Тексты песен отключены\nв настройках";
+        lyricsMessage.Text = preferences.LyricsEnabled ? UiText.Get("lyrics.empty.track") : UiText.Get("lyrics.disabled");
         var hasText = lyricsResult.Status is LyricsStatus.Synced or LyricsStatus.Plain;
         var loading = lyricsResult.Status == LyricsStatus.Loading;
         resetScroll |= !hasText;

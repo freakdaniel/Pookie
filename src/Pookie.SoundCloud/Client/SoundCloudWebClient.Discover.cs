@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -7,7 +8,7 @@ public sealed partial class SoundCloudWebClient
     internal static string SystemPlaylistPath(string urn)
     {
         if (!urn.StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal) || !BrowserRequestCommand.IsHistoryContextUrn(urn))
-            throw new ArgumentException("Некорректный идентификатор микса.", nameof(urn));
+            throw new ArgumentException(UiText.Get("mixes.invalidId"), nameof(urn));
         return "system-playlists/" + Uri.EscapeDataString(urn);
     }
 
@@ -15,14 +16,14 @@ public sealed partial class SoundCloudWebClient
     {
         using var json = await GetJsonAsync(Api(SystemPlaylistPath(urn)), token).ConfigureAwait(false);
         var mix = LibraryData.ParsePlaylist(json.RootElement);
-        if (mix.Urn != urn || mix.IsPublic == null) throw new SoundCloudException("SoundCloud не подтвердил настройки доступа к миксу.");
+        if (mix.Urn != urn || mix.IsPublic == null) throw new SoundCloudException(UiText.Get("soundcloud.mix.privacyUnconfirmed"));
         return mix;
     }
 
     public async Task<LibraryItem[]> GetBuzzingPlaylistsAsync(CancellationToken token = default)
     {
         var profile = await ResolveLinkAsync("https://soundcloud.com/buzzing-playlists", token).ConfigureAwait(false);
-        if (profile.User == null) throw new SoundCloudException("Профиль SoundCloud Buzzing недоступен.");
+        if (profile.User == null) throw new SoundCloudException(UiText.Get("home.buzzing.profileUnavailable"));
         var page = await GetUserSectionAsync(profile.User.Id, "playlists", token: token).ConfigureAwait(false);
         return page.Items.Where(item => item.Playlist is { IsPrivate: false } playlist &&
             (playlist.TrackCount > 0 || playlist.Tracks.Length > 0)).Take(8).ToArray();
@@ -38,7 +39,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<LibraryItem[]> GetPersonalMixesAsync(long userId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId);
-        if (Session == null) throw new SoundCloudException("Для персональных подборок нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.personalizedCollections"));
 
         return await GetRestMixesAsync(userId, token);
     }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Messages;
 using Pookie.SoundCloud;
 
@@ -26,7 +27,7 @@ internal sealed partial class MainWindow
             token = chatAccountLifetime.Token;
             if (chatPending.ContainsKey(recipient.Id))
             {
-                if (CurrentDialog()) SetShareMessage("Есть неподтверждённая отправка этому получателю. Проверь её в чатах перед повтором.");
+                if (CurrentDialog()) SetShareMessage(UiText.Get("chats.send.pendingForRecipient"));
                 return;
             }
             var before = chatRecipient?.Id == recipient.Id ? chatMessages.Select(message => message.Id).TakeLast(64).ToArray()
@@ -46,7 +47,7 @@ internal sealed partial class MainWindow
             if (!CurrentAccount() || token.IsCancellationRequested) return;
             if (conversation.Recipient.Id != recipient.Id || conversation.LastMessage is not { } confirmed ||
                 confirmed.SenderId != account || confirmed.Body != body)
-                throw new SoundCloudException("SoundCloud не подтвердил содержимое отправленного сообщения.");
+                throw new SoundCloudException(UiText.Get("chats.send.contentUnconfirmed"));
             if (chatPending.GetValueOrDefault(recipient.Id) == pending) chatPending.Remove(recipient.Id);
             var index = chatConversations.FindIndex(row => row.Recipient.Id == recipient.Id);
             if (index >= 0) chatConversations[index] = conversation; else chatConversations.Insert(0, conversation);
@@ -57,7 +58,7 @@ internal sealed partial class MainWindow
                 chatThreadRefreshRequested = true;
                 if (page.Value == Page.Chats) Run(() => RefreshChatThreadAsync());
             }
-            status.Value = "Сообщение отправлено.";
+            status.Value = UiText.Get("chats.send.success");
             if (CurrentDialog()) CloseShare();
         }
         catch (OperationCanceledException) when (!CurrentAccount() || token.IsCancellationRequested) { }
@@ -67,7 +68,7 @@ internal sealed partial class MainWindow
             var uncertain = posted && error is not SoundCloudException { StatusCode: >= 400 and < 500 and not 408 };
             if (!uncertain && pending != null && chatPending.GetValueOrDefault(recipient.Id) == pending)
             { chatPending.Remove(recipient.Id); SaveChatState(); }
-            var message = uncertain ? "Отправка не подтверждена. Проверь переписку перед повтором — сообщение могло дойти."
+            var message = uncertain ? UiText.Get("chats.send.checkBeforeRetry")
                 : FriendlyError(error);
             if (CurrentDialog()) SetShareMessage(message); else status.Value = message;
             Pookie.Logging.AppLog.Failure("Pookie.Share", "Не удалось подтвердить отправку сообщения", error);

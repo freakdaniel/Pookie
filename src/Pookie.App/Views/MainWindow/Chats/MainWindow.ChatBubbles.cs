@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -78,26 +79,24 @@ internal sealed partial class MainWindow
             frame = new ChatMessageFrame(quote, Bubble).Initialize();
             Motion.Content = new StackPanel().Vertical().Children(DateBadge,frame);
             Root = new Border().Background(Color.Transparent).Padding(0).Child(Motion);
-            var copy = new Command("pookie.chat.copy", "Скопировать текст");
-            var retry = new Command("pookie.chat.retry", "Повторить отправку");
-            var remove = new Command("pookie.chat.discard", "Убрать сообщение");
-            var save = new Command("pookie.chat.save", "Сохранить вложение");
+            var copy = new Command("pookie.chat.copy", UiText.Get("clipboard.copyText"));
+            var retry = new Command("pookie.chat.retry", UiText.Get("chats.send.retry"));
+            var remove = new Command("pookie.chat.discard", UiText.Get("chats.message.remove"));
+            var save = new Command("pookie.chat.save", UiText.Get("chats.attachment.save"));
             Root.Commands.Register(copy, () => { if (CopyContent() is { } text) owner.CopyText(text); }, () => !string.IsNullOrEmpty(CopyContent()));
             Root.Commands.Register(retry, () => owner.Run(owner.RetryChatOutgoingAsync), () => owner.ChatOutgoing(Message)?.State == ChatDelivery.Failed);
             Root.Commands.Register(remove, owner.DiscardPendingChat, () => owner.ChatOutgoing(Message) != null && !owner.chatSending);
             Root.Commands.Register(save, () => { if (Message != null) owner.Run(() => owner.SaveChatAttachmentAsync(Message.Id, 0)); },
                 () => Message != null && (owner.CachedChatMedia(Message)?.Attachments.Length > 0 || owner.ChatMediaSummaryFor(Message, owner.chatRecipient?.Id ?? 0)?.Files?.Length > 0));
-            var reply=new Command("pookie.chat.reply","Ответить");
-            var favorite=new Command("pookie.chat.favorite","В избранное / убрать");
-            var select=new Command("pookie.chat.select","Выделить");
+            var reply=new Command("pookie.chat.reply",UiText.Get("chats.reply.action"));
+            var select=new Command("pookie.chat.select",UiText.Get("common.select"));
             Root.Commands.Register(reply,()=>{if(Message!=null)owner.ReplyToChat(Message);},()=>Message!=null&&owner.ChatOutgoing(Message)==null);
-            Root.Commands.Register(favorite,()=>{if(Message!=null)owner.ChatFavoriteMessage(Message);},()=>Message!=null&&owner.ChatOutgoing(Message)==null);
             Root.Commands.Register(select,()=>{if(Message!=null)owner.ToggleChatSelection(Message);});
-            ReplyCommand=reply;FavoriteCommand=favorite;SelectCommand=select;
+            ReplyCommand=reply;SelectCommand=select;
             foreach(var emoji in ChatProtocol.Reactions)
             {var command=new Command("chat.react."+emoji,emoji); Root.Commands.Register(command,()=>{if(Message!=null)owner.Run(()=>owner.ReactToChatAsync(Message,emoji));},()=>!owner.chatSending);ReactionCommands.Add(command);}
             CopyCommand = copy; RetryCommand = retry; RemoveCommand = remove; SaveCommand = save;
-            menuItems = new[] { reply, copy, favorite, select }.Select(command => new MenuItem(command)).ToArray();
+            menuItems = new[] { reply, copy, select }.Select(command => new MenuItem(command)).ToArray();
             retryItem = new(retry); removeItem = new(remove); saveItem = new(save);
             foreach (var item in menuItems) menu.Items.Add(item);
             Root.ContextMenu = menu;
@@ -116,7 +115,7 @@ internal sealed partial class MainWindow
         private readonly ContextMenu menu = new();
         private readonly MenuItem[] menuItems;
         private readonly MenuItem retryItem, removeItem, saveItem;
-        private readonly Command CopyCommand, RetryCommand, RemoveCommand, SaveCommand,ReplyCommand,FavoriteCommand,SelectCommand;
+        private readonly Command CopyCommand, RetryCommand, RemoveCommand, SaveCommand,ReplyCommand,SelectCommand;
         private readonly List<Command> ReactionCommands=[];
         private string? CopyContent() => Body.SelectedText ?? (Message == null ? null : ChatMediaReference.Parse(Message.Body) == null ? ChatProtocol.Project(Message,owner.chatAccountId,owner.chatRecipient?.Id??0).Text :
             owner.CachedChatMedia(Message)?.Caption);
@@ -144,7 +143,7 @@ internal sealed partial class MainWindow
             openLabel.Text="↓";openLabel.FontSize=20;
             if (ChatEnvelopeHosting.IsReference(message.Body) && projection.EventId==null)
             {
-                openLabel.Text="Загрузить сообщение";openLabel.FontSize=12;
+                openLabel.Text=UiText.Get("chats.message.load");openLabel.FontSize=12;
                 Open.IsVisible=true;
             }
             else if (media) owner.BindChatMediaPreview(this);
@@ -213,7 +212,7 @@ internal sealed partial class MainWindow
             Spinner.IsVisible = Spinner.IsActive = own && state == ChatDelivery.Sending;
             Checks.IsVisible = own && state == ChatDelivery.Sent;
             Error.IsVisible = own && state == ChatDelivery.Failed;
-            Error.Hint(owner.ChatOutgoing(Message)?.Error ?? "Повторить отправку");
+            Error.Hint(owner.ChatOutgoing(Message)?.Error ?? UiText.Get("chats.send.retry"));
             Footer.IsHitTestVisible = Error.IsVisible;
             UpdateMediaHover(Bubble.IsMouseOver);
         }

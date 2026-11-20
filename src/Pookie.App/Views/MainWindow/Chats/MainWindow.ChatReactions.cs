@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Pookie.App.Messages;
 using Pookie.SoundCloud;
@@ -19,7 +20,7 @@ internal sealed partial class MainWindow
         {
             var body=await chatEnvelopes.UploadAsync(chatMedia,content,account,peer.Id,token);
             if(!ChatWriteCurrent(account,token))return;
-            var pending = new ChatPending(peer.Id, body, "Реакция", DateTimeOffset.UtcNow, true, chatMessages.Select(m => m.Id).TakeLast(64).ToArray(),content);
+            var pending = new ChatPending(peer.Id, body, UiText.Get("chats.reaction.label"), DateTimeOffset.UtcNow, true, chatMessages.Select(m => m.Id).TakeLast(64).ToArray(),content);
             chatPending[peer.Id] = pending;
             try { await chatLocalStore!.SaveAsync(new(chatDrafts.Where(p => p.Value.Length > 0).ToDictionary(), chatPending.Values.ToArray(), chatUnread.States.TakeLast(500).ToDictionary()), preferences.ChatSaveDrafts); committed = true; }
             catch { chatPending.Remove(peer.Id); throw; }
@@ -30,7 +31,7 @@ internal sealed partial class MainWindow
         catch (Exception)
         {
             if (ChatWriteCurrent(account, token))
-            { if (committed) RestoreChatOutbox(); chatThreadStatus.Value = committed ? "Реакция не подтверждена. Проверь отправку в меню диалога." : "Не удалось подготовить реакцию перед отправкой."; RefreshChatTimeline(); }
+            { if (committed) RestoreChatOutbox(); chatThreadStatus.Value = committed ? UiText.Get("chats.reaction.deliveryUnconfirmed") : UiText.Get("chats.reaction.prepareFailed"); RefreshChatTimeline(); }
         }
         finally { if (ChatWriteCurrent(account, token)) { chatSending = false; RefreshChatComposer(); } }
     }

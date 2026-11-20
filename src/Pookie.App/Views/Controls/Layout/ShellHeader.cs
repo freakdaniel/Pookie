@@ -7,7 +7,6 @@ namespace Pookie.App;
 internal sealed class ShellHeader : Grid
 {
     internal const double HeaderHeight = 64;
-    internal const double NavigationWidth = 368;
     internal const double NavigationButtonHeight = 40;
     internal const double HistoryButtonSize = 36;
     internal const double AccountButtonSize = 34;
@@ -27,7 +26,7 @@ internal sealed class ShellHeader : Grid
         Func<bool> deferResizeCapture, Func<bool> paceCapture, Func<int?> pageSampleVersion)
     {
         HistoryCard = Card(history, 12, HistoryInset).Left();
-        NavigationCard = Card(navigation, NavigationInset, NavigationInset).Width(NavigationWidth + 2 * NavigationInset).CenterHorizontal();
+        NavigationCard = Card(navigation, NavigationInset, NavigationInset).CenterHorizontal();
         AccountCard = Card(account, AccountInset, AccountInset).Right();
         this.Columns("144,*,144").Rows("*").Padding(36, 14, 36, 2).Children(
             HistoryCard.Column(0), NavigationCard.Column(1), AccountCard.Column(2));
@@ -41,6 +40,36 @@ internal sealed class ShellHeader : Grid
         HistoryCard.UseLiveBackdrop(glass);
         NavigationCard.UseLiveBackdrop(glass);
         AccountCard.UseLiveBackdrop(glass);
+    }
+
+    // The navigation buttons set the shared width. Typing in the overlaid search field
+    // must not change the size of the glass card or move the search animation's origin.
+    internal sealed class NavigationContent : Panel
+    {
+        private readonly FrameworkElement navigation, search;
+
+        internal NavigationContent(FrameworkElement navigation, FrameworkElement search)
+        {
+            this.navigation = navigation;
+            this.search = search;
+            Add(navigation);
+            Add(search);
+        }
+
+        protected override Size MeasureContent(Size availableSize)
+        {
+            navigation.Measure(availableSize);
+            var size = navigation.DesiredSize;
+            search.Measure(size);
+            return size;
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            navigation.Arrange(Bounds);
+            search.Arrange(Bounds);
+            return finalSize;
+        }
     }
 
     private Rect GlassBounds()

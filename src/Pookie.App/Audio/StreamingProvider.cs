@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text;
 using System.Security.Cryptography;
 using System.Threading.Channels;
@@ -142,12 +143,12 @@ internal sealed class StreamingProvider : ISoundDataProvider
                         cachedEnd = () => sequential.BufferedFraction * Duration;
                     await DecodeAsync(stream, offset, offset, stop);
                 }
-                if (!ready.Task.IsCompleted) throw new InvalidOperationException("Аудиопоток пуст.");
+                if (!ready.Task.IsCompleted) throw new InvalidOperationException(UiText.Get("audio.stream.empty"));
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested) { ready.TrySetCanceled(stop); }
             catch (Exception failure)
             {
-                error = failure is DrmPlaybackException ? failure : new InvalidOperationException("Не удалось загрузить или декодировать аудиопоток. Попробуй открыть трек ещё раз.", failure);
+                error = failure is DrmPlaybackException ? failure : new InvalidOperationException(UiText.Get("audio.stream.decodeFailed"), failure);
                 ready.TrySetException(error);
             }
             finally { chunks.Writer.TryComplete(); }
@@ -242,7 +243,7 @@ internal sealed class StreamingProvider : ISoundDataProvider
     }
 
     private static Uri MediaUri(string value, Func<Uri, bool> allowed) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && allowed(uri)
-        ? uri : throw new InvalidOperationException("Недопустимый адрес аудиопотока.");
+        ? uri : throw new InvalidOperationException(UiText.Get("audio.stream.invalidUrl"));
 
     // Async consumers can wait for decoded data. The real-time callback keeps
     // using ReadBytes without ever waiting for the decoder or the network.

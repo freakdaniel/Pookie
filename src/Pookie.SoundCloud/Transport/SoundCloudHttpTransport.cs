@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
@@ -22,7 +23,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             ? SoundCloudTransportCapabilities.FollowSigning | SoundCloudTransportCapabilities.Following : SoundCloudTransportCapabilities.None);
     public Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default)
     {
-        if (verification == null) throw new SoundCloudException("Для подтверждения подписки нужно браузерное соединение SoundCloud.");
+        if (verification == null) throw new SoundCloudException(UiText.Get("soundcloud.follow.browserRequired"));
         verification.Require(SoundCloudTransportCapabilities.FollowSigning);
         return verification.GetFollowSignatureAsync(userId, artistId, cancellationToken);
     }
@@ -51,7 +52,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         lifetime.Token.ThrowIfCancellationRequested();
         var account = Account();
         if (!(BrowserRequestCommand.IsReadUrl(uri.AbsoluteUri)))
-            throw new SoundCloudException("Отклонён адрес вне SoundCloud API.");
+            throw new SoundCloudException(UiText.Get("soundcloud.api.externalUrl"));
         var key = account.ClientId + "\n" + account.AccessToken + "\n" + uri.AbsoluteUri;
         while (true)
         {
@@ -102,7 +103,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
     private WebSession Account()
     {
         var account = session();
-        if (!account.IsValid()) throw new SoundCloudException("Некорректная сессия SoundCloud. Войди ещё раз.");
+        if (!account.IsValid()) throw new SoundCloudException(UiText.Get("auth.session.invalidSignIn"));
         return account;
     }
 
@@ -113,7 +114,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         var stop = cancellation.Token;
         var account = expectedAccount ?? Account();
-        if (!account.Equals(Account())) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+        if (!account.Equals(Account())) throw new SoundCloudException(UiText.Get("auth.session.changed"));
         var protection = account.DataDomeClientId;
         var accessToken = account.AccessToken;
         var generation = Interlocked.Read(ref preparationGeneration);
@@ -140,7 +141,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             void EnsureSameAccount(WebSession current)
             {
                 if (account.VerifiedUserId != current.VerifiedUserId || !(account with { AccessToken = current.AccessToken }).Equals(current))
-                    throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+                    throw new SoundCloudException(UiText.Get("auth.session.changed"));
             }
         }
         catch (SoundCloudException error) when (error.RequiresBrowserVerification &&
@@ -157,7 +158,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
                 // explicit protection denials are replayed; network failures aren't.
                 var current = Account();
                 if (!account.Equals(current))
-                    throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+                    throw new SoundCloudException(UiText.Get("auth.session.changed"));
                 if (protection != current.DataDomeClientId || accessToken != current.AccessToken || generation != Interlocked.Read(ref preparationGeneration))
                 {
                     var resumed = await RetryNativeAsync().ConfigureAwait(false);
@@ -165,7 +166,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
                 }
                 var requestKey = method.Method + " " + uri.GetLeftPart(UriPartial.Path);
                 if (verified && verifiedProtection == Account().DataDomeClientId && verifiedToken == Account().AccessToken && verifiedRequest == requestKey)
-                    throw new SoundCloudException("SoundCloud не принял нативную сессию после браузерной проверки.", rejection.StatusCode, requiresBrowserVerification: true)
+                    throw new SoundCloudException(UiText.Get("auth.session.browserCheckRejected"), rejection.StatusCode, requiresBrowserVerification: true)
                         { ChallengeKind = rejection.ChallengeKind };
                 current = Account();
                 if (verification is ISoundCloudSessionVerifier preparer &&
@@ -175,7 +176,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
                     await preparer.PrepareSessionAsync(stop).ConfigureAwait(false);
                     stop.ThrowIfCancellationRequested();
                     current = Account();
-                    if (!account.Equals(current)) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+                    if (!account.Equals(current)) throw new SoundCloudException(UiText.Get("auth.session.changed"));
                     prepared = true; preparedProtection = current.DataDomeClientId; preparedToken = current.AccessToken;
                     Interlocked.Increment(ref preparationGeneration);
                     Report(SoundCloudRecoveryStage.SessionPrepared);
@@ -219,14 +220,14 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         Action<JsonElement>? validate)
     {
         if (!(SoundCloudWebClient.IsApiUri(uri) || IsGraphUri(uri)) || uri.Fragment.Length != 0)
-            throw new SoundCloudException("Отклонён адрес вне SoundCloud API.");
+            throw new SoundCloudException(UiText.Get("soundcloud.api.externalUrl"));
         CheckCooldown();
         await concurrency.WaitAsync(token).ConfigureAwait(false);
         try
         {
             CheckCooldown();
             var account = Account();
-            if (!expected.Equals(account)) throw new SoundCloudException("Сессия SoundCloud изменилась. Повтори действие.");
+            if (!expected.Equals(account)) throw new SoundCloudException(UiText.Get("auth.session.changed"));
             var sentProtection = account.DataDomeClientId;
             using var request = new HttpRequestMessage(method, WithContext(uri, account))
                 { Version = HttpVersion.Version20, VersionPolicy = HttpVersionPolicy.RequestVersionOrLower };
@@ -258,8 +259,8 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             var challenge = Challenge(response, bytes, request.RequestUri);
             if (challenge != null)
                 throw new SoundCloudException(challenge == SoundCloudChallengeKind.HardBlock
-                    ? "SoundCloud заблокировал доступ. Капча не предложена."
-                    : "SoundCloud запросил проверку сессии.", (int)response.StatusCode, requiresBrowserVerification: true)
+                    ? UiText.Get("soundcloud.access.blockedWithoutCaptcha")
+                    : UiText.Get("soundcloud.auth.verificationRequired"), (int)response.StatusCode, requiresBrowserVerification: true)
                     { ChallengeKind = challenge.Value };
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -274,10 +275,10 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
             if (!response.IsSuccessStatusCode)
                 throw new SoundCloudException(response.StatusCode switch
                 {
-                    HttpStatusCode.Unauthorized => "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.",
-                    HttpStatusCode.Forbidden => "SoundCloud запретил доступ к ресурсу.",
-                    HttpStatusCode.NotFound => "Ресурс SoundCloud не найден.",
-                    _ => "SoundCloud не выполнил запрос."
+                    HttpStatusCode.Unauthorized => UiText.Get("soundcloud.auth.requestUnauthorized"),
+                    HttpStatusCode.Forbidden => UiText.Get("soundcloud.access.resourceDenied"),
+                    HttpStatusCode.NotFound => UiText.Get("soundcloud.resource.notFound"),
+                    _ => UiText.Get("soundcloud.request.failed")
                 }, (int)response.StatusCode);
             var document = JsonDocument.Parse(!expectJson || bytes.Length == 0 ? "{}"u8.ToArray() : bytes);
             try { validate?.Invoke(document.RootElement); return document; }
@@ -310,7 +311,7 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
         if (Interlocked.Read(ref retryAfterTicks) > clock.GetUtcNow().UtcTicks) throw RateLimited();
     }
 
-    private SoundCloudException RateLimited() => new("SoundCloud ограничил частоту запросов. Повтори позже.", 429)
+    private SoundCloudException RateLimited() => new(UiText.Get("soundcloud.request.rateLimited"), 429)
         { RetryAfterUtc = new DateTimeOffset(Interlocked.Read(ref retryAfterTicks), TimeSpan.Zero) };
 
     private static Uri WithContext(Uri uri, WebSession account)
@@ -361,14 +362,14 @@ public sealed partial class SoundCloudHttpTransport(HttpClient http, Func<WebSes
 
     private static async Task<byte[]> ReadBoundedAsync(HttpContent content, CancellationToken token)
     {
-        if (content.Headers.ContentLength > MaxResponseBytes) throw new SoundCloudException("Слишком большой ответ SoundCloud.");
+        if (content.Headers.ContentLength > MaxResponseBytes) throw new SoundCloudException(UiText.Get("soundcloud.response.tooLarge"));
         await using var stream = await content.ReadAsStreamAsync(token).ConfigureAwait(false);
         using var output = new MemoryStream();
         var buffer = new byte[16384];
         int count;
         while ((count = await stream.ReadAsync(buffer, token).ConfigureAwait(false)) != 0)
         {
-            if (output.Length + count > MaxResponseBytes) throw new SoundCloudException("Слишком большой ответ SoundCloud.");
+            if (output.Length + count > MaxResponseBytes) throw new SoundCloudException(UiText.Get("soundcloud.response.tooLarge"));
             output.Write(buffer, 0, count);
         }
         return output.ToArray();

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Pookie.Media.MacOS;
@@ -41,7 +42,7 @@ internal static partial class ImageClipboard
     private static byte[] CreateDib(byte[] bgra, int width, int height)
     {
         if (width <= 0 || height <= 0 || (long)width * height > 16 * 1024 * 1024 || bgra.Length != (long)width * height * 4)
-            throw new InvalidDataException("Некорректное изображение для копирования.");
+            throw new InvalidDataException(UiText.Get("clipboard.image.invalidSource"));
         var dib = new byte[40 + bgra.Length];
         BinaryPrimitives.WriteInt32LittleEndian(dib, 40);
         BinaryPrimitives.WriteInt32LittleEndian(dib.AsSpan(4), width);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -36,7 +37,7 @@ internal static class NativeWebLogin
     private static async Task<WebSession> RunProcessAsync(CancellationToken token, string profilePath, string? fixtureUri, bool hidden = false)
     {
         using var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-        var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException("Не найден исполняемый файл Pookie."))
+        var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException(UiText.Get("startup.executableMissing")))
         { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet")
             start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(NativeWebLogin).Assembly.GetName().Name + ".dll"));
@@ -48,7 +49,7 @@ internal static class NativeWebLogin
         if (hidden) start.ArgumentList.Add("--restore-session");
         StartupLog.EnsureInitialized();
         AppLog.ConfigureChild(start);
-        using var child = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить окно входа.");
+        using var child = Process.Start(start) ?? throw new InvalidOperationException(UiText.Get("auth.window.startFailed"));
         pipe.DisposeLocalCopyOfClientHandle();
         // Drain browser-engine diagnostics without exposing login headers/cookies in application logs.
         var stdout = DrainAsync(child.StandardOutput, fixtureUri != null);
@@ -70,14 +71,14 @@ internal static class NativeWebLogin
                 await child.WaitForExitAsync(token);
                 if (fixtureUri != null) Console.Error.WriteLine($"LOGIN_CHILD_EXIT: {child.ExitCode}");
                 throw new InvalidOperationException(child.ExitCode == 2
-                    ? "Не удалось открыть окно входа. На Linux нужен libwebkit2gtk-4.1-0, на Windows — WebView2 Runtime."
-                    : child.ExitCode == 3 ? "Не удалось передать сессию SoundCloud в Pookie. Перезапустите окно входа."
-                    : child.ExitCode == 1 ? "Окно входа закрыто. Подключение к SoundCloud отменено."
-                    : "Окно входа аварийно завершилось.");
+                    ? UiText.Get("auth.window.runtimeMissing")
+                    : child.ExitCode == 3 ? UiText.Get("auth.session.handoffFailed")
+                    : child.ExitCode == 1 ? UiText.Get("auth.window.canceled")
+                    : UiText.Get("auth.window.crashed"));
             }
-            if (count == buffer.Length) throw new InvalidOperationException("Некорректный ответ окна входа.");
+            if (count == buffer.Length) throw new InvalidOperationException(UiText.Get("auth.window.invalidResponse"));
             var session = JsonSerializer.Deserialize(new string(buffer, 0, count), SoundCloudJson.Default.WebSession);
-            if (session == null || !session.IsValid()) throw new InvalidOperationException("Некорректный ответ окна входа.");
+            if (session == null || !session.IsValid()) throw new InvalidOperationException(UiText.Get("auth.window.invalidResponse"));
             return session;
         }
         finally

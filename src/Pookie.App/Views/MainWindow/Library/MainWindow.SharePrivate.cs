@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -26,7 +27,7 @@ internal sealed partial class MainWindow
             mixLockClosed = Icons.View("lock-simple", 20).Column(0).Row(0).IsVisible(false),
             mixLockOpen = Icons.View("lock-simple-open", 20).Column(0).Row(0).Opacity(0).IsVisible(false));
         shareAccessButton = TrackButtons.Icon(icons, ToggleShareAccessMenu,
-            TrackButtons.Text, 48).Hint("Сбросить секретную ссылку").IsVisible(false);
+            TrackButtons.Text, 48).Hint(UiText.Get("share.link.resetSecret")).IsVisible(false);
         ((MaterialTrackButton)shareAccessButton).UseListStateLayer();
         return shareAccessButton;
     }
@@ -45,7 +46,7 @@ internal sealed partial class MainWindow
         if (!shareDialog.IsOpen || !shareAccessButton.IsVisible || !shareAccessButton.IsEnabled) return;
         if (shareAccessPopup == null)
         {
-            shareAccessCancel = TrackButtons.Action(new TextBlock().Text("Отмена").FontSize(13),
+            shareAccessCancel = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.cancel")).FontSize(13),
                 () => shareAccessPopup!.Close(), TrackButtons.Text);
             shareAccessConfirm = TrackButtons.Action(shareAccessLabel = new TextBlock().FontSize(13).SemiBold().Foreground(TrackButtons.OnPrimary),
                 ConfirmShareAccess, TrackButtons.Filled);
@@ -64,9 +65,9 @@ internal sealed partial class MainWindow
             : ShareAccessAction.ResetSecret;
         (shareAccessTitle.Text, shareAccessMessage.Text, shareAccessLabel.Text) = shareAccessAction switch
         {
-            ShareAccessAction.PublishMix => ("Открыть публичную ссылку?", "Любой сможет найти и послушать этот микс.", "Открыть"),
-            ShareAccessAction.HideMix => ("Закрыть публичную ссылку?", "Микс снова будет доступен только тебе. Ранее отправленная ссылка перестанет открывать его для других.", "Закрыть ссылку"),
-            _ => ("Сбросить секретную ссылку?", "Старая ссылка перестанет работать во всех сообщениях и виджетах. Доступ останется только по новой ссылке", "Сбросить")
+            ShareAccessAction.PublishMix => (UiText.Get("share.link.confirmEnablePublic"), UiText.Get("share.mix.enablePublicDescription"), UiText.Get("common.open")),
+            ShareAccessAction.HideMix => (UiText.Get("share.link.confirmDisablePublic"), UiText.Get("share.mix.confirmPrivateDescription"), UiText.Get("share.link.disable")),
+            _ => (UiText.Get("share.link.confirmResetSecret"), UiText.Get("share.link.confirmResetDescription"), UiText.Get("common.reset"))
         };
         shareAccessPopup.ShowPopup(shareAccessButton, shareAccessCancel);
     }
@@ -106,11 +107,11 @@ internal sealed partial class MainWindow
         {
             var publicMix = mix && playlist?.IsPublic == true;
             sharePrivateIcon.Source = Icons.Source(publicMix ? "globe" : "lock-simple", Muted);
-            sharePrivateTitle.Text = mix ? publicMix ? "Публичный микс" : "Приватный микс" : "Секретная ссылка";
-            sharePrivateHint.Text = !mix ? "Плейлист доступен всем, у кого есть эта секретная ссылка. Сбрось её, чтобы закрыть доступ по старой ссылке" :
-                publicMix ? "Любой может найти и послушать этот микс" :
-                OwnsMix(playlist!) ? "Включи публичную ссылку, чтобы другие могли найти и послушать этот микс" :
-                "Микс доступен только слушателю, для которого он создан";
+            sharePrivateTitle.Text = mix ? publicMix ? UiText.Get("share.mix.public") : UiText.Get("share.mix.private") : UiText.Get("share.link.secret");
+            sharePrivateHint.Text = !mix ? UiText.Get("share.playlist.secretDescription") :
+                publicMix ? UiText.Get("share.mix.publicDescription") :
+                OwnsMix(playlist!) ? UiText.Get("share.mix.enablePublicHint") :
+                UiText.Get("share.mix.privateDescription");
         }
         RefreshMixShareControls(opening);
         shareResetIcon.IsVisible = !mix;
@@ -122,7 +123,7 @@ internal sealed partial class MainWindow
             ? playlist?.IsPublic != null && !mixShareLoading && mixPrivacyWrite == null && !demo &&
                 api.Transport?.Supports(SoundCloudTransportCapabilities.SystemPlaylistPrivacy) == true
             : !sharePrivateLoading && !shareSecretResetting && shareUri != null);
-        shareAccessButton.Hint(mix ? playlist?.IsPublic == true ? "Закрыть публичную ссылку" : "Открыть публичную ссылку" : "Сбросить секретную ссылку");
+        shareAccessButton.Hint(mix ? playlist?.IsPublic == true ? UiText.Get("share.link.disablePublic") : UiText.Get("share.link.enablePublic") : UiText.Get("share.link.resetSecret"));
         if (!shareAccessButton.IsVisible) shareAccessPopup?.Close(true, false);
         FitShareContent();
     }
@@ -160,7 +161,7 @@ internal sealed partial class MainWindow
         var generation = shareGeneration;
         bool Current() => !disposed && generation == shareGeneration && api.Session == session;
         shareSecretResetting = true; shareSecretResetCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously); shareUri = null;
-        RefreshShareLink(); RefreshPrivateShare(); SetShareMessage("Обновляем секретную ссылку…");
+        RefreshShareLink(); RefreshPrivateShare(); SetShareMessage(UiText.Get("share.link.updating"));
         try
         {
             // A submitted reset must not be replayed or cancelled by closing the dialog.
@@ -168,7 +169,7 @@ internal sealed partial class MainWindow
             if (!disposed && api.Session == session) InvalidatePlaylistLibrary(playlist.Id);
             if (!Current()) return;
             shareTarget = LibraryData.FromPlaylist(updated); shareUri = PlaylistSharing.ShareUri(updated);
-            shareAccessAction = ShareAccessAction.None; RefreshShareLink(); SetShareMessage("Ссылка обновлена. Старая ссылка больше не работает.");
+            shareAccessAction = ShareAccessAction.None; RefreshShareLink(); SetShareMessage(UiText.Get("share.link.updated"));
         }
         catch (Exception error)
         {
@@ -177,7 +178,7 @@ internal sealed partial class MainWindow
             {
                 // The server may already have reset it. Never re-enable a stale link.
                 RefreshShareLink();
-                SetShareMessage(FriendlyError(error) + " Открой окно заново, чтобы проверить актуальную ссылку.");
+                SetShareMessage(UiText.Compose($"{FriendlyError(error)}{UiText.Get("share.link.reopenHint")}"));
                 shareAccessAction = ShareAccessAction.None;
             }
         }

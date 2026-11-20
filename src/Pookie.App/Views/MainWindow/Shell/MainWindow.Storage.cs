@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Browser;
 using Aprillz.MewUI;
 using Pookie.App.Storage;
@@ -43,11 +44,11 @@ internal sealed partial class MainWindow
             {
                 try { await save; }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                { if (!disposed) settingsMessage.Value = status.Value = "Не удалось сохранить настройки Pookie."; }
+                { if (!disposed) settingsMessage.Value = status.Value = UiText.Get("settings.saveFailed"); }
             });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { if (!disposed) settingsMessage.Value = status.Value = "Не удалось сохранить настройки Pookie."; }
+        { if (!disposed) settingsMessage.Value = status.Value = UiText.Get("settings.saveFailed"); }
     }
 
     private void UpdatePreferences(Func<AppConfiguration, AppConfiguration> update)
@@ -55,6 +56,7 @@ internal sealed partial class MainWindow
         var before = preferences;
         preferences = update(before).Normalize();
         if (preferences == before) return;
+        if (before.InterfaceLanguage != preferences.InterfaceLanguage) ApplyInterfaceLanguage();
         if (before.ShortcutOverrides != preferences.ShortcutOverrides) RefreshShortcuts();
         ApplyChatPreferences(before);
         ApplyPlaybackPreferences(before);
@@ -63,6 +65,17 @@ internal sealed partial class MainWindow
         configurationTimer.Stop(); configurationTimer.Start();
         settingsMessage.Value = "";
         RefreshSettingsControls();
+    }
+
+    private void ApplyInterfaceLanguage()
+    {
+        Hosting.SystemLanguage.Initialize(preferences.InterfaceLanguage);
+        foreach (var source in new[] { profile, status, heading, title, artist, audioStatus, eyebrow, searchHeading,
+            searchStatus, librarySectionTitle, librarySectionStatus, likedActionError, chatsStatus, chatThreadStatus, queueStatus })
+            source.Value = UiText.Refresh(source.Value);
+        RefreshQueue();
+        LocalizedViews.Refresh(Window);
+        Window.InvalidateMeasure();
     }
 
     private async Task PersistBrowserSessionAsync(NativeBrowserSession connected)

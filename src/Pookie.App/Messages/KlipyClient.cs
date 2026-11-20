@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -40,11 +41,11 @@ internal sealed class KlipyClient : IDisposable
     }
     internal async Task<KlipyGif[]> SearchAsync(string query, CancellationToken token)
     {
-        if (!Available) throw new InvalidOperationException("Для поиска GIF нужен ключ KLIPY в .NET User Secrets (Klipy:ApiKey).");
+        if (!Available) throw new InvalidOperationException(UiText.Get("chats.gifs.keyRequired"));
         var endpoint = string.IsNullOrWhiteSpace(query) ? "trending" : "search";
-        var url = $"https://api.klipy.com/api/v1/{Uri.EscapeDataString(ApiKey!)}/gifs/{endpoint}?page=1&per_page=12&customer_id={customer}&locale=ru_RU&q={Uri.EscapeDataString(query)}";
+        var url = $"https://api.klipy.com/api/v1/{Uri.EscapeDataString(ApiKey!)}/gifs/{endpoint}?page=1&per_page=12&customer_id={customer}&locale={System.Globalization.CultureInfo.CreateSpecificCulture(UiText.Language.Name).Name.Replace('-', '_')}&q={Uri.EscapeDataString(query)}";
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("KLIPY не вернул GIF. Проверь ключ или попробуй позже.");
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(UiText.Get("chats.gifs.noResponse"));
         using var json = JsonDocument.Parse(await ChatMediaHosting.ReadBoundedAsync(response.Content, 1024 * 1024, token));
         return Parse(json.RootElement);
     }
@@ -73,7 +74,7 @@ internal sealed class KlipyClient : IDisposable
         uri.Host is "static.klipy.com" or "static1.klipy.com" or "static2.klipy.com";
     internal async Task<byte[]> DownloadAsync(string url, CancellationToken token)
     {
-        if (!IsMediaUrl(url)) throw new InvalidDataException("Недопустимый адрес GIF.");
+        if (!IsMediaUrl(url)) throw new InvalidDataException(UiText.Get("chats.gifs.invalidUrl"));
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
         response.EnsureSuccessStatusCode();
         return await ChatMediaHosting.ReadBoundedAsync(response.Content, 8 * 1024 * 1024, token);

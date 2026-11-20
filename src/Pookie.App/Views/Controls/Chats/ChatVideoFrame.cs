@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -37,7 +38,7 @@ internal sealed class ChatVideoFrame : Panel
         eligible = CanAutoPlay(bytes);
         ClipToBounds = true; Cursor = CursorType.Hand;
         if (info is { Valid: true }) Picture.Source = ImageSource.FromBgraPixels(info.ThumbWidth, info.ThumbHeight, info.Pixels);
-        duration = new TextBlock().Text(info?.DurationMs > 0 ? VideoTime(info.DurationMs) : "Видео").FontSize(11).Foreground(Color.White);
+        duration = new TextBlock().Text(info?.DurationMs > 0 ? VideoTime(info.DurationMs) : UiText.Get("chats.media.video")).FontSize(11).Foreground(Color.White);
         badge = new Border().Background(Color.FromArgb(145, 0, 0, 0)).CornerRadius(10).BorderThickness(0).Padding(6, 3).IsHitTestVisible(false)
             .Child(new StackPanel().Horizontal().Spacing(4).Children(duration, Icons.View("speaker-slash", 12, Color.White).CenterVertical()));
         play = new Border().Background(Color.FromArgb(130, 0, 0, 0)).CornerRadius(22).BorderThickness(0).Width(44).Height(44).IsHitTestVisible(false)

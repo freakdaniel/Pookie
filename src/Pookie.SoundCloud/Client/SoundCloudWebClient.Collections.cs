@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -7,17 +8,17 @@ public sealed partial class SoundCloudWebClient
     public async Task<SoundCloudPlaylist> CreatePlaylistAsync(long userId, string title, string sharing, long trackId, CancellationToken token = default)
     {
         var request = new PlaylistCreateRequest(userId, trackId, title.Trim(), sharing);
-        if (!request.IsValid()) throw new ArgumentException("Укажи название плейлиста длиной до 255 символов.");
-        if (Session?.IsValid() != true || BrowserTransport == null) throw new SoundCloudException("Войди в SoundCloud, чтобы создать плейлист.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("playlist.edit.titleLength"));
+        if (Session?.IsValid() != true || BrowserTransport == null) throw new SoundCloudException(UiText.Get("auth.required.createPlaylist"));
         using var document = await BrowserTransport.CreatePlaylistAsync(request, token);
-        if (!request.Confirms(document.RootElement)) throw new SoundCloudException("SoundCloud не подтвердил создание плейлиста.");
+        if (!request.Confirms(document.RootElement)) throw new SoundCloudException(UiText.Get("soundcloud.playlist.createUnconfirmed"));
         return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudPlaylist)!;
     }
 
     public async Task<LibraryItem[]> GetOwnedPlaylistsAsync(long userId, CancellationToken token = default, bool includeTracks = false)
     {
         ValidateDetailTrackId(userId);
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы добавить трек в плейлист.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.addTrack"));
 
         var items = new List<LibraryItem>();
         var path = $"/users/{userId}/playlists";
@@ -26,7 +27,7 @@ public sealed partial class SoundCloudWebClient
         while (target != null)
         {
             if (seen.Count >= 1000 || !BrowserRequestCommand.IsReadUrl(target.AbsoluteUri) || target.AbsolutePath != path || !seen.Add(target.AbsoluteUri))
-                throw new SoundCloudException("Неверный адрес страницы плейлистов.");
+                throw new SoundCloudException(UiText.Get("playlist.page.invalidUrl"));
             var read = target;
             if (includeTracks)
             {
@@ -38,7 +39,7 @@ public sealed partial class SoundCloudWebClient
             var page = LibraryData.Parse(document.RootElement);
             items.AddRange(page.Items.Where(item => item.Playlist is { Id: > 0 } playlist && playlist.User?.Id == userId && !item.IsAlbum));
             target = page.NextHref == null ? null : Uri.TryCreate(page.NextHref, UriKind.Absolute, out var next) ? next :
-                throw new SoundCloudException("Неверный адрес страницы плейлистов.");
+                throw new SoundCloudException(UiText.Get("playlist.page.invalidUrl"));
         }
         return items.DistinctBy(item => item.Playlist!.Id).ToArray();
     }
@@ -61,7 +62,7 @@ public sealed partial class SoundCloudWebClient
 
             if (full.Id != playlist.Id || full.User?.Id != userId || full.IsAlbum || full.IsSystemPlaylist || full.TrackCount < 0 ||
                 (!full.TrackPagesComplete && full.Tracks.Length != full.TrackCount) || full.Tracks.Any(track => track.Id <= 0))
-                throw new SoundCloudException("SoundCloud не подтвердил состав плейлиста. Открой список ещё раз.");
+                throw new SoundCloudException(UiText.Get("playlist.tracks.reloadRequired"));
             items[index] = LibraryData.FromPlaylist(full);
         });
         return items;
@@ -70,14 +71,14 @@ public sealed partial class SoundCloudWebClient
     public async Task<HashSet<long>> GetFollowingIdsAsync(long userId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId);
-        if (Session == null) throw new SoundCloudException("Для подписок нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.following"));
         var ids = new HashSet<long>(); var seen = new HashSet<string>();
         var path = $"/users/{userId}/followings/ids";
         Uri? target = Api(path.TrimStart('/') + "?limit=200&linked_partitioning=1");
         while (target != null)
         {
             if (seen.Count >= 1000 || !BrowserRequestCommand.IsReadUrl(target.AbsoluteUri) || target.AbsolutePath != path || !seen.Add(target.AbsoluteUri))
-                throw new SoundCloudException("Неверный адрес страницы подписок.");
+                throw new SoundCloudException(UiText.Get("following.page.invalidUrl"));
             using var document = await GetJsonAsync(target, token);
             var root = document.RootElement;
             var rows = root.ValueKind == JsonValueKind.Array ? root : root.GetProperty("collection");
@@ -89,7 +90,7 @@ public sealed partial class SoundCloudWebClient
                 if (id is > 0 and <= 9007199254740991) ids.Add(id);
             }
             target = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("next_href", out var href) && href.ValueKind == JsonValueKind.String && href.GetString() is { } url
-                ? Uri.TryCreate(url, UriKind.Absolute, out var next) ? next : throw new SoundCloudException("Неверный адрес страницы подписок.") : null;
+                ? Uri.TryCreate(url, UriKind.Absolute, out var next) ? next : throw new SoundCloudException(UiText.Get("following.page.invalidUrl")) : null;
         }
         return ids;
     }
@@ -97,30 +98,30 @@ public sealed partial class SoundCloudWebClient
     public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId); ValidateDetailTrackId(artistId);
-        if (userId == artistId) throw new ArgumentException("Нельзя подписаться на свой профиль.");
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы подписаться.");
-        if (BrowserTransport is not { } browser) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (userId == artistId) throw new ArgumentException(UiText.Get("profile.follow.selfUnsupported"));
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.follow"));
+        if (BrowserTransport is not { } browser) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         await browser.SetFollowingAsync(userId, artistId, following, token);
     }
 
     public async Task AddToPlaylistAsync(long userId, long playlistId, long trackId, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId); ValidateDetailTrackId(playlistId); ValidateDetailTrackId(trackId);
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы добавить трек в плейлист.");
-        if (BrowserTransport is not { } browser) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.addTrack"));
+        if (BrowserTransport is not { } browser) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         await browser.AddToPlaylistAsync(userId, playlistId, trackId, token);
         lock (libraryMetadataGate) libraryMetadata.Remove($"playlists/{playlistId}?representation=full");
     }
     public async Task<HashSet<long>> GetPlaylistActionIdsAsync(bool reposts, CancellationToken token = default)
     {
-        if (Session == null) throw new SoundCloudException("Для этого нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.action"));
         var path = reposts ? "/me/playlist_reposts/ids" : "/me/playlist_likes/ids";
         Uri? target = Api(path.TrimStart('/') + "?limit=200&linked_partitioning=1");
         var ids = new HashSet<long>(); var seen = new HashSet<string>();
         while (target != null)
         {
             if (seen.Count >= 1000 || !BrowserRequestCommand.IsReadUrl(target.AbsoluteUri) || target.AbsolutePath != path || !seen.Add(target.AbsoluteUri))
-                throw new SoundCloudException("Неверный адрес страницы плейлистов.");
+                throw new SoundCloudException(UiText.Get("playlist.page.invalidUrl"));
             using var document = await GetJsonAsync(target, token);
             var root = document.RootElement;
             var rows = root.ValueKind == JsonValueKind.Array ? root : root.GetProperty("collection");
@@ -133,7 +134,7 @@ public sealed partial class SoundCloudWebClient
             }
             target = null;
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("next_href", out var href) && href.ValueKind == JsonValueKind.String && href.GetString() is { } url)
-                target = Uri.TryCreate(url, UriKind.Absolute, out var next) ? next : throw new SoundCloudException("Неверный адрес страницы плейлистов.");
+                target = Uri.TryCreate(url, UriKind.Absolute, out var next) ? next : throw new SoundCloudException(UiText.Get("playlist.page.invalidUrl"));
         }
         return ids;
     }
@@ -141,16 +142,16 @@ public sealed partial class SoundCloudWebClient
     public async Task SetPlaylistLikedAsync(long userId, long playlistId, bool liked, CancellationToken token = default)
     {
         ValidateDetailTrackId(userId); ValidateDetailTrackId(playlistId);
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы поставить лайк.");
-        if (BrowserTransport is not { } browser) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.like"));
+        if (BrowserTransport is not { } browser) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         await browser.SetPlaylistLikedAsync(userId, playlistId, liked, token);
     }
 
     public async Task SetPlaylistRepostedAsync(long playlistId, bool reposted, CancellationToken token = default)
     {
         ValidateDetailTrackId(playlistId);
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы сделать репост.");
-        if (BrowserTransport is not { } browser) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.repost"));
+        if (BrowserTransport is not { } browser) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         await browser.SetPlaylistRepostedAsync(playlistId, reposted, token);
     }
 

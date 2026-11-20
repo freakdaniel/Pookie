@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text;
 using System.Text.Json;
 using Aprillz.MewUI;
@@ -14,7 +15,7 @@ namespace Pookie.App.Browser;
 internal sealed class EmbeddedWidgetPreview : ContentControl
 {
     private readonly Func<bool> canPresent;
-    private readonly TextBlock message = new TextBlock().Text("Загружаем плеер…").FontSize(13).Foreground(TrackButtons.OnSurface).CenterHorizontal();
+    private readonly TextBlock message = new TextBlock().Text(UiText.Get("player.loading")).FontSize(13).Foreground(TrackButtons.OnSurface).CenterHorizontal();
     private readonly LoadingSpinner spinner;
     // The bundled mark contains large transparent gutters. Crop those rather
     // than centering its PNG canvas and leaving a false gap above the spinner.
@@ -69,7 +70,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         spinner = new LoadingSpinner { CanAnimate = canPresent }.Width(28).Height(28).Foreground(Color.White).CenterHorizontal();
         Content = placeholder = new StackPanel().Vertical().Spacing(16).Center().Children(logo, spinner, message);
         reload.Tick += () => { reload.Stop(); if (requested && VisibleHere()) Reload(); };
-        deadline.Tick += () => Fail(new TimeoutException("Плеер SoundCloud не загрузился вовремя."));
+        deadline.Tick += () => Fail(new TimeoutException(UiText.Get("player.widget.timeout")));
     }
 
     internal void Configure(string? url, int height)
@@ -91,7 +92,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         if (!requested) return;
         Hide(); ready = false; deadline.Stop();
         placeholder.IsVisible = !popupFrozen && !tooltipFrozen; logo.IsVisible = spinner.IsVisible = url != null; message.IsVisible = url == null;
-        spinner.IsActive = url != null; message.Text = url == null ? "Проверь ссылку и цвет виджета." : "Загружаем плеер…";
+        spinner.IsActive = url != null; message.Text = url == null ? UiText.Get("playlist.edit.invalidWidget") : UiText.Get("player.loading");
         reload.Stop(); if (url != null) reload.Start();
     }
 
@@ -149,7 +150,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         { viewport = window.ClientSize; ViewportChanged?.Invoke(); }
         if (!VisibleHere()) { Hide(); return; }
         if (failed) return;
-        if (playerUrl == null) { spinner.IsActive = spinner.IsVisible = logo.IsVisible = false; message.IsVisible = true; message.Text = "Проверь ссылку и цвет виджета."; return; }
+        if (playerUrl == null) { spinner.IsActive = spinner.IsVisible = logo.IsVisible = false; message.IsVisible = true; message.Text = UiText.Get("playlist.edit.invalidWidget"); return; }
         if (browser == null && !initializing) { initialization = InitializeAsync(); return; }
         if (initializing || browser == null) return;
         if (loadedUrl != playerUrl && !reload.IsEnabled && !refreshing) Reload();
@@ -254,7 +255,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         return $$"""
             <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
             <style>{{ViewportCss}}</style></head><body>
-            <div id="viewport"><iframe id="player" name="pookie-player" title="Предпросмотр SoundCloud" allow="autoplay" scrolling="no"></iframe></div>
+            <div id="viewport"><iframe id="player" name="pookie-player" title="{{System.Net.WebUtility.HtmlEncode(UiText.Get("soundcloud.widget.preview"))}}" allow="autoplay" scrolling="no"></iframe></div>
             <script>
             (()=>{let frame=document.getElementById('player');
               const post=(kind,url)=>{const text=JSON.stringify({nonce:{{id}},kind,url});
@@ -291,7 +292,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
             var kind = json.RootElement.GetProperty("kind").GetString();
             if (kind == "updated" && refreshing && json.RootElement.TryGetProperty("url", out var url) && url.GetString() == loadedUrl)
             { _ = FinishRefreshAsync(loadedUrl!); return; }
-            if (kind == "error") { Fail(new InvalidOperationException("SoundCloud не смог открыть этот виджет.")); return; }
+            if (kind == "error") { Fail(new InvalidOperationException(UiText.Get("soundcloud.widget.openFailed"))); return; }
             if (kind == "ready")
             { deadline.Stop(); ready = true; failed = false; spinner.IsActive = false; placeholder.IsVisible = false; Frame(); }
             if (kind is "ready" or "paused") _ = CaptureAsync(revision, browser);
@@ -349,7 +350,7 @@ internal sealed class EmbeddedWidgetPreview : ContentControl
         if (disposed) return;
         deadline.Stop(); reload.Stop(); Hide(); browser?.SetVisible(false); ready = false; failed = true; loadedUrl = playerUrl;
         spinner.IsActive = false; spinner.IsVisible = logo.IsVisible = false; message.IsVisible = placeholder.IsVisible = true;
-        message.Text = "Не удалось загрузить плеер.\nОткрой другую вкладку и попробуй снова.";
+        message.Text = UiText.Get("player.widget.loadFailed");
         Pookie.Logging.AppLog.Failure("Pookie.Widget", "Предпросмотр SoundCloud недоступен", error);
     }
 

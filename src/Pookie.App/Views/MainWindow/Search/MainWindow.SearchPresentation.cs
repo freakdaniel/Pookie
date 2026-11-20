@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -94,7 +95,7 @@ internal sealed partial class MainWindow
         var title = new TextBlock().FontSize(24).Bold().MaxHeight(64).TextWrapping(TextWrapping.Wrap)
             .TextTrimming(TextTrimming.CharacterEllipsis);
         var subtitle = new TextBlock().FontSize(12).Foreground(Color.FromArgb(185, 255, 255, 255)).TextTrimming(TextTrimming.CharacterEllipsis);
-        var play = Icons.View("play-solid", 22, Surface).CenterHorizontal().CenterVertical();
+        var play = Icons.View("play-solid", 22, TrackButtons.OnSurface).CenterHorizontal().CenterVertical();
         var backdrop = new Image().StretchMode(Stretch.UniformToFill);
         backdrop.ImageScaleQuality = ImageScaleQuality.HighQuality;
         backdrop.IsHitTestVisible = false;
@@ -110,7 +111,7 @@ internal sealed partial class MainWindow
                     if (hero.Item?.Track is { } track) SelectLibraryTrack(track);
                     else if (hero.Item?.Playlist != null) Run(() => PlayLibraryCollectionAsync(hero.Item));
                     else if (hero.Item is { } item) Run(() => OpenLibraryItemAsync(item));
-                }, TrackButtons.Filled, 44).Right().Bottom().Column(1));
+                }, TrackButtons.Glass, 44).Right().Bottom().Column(1));
         var card = new Border().Background(Color.FromRgb(29, 29, 29)).CornerRadius(12).Height(256).Padding(0).ClipToBounds()
             .Child(new Grid().Columns("*").Rows("*").Children(backdrop, hover, new ArtworkGlassSheen(12), content));
         var button = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(card);
@@ -118,10 +119,10 @@ internal sealed partial class MainWindow
         var shadow = new ShadowDecorator().BlurRadius(14).OffsetY(5).ShadowColor(Color.FromArgb(72, 0, 0, 0))
             .CornerRadius(12).Margin(-14, -9, -14, -19).Child(button);
         var bestSection = new StackPanel().Vertical().Spacing(16).Children(
-            new TextBlock().Text("Лучший результат").FontSize(22).Bold(), shadow);
+            new TextBlock().Text(UiText.Get("search.topResult")).FontSize(22).Bold(), shadow);
         var rows = Enumerable.Range(0, 4).Select(_ => CreateCompactTrackRow()).ToArray();
         var songsSection = new StackPanel().Vertical().Spacing(16).Margin(-8, 0, -8, 0).Children(
-            new TextBlock().Text("Треки").FontSize(22).Bold().Margin(8, 0),
+            new TextBlock().Text(UiText.Get("common.tracks")).FontSize(22).Bold().Margin(8, 0),
             new StackPanel().Vertical().Children(rows.Select(row => (Element)row.Root).ToArray()));
         var root = new Grid().Columns("*,1.5*").Rows("Auto").Spacing(28).Margin(0, 0, 0, 32)
             .Children(bestSection.Column(0), songsSection.Column(1));
@@ -144,8 +145,8 @@ internal sealed partial class MainWindow
         var item = block.Item!; hero.Item = item;
         var binding = ++hero.BindingGeneration;
         hero.Title.Text = item.Title;
-        var kind = item.User != null ? "Исполнитель" : item.Track != null ? "Трек" : item.IsAlbum ? "Альбом" : "Плейлист";
-        hero.Subtitle.Text = string.IsNullOrEmpty(item.Subtitle) ? kind : kind + " · " + item.Subtitle;
+        var kind = item.User != null ? UiText.Get("common.artist") : item.Track != null ? UiText.Get("collection.trackLabel.one") : item.IsAlbum ? UiText.Get("common.album") : UiText.Get("common.playlist");
+        hero.Subtitle.Text = string.IsNullOrEmpty(item.Subtitle) ? kind : UiText.Compose($"{kind} · {item.Subtitle}");
         hero.Frame.CornerRadius = item.User != null ? 48 : 6;
         var artwork = item.ArtworkUrl ?? item.Track?.User?.AvatarUrl;
         var imageItem = item with { ArtworkUrl = artwork };
@@ -202,7 +203,7 @@ internal sealed partial class MainWindow
     private void RefreshSearchHeroPlayback(SearchHero hero) =>
         hero.Play.Source = Icons.Source(hero.Item?.Track is { } track
             ? current?.Id == track.Id && isPlaying.Value ? "pause-solid" : "play-solid"
-            : hero.Item?.Playlist != null ? playbackQueue.Context?.Key == hero.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid" : "arrow-right", Surface);
+            : hero.Item?.Playlist != null ? playbackQueue.Context?.Key == hero.Item.Key && isPlaying.Value ? "pause-solid" : "play-solid" : "arrow-right", TrackButtons.OnSurface);
 
     private void RefreshSearchPlayback()
     {

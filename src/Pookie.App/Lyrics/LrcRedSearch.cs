@@ -9,6 +9,10 @@ using Pookie.SoundCloud;
 
 namespace Pookie.App;
 
+internal enum LyricPhraseMatch { Unverified, Near, Exact }
+
+internal sealed record LyricSearchMatch(LibraryItem Item, LyricPhraseMatch Phrase);
+
 internal sealed partial class LrcRedSearch(HttpClient http)
 {
     internal const string Source = "https://lrc.red/";
@@ -20,7 +24,7 @@ internal sealed partial class LrcRedSearch(HttpClient http)
          "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"];
     private long retryAfter;
 
-    internal async Task<LibraryItem[]> FindAsync(string query,
+    internal async Task<LyricSearchMatch[]> FindAsync(string query,
         Func<string, CancellationToken, Task<LibraryPage>> searchTracks, CancellationToken token)
     {
         if (query.Length is < 8 or > 240 || query.Contains("://", StringComparison.Ordinal)) return [];
@@ -36,14 +40,63 @@ internal sealed partial class LrcRedSearch(HttpClient http)
             return Interlocked.Decrement(ref budget) >= 0
                 ? searchTracks(metadata, cancellation) : Task.FromResult(new LibraryPage([], null));
         }
-        var matches = await ResolveAsync(query, SearchWithinBudget, timeout.Token).ConfigureAwait(false);
-        // Shorter fragments can still match when a word is misspelled or ё was typed as е.
-        if (matches.Length == 0 && words.Length > 3 && !timeout.IsCancellationRequested)
-            matches = await ResolveAsync(string.Join(' ', words.TakeLast(3)), SearchWithinBudget, timeout.Token).ConfigureAwait(false);
-        return matches;
+        var primary = await FindPhraseAsync(query).ConfigureAwait(false);
+        var ranked = primary;
+        if (words.Length > 3 && !primary.Any(match => match.Phrase == LyricPhraseMatch.Exact) && !timeout.IsCancellationRequested)
+        {
+            var fragment = await FindPhraseAsync(string.Join(' ', words.TakeLast(3))).ConfigureAwait(false);
+            // A fragment can retrieve an alternate wording. Compare it against the original query
+            // before letting it displace any results from the complete phrase.
+            ranked = primary.Concat(fragment.Where(match => primary.Length == 0 || match.Phrase != LyricPhraseMatch.Unverified))
+                .OrderByDescending(match => match.Phrase).DistinctBy(match => match.Item.Key).ToArray();
+        }
+        token.ThrowIfCancellationRequested();
+        return ranked;
+
+        async Task<LyricSearchMatch[]> FindPhraseAsync(string phrase)
+        {
+            var recordings = await ResolveAsync(phrase, SearchWithinBudget, timeout.Token).ConfigureAwait(false);
+            var matches = await Task.WhenAll(recordings.Select(async recording => new LyricSearchMatch(recording.Item,
+                await CheckPhraseAsync(recording.Hit, words, timeout.Token).ConfigureAwait(false)))).ConfigureAwait(false);
+            return matches.OrderByDescending(match => match.Phrase).ToArray();
+        }
     }
 
-    private async Task<LibraryItem[]> ResolveAsync(string query,
+    private async Task<LyricPhraseMatch> CheckPhraseAsync(LrcRedHit hit, string[] words, CancellationToken token)
+    {
+        var preview = PhraseMatch(hit.Line, words);
+        if (preview == LyricPhraseMatch.Exact || words.Length < 3 || NormalizeIsrc(hit.Isrc) is not { } isrc) return preview;
+        // Search previews can end before the chorus. Limit this optional check so the
+        // regular search and already resolved recordings can still be displayed promptly.
+        using var lookup = CancellationTokenSource.CreateLinkedTokenSource(token);
+        lookup.CancelAfter(TimeSpan.FromSeconds(1));
+        try
+        {
+            var document = await ReadDocumentAsync(isrc, hit.Title, hit.Artist, lookup.Token).ConfigureAwait(false);
+            var full = PhraseMatch(document?.PlainText, words);
+            return full > preview ? full : preview;
+        }
+        catch (Exception error) when (Unavailable(error)) { return preview; }
+    }
+
+    private static LyricPhraseMatch PhraseMatch(string? text, string[] query)
+    {
+        var words = LyricsMatcher.Normalize(text).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var best = LyricPhraseMatch.Unverified;
+        for (var start = 0; start <= words.Length - query.Length; start++)
+        {
+            var window = words.AsSpan(start, query.Length);
+            var i = 0;
+            while (i < query.Length && query[i] == window[i]) i++;
+            if (i == query.Length) return LyricPhraseMatch.Exact;
+            if (query.Length >= 4 && window[(i + 1)..].SequenceEqual(query.AsSpan(i + 1)) &&
+                LyricsMatcher.OneLetterApart(window[i], query[i], minimumLength: 2))
+                best = LyricPhraseMatch.Near;
+        }
+        return best;
+    }
+
+    private async Task<(LrcRedHit Hit, LibraryItem Item)[]> ResolveAsync(string query,
         Func<string, CancellationToken, Task<LibraryPage>> searchTracks, CancellationToken token)
     {
         LrcRedHit[] hits;
@@ -76,7 +129,7 @@ internal sealed partial class LrcRedSearch(HttpClient http)
             else if (SameIsrc(hit, track) && !SameIsrc(recordings[duplicate].Hit, recordings[duplicate].Item.Track!))
                 recordings[duplicate] = (hit, item);
         }
-        return recordings.Select(recording => recording.Item).ToArray();
+        return recordings.ToArray();
     }
 
     private static bool SameRecording(LrcRedHit first, LrcRedHit second) =>
@@ -126,8 +179,9 @@ internal sealed partial class LrcRedSearch(HttpClient http)
                 track.Access is not ("blocked" or "preview") && track.Policy is not ("BLOCK" or "SNIP"))
             .Select(item => (Item: item, Rank: Rank(item.Track!)))
             .Where(candidate => candidate.Rank >= 0)
-            .OrderBy(candidate => candidate.Rank)
+            .OrderBy(candidate => candidate.Rank == 0 ? 0 : 1)
             .ThenByDescending(candidate => candidate.Item.Track!.PlaybackCount)
+            .ThenBy(candidate => candidate.Rank)
             .Select(candidate => candidate.Item).FirstOrDefault();
 
         double Rank(SoundCloudTrack track)
@@ -178,7 +232,7 @@ internal sealed partial class LrcRedSearch(HttpClient http)
     private static partial Regex Remaster();
 }
 
-internal sealed record LrcRedHit(string Title, string Artist, string? Isrc, double Duration);
+internal sealed record LrcRedHit(string Title, string Artist, string? Isrc, double Duration, string? Line = null);
 internal sealed record LrcRedResults(LrcRedHit[]? Hits);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

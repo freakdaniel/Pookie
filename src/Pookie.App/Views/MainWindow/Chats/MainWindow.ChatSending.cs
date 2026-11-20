@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -19,8 +20,8 @@ internal sealed partial class MainWindow
         var recipient = target.Id; var account = me?.Id; var generation = chatAttachmentGeneration;
         CloseChatAttachMenu(true); chatFilePickerOpen = true;
         string[]? files;
-        try { files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = mediaOnly ? "Фото или видео" : "Прикрепить файлы", Multiselect = true,
-            Filters = mediaOnly ? [new FileFilter("Фото и видео", "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.mp4", "*.webm", "*.mov", "*.mkv", "*.avi")] : [] }, lifetime.Token); }
+        try { files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = mediaOnly ? UiText.Get("chats.attachments.photoOrVideo") : UiText.Get("chats.attachments.attachFiles"), Multiselect = true,
+            Filters = mediaOnly ? [new FileFilter(UiText.Get("chats.attachments.photoAndVideo"), "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.mp4", "*.webm", "*.mov", "*.mkv", "*.avi")] : [] }, lifetime.Token); }
         finally { chatFilePickerOpen = false; chatAttachInteraction.Stop(); }
         if (disposed || chatRecipient?.Id != recipient || me?.Id != account || generation != chatAttachmentGeneration || files == null || files.Length == 0) return;
         await AddChatFilesAsync(files, documents);
@@ -90,7 +91,7 @@ internal sealed partial class MainWindow
         if(files.Length==0&&gif==null)
         {
             try{plainBody=reply==null?draft.Trim():ChatProtocol.Reply(user.Id,recipient.Id,reply.MessageId,reply.Preview,draft.Trim(),hosted:true);}
-            catch(ArgumentException){chatThreadStatus.Value="Ответ слишком длинный. Сократи текст перед отправкой.";return;}
+            catch(ArgumentException){chatThreadStatus.Value=UiText.Get("chats.reply.tooLong");return;}
         }
         var documents = chatDocumentFiles.ToHashSet(chatDocumentFiles.Comparer);
         var token = chatAccountLifetime?.Token ?? lifetime.Token;
@@ -121,10 +122,10 @@ internal sealed partial class MainWindow
                     {
                         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, useAsync: true);
                         if (input.Length > ChatMediaCrypto.MaxFileBytes || attachments.Sum(a => a.Data.Length) + input.Length > ChatMediaCrypto.MaxPayloadBytes - 65536)
-                            throw new InvalidOperationException("Вложения слишком большие.");
+                            throw new InvalidOperationException(UiText.Get("chats.attachments.tooLarge"));
                         var bytes = new byte[(int)input.Length];
                         await input.ReadExactlyAsync(bytes, token);
-                        if (input.ReadByte() != -1) throw new InvalidOperationException("Файл изменился во время чтения. Выбери его заново.");
+                        if (input.ReadByte() != -1) throw new InvalidOperationException(UiText.Get("files.changedDuringRead"));
                         var name = Path.GetFileName(path);
                         attachments.Add(new(name, ChatMediaType(name), bytes, documents.Contains(path), Voice: voiceDraft?.Path==path ? voiceDraft.Metadata : null));
                     }
@@ -135,13 +136,13 @@ internal sealed partial class MainWindow
                     if (ChatWriteCurrent(user.Id, token)) CommitOutgoingChatMedia(outgoing, package, recipient.Id, body);
                 }
                 finally { foreach (var item in attachments) System.Security.Cryptography.CryptographicOperations.ZeroMemory(item.Data); }
-                if (body.Length > 36) throw new InvalidOperationException("Код вложения превышает 36 символов.");
+                if (body.Length > 36) throw new InvalidOperationException(UiText.Get("chats.attachment.codeTooLong"));
             }
             else body = reply==null ? plainBody! : await chatEnvelopes.UploadAsync(chatMedia,plainBody!,user.Id,recipient.Id,token);
             if (!ChatWriteCurrent(user.Id, token)) return;
             var clientContent=files.Length==0 && gif==null && reply!=null ? plainBody : null;
             outgoing.Message = outgoing.Message with { Body = body, ClientContent=clientContent }; RefreshChatTimeline();
-            var label = files.Length > 0 || gif != null ? "Медиа" : ChatProtocol.Clip(draft,255);
+            var label = files.Length > 0 || gif != null ? UiText.Get("common.media") : ChatProtocol.Clip(draft,255);
             var pending = new ChatPending(recipient.Id, body, label, DateTimeOffset.UtcNow, true, outgoing.BeforeSendIds.TakeLast(64).ToArray(),clientContent);
             chatPending[recipient.Id] = pending;
             // Commit before POST: a process crash must never cause an automatic replay.
@@ -172,7 +173,7 @@ internal sealed partial class MainWindow
             if (ChatWriteCurrent(user.Id, token))
             {
                 outgoing.State = ChatDelivery.Failed;
-                outgoing.Error = chatPending.ContainsKey(recipient.Id) ? "Отправка не подтверждена. Нажми, чтобы проверить." : "Не удалось отправить. Нажми, чтобы повторить.";
+                outgoing.Error = chatPending.ContainsKey(recipient.Id) ? UiText.Get("chats.send.unconfirmedHint") : UiText.Get("chats.send.failed");
                 Pookie.Logging.AppLog.Failure("Pookie.Chats", "Не удалось отправить сообщение", error);
                 RefreshChatTimeline(); RenderChatInbox();
             }
@@ -189,11 +190,11 @@ internal sealed partial class MainWindow
     {
         if (!ChatWriteCurrent(account,token)) return;
         if(pending.ClientContent!=null && (!ChatEnvelopeHosting.IsReference(pending.Body) || pending.Body.Length>ChatEnvelopeHosting.MaxWireLength))
-            throw new InvalidOperationException("Некорректный короткий код сообщения.");
+            throw new InvalidOperationException(UiText.Get("chats.message.invalidCode"));
         var conversation = await api.SendMessageAsync(account, recipient.Id, pending.Body, token);
         if (!ChatWriteCurrent(account, token)) return;
         if (conversation.Recipient.Id != recipient.Id || conversation.LastMessage is not { } confirmed || confirmed.SenderId != account || confirmed.Body != pending.Body)
-            throw new SoundCloudException("SoundCloud не подтвердил содержимое отправленного сообщения.");
+            throw new SoundCloudException(UiText.Get("chats.send.contentUnconfirmed"));
         if (chatRecipient?.Id == recipient.Id) CloseChatGifs();
         confirmed=confirmed with{ClientContent=pending.ClientContent};
         conversation=conversation with{LastMessage=confirmed};
@@ -240,7 +241,7 @@ internal sealed partial class MainWindow
         await RefreshChatThreadAsync();
         await ConfirmCachedPendingChatAsync();
         if (disposed || api.Session != session || chatRecipient?.Id != recipient.Id || !chatPending.ContainsKey(recipient.Id)) return;
-        if (!await MessageBox.AskYesNoAsync("Повторить отправку?", detail: "В загруженной переписке сообщение не найдено. Если SoundCloud уже принял его, повтор может создать дубль.", owner: Window)) return;
+        if (!await ConfirmAsync(UiText.Get("chats.send.confirmRetry"), detail: UiText.Get("chats.send.duplicateRisk"), owner: Window)) return;
         if (api.Session != session || me?.Id != account || chatRecipient?.Id != recipient.Id) return;
         chatSending = true; RefreshChatComposer();
         if (chatOutgoing.TryGetValue(recipient.Id, out var retry)) { retry.State = ChatDelivery.Sending; retry.Error = null; RefreshChatTimeline(); }
@@ -249,7 +250,7 @@ internal sealed partial class MainWindow
         catch (Exception)
         {
             if (api.Session == session && chatOutgoing.TryGetValue(recipient.Id, out var failed))
-            { failed.State = ChatDelivery.Failed; failed.Error = "Отправка не подтверждена. Нажми, чтобы проверить."; RefreshChatTimeline(); }
+            { failed.State = ChatDelivery.Failed; failed.Error = UiText.Get("chats.send.unconfirmedHint"); RefreshChatTimeline(); }
         }
         finally { if (!disposed && chatAccountId == account) { chatSending = false; RefreshChatComposer(); } }
     }
@@ -269,6 +270,6 @@ internal sealed partial class MainWindow
         ".mp4" => "video/mp4", ".webm" => "video/webm", ".mov" => "video/quicktime", ".mkv" => "video/x-matroska", ".avi" => "video/x-msvideo",
         ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", ".wav"=>"audio/wav", _ => "application/octet-stream"
     };
-    private static string ChatActionError(Exception error) => error is InvalidDataException ? "Не удалось прочитать данные вложения." :
-        error is IOException ? "Не удалось прочитать или сохранить файл." : FriendlyError(error);
+    private static string ChatActionError(Exception error) => error is InvalidDataException ? UiText.Get("chats.attachment.readFailed") :
+        error is IOException ? UiText.Get("files.readOrSaveFailed") : FriendlyError(error);
 }

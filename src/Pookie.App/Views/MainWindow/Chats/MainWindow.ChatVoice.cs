@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -35,17 +36,17 @@ internal sealed partial class MainWindow
         }) };
         chatRecordingDot = new Border().Width(8).Height(8).CornerRadius(4).Background(Color.FromRgb(245,91,105)).Center();
         chatRecordingDot.Transitions = [Transition.Create(UIElement.OpacityProperty,200)];
-        chatVoicePause = TrackButtons.Icon(Icons.View("pause", 20), () => Run(StopChatVoiceAsync), TrackButtons.Text, 36).Hint("Приостановить запись");
+        chatVoicePause = TrackButtons.Icon(Icons.View("pause", 20), () => Run(StopChatVoiceAsync), TrackButtons.Text, 36).Hint(UiText.Get("chats.voice.pause"));
         chatVoiceDraftPlay = Icons.PlaybackDisc(false,28,14,TrackButtons.OnSurface).Center();
         chatVoiceDraftPause = Icons.PlaybackDisc(true,28,14,TrackButtons.OnSurface).Center().IsVisible(false);
-        chatVoicePreview = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(chatVoiceDraftPlay,chatVoiceDraftPause), () => Run(PlayChatVoiceDraftAsync), TrackButtons.Text, 28).Hint("Прослушать / пауза");
+        chatVoicePreview = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(chatVoiceDraftPlay,chatVoiceDraftPause), () => Run(PlayChatVoiceDraftAsync), TrackButtons.Text, 28).Hint(UiText.Get("chats.voice.playPause"));
         ((MaterialTrackButton)chatVoicePreview).SuppressStateLayer();
-        chatVoiceContinue = TrackButtons.Icon(Icons.View("microphone",20), () => Run(ContinueChatVoiceAsync), TrackButtons.Text,36).Hint("Продолжить запись");
+        chatVoiceContinue = TrackButtons.Icon(Icons.View("microphone",20), () => Run(ContinueChatVoiceAsync), TrackButtons.Text,36).Hint(UiText.Get("chats.voice.resume"));
         var lead = new Grid().Columns("*").Rows("*").Children(chatRecordingDot,chatVoicePreview.Center());
         var pill = new Border().CornerRadius(20).Background(Color.FromRgb(39,57,73)).Padding(8,0,12,0).Height(36).Child(
             new Grid().Columns("28,*,Auto").Rows("*").Spacing(8).Children(lead.Column(0),chatVoiceWave.Column(1).CenterVertical(),chatVoiceTime.Column(2)));
         chatVoiceBar = new Grid().Columns("36,*,36").Rows("40").Spacing(4).Children(
-            TrackButtons.Icon(Icons.View("trash",20), () => Run(DeleteChatVoiceAsync),TrackButtons.Text,36).Hint("Удалить запись").Column(0).CenterVertical(),
+            TrackButtons.Icon(Icons.View("trash",20), () => Run(DeleteChatVoiceAsync),TrackButtons.Text,36).Hint(UiText.Get("chats.voice.delete")).Column(0).CenterVertical(),
             pill.Column(1).CenterVertical(),new Grid().Columns("*").Rows("*").Children(chatVoicePause.Center(),chatVoiceContinue.Center()).Column(2));
         chatVoiceBar.IsVisible = false;
         chatVoiceTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(33));
@@ -114,7 +115,7 @@ internal sealed partial class MainWindow
         catch (Exception)
         {
             if (ChatVoiceCurrent(generation, account, peer))
-            { chatThreadStatus.Value = "Не удалось включить микрофон. Проверь устройство и разрешения."; chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); }
+            { chatThreadStatus.Value = UiText.Get("chats.voice.microphonePermission"); chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); }
         }
         finally
         {
@@ -155,7 +156,7 @@ internal sealed partial class MainWindow
             finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(result.Data); }
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { if (ChatVoiceCurrent(generation, account, peer)) chatThreadStatus.Value = "Не удалось сохранить запись. Можно продолжить запись или удалить её."; }
+        catch (Exception) { if (ChatVoiceCurrent(generation, account, peer)) chatThreadStatus.Value = UiText.Get("chats.voice.saveFailed"); }
         finally
         {
             if (chatVoiceIdle == idle) chatVoiceBusy = false;
@@ -169,7 +170,7 @@ internal sealed partial class MainWindow
         var active = chatVoiceRecorder is { Recording: true };
         var finishing = chatVoiceBusy && chatVoiceRecorder is { Recording: false };
         var duration = active || finishing ? chatVoiceRecorder!.Duration : chatVoiceDraft?.Metadata.Duration ?? 0;
-        chatComposerLayout.SetVoiceMode(!chatFavoritesOpen && (active || finishing || chatVoiceDraft != null));
+        chatComposerLayout.SetVoiceMode(active || finishing || chatVoiceDraft != null);
         chatVoiceTime.Text = $"{(int)duration / 60}:{(int)duration % 60:00}" + (active ? $",{(int)(duration * 10) % 10}" : "");
         chatRecordingDot.IsVisible = active || finishing; chatRecordingDot.Opacity = active && DateTimeOffset.UtcNow.Millisecond < 500 ? 1 : .35;
         if (active || finishing) chatVoiceWave.UpdateLive(chatVoiceRecorder!.Meter);
@@ -209,7 +210,7 @@ internal sealed partial class MainWindow
             if (disposed || chatClosing || request != chatVoicePlaybackGeneration || generation != chatVoiceGeneration || !startup.TryTake(out var player)) return;
             chatVoicePlayer = player; chatVoicePlayingId = messageKey; chatVoiceTimer.Start();
         }
-        catch { if (request == chatVoicePlaybackGeneration) { chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); chatThreadStatus.Value = "Не удалось воспроизвести голосовое сообщение."; } }
+        catch { if (request == chatVoicePlaybackGeneration) { chatVoiceAudioActive = false; RestoreMusicAfterChatVideo(); chatThreadStatus.Value = UiText.Get("chats.voice.playbackFailed"); } }
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes); }
     }
     private Task StopChatVoicePlaybackAsync() => StopChatVoicePlaybackAsync(invalidate: true);

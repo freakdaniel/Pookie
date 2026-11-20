@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -20,8 +21,8 @@ internal sealed partial class MainWindow
     {
         collectionHeart = Icons.View("heart", 20, TrackButtons.OnSurface);
         collectionRepostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
-        collectionLikeLabel = new TextBlock().Text("Нравится").FontSize(14).SemiBold().Foreground(TrackButtons.OnSurface).CenterVertical();
-        collectionRepostLabel = new TextBlock().Text("Репост").FontSize(14).SemiBold().Foreground(TrackButtons.OnSurface).CenterVertical();
+        collectionLikeLabel = new TextBlock().Text(UiText.Get("likes.add.label")).FontSize(14).SemiBold().Foreground(TrackButtons.OnSurface).CenterVertical();
+        collectionRepostLabel = new TextBlock().Text(UiText.Get("feed.repost.label")).FontSize(14).SemiBold().Foreground(TrackButtons.OnSurface).CenterVertical();
         collectionLike = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(collectionHeart.CenterVertical(), collectionLikeLabel),
             () => Run(() => ToggleCollectionActionAsync(false)), TrackButtons.Glass, 44);
         collectionRepost = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(collectionRepostIcon.CenterVertical(), collectionRepostLabel),
@@ -120,7 +121,7 @@ internal sealed partial class MainWindow
             if (repost) UpdateProfileRepost(user.Id, profileItem, selected);
             else UpdateProfileMembership(user.Id, UserSection.Likes, profileItem, selected);
             if (!repost) InvalidatePlaylistLibrary(playlist.Id, details: false);
-            status.Value = repost ? selected ? "Плейлист появился в твоём профиле." : "Репост убран." : selected ? "Плейлист сохранён." : "Лайк убран.";
+            status.Value = repost ? selected ? UiText.Get("playlist.status.onProfile") : UiText.Get("reposts.status.removed") : selected ? UiText.Get("playlist.status.saved") : UiText.Get("likes.status.removed");
         }
         finally { pendingCollectionActions.Remove((session, playlist.Id, repost)); if (!disposed) RefreshCollectionActions(); }
     }

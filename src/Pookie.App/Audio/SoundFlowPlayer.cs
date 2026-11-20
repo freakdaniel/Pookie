@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using SoundFlow.Abstracts.Devices;
 using SoundFlow.Backends.MiniAudio;
 using SoundFlow.Backends.MiniAudio.Enums;
@@ -40,7 +41,7 @@ public sealed class SoundFlowPlayer : IAudioPlayer
         if (!silent && engine.ActiveBackend == nativeNull)
         {
             engine.Dispose(); http.Dispose();
-            throw new InvalidOperationException("Не найден доступный аудиосервис. Проверь устройство вывода звука в системе.");
+            throw new InvalidOperationException(UiText.Get("audio.output.unavailable"));
         }
     }
 

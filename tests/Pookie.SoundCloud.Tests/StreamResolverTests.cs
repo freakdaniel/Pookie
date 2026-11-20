@@ -156,7 +156,7 @@ public sealed class StreamResolverTests
         var error = await Assert.ThrowsAsync<SoundCloudException>(() => new SoundCloudStreamResolver(local, region).ResolveAsync(42));
         Assert.False(error.TrackUnavailable);
         Assert.Equal(1, region.MetadataCalls);
-        Assert.Contains("региональное соединение", error.Message);
+        Assert.Equal(Pookie.Localization.UiText.Get("audio.region.connectionUnavailable"), error.Message);
         var final = new Source(Track("final"));
         var recovered = await new SoundCloudStreamResolver(local, region, final).ResolveAsync(42);
         Assert.True(recovered.UsedRegionalSource);

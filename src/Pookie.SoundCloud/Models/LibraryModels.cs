@@ -1,8 +1,13 @@
+using Pookie.Localization;
+
 namespace Pookie.SoundCloud;
 
 public sealed record LibraryItem(string Key, string Title, string Subtitle, string? ArtworkUrl,
     SoundCloudTrack? Track = null, SoundCloudPlaylist? Playlist = null, SoundCloudUser? User = null)
 {
+    // Cached items can contain generated labels such as follower counts and unknown artists.
+    public string Title { get => UiText.Refresh(field); init; } = Title;
+    public string Subtitle { get => UiText.Refresh(field); init; } = Subtitle;
     public string? ActivityType { get; init; }
     public string? ActivityAt { get; init; }
     public bool MatchedByLyrics { get; init; }

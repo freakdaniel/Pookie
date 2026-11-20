@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Playback;
@@ -29,9 +30,9 @@ internal sealed partial class MainWindow
     private FrameworkElement HomeChartView()
     {
         homeChartGenreSlot = new StackPanel().Vertical();
-        homeChartOpen = TrackButtons.Action(new TextBlock().Text("Смотреть всё →").FontSize(13).SemiBold(),
+        homeChartOpen = TrackButtons.Action(new TextBlock().Text(UiText.Get("home.shelf.seeAll")).FontSize(13).SemiBold(),
             () => { if (homeChartGenre is { } genre) Run(() => OpenLibraryItemAsync(genre)); }, TrackButtons.Text, 40);
-        homeChartRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13),
+        homeChartRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retry")).FontSize(13),
             () => { homeChartFailed = false; LoadHomeChart(); }, TrackButtons.Text, 32).Left().IsVisible(false);
         homeChartStatus = new TextBlock().FontSize(14).Foreground(Muted).Margin(4, 10).IsVisible(false);
         homeChartLeft = new StackPanel().Vertical().Spacing(ChartRowSpacing);
@@ -58,8 +59,8 @@ internal sealed partial class MainWindow
         };
         var heading = new Grid().Columns("*,Auto,Auto").Rows("Auto").Spacing(10).Children(
             new StackPanel().Vertical().Spacing(4).CenterVertical().Children(
-                new TextBlock().Text("Тренды").FontSize(22).Bold(),
-                new TextBlock().Text("Популярные треки SoundCloud").FontSize(13).Foreground(Muted)
+                new TextBlock().Text(UiText.Get("home.trending")).FontSize(22).Bold(),
+                new TextBlock().Text(UiText.Get("home.popularTracks")).FontSize(13).Foreground(Muted)
                     .TextTrimming(TextTrimming.CharacterEllipsis)),
             homeChartGenreSlot.Column(1).CenterVertical(), homeChartOpen.Column(2).CenterVertical());
         page.Changed += () => { if (page.Value != Page.Home) CancelHomeChartRequest(); };
@@ -69,7 +70,7 @@ internal sealed partial class MainWindow
     }
 
     private static string HomeChartGenreName(LibraryItem item) =>
-        item.Playlist?.Urn.EndsWith(AllGenresSuffix, StringComparison.Ordinal) == true ? "Все жанры" : item.Title;
+        item.Playlist?.Urn.EndsWith(AllGenresSuffix, StringComparison.Ordinal) == true ? UiText.Get("home.genres.all") : item.Title;
 
     private void RenderHomeChart(LibraryItem[] genres, bool refresh)
     {
@@ -92,7 +93,7 @@ internal sealed partial class MainWindow
             if (selected < 0 && genres.Length > 0) selected = 0;
             if (selected >= 0)
             {
-                var picker = new MaterialSelect(genres.Select(HomeChartGenreName).ToArray())
+                var picker = new MaterialSelect(genres.Select(HomeChartGenreName).ToArray(), () => preferences.SmoothScrolling)
                     .Width(196).Height(40).FontSize(14);
                 picker.SelectedIndex = selected;
                 picker.SelectionChanged += index =>
@@ -145,7 +146,7 @@ internal sealed partial class MainWindow
             {
                 homeChartFailed = true;
                 RefreshHomeChartLoading();
-                if (homeChartDetail == null) SetHomeChartStatus("Не удалось загрузить чарт.");
+                if (homeChartDetail == null) SetHomeChartStatus(UiText.Get("chart.loadFailed"));
             }
             finally
             {
@@ -201,7 +202,7 @@ internal sealed partial class MainWindow
             motion.Dispose();
         }
         homeChartRows.Clear();
-        SetHomeChartStatus(detail != null && tracks.Length == 0 ? "В этом чарте пока нет треков." : "");
+        SetHomeChartStatus(detail != null && tracks.Length == 0 ? UiText.Get("chart.tracks.empty") : "");
         for (var index = 0; index < tracks.Length; index++)
         {
             var track = tracks[index];
@@ -254,7 +255,7 @@ internal sealed partial class MainWindow
 
     private void SetChartQueue(CollectionDetail chart, SoundCloudTrack track, string? filter = null)
     {
-        StartQueueContext(new(chart.Item.Key, chart.Item.Title, "Чарт SoundCloud", chart.Tracks.NextHref,
+        StartQueueContext(new(chart.Item.Key, chart.Item.Title, UiText.Get("home.chart.title"), chart.Tracks.NextHref,
             Kind: PlaybackContextKind.Playlist, ResourceUrn: PlaybackHistoryContextUrn(chart.Item), Filter: filter),
             chart.Tracks.Tracks.Where(IsChartTrack).ToArray(), track, preserveManual: true);
     }

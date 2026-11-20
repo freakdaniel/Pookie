@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Pookie.SoundCloud;
@@ -21,7 +22,7 @@ internal sealed class LinuxSessionVault : ISessionVault
     public LinuxSessionVault(string application = "pookie")
     {
         this.application = application;
-        if (!OperatingSystem.IsLinux() || !NativeLibrary.TryLoad("libsecret-1.so.0", out library)) throw new InvalidOperationException("Сохранение сессии требует Linux Secret Service (GNOME Keyring или KWallet).");
+        if (!OperatingSystem.IsLinux() || !NativeLibrary.TryLoad("libsecret-1.so.0", out library)) throw new InvalidOperationException(UiText.Get("vault.linux.serviceRequired"));
         lookup = Export<Lookup>("secret_password_lookup_sync");
         store = Export<Store>("secret_password_store_sync");
         clear = Export<Clear>("secret_password_clear_sync");
@@ -29,14 +30,14 @@ internal sealed class LinuxSessionVault : ISessionVault
         freeError = Export<Release>("g_error_free");
         unrefSchema = Export<Release>("secret_schema_unref");
         schema = Export<NewSchema>("secret_schema_new")("io.pookie.web-session", 0, "application", 0, 0);
-        if (schema == 0) throw new InvalidOperationException("Не удалось создать схему хранилища сессий.");
+        if (schema == 0) throw new InvalidOperationException(UiText.Get("vault.schema.createFailed"));
     }
     private T Export<T>(string name) where T : Delegate => Marshal.GetDelegateForFunctionPointer<T>(NativeLibrary.GetExport(library, name));
     private void Check(nint error)
     {
         if (error == 0) return;
         freeError(error);
-        throw new InvalidOperationException("Хранилище паролей недоступно или заблокировано. Сессия останется только в памяти.");
+        throw new InvalidOperationException(UiText.Get("vault.passwordStore.locked"));
     }
     public WebSession? Load()
     {
@@ -54,7 +55,7 @@ internal sealed class LinuxSessionVault : ISessionVault
     {
         var success = store(schema, "default", "Pookie SoundCloud session", JsonSerializer.Serialize(session, SoundCloudJson.Default.WebSession), 0, out var error, "application", application, 0);
         Check(error);
-        if (success == 0) throw new InvalidOperationException("Сессию не удалось сохранить в хранилище паролей.");
+        if (success == 0) throw new InvalidOperationException(UiText.Get("vault.passwordStore.saveFailed"));
     }
     public void Delete() { clear(schema, 0, out var error, "application", application, 0); Check(error); }
     public void Dispose() { if (disposed) return; disposed = true; unrefSchema(schema); NativeLibrary.Free(library); }

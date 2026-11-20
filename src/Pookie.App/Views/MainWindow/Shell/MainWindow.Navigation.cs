@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Browser;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -9,7 +10,7 @@ internal sealed partial class MainWindow
 {
     private enum Page { Home, Feed, Search, Track, Chats, Library, LibraryTracks, LibraryPlaylists, LibraryAlbums, LibraryStations, LibraryFollowing, LibraryHistory, LibraryCollection, Settings, UserProfile, LibraryMixes }
     private readonly ObservableValue<Page> page = new(Page.Home);
-    private readonly ObservableValue<string> eyebrow = new("ГЛАВНАЯ / ОТКРЫВАЙ НОВУЮ МУЗЫКУ");
+    private readonly ObservableValue<string> eyebrow = new(UiText.Get("home.discover.eyebrow"));
     private readonly ObservableValue<bool> profileOpen = new(false);
     private readonly ObservableValue<bool> searching = new(false);
     private readonly ObservableValue<bool> hasLibraryTracks = new(false);
@@ -21,7 +22,7 @@ internal sealed partial class MainWindow
     private readonly ObservableValue<bool> likeAvailable = new(false);
     private readonly ObservableValue<bool> muted = new(false);
     private readonly ObservableValue<double> volume = new(70);
-    private readonly ObservableValue<string> queueStatus = new("Выбери трек, чтобы собрать очередь");
+    private readonly ObservableValue<string> queueStatus = new(UiText.Get("queue.empty.prompt"));
     private readonly HashSet<long> likedIds = [];
     private readonly Storage.ResourceCache<long, ImageSource> coverCache = new(256, ArtworkCacheBudget, ArtworkBytes);
     private readonly Storage.ResourceCache<long, ImageSource> libraryCoverCache = new(256, ArtworkCacheBudget, ArtworkBytes);
@@ -106,7 +107,7 @@ internal sealed partial class MainWindow
             if (api.Session != session) return;
             var token = likedLoading?.Token ?? lifetime.Token;
             if (api.BrowserTransport == null) AttachBrowser(CreateBrowserSession(session));
-            status.Value = liked ? "Добавляем лайк…" : "Снимаем лайк…";
+            status.Value = liked ? UiText.Get("likes.status.adding") : UiText.Get("likes.status.removing");
             await api.BrowserTransport!.SetLikedAsync(user.Id, track.Id, liked, token);
             if (api.Session != session || disposed) return;
             if (liked) likedIds.Add(track.Id); else likedIds.Remove(track.Id);
@@ -114,7 +115,7 @@ internal sealed partial class MainWindow
             UpdateTrackSocialDetails(track.Id, liked, repost: false);
             UpdateProfileMembership(user.Id, UserSection.Likes, LibraryItem.FromTrack(track), liked);
             UpdateLikeState();
-            status.Value = liked ? "Трек добавлен в твои лайки SoundCloud." : "Трек удалён из лайков SoundCloud.";
+            status.Value = liked ? UiText.Get("likes.status.trackAdded") : UiText.Get("likes.status.trackRemoved");
             await ApplyLibraryLikeAsync(track, liked, session);
             if (!disposed && api.Session == session) RefreshHomeShortcuts();
         }

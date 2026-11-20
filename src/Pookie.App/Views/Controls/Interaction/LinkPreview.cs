@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -8,7 +9,8 @@ namespace Pookie.App;
 
 internal sealed record LinkPreviewData(string Url, string Label, ImageSource? Cover, bool Loading = false, bool Failed = false)
 {
-    internal static LinkPreviewData Pending(string url) => new(url, "Ищу...", null, Loading: true);
+    public string Label { get => UiText.Refresh(field); init; } = Label;
+    internal static LinkPreviewData Pending(string url) => new(url, UiText.Get("search.lyrics.loading"), null, Loading: true);
     internal static LinkPreviewData Missing(string url) => new(url, url, null, Failed: true);
 }
 
@@ -129,15 +131,17 @@ internal sealed class LinkPreviewVisual : IDisposable
         internal ITextLayout? Text;
         internal IImage? Image;
         private double width = -1, dpi;
+        private string? drawnLabel;
         internal double Measure(TextElement owner, double maximum)
         {
             var scale = owner.FindVisualRoot() is Window root ? root.DpiScale : 1;
-            if (Text == null || width != maximum || dpi != scale)
+            var label = Data.Label;
+            if (Text == null || width != maximum || dpi != scale || drawnLabel != label)
             {
-                width = maximum; dpi = scale;
+                width = maximum; dpi = scale; drawnLabel = label;
                 Text = Application.Current.GraphicsFactory.TextEngine.CreateLayout(new TextLayoutRequest
                 {
-                    Text = Data.Label.AsMemory(), Dpi = (uint)Math.Round(96 * scale),
+                    Text = label.AsMemory(), Dpi = (uint)Math.Round(96 * scale),
                     DefaultStyle = new(owner.FontFamily, Data.Failed ? owner.FontSize : 13, Data.Failed ? FontWeight.Normal : FontWeight.SemiBold),
                     Paragraph = new() { MaxWidth = Math.Max(1, maximum - (Data.Failed ? 0 : 33)), Wrapping = TextWrapping.NoWrap, Trimming = TextTrimming.CharacterEllipsis }
                 });

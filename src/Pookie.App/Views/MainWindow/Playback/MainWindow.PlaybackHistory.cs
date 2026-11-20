@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Diagnostics;
 using Pookie.App.Playback;
 using Pookie.Logging;
@@ -61,7 +62,7 @@ internal sealed partial class MainWindow
             AppLog.For("Pookie.History").Warning("Не удалось записать прослушивание трека {TrackId}: {ErrorType}; HTTP {StatusCode}",
                 track.Id, error.GetType().Name, (error as SoundCloudException)?.StatusCode);
             if (!disposed && api.Session == session)
-                status.Value = "Не удалось обновить историю SoundCloud. Прослушивание сохранено в Pookie.";
+                status.Value = UiText.Get("history.sync.failed");
         }
     }
 }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -24,14 +25,14 @@ public sealed partial class SoundCloudWebClient
     public async Task<TrackCommentPage> GetTrackCommentsAsync(long trackId, CancellationToken token = default, string sort = "NEWEST")
     {
         ValidateDetailTrackId(trackId);
-        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException("Неверная сортировка комментариев.");
+        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException(UiText.Get("comments.sort.invalid"));
         try
         {
             using var graph = await ReadTrackDocumentAsync(new("comments", trackId, Sort: sort), token).ConfigureAwait(false);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
         catch (NotSupportedException) { /* Compatibility with REST-only transports. */ }
-        if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
+        if (sort != "NEWEST") throw new NotSupportedException(UiText.Get("comments.sort.browserRequired"));
         using var document = await GetJsonAsync(Api($"tracks/{trackId}/comments?limit=30&linked_partitioning=1&threaded=0&filter_replies=1"), token).ConfigureAwait(false);
         return ParseComments(document.RootElement);
     }
@@ -39,23 +40,23 @@ public sealed partial class SoundCloudWebClient
     public async Task<TrackCommentPage> GetTrackCommentsNextAsync(long trackId, string cursor, CancellationToken token = default, string sort = "NEWEST")
     {
         ValidateDetailTrackId(trackId);
-        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException("Неверная сортировка комментариев.");
+        if (!new TrackReadRequest("comments", trackId, Sort: sort).IsValid()) throw new ArgumentException(UiText.Get("comments.sort.invalid"));
         if (cursor.StartsWith("sc-comments:", StringComparison.Ordinal))
         {
             var prefix = $"sc-comments:{trackId}:";
-            if (!cursor.StartsWith(prefix, StringComparison.Ordinal)) throw new SoundCloudException("Неверный курсор комментариев.");
+            if (!cursor.StartsWith(prefix, StringComparison.Ordinal)) throw new SoundCloudException(UiText.Get("comments.cursor.invalid"));
             string after;
             try { after = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cursor[prefix.Length..])); }
-            catch (FormatException) { throw new SoundCloudException("Неверный курсор комментариев."); }
+            catch (FormatException) { throw new SoundCloudException(UiText.Get("comments.cursor.invalid")); }
             var request = new TrackReadRequest("comments", trackId, Cursor: after, Sort: sort);
-            if (!request.IsValid()) throw new SoundCloudException("Неверный курсор комментариев.");
+            if (!request.IsValid()) throw new SoundCloudException(UiText.Get("comments.cursor.invalid"));
             using var graph = await ReadTrackDocumentAsync(request, token).ConfigureAwait(false);
             return ParseGraphComments(GraphObject(GraphData(graph), "trackComments"), trackId);
         }
-        if (sort != "NEWEST") throw new NotSupportedException("Сортировка требует браузерного соединения.");
+        if (sort != "NEWEST") throw new NotSupportedException(UiText.Get("comments.sort.browserRequired"));
         if (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out var uri) ||
             uri.AbsolutePath != $"/tracks/{trackId}/comments")
-            throw new SoundCloudException("Неверный адрес страницы комментариев.");
+            throw new SoundCloudException(UiText.Get("comments.page.invalidUrl"));
         using var document = await GetJsonAsync(uri, token).ConfigureAwait(false);
         return ParseComments(document.RootElement);
     }
@@ -109,9 +110,9 @@ public sealed partial class SoundCloudWebClient
     private async Task<JsonDocument> ReadTrackDocumentAsync(TrackReadRequest request, CancellationToken token)
     {
         if (!request.IsValid()) throw new ArgumentException("Invalid track page read.");
-        if (Session is { } account && !account.IsValid()) throw new SoundCloudException("Некорректная сессия SoundCloud.");
+        if (Session is { } account && !account.IsValid()) throw new SoundCloudException(UiText.Get("auth.session.invalid"));
         if (BrowserTransport is { } browser && Session != null) return await browser.ReadTrackAsync(request, token);
-        if (Session != null && RequireBrowserTransport) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (Session != null && RequireBrowserTransport) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         var clientId = await GetClientIdAsync(token);
         using var output = new MemoryStream();
         using (var writer = new Utf8JsonWriter(output))
@@ -138,20 +139,20 @@ public sealed partial class SoundCloudWebClient
         message.Headers.Referrer = new("https://soundcloud.com/");
         if (Session is { } session)
         {
-            if (!session.IsValid()) throw new SoundCloudException("Некорректная сессия SoundCloud.");
+            if (!session.IsValid()) throw new SoundCloudException(UiText.Get("auth.session.invalid"));
             message.Headers.Authorization = new("OAuth", session.AccessToken);
         }
         using var response = await http.SendAsync(message, token);
-        if (!response.IsSuccessStatusCode) throw new SoundCloudException("SoundCloud не загрузил сведения о треке.", (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode) throw new SoundCloudException(UiText.Get("soundcloud.track.detailsFailed"), (int)response.StatusCode);
         await using var body = await response.Content.ReadAsStreamAsync(token);
         return await JsonDocument.ParseAsync(body, cancellationToken: token);
     }
 
     private static JsonElement GraphData(JsonDocument document) => document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
-        ? data : throw new SoundCloudException("SoundCloud не вернул сведения о треке.");
+        ? data : throw new SoundCloudException(UiText.Get("soundcloud.track.missingDetails"));
 
     private static JsonElement GraphObject(JsonElement data, string name) => data.TryGetProperty(name, out var section) && section.ValueKind == JsonValueKind.Object
-        ? section : throw new SoundCloudException("SoundCloud не загрузил этот раздел трека.");
+        ? section : throw new SoundCloudException(UiText.Get("soundcloud.track.sectionFailed"));
 
     private static TrackCommentPage ParseGraphComments(JsonElement root, long trackId)
     {
@@ -213,7 +214,7 @@ public sealed partial class SoundCloudWebClient
         Uri uri;
         if (cursor == null) uri = Api(path.TrimStart('/') + "?limit=30&linked_partitioning=1");
         else if (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri!) || uri.AbsolutePath != path)
-            throw new SoundCloudException("Неверный адрес раздела трека.");
+            throw new SoundCloudException(UiText.Get("track.section.invalidUrl"));
         using var document = await GetJsonAsync(uri, token).ConfigureAwait(false);
         if (section != "related") return await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         var tracks = ParsePage(document.RootElement);

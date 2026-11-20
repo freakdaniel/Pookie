@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Home;
 using Pookie.App.Playback;
 using Pookie.SoundCloud;
@@ -23,7 +24,7 @@ internal sealed partial class MainWindow
             playbackQueue.SetRepeat(RepeatMode.Off); RefreshRepeatState();
             configurationTimer.Stop(); configurationTimer.Start();
         }
-        StartQueueContext(new(key, "Радио: " + track.Title, "Похожие треки SoundCloud",
+        StartQueueContext(new(key, UiText.Compose($"{UiText.Get("radio.stationPrefix")}{track.Title}"), UiText.Get("track.related.soundcloud"),
             Kind: PlaybackContextKind.Radio), [track], track, preserveManual: true);
         if (keepPlaying)
         {

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -13,7 +14,7 @@ internal sealed partial class MacSessionVault : ISessionVault
     private bool disposed;
     internal MacSessionVault(string scope)
     {
-        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException("Keychain доступен только на macOS.");
+        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException(UiText.Get("vault.mac.unsupported"));
         service = "io.github.freakdaniel.Pookie." + scope;
     }
 
@@ -29,9 +30,9 @@ internal sealed partial class MacSessionVault : ISessionVault
         try
         {
             if (value == 0 || Keychain.GetTypeId(value) != Keychain.DataTypeId())
-                throw new InvalidOperationException("Keychain вернул некорректную сессию.");
+                throw new InvalidOperationException(UiText.Get("vault.mac.invalidKeychainSession"));
             var length = Keychain.DataLength(value);
-            if (length is < 1 or > WindowsSessionVault.MaxSize) throw new InvalidOperationException("Некорректный размер сессии Keychain.");
+            if (length is < 1 or > WindowsSessionVault.MaxSize) throw new InvalidOperationException(UiText.Get("vault.mac.invalidSize"));
             var bytes = new byte[(int)length];
             try
             {
@@ -41,14 +42,14 @@ internal sealed partial class MacSessionVault : ISessionVault
             }
             finally { CryptographicOperations.ZeroMemory(bytes); }
         }
-        catch (JsonException error) { throw new InvalidOperationException("Некорректная сессия Keychain.", error); }
+        catch (JsonException error) { throw new InvalidOperationException(UiText.Get("vault.mac.invalidSession"), error); }
         finally { if (value != 0) Keychain.Release(value); }
     }
 
     public void Save(WebSession session)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        if (!session.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.", nameof(session));
+        if (!session.IsValid()) throw new ArgumentException(UiText.Get("auth.session.invalid"), nameof(session));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(session, SoundCloudJson.Default.WebSession);
         try
         {
@@ -90,7 +91,7 @@ internal sealed partial class MacSessionVault : ISessionVault
     }
     private static void Check(int status)
     {
-        if (status != 0) throw new InvalidOperationException($"Keychain недоступен или заблокирован (OSStatus {status}). Сессия останется только в памяти.");
+        if (status != 0) throw new InvalidOperationException(UiText.Format("vault.mac.locked", status));
     }
 
     private static partial class Keychain

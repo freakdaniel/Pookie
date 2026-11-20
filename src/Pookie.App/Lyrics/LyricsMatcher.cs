@@ -263,11 +263,11 @@ public static partial class LyricsMatcher
         return changed;
     }
 
-    internal static bool OneLetterApart(string left, string right)
+    internal static bool OneLetterApart(string left, string right, int minimumLength = 4)
     {
         var a = StringInfo.ParseCombiningCharacters(left);
         var b = StringInfo.ParseCombiningCharacters(right);
-        if (Math.Min(a.Length, b.Length) < 4 || Math.Abs(a.Length - b.Length) > 1) return false;
+        if (Math.Min(a.Length, b.Length) < minimumLength || Math.Abs(a.Length - b.Length) > 1) return false;
         int i = 0, j = 0, edits = 0;
         while (i < a.Length && j < b.Length)
         {

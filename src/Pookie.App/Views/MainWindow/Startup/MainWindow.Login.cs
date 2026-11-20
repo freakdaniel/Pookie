@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -54,9 +55,9 @@ internal sealed partial class MainWindow
         loginContent = new StackPanel().Vertical().Spacing(36).Width(400).CenterHorizontal().CenterVertical().Children(
             loginBrand,
             new StackPanel().Vertical().Spacing(14).Children(
-                new TextBlock().Text("Добро пожаловать").FontSize(34).Bold().Foreground(LoginPaper)
+                new TextBlock().Text(UiText.Get("auth.welcome")).FontSize(34).Bold().Foreground(LoginPaper)
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap),
-                new TextBlock().Text("Для использования Pookie необходима учётная запись SoundCloud. Выполните вход с помощью кнопки ниже")
+                new TextBlock().Text(UiText.Get("auth.welcome.description"))
                     .FontSize(15).Foreground(Color.FromArgb(191, 255, 255, 255))
                     .TextAlignment(TextAlignment.Center).TextWrapping(TextWrapping.Wrap)),
             new StackPanel().Vertical().Spacing(14).Children(loginButton.CenterHorizontal(), loginError));
@@ -74,9 +75,9 @@ internal sealed partial class MainWindow
         loginButtonState = state;
         var label = state switch
         {
-            LoginButtonState.Waiting => "Ожидание входа…",
-            LoginButtonState.Connecting => "Вхожу…",
-            _ => "Войти в SoundCloud"
+            LoginButtonState.Waiting => UiText.Get("auth.status.waiting"),
+            LoginButtonState.Connecting => UiText.Get("auth.status.signingIn"),
+            _ => UiText.Get("auth.signIn")
         };
         loginButtonLabel = new TextBlock().Text(label).FontSize(15).SemiBold().Foreground(LoginPaper)
             .CenterHorizontal().CenterVertical();

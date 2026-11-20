@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -68,11 +69,11 @@ internal sealed partial class MainWindow
         ShortcutHint(heartButton, ShortcutAction.Like);
         playerRepostButton = PlayerButton(PlayerRepostGlyph(19, Color.White),
             () => Run(ToggleCurrentTrackRepostAsync), isReposted).BindIsEnabled(repostAvailable);
-        void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? "Убрать репост" : "Сделать репост");
+        void RefreshRepostHint() => playerRepostButton.Hint(isReposted.Value ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost"));
         isReposted.Changed += RefreshRepostHint;
         RefreshRepostHint();
         var share = playerShareButton = PlayerButton(Icons.View("arrow-square-out", 19, Color.White),
-            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }).BindIsEnabled(playerVisible).Hint("Поделиться");
+            () => { if (current is { } track) OpenShare(Pookie.SoundCloud.LibraryItem.FromTrack(track)); }).BindIsEnabled(playerVisible).Hint(UiText.Get("common.share"));
 
         outgoingMiniCover = new Border().Child(outgoingMiniArtwork);
         miniArtworkFade.TransitionCompleted += () =>
@@ -90,7 +91,7 @@ internal sealed partial class MainWindow
             .CornerRadius(6).Width(48).Height(48)
             .Content(new Border().CornerRadius(6).ClipToBounds()
                 .Child(new Grid().Columns("*").Rows("*").Children(artwork, miniArtworkFade, playerArtworkOverlay)))
-            .Hint("Развернуть плеер")
+            .Hint(UiText.Get("player.expand"))
             .OnMouseEnter(() => playerArtworkOverlay.Opacity = 1)
             .OnMouseLeave(() => playerArtworkOverlay.Opacity = 0)
             .OnGotFocus(() => playerArtworkOverlay.Opacity = KeyboardFocusFeedback.IsVisible(playerArtworkButton) || playerArtworkButton.IsMouseOver ? 1 : 0)

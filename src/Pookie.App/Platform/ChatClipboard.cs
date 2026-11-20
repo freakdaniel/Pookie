@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Text;
 using Pookie.App.Messages;
@@ -92,7 +93,7 @@ internal static partial class ChatClipboard
             byte[]? bytes = null;
             var length = gtk_selection_data_get_length(selection);
             var data = gtk_selection_data_get_data(selection);
-            if (length > ChatMediaCrypto.MaxFileBytes) throw new InvalidOperationException("Изображение или список файлов в буфере превышает 16 МБ.");
+            if (length > ChatMediaCrypto.MaxFileBytes) throw new InvalidOperationException(UiText.Get("clipboard.files.sizeLimit"));
             if (data != 0 && gtk_selection_data_get_format(selection) == 8 && length is > 0 and <= ChatMediaCrypto.MaxFileBytes)
             { bytes = new byte[length]; Marshal.Copy(data, bytes, 0, length); }
             ((TaskCompletionSource<byte[]?>)handle.Target!).TrySetResult(bytes);
@@ -109,7 +110,7 @@ internal static partial class ChatClipboard
             if (IsClipboardFormatAvailable(15))
             {
                 var drop = GetClipboardData(15); var count = DragQueryFileW(drop, uint.MaxValue, null, 0);
-                if (count > ChatMediaCrypto.MaxAttachments) throw new InvalidOperationException("За раз можно прикрепить до четырёх файлов.");
+                if (count > ChatMediaCrypto.MaxAttachments) throw new InvalidOperationException(UiText.Get("chats.attachments.countLimit"));
                 var paths = new List<string>();
                 for (uint i = 0; i < count; i++)
                 {
@@ -136,7 +137,7 @@ internal static partial class ChatClipboard
         if (!IsClipboardFormatAvailable(format)) return null;
         var handle = GetClipboardData(format); var length = GlobalSize(handle);
         if (length == 0) return null;
-        if (length > (nuint)limit) throw new InvalidOperationException("Изображение в буфере слишком большое.");
+        if (length > (nuint)limit) throw new InvalidOperationException(UiText.Get("clipboard.image.tooLarge"));
         var pointer = GlobalLock(handle); if (pointer == 0) return null;
         try { var data = new byte[(int)length]; Marshal.Copy(pointer, data, 0, data.Length); return data; }
         finally { GlobalUnlock(handle); }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Threading.Channels;
 using Pookie.Logging;
 
@@ -77,8 +78,8 @@ internal sealed class PlayReadyPlayback
         {
 #if WINDOWS
             if (!Uri.TryCreate(source.Location, UriKind.Absolute, out var uri) || !allowed(uri))
-                throw new DrmPlaybackException("Неверный адрес защищённого аудиопотока.");
-            var authorization = source.LicenseAuthToken ?? throw new DrmPlaybackException("SoundCloud не предоставил авторизацию PlayReady.");
+                throw new DrmPlaybackException(UiText.Get("drm.stream.invalidUrl"));
+            var authorization = source.LicenseAuthToken ?? throw new DrmPlaybackException(UiText.Get("drm.playReady.authorizationMissing"));
             await using var media = await PlayReadyHlsStream.OpenAsync(http, uri, allowed, stop).ConfigureAwait(false);
             media.Prefetch(0, stop);
             await PlayReadyMediaEngine.RunAsync(http, media, authorization, Directory.CreateDirectory(store).FullName,

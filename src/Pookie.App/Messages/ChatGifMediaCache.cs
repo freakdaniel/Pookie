@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Security.Cryptography;
 
 namespace Pookie.App.Messages;
@@ -19,7 +20,7 @@ internal sealed class ChatGifMediaCache(ChatMediaDiskCache? disk, Func<string, C
 
     internal async Task<byte[]> GetAsync(ChatMediaReference reference, string url, long sender, long recipient, CancellationToken setting, CancellationToken caller)
     {
-        if (!KlipyClient.IsMediaUrl(url)) throw new InvalidDataException("Недопустимый адрес GIF.");
+        if (!KlipyClient.IsMediaUrl(url)) throw new InvalidDataException(UiText.Get("chats.gifs.invalidUrl"));
         caller.ThrowIfCancellationRequested();
         var id = reference.Code;
         Entry entry;
@@ -27,7 +28,7 @@ internal sealed class ChatGifMediaCache(ChatMediaDiskCache? disk, Func<string, C
         {
             if (!pending.TryGetValue(id, out entry!))
             {
-                if (pending.Count >= 64) throw new IOException("Очередь загрузки GIF заполнена.");
+                if (pending.Count >= 64) throw new IOException(UiText.Get("chats.gifs.queueFull"));
                 entry = new(CancellationTokenSource.CreateLinkedTokenSource(account, setting));
                 pending[id] = entry;
                 var owned = entry;

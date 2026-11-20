@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Pookie.App.Home;
 using Aprillz.MewUI.Animation;
@@ -60,9 +61,9 @@ internal sealed partial class MainWindow
             content.HorizontalAlignment = HorizontalAlignment.Stretch;
             return card;
         }
-        homeLikesCard = Card("Мне нравится", "pixel-heart", history: false,
+        homeLikesCard = Card(UiText.Get("likes.action.like"), "pixel-heart", history: false,
             () => Run(() => LikesAsync(showAll: true)), out homeLikesSubtitle);
-        homeHistoryCard = Card("История", "pixel-clock", history: true,
+        homeHistoryCard = Card(UiText.Get("header.history"), "pixel-clock", history: true,
             () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory)), out homeHistorySubtitle);
         return new Grid().Columns("*,*").Rows("Auto").Spacing(16)
             .Children(homeLikesCard.Column(0), homeHistoryCard.Column(1));
@@ -71,13 +72,13 @@ internal sealed partial class MainWindow
     {
         if (homeLikesSubtitle == null) return;
         var count = likedIdsReady ? likedIds.Count : homeLikesCount;
-        homeLikesSubtitle.Text = count is { } total ? DetailCount(total) + " " + RussianPlural(total, "трек", "трека", "треков") : "Сохранённые треки";
+        homeLikesSubtitle.Text = count is { } total ? UiText.Compose($"{DetailCount(total)} {UiText.Plural(total, "collection.track")}"): UiText.Get("library.savedTracks");
         var likes = (libraryLikes?.Tracks ?? homeLikesPreview)
             .Take(2).Select(LibraryItem.FromTrack).ToArray();
         var history = localRecent.Concat(HomeItems("recent")).Where(item => item.Track != null || item.Playlist != null)
             .DistinctBy(item => item.Key).Take(2).ToArray();
         homeShortcuts.IsVisible = count > 0 || likes.Length > 0 || history.Length > 0;
-        var latestHistoryTitle = history.FirstOrDefault()?.Title ?? "Недавние прослушивания";
+        var latestHistoryTitle = history.FirstOrDefault()?.Title ?? UiText.Get("history.recentPlays");
         if (homeHistoryTitle == null)
         {
             homeHistoryTitle = latestHistoryTitle;

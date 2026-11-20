@@ -11,29 +11,13 @@ internal sealed partial class MainWindow
         chatInput.Text="";SaveChatDraft();
         ToggleChatPin(transport.Third.Id);
         if(chatInboxItems[0].Recipient.Id!=transport.Third.Id)throw new InvalidOperationException("Pinned dialog did not move to the front.");
-        OpenChatFolderEditor(null);await WaitForLikedLayoutAsync(() => !chatColumns.Animating && !chatDetailsTransition.Animating && chatDetailsCard.Opacity > .99);
-        var name=chatDetailsBody.FindVisualChild<TextBox>() as TextBox??throw new InvalidOperationException("Folder name editor missing.");
-        name.Text="Музыка";
-        var choices=chatDetailsBody.Children.OfType<StackPanel>().Single();
-        var peerButton=choices.Children.OfType<Button>().First();RouteWaveformClick(SettingsCenter(peerButton));
-        var save=chatDetailsBody.Children.OfType<Button>().First();RouteWaveformClick(SettingsCenter(save));
-        if(chatWorkspace.Folders is not [{Name:"Музыка",Peers.Length:1}])throw new InvalidOperationException("Folder editor did not save its name/membership.");
-        chatFolder=chatWorkspace.Folders[0].Id;RenderChatInbox();if(chatInboxItems.Count!=1)throw new InvalidOperationException("Folder membership did not filter inbox.");
-        OpenChatFolderEditor(chatWorkspace.Folders[0]);await WaitForLikedLayoutAsync(() => !chatColumns.Animating && !chatDetailsTransition.Animating && chatDetailsCard.Opacity > .99);
-        var delete=chatDetailsBody.Children.OfType<Button>().Last();RouteWaveformClick(SettingsCenter(delete));
-        if(chatWorkspace.Folders.Length!=0||chatInboxItems.Count!=2)throw new InvalidOperationException("Deleting folder deleted dialogs.");
-        var savedRows = new List<TextBlock>();
-        VisualTree.Visit(chatSidebarNormal, element => { if (element is TextBlock { Text: "Избранное" } label) savedRows.Add(label); });
-        if (savedRows.Count != 0) throw new InvalidOperationException("Saved messages still occupy a row in the dialog list.");
-        var savedShortcut = new List<Button>();
-        VisualTree.Visit((FrameworkElement)chatColumns.Children[0], element => { if (element is Button button && TooltipHints.TextFor(button) == "Избранное") savedShortcut.Add(button); });
-        if (savedShortcut.Count != 1) throw new InvalidOperationException("The saved-messages shortcut is missing from the sidebar toolbar.");
-        var target=chatMessages.Last();ChatFavoriteMessage(target);RouteWaveformClick(SettingsCenter(savedShortcut[0]));
-        await WaitForLikedLayoutAsync(() => chatFavoritesOpen && chatSavedMessages.ActualHeight > 0 && !chatColumns.Animating);
-        if(chatWorkspace.Favorites.Length!=1||chatName.Text!="Избранное"||chatComposer.IsVisible||chatColumns.DetailsOpen||!new ChatWorkspaceStore(dataPaths,42).Load().SavedOpen)
-            throw new InvalidOperationException("Saved messages did not open as a durable standalone local conversation.");
-        CaptureUiPreview("chats-saved-conversation");
-        await SelectChatAsync(transport.Other); ToggleChatSelection(target);
+        VisualTree.Visit((FrameworkElement)chatColumns.Children[0], element =>
+        {
+            if (element is Button button && TooltipHints.TextFor(button) is "Избранное" or "Создать папку")
+                throw new InvalidOperationException("Saved messages and folders must be hidden from the sidebar.");
+        });
+        var target = chatMessages.Last();
+        ToggleChatSelection(target);
         if(!chatSelectionBar.IsVisible||chatSelected.Count!=1)throw new InvalidOperationException("Multiple selection toolbar missing.");
         RouteChatEscape();if(chatSelectionBar.IsVisible)throw new InvalidOperationException("Escape did not close selection.");
         await VerifyChatReplyUiAsync(target);chatInput.Text="Связанный ответ";await SendChatAsync();
@@ -105,10 +89,17 @@ internal sealed partial class MainWindow
         CloseChatSearch();
         await WaitForLikedLayoutAsync(() => !chatSidebarTransition.Animating);
         var sidebarOpacities = new List<double>();
-        void SampleSidebarReveal() => sidebarOpacities.Add(chatSidebarSearch.Opacity);
+        var backWidths = new List<double>();
+        void SampleSidebarReveal()
+        {
+            sidebarOpacities.Add(chatSidebarSearch.Opacity);
+            backWidths.Add(chatSidebarBackSlot.ActualWidth);
+        }
         Window.FrameRendered += SampleSidebarReveal; RouteWaveformClick(SettingsCenter(chatSearch));
         await WaitForLikedLayoutAsync(() => chatSidebarSearching && !chatSidebarTransition.Animating);
         Window.FrameRendered -= SampleSidebarReveal;
+        if (!DesktopMotion.PrefersReducedMotion() && !backWidths.Any(w => w > 0 && w < 46))
+            throw new InvalidOperationException("The search field snapped to its narrow width.");
         if (!sidebarOpacities.Any(o => o > .01 && o < .99) || chatSidebarBack.Bounds.Right >= chatSearch.Bounds.X)
             throw new InvalidOperationException("Focusing sidebar search did not animate its content or keep the back button outside the field.");
         await WaitForLikedLayoutAsync(() => chatSearchLanding.IsVisible && chatSearchLanding.FindVisualChild<Image>() is Image { ActualHeight: > 0 });
@@ -261,7 +252,7 @@ internal sealed partial class MainWindow
         await chatHistory!.SavePageAsync(42, 90, new([
             new("media-library-track", 90, mediaTrackUrl, DateTimeOffset.UtcNow.AddHours(-2)),
             new("media-library-playlist", 90, mediaPlaylistUrl, DateTimeOffset.UtcNow.AddHours(-2))], null));
-        OpenChatInfo(); await RenderChatMediaLibraryAsync("Музыка");
+        OpenChatInfo(); await RenderChatMediaLibraryAsync(ChatMediaKind.Music);
         var libraryTracks = compactTrackRows.Where(row => chatMediaLibrary!.Children.Contains(row.Root)).ToArray();
         var playlistShown = false;
         VisualTree.Visit(chatMediaLibrary!, element => { if (element is TextBlock { Text: "Плейлист" }) playlistShown = true; });
@@ -270,11 +261,13 @@ internal sealed partial class MainWindow
         await WaitForLikedLayoutAsync(() => chatDetailsCard.Opacity > .99);
         CaptureUiPreview("chats-media-library-types");
         await WaitForLikedLayoutAsync(() => !chatMediaTransition.Animating && chatMediaPill is { Animating: false });
-        var startPill = chatMediaPill!.SelectionBounds.X; var pillFrames = new List<double>();
+        if (chatMediaPill!.Parent is not GlassCard) throw new InvalidOperationException("The media tabs lost their glass surface.");
+        await VerifyTabHoverFadeAsync(chatMediaPill.Children.OfType<Button>().ElementAt(1));
+        var startPill = chatMediaPill.SelectionBounds.X; var pillFrames = new List<double>();
         void SamplePill() => pillFrames.Add(chatMediaPill.SelectionBounds.X);
         Window.FrameRendered += SamplePill;
         RouteWaveformClick(SettingsCenter(chatMediaPill.Children.OfType<Button>().ElementAt(1)));
-        await WaitForLikedLayoutAsync(() => chatMediaLibraryKind == "Фото" && !chatMediaPill.Animating && !chatMediaTransition.Animating);
+        await WaitForLikedLayoutAsync(() => chatMediaLibraryKind == ChatMediaKind.Photos && !chatMediaPill.Animating && !chatMediaTransition.Animating);
         Window.FrameRendered -= SamplePill;
         var endPill = chatMediaPill.SelectionBounds.X;
         if (!pillFrames.Any(x => x > startPill + .5 && x < endPill - .5))
@@ -373,6 +366,14 @@ internal sealed partial class MainWindow
         if(CachedChatMedia(voiceMessage)?.Reply?.MessageId!=target.Id)throw new InvalidOperationException("Voice attachment lost its linked reply.");
         CaptureUiPreview("chats-synthetic-voice-message");
         await chatHistory!.SaveDialogsAsync(chatConversations);RememberChatThread();SaveChatDraft();
+        // A workspace saved by an older version can still have Favorites selected.
+        chatWorkspace = chatWorkspace with
+        {
+            Favorites = [new(transport.Other.Id, target, DateTimeOffset.UtcNow)],
+            Folders = [new("music", "Музыка", [transport.Third.Id])],
+            SavedOpen = true
+        };
+        SaveChatWorkspace();
         var previousHistory=chatHistory;ResetChats();await previousHistory.DisposeAsync();
         BeginNavigation(new(Page.Home));await WaitForLoginFrameAsync();
         transport.DelayThread=true;transport.ThreadReady=null;
@@ -387,8 +388,8 @@ internal sealed partial class MainWindow
         me=new(){Id=7,Username="Другой аккаунт"};await EnsureChatAccountAsync();await RestoreChatHistoryAsync();
         if(chatMessageItems.Count!=0||chatWorkspace.Favorites.Length!=0||chatRecipient!=null||chatGlobalSearchResults.Children.Count!=0||chatSearch.Text.Length!=0||chatGlobalSearchFrame.IsVisible||chatColumns.DetailsOpen)throw new InvalidOperationException("Account switch exposed previous chats.");
         me=new(){Id=42,Username="Ты"};await EnsureChatAccountAsync();await RestoreChatHistoryAsync();chatTimer.Stop();transport.FailReads=false;
-        if(chatRecipient?.Id!=90||chatWorkspace.Favorites.Length!=1)throw new InvalidOperationException("Account return lost durable favorites or last conversation.");
-        Console.WriteLine("UI_CHAT_WORKSPACE_OK: folders, pins, favorites, selection, replies, reactions, FTS, dock/overlay, Escape and synthetic voice drafts");
+        if(chatRecipient?.Id!=90||chatWorkspace.Favorites.Length!=1||chatWorkspace.Folders.Length!=1||chatInboxItems.Count!=2)throw new InvalidOperationException("Account return lost durable favorites or last conversation.");
+        Console.WriteLine("UI_CHAT_WORKSPACE_OK: hidden folders/favorites, legacy workspace restoration, pins, selection, replies, reactions, FTS, dock/overlay, Escape and synthetic voice drafts");
     }
 
     private void VerifyChatReferenceGeometry(bool detailsOpen)
@@ -444,6 +445,13 @@ internal sealed partial class MainWindow
         await WaitForLoginFrameAsync();
         var beforeBounds = chatDetailsCard.Bounds; var before = ReadBackground();
         CaptureUiPreview("chats-profile-gradient-before-scroll");
+        var offsets = new HashSet<double>();
+        void SampleScroll() => offsets.Add(scroll.VerticalOffset);
+        Window.FrameRendered += SampleScroll;
+        RouteSearchTestWheel(SettingsCenter(scroll), -2);
+        await WaitForLikedLayoutAsync(() => scroll.VerticalOffset > 0 && !smoothScrolls[scroll].IsRunning);
+        Window.FrameRendered -= SampleScroll;
+        if (offsets.Count < 3) throw new InvalidOperationException("The information sidebar did not scroll through intermediate positions.");
         scroll.SetScrollOffsets(0, 180);
         await WaitForLikedLayoutAsync(() => Math.Abs(scroll.VerticalOffset-180)<1 && !scroll.IsArrangeDirty);
         await WaitForLoginFrameAsync();

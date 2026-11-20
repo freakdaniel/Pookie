@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Automation;
 using Aprillz.MewUI.Controls;
@@ -24,12 +25,12 @@ internal sealed partial class MainWindow
         shortcutCapture.GotFocus += () => shortcutCapture.BorderBrush = Color.FromRgb(108, 108, 122);
         shortcutCapture.LostFocus += () => shortcutCapture.BorderBrush = Edge;
         shortcutNotice = new TextBlock().FontSize(13).Foreground(TrackButtons.OnSelected).TextWrapping(TextWrapping.Wrap).IsVisible(false);
-        var cancel = TrackButtons.Action(new TextBlock().Text("Отмена").FontSize(14).SemiBold(), CloseShortcutRecorder, TrackButtons.Glass);
+        var cancel = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.cancel")).FontSize(14).SemiBold(), CloseShortcutRecorder, TrackButtons.Glass);
         shortcutSaveLabel = new TextBlock().FontSize(14).SemiBold().Foreground(TrackButtons.OnPrimary);
         shortcutSave = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(
             Icons.View("check", 18, TrackButtons.OnPrimary).CenterVertical(), shortcutSaveLabel.CenterVertical()), SavePendingShortcut, TrackButtons.Filled);
         var body = new StackPanel().Vertical().Spacing(18).Margin(28).Children(shortcutTitle,
-            new TextBlock().Text("Нажми новое сочетание клавиш или боковую кнопку мыши.").Foreground(Muted).FontSize(14),
+            new TextBlock().Text(UiText.Get("shortcuts.recorder.prompt")).Foreground(Muted).FontSize(14),
             shortcutCapture, shortcutNotice, new StackPanel().Horizontal().Spacing(8).Right().Children(cancel, shortcutSave));
         shortcutDialog = new ModalDialog(TrackDialogChrome.MatteBody(body).Width(540), shortcutCapture,
             staticBackdrop: true, cacheTransition: true, backdropTint: TrackDialogChrome.MatteTint) { DismissRequested = CloseShortcutRecorder };
@@ -58,16 +59,15 @@ internal sealed partial class MainWindow
         pendingShortcut = value;
         var shown = value ?? Assigned(binding);
         var conflicts = ShortcutConflicts(binding, shown);
-        shortcutCaption.Text = value == null ? (shown.Length == 0 ? "Сочетание не назначено" : "Текущее сочетание")
-            : value.Length == 0 ? "Без сочетания" : "Новое сочетание";
+        shortcutCaption.Text = value == null ? (shown.Length == 0 ? UiText.Get("shortcuts.noneAssigned") : UiText.Get("shortcuts.current"))
+            : value.Length == 0 ? UiText.Get("shortcuts.unassigned") : UiText.Get("shortcuts.recorder.new");
         shortcutPreview.Child = ShortcutKeycaps.View(shown, large: true);
         AutomationProperties.SetName(shortcutCapture, shortcutCaption.Text + (shown.Length > 0 ? ". " + ShortcutBinding.Display(shown) : ""));
-        shortcutSaveLabel.Text = conflicts.Length == 0 ? "Сохранить" : "Переназначить";
+        shortcutSaveLabel.Text = conflicts.Length == 0 ? UiText.Get("common.save") : UiText.Get("shortcuts.reassign");
         shortcutSave.IsEnabled = value != null && value != Assigned(binding);
         shortcutNotice.IsVisible = conflicts.Length > 0;
         if (conflicts.Length > 0)
-            shortcutNotice.Text = "Это сочетание уже используется для " + string.Join(", ", conflicts.Select(other => $"«{other.Title}»")) +
-                ". При переназначении оно будет снято с этой команды.";
+            shortcutNotice.Text = UiText.Compose($"{UiText.Get("shortcuts.conflict.assignedPrefix")}{UiText.Join(", ", conflicts.Select(other => UiText.Compose($"«{other.Title}»")))}{UiText.Get("shortcuts.conflict.removal")}");
         shortcutDialog.InvalidateTransitionSnapshot();
     }
 

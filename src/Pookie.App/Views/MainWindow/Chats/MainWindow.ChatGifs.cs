@@ -1,4 +1,6 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
+using Aprillz.MewUI.Automation;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
 using Pookie.SoundCloud;
@@ -41,7 +43,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ChatGifsView()
     {
-        chatGifSearch = new TextBox().Placeholder("Поиск эмодзи").Background(Color.Transparent).BorderThickness(0).FontSize(13).MaxLength(100);
+        chatGifSearch = new TextBox().Placeholder(UiText.Get("chats.emoji.search")).Background(Color.Transparent).BorderThickness(0).FontSize(13).MaxLength(100);
         chatGifSearch.OnTextChanged(_ =>
         {
             if (chatEmojiUpdating) return;
@@ -52,7 +54,7 @@ internal sealed partial class MainWindow
         chatEmojiSearchTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(220));
         chatEmojiSearchTimer.Tick += () => { chatEmojiSearchTimer.Stop(); if (chatEmojiGifMode) Run(SearchChatGifsAsync); else RefreshChatEmojiResults(); };
         chatGifStatus = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxWidth(280).CenterHorizontal();
-        chatGifRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), () => Run(SearchChatGifsAsync), TrackButtons.Text, 32).CenterHorizontal().IsVisible(false);
+        chatGifRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retry")).FontSize(13), () => Run(SearchChatGifsAsync), TrackButtons.Text, 32).CenterHorizontal().IsVisible(false);
         chatGifResults = new TrackCollectionGrid(3, 94, 3);
         chatGifScroll = new ScrollViewer().Content(chatGifResults).Background(Color.Transparent).BorderThickness(0).Padding(6, 0, 6, 6);
         chatGifScroll.ScrollChanged += QueueVisibleChatGifPreviews;
@@ -111,6 +113,7 @@ internal sealed partial class MainWindow
         for (var i = 0; i < 8; i++)
         {
             var button = context.Get<Button>("button" + i); var emoji = row.Values.ElementAtOrDefault(i);
+            AutomationProperties.SetName(button, emoji?.Name ?? "");
             button.IsVisible = emoji != null; chatEmojiSlots.GetValue(button, _ => new()).Value = emoji?.Value;
             context.Get<Image>("image" + i).Source = emoji == null ? null : ChatEmojiArtwork.Source(emoji.Value);
         }
@@ -143,7 +146,7 @@ internal sealed partial class MainWindow
         chatEmojiModes.SetMode(gif, preferences.KlipyEnabled && chatEmojiTarget == null);
         chatGifsOpen.Value = gif && chatEmojiPopup.IsOpen;
         chatEmojiUpdating = true; if (changed) chatGifSearch.Text = ""; chatEmojiUpdating = false;
-        chatGifSearch.Placeholder = gif ? "Поиск GIF" : "Поиск эмодзи";
+        chatGifSearch.Placeholder = gif ? UiText.Get("chats.gifs.search") : UiText.Get("chats.emoji.search");
         chatEmojiCategories.IsVisible = !gif;
         UpdateChatEmojiSearchMode();
         chatEmojiTransition.Show(gif ? chatGifBody : chatEmojiBody, gif ? 1 : -1);
@@ -151,7 +154,7 @@ internal sealed partial class MainWindow
         {
             chatGifsOpen.Value = true;
             chatGifStatus.IsVisible = !klipy.Available;
-            chatGifStatus.Text = klipy.Available ? "" : "GIF сейчас недоступны";
+            chatGifStatus.Text = klipy.Available ? "" : UiText.Get("chats.gifs.unavailable");
             chatGifRetry.IsVisible = false;
             if (klipy.Available) Run(SearchChatGifsAsync);
         }
@@ -171,14 +174,14 @@ internal sealed partial class MainWindow
             var index = 0; foreach (var chunk in array.Chunk(8)) rows.Add(new(key + ":" + index++, "", chunk));
         }
         var query = chatGifSearch.Text.Trim();
-        if (query.Length > 0) Section("search", "Результаты поиска", ChatEmojiCatalog.Search(query));
+        if (query.Length > 0) Section("search", UiText.Get("search.results.heading"), ChatEmojiCatalog.Search(query));
         else if (chatEmojiGroup != null) Section(chatEmojiGroup, ChatEmojiCatalog.Title(chatEmojiGroup), ChatEmojiCatalog.Search("", chatEmojiGroup));
         else
         {
-            Section("recent", "Недавние", (chatWorkspace.RecentEmoji ?? ChatProtocol.Reactions).Select(ChatEmojiCatalog.Find).OfType<ChatEmoji>());
+            Section("recent", UiText.Get("common.recent"), (chatWorkspace.RecentEmoji ?? ChatProtocol.Reactions).Select(ChatEmojiCatalog.Find).OfType<ChatEmoji>());
             foreach (var group in ChatEmojiCatalog.Groups) Section(group.Group, group.Title, ChatEmojiCatalog.All.Where(e => e.Group == group.Group));
         }
-        if (rows.Count == 0) rows.Add(new("empty", "Ничего не найдено", []));
+        if (rows.Count == 0) rows.Add(new("empty", UiText.Get("search.empty"), []));
         chatEmojiResultsFade.Replace(() =>
         {
             chatEmojiResults.ItemsSource = ItemsView.Create(rows, r => r.Key, r => r.Key);
@@ -233,7 +236,7 @@ internal sealed partial class MainWindow
             var gifs = await klipy.SearchAsync(chatGifSearch.Text, token);
             if (!preferences.KlipyEnabled || !chatEmojiPopup.IsOpen || disposed || token.IsCancellationRequested || generation != chatGifGeneration || chatRecipient?.Id != recipient || me?.Id != account) return;
             StopChatGifSkeletons(); chatGifResults.Clear();
-            chatGifStatus.Text = gifs.Length == 0 ? "GIF не найдены" : ""; chatGifStatus.IsVisible = gifs.Length == 0;
+            chatGifStatus.Text = gifs.Length == 0 ? UiText.Get("chats.gifs.empty") : ""; chatGifStatus.IsVisible = gifs.Length == 0;
             foreach (var gif in gifs)
             {
                 var image = new Image { Opacity = 0 }.Height(104).StretchMode(Stretch.UniformToFill);
@@ -254,7 +257,7 @@ internal sealed partial class MainWindow
             if (!disposed && generation == chatGifGeneration && !token.IsCancellationRequested)
             {
                 StopChatGifSkeletons(); chatGifResults.Clear();
-                chatGifStatus.IsVisible = chatGifRetry.IsVisible = true; chatGifStatus.Text = "Не удалось загрузить GIF";
+                chatGifStatus.IsVisible = chatGifRetry.IsVisible = true; chatGifStatus.Text = UiText.Get("chats.gifs.loadFailed");
             }
         }
     }

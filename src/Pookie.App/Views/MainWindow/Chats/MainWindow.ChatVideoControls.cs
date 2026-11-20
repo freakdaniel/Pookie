@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -57,7 +58,7 @@ internal sealed partial class MainWindow
     {
         rate = Math.Round(Math.Clamp(rate, .25, 2) * 20) / 20;
         if (chatVideoSession is { } session && !session.Rate(rate)) return;
-        chatVideoRate = rate; chatVideoSpeedValue.Text = rate.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("ru-RU")) + "×";
+        chatVideoRate = rate; chatVideoSpeedValue.Text = rate.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture) + "×";
         chatVideoSyncSpeed = true;
         try { chatVideoSpeedSlider.Value = rate; }
         finally { chatVideoSyncSpeed = false; }
@@ -105,11 +106,11 @@ internal sealed partial class MainWindow
         var speedHeader = new Grid().Columns("38,*").Rows("32").Spacing(6).Margin(8, 0).Children(chatVideoSpeedValue, chatVideoSpeedSlider.Column(1));
         var choices = new StackPanel().Vertical().Spacing(2).Children(speedHeader,
             new Border().Height(1).Background(Color.FromRgb(63, 63, 66)).BorderThickness(0).Margin(0, 4));
-        foreach (var (rate, title) in new[] { (.5, "Медленно"), (1d, "По умолчанию"), (1.25, "Ускоренно"),
-            (1.5, "Быстро"), (1.75, "Очень быстро"), (2d, "Сверхбыстро") })
+        foreach (var (rate, title) in new[] { (.5, UiText.Get("speed.slow")), (1d, UiText.Get("settings.choice.default")), (1.25, UiText.Get("speed.faster")),
+            (1.5, UiText.Get("speed.fast")), (1.75, UiText.Get("speed.veryFast")), (2d, UiText.Get("speed.fastest")) })
         {
             var selected = rate == chatVideoRate;
-            var rateText = new TextBlock().Text(rate.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("ru-RU")) + "×").FontSize(10).SemiBold().CenterVertical();
+            var rateText = new TextBlock().Text(rate.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture) + "×").FontSize(10).SemiBold().CenterVertical();
             var label = new TextBlock().Text(title).FontSize(13).CenterVertical();
             rateText.Foreground = label.Foreground = selected ? ChatAccent : TrackButtons.OnSurface;
             var check = new TextBlock().Text("✓").FontSize(14).Foreground(ChatAccent).CenterVertical(); check.Opacity = selected ? 1 : 0;

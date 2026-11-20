@@ -22,7 +22,7 @@ internal sealed partial class MainWindow
             await chatHistory!.SavePageAsync(42,90,new([message],null));
             await chatHistory.SaveMediaMetadataAsync(90,message.Id,Files(package),"");
             handler.DelayDownload = true;
-            await RenderChatMediaLibraryAsync("Фото");
+            await RenderChatMediaLibraryAsync(ChatMediaKind.Photos);
             await WaitForLikedLayoutAsync(() => handler.DownloadReady != null && chatLibraryPreviews.Count == 2 && chatLibraryPreviews.Any(e=>e.Tile.Loading && e.Tile.Shimmering));
             CaptureUiPreview("chats-library-photo-skeletons");
 
@@ -34,7 +34,7 @@ internal sealed partial class MainWindow
             // Capture immediately before the synchronous click under test.
             var library = chatMediaLibrary; var body = chatDetailsBody; var generation = chatDetailsGeneration;
             RouteWaveformClick(SettingsCenter(chatName));
-            if (chatMediaLibrary != library || chatDetailsBody != body || chatDetailsGeneration != generation || chatMediaLibraryKind != "Фото")
+            if (chatMediaLibrary != library || chatDetailsBody != body || chatDetailsGeneration != generation || chatMediaLibraryKind != ChatMediaKind.Photos)
                 throw new InvalidOperationException("Clicking the open profile header rebuilt its information panel.");
 
             handler.DownloadReady!.TrySetResult();
@@ -45,14 +45,14 @@ internal sealed partial class MainWindow
 
             var unknown = new ChatMessage("library-unknown-photo",90,handler.Add(new(90,42,"",[new("new.png","image/png",Fixture("chat-small.png"))])),DateTimeOffset.UtcNow.AddSeconds(1));
             await chatHistory.SavePageAsync(42,90,new([unknown],null));
-            await RenderChatMediaLibraryAsync("Фото");
+            await RenderChatMediaLibraryAsync(ChatMediaKind.Photos);
             await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews.Count == 3 && chatLibraryPreviews.All(e=>e.Index >= 0 && e.Tile.Ready && !e.Tile.Animating));
 
             var videoPackage = new ChatMediaPackage(90,42,"",[new("clip.mp4","video/mp4",Fixture("chat-video-portrait.mp4"))]);
             var video = new ChatMessage("library-cold-video",90,handler.Add(videoPackage,legacy:true),DateTimeOffset.UtcNow.AddSeconds(2));
             await chatHistory.SavePageAsync(42,90,new([video],null));
             await chatHistory.SaveMediaMetadataAsync(90,video.Id,Files(videoPackage),"");
-            await RenderChatMediaLibraryAsync("Видео");
+            await RenderChatMediaLibraryAsync(ChatMediaKind.Video);
             // Cold native codec initialization and the bounded poster probe can outlast a layout-only wait.
             try { await WaitForLikedLayoutAsync(() => chatLibraryPreviewActive == 0 && chatLibraryPreviews is [{Tile.Ready:true,Tile.Animating:false}], timeoutMs: 15000); }
             catch (Exception error)
@@ -65,7 +65,7 @@ internal sealed partial class MainWindow
             var retry = new ChatMessage("library-retry-photo",90,handler.Add(retryPackage,legacy:true),DateTimeOffset.UtcNow.AddSeconds(3));
             await chatHistory.SavePageAsync(42,90,new([retry],null));
             await chatHistory.SaveMediaMetadataAsync(90,retry.Id,Files(retryPackage),"");
-            handler.FailNextDownload = true; await RenderChatMediaLibraryAsync("Фото");
+            handler.FailNextDownload = true; await RenderChatMediaLibraryAsync(ChatMediaKind.Photos);
             await WaitForLikedLayoutAsync(() => chatLibraryPreviews.Any(e=>e.Message.Id == retry.Id && e.Tile.Notice.Contains("Повторить")));
             var retryTile = chatLibraryPreviews.Single(e=>e.Message.Id == retry.Id).Tile;
             RouteWaveformClick(SettingsCenter(retryTile));

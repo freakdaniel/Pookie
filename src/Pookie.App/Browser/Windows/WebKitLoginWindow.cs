@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -65,7 +66,7 @@ internal sealed partial class WebKitLoginWindow
 
     private static bool RunCore(WebKitLoginWindow app, string startUri, string profilePath)
     {
-        if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException("Не удалось открыть WebView.");
+        if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException(UiText.Get("browser.webView.openFailed"));
         using var contentFilter = new WebKitContentFilter(profilePath);
         app.contentFilter = contentFilter;
         var dataPath = Path.Combine(profilePath, "Data");
@@ -138,10 +139,10 @@ internal sealed partial class WebKitLoginWindow
         Native.webkit_settings_set_user_agent(settings, null);
         ConfigureView(view);
         var window = Native.gtk_window_new(0);
-        Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : "Pookie — вход на сайте SoundCloud");
+        Native.gtk_window_set_title(window, background ? "Pookie — SoundCloud" : UiText.Get("auth.window.signInTitle"));
         Native.gtk_window_set_default_size(window, 900, 760);
         var box = Native.gtk_box_new(1, 8);
-        var address = Native.gtk_label_new("Подключение к SoundCloud…");
+        var address = Native.gtk_label_new(UiText.Get("auth.status.connecting"));
         Native.gtk_label_set_selectable(address, 1);
         Native.gtk_box_pack_start(box, address, 0, 0, 8);
         Native.gtk_box_pack_start(box, view, 1, 1, 0);
@@ -195,7 +196,7 @@ internal sealed partial class WebKitLoginWindow
                 if (message == null) return;
                 if (message.Kind is "checking" or "blocked" && message.Interactive)
                 {
-                    Native.gtk_window_set_title(rootWindow, message.Kind == "blocked" ? "Pookie — доступ к SoundCloud ограничен" : "Pookie — проверка SoundCloud");
+                    Native.gtk_window_set_title(rootWindow, message.Kind == "blocked" ? UiText.Get("auth.window.restrictedTitle") : UiText.Get("auth.window.verificationTitle"));
                     Native.gtk_window_set_skip_taskbar_hint(rootWindow, 0);
                     Native.gtk_window_set_skip_pager_hint(rootWindow, 0);
                     Native.gtk_widget_show_all(rootWindow);
@@ -226,8 +227,8 @@ internal sealed partial class WebKitLoginWindow
         if (!views.TryGetValue(view, out var item)) return;
         var uri = Marshal.PtrToStringUTF8(Native.webkit_web_view_get_uri(view));
         var text = Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.Scheme == "https"
-            ? $"https://{address.Host} — {(background ? "проверка выполняется на этом сайте" : "вход выполняется на этом сайте")}"
-            : "Pookie — загрузка страницы входа";
+            ? $"https://{address.Host} — {(background ? UiText.Get("auth.site.verification") : UiText.Get("auth.site.signIn"))}"
+            : UiText.Get("auth.window.loadingTitle");
         Native.gtk_label_set_text(item.Address, text);
     }
 

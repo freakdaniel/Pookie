@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Aprillz.MewUI;
@@ -47,9 +48,9 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
 
     internal EmbeddedLoginView(string profilePath, string? fixture = null, WebSession? account = null)
     {
-        if (account != null && !account.IsValid()) throw new ArgumentException("Некорректная сессия.", nameof(account));
+        if (account != null && !account.IsValid()) throw new ArgumentException(UiText.Get("vault.session.invalid"), nameof(account));
         if (fixture != null && (!Uri.TryCreate(fixture, UriKind.Absolute, out var uri) || uri.Scheme != "http" || !uri.IsLoopback || uri.UserInfo != "" || uri.Fragment != ""))
-            throw new ArgumentException("Тест входа должен использовать локальный HTTP-адрес.", nameof(fixture));
+            throw new ArgumentException(UiText.Get("auth.test.localUrlRequired"), nameof(fixture));
         workerAccount = account;
         isolated = fixture != null;
         start = fixture ?? (account == null ? "https://soundcloud.com/you/likes" : "https://soundcloud.com/");
@@ -145,7 +146,7 @@ internal sealed partial class EmbeddedLoginView : FrameworkElement
         timeout.CancelAfter(PreparationTimeout);
         try { await PrepareCoreAsync(window, bounds, timeout.Token); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested && timeout.IsCancellationRequested)
-        { throw new InvalidOperationException("Страница входа SoundCloud не загрузилась вовремя. Проверь подключение и попробуй открыть вход ещё раз."); }
+        { throw new InvalidOperationException(UiText.Get("auth.window.loadTimeout")); }
     }
 
     private async Task PrepareCoreAsync(Window window, Rect bounds, CancellationToken token)

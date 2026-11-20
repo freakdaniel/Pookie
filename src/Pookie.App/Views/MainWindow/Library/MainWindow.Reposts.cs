@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Browser;
@@ -71,7 +72,7 @@ internal sealed partial class MainWindow
             state.Track.RepostsCount is > 0 ? DetailCount(state.Track.RepostsCount) : "");
         TrackButtons.SetTextColor(trackDetailRepostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
         TrackButtons.SetAvailability(trackDetailRepost, CanRepostTrack(state.Track), IsRepostPending(state.Track));
-        trackDetailRepost.Hint(me != null && state.Track.User?.Id == me.Id ? "Это твой трек" : reposted ? "Убрать репост" : "Сделать репост");
+        trackDetailRepost.Hint(me != null && state.Track.User?.Id == me.Id ? UiText.Get("track.ownTrack") : reposted ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost"));
     }
 
     private async Task ToggleTrackRepostAsync(SoundCloudTrack track)
@@ -88,7 +89,7 @@ internal sealed partial class MainWindow
             if (reposted) repostedIds.Add(track.Id); else repostedIds.Remove(track.Id);
             UpdateProfileRepost(me!.Id, LibraryItem.FromTrack(track), reposted);
             UpdateTrackSocialDetails(track.Id, reposted, repost: true);
-            status.Value = reposted ? "Трек появился в твоём профиле." : "Репост убран.";
+            status.Value = reposted ? UiText.Get("reposts.status.trackOnProfile") : UiText.Get("reposts.status.removed");
         }
         finally { pendingReposts.Remove((session, track.Id)); if (!disposed) RefreshRepostState(); }
     }

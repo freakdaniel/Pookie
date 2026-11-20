@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -24,30 +25,30 @@ internal sealed partial class MainWindow
     private string? expandedCurrentKey;
     private long expandedSourceVersion = -1;
     private bool expandedRowsNeedCleanup;
-    private string queueOriginTitle = "Очередь воспроизведения", queueOriginKind = "Сейчас играет";
+    private string queueOriginTitle = UiText.Get("queue.heading"), queueOriginKind = UiText.Get("player.nowPlaying");
 
     private void CaptureQueueOrigin(bool recent = false)
     {
         queueOriginTitle = page.Value switch
         {
             Page.LibraryCollection => librarySectionTitle.Value,
-            Page.Library or Page.LibraryTracks => recent ? "Недавно прослушанное" : "Понравившиеся треки",
-            Page.LibraryHistory => "История прослушивания",
-            Page.Search => $"Поиск «{navigationHistory[navigationIndex].Route.Search ?? query.Value}»",
-            Page.Feed => "Лента", Page.Home => "Главная",
-            _ => "Очередь воспроизведения"
+            Page.Library or Page.LibraryTracks => recent ? UiText.Get("history.recentlyPlayed") : UiText.Get("library.likedTracks"),
+            Page.LibraryHistory => UiText.Get("history.listening.heading"),
+            Page.Search => UiText.Format("navigation.search.query", navigationHistory[navigationIndex].Route.Search ?? query.Value),
+            Page.Feed => UiText.Get("header.feed"), Page.Home => UiText.Get("header.home"),
+            _ => UiText.Get("queue.heading")
         };
         var collection = navigationHistory[navigationIndex].Route.Item;
         queueOriginKind = page.Value switch
         {
-            Page.LibraryCollection when collection?.User != null => "Сейчас играет у исполнителя",
-            Page.LibraryCollection when collection?.IsAlbum == true => "Сейчас играет из альбома",
-            Page.LibraryCollection => "Сейчас играет из плейлиста",
-            Page.Search => "Сейчас играет из результатов поиска",
-            Page.Home => "Сейчас играет из рекомендаций",
-            Page.Feed => "Сейчас играет из ленты",
-            Page.LibraryHistory => "Сейчас играет из истории",
-            _ => "Сейчас играет из подборки"
+            Page.LibraryCollection when collection?.User != null => UiText.Get("queue.source.artist"),
+            Page.LibraryCollection when collection?.IsAlbum == true => UiText.Get("queue.source.fromAlbum"),
+            Page.LibraryCollection => UiText.Get("queue.source.fromPlaylist"),
+            Page.Search => UiText.Get("queue.source.search"),
+            Page.Home => UiText.Get("queue.source.recommendations"),
+            Page.Feed => UiText.Get("queue.source.feed"),
+            Page.LibraryHistory => UiText.Get("queue.source.history"),
+            _ => UiText.Get("queue.source.collection")
         };
     }
 
@@ -217,22 +218,22 @@ internal sealed partial class MainWindow
         var manualCurrent = state.Current?.Origin == PlaybackEntryOrigin.Manual;
         var recommendedCurrent = state.Current?.Origin == PlaybackEntryOrigin.Recommendation;
         next.Add(new("source", QueueBlockKind.Source,
-            Title: manualCurrent ? "Сейчас играет" : state.Context?.Title ?? queueOriginTitle,
-            Subtitle: manualCurrent ? "" : recommendedCurrent ? "Сейчас играют похожие треки" : state.Context?.Subtitle ?? queueOriginKind));
+            Title: manualCurrent ? UiText.Get("player.nowPlaying") : UiText.Refresh(state.Context?.Title ?? queueOriginTitle),
+            Subtitle: manualCurrent ? "" : recommendedCurrent ? UiText.Get("queue.source.related") : UiText.Refresh(state.Context?.Subtitle ?? queueOriginKind)));
         var currentBlock = state.Current is { } playing ? TrackBlock(playing) : null;
         if (currentBlock != null) next.Add(currentBlock);
         if (state.Recommendations.Count == 0 || state.ManualUpcoming.Count + state.Forward.Count + state.ContextUpcoming.Count > 0)
             next.Add(new("upcoming", QueueBlockKind.Upcoming,
-                Title: state.ManualUpcoming.Count > 0 ? "Добавлено тобой" :
-                    expandedUpcoming.Length > 0 ? "Далее" : "Следующих треков пока нет"));
+                Title: state.ManualUpcoming.Count > 0 ? UiText.Get("queue.addedByYou") :
+                    expandedUpcoming.Length > 0 ? UiText.Get("common.next") : UiText.Get("queue.empty.next")));
         next.AddRange(state.ManualUpcoming.Select(TrackBlock));
         if (state.ManualUpcoming.Count > 0 && state.ContextUpcoming.Count + state.Forward.Count > 0)
-            next.Add(new("context", QueueBlockKind.Context, Title: "Очередь воспроизведения"));
+            next.Add(new("context", QueueBlockKind.Context, Title: UiText.Get("queue.heading")));
         next.AddRange(state.Forward.Select(TrackBlock));
         next.AddRange(state.ContextUpcoming.Select(TrackBlock));
         if (state.Recommendations.Count > 0)
         {
-            next.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? "Далее на радио" : "Похожие дальше"));
+            next.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? UiText.Get("radio.upNext") : UiText.Get("queue.related.upNext")));
             next.AddRange(state.Recommendations.Select(TrackBlock));
         }
         next.Add(new("end-space", QueueBlockKind.Spacer));

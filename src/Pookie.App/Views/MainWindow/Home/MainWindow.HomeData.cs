@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Home;
 using Pookie.SoundCloud;
 
@@ -9,7 +10,7 @@ internal sealed partial class MainWindow
 
     private async Task LoadHomeAsync(bool force = false)
     {
-        heading.Value = "Главная"; eyebrow.Value = ""; status.Value = "";
+        heading.Value = UiText.Get("header.home"); eyebrow.Value = ""; status.Value = "";
         if (demo)
         {
             homeContent ??= new(tracks.Take(6).Select(LibraryItem.FromTrack).ToArray(), [], [], []);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Playback;
 using Pookie.SoundCloud;
 
@@ -23,7 +24,7 @@ internal sealed partial class MainWindow
 
     private async Task ContinueAfterUnavailableRecommendationAsync(long generation, int skipped)
     {
-        if (skipped >= 5) { status.Value = "Несколько рекомендованных треков недоступны. Попробуй продолжить позже."; return; }
+        if (skipped >= 5) { status.Value = UiText.Get("queue.continuation.unavailable"); return; }
         var version = playbackQueue.SourceVersion;
         for (var attempt = 0; attempt < 3 && !playbackQueue.Snapshot.Upcoming.Any() && playbackQueue.Snapshot.CanLoadRecommendations; attempt++)
         {
@@ -33,6 +34,6 @@ internal sealed partial class MainWindow
         if (disposed || generation != playGeneration || version != playbackQueue.SourceVersion) return;
         var next = playbackQueue.Next();
         if (next != null) await PlayAsync(next.Track, queueAdvance: true, unavailableSkips: skipped + 1);
-        else { EndPlayback(); status.Value = "Пока не нашлось доступных треков для продолжения."; }
+        else { EndPlayback(); status.Value = UiText.Get("queue.continuation.empty"); }
     }
 }

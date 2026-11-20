@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -34,6 +35,6 @@ internal sealed partial class MainWindow
     {
         if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)) return "";
         var days = Math.Max(0, (DateTimeOffset.UtcNow - date).TotalDays);
-        return days < 1 ? "Сегодня" : days < 30 ? $"{(int)days} дн. назад" : date.ToLocalTime().ToString("d MMM yyyy", CultureInfo.GetCultureInfo("ru-RU"));
+        return days < 1 ? UiText.Get("time.today") : days < 30 ? UiText.Format("time.ago.days", (int)days): date.ToLocalTime().ToString("d MMM yyyy", CultureInfo.CurrentCulture);
     }
 }

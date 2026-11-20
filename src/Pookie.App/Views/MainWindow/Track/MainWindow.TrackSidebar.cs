@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -21,7 +22,7 @@ internal sealed partial class MainWindow
         var profile = TrackButtons.Action(new Grid().Columns("64,*").Rows("Auto").Spacing(14).Children(
             new Border().CornerRadius(32).ClipToBounds().Child(trackDetailAvatar).Column(0),
             new StackPanel().Vertical().Spacing(6).CenterVertical().Column(1).Children(trackDetailAuthorName, trackDetailAuthorStats)),
-            () => { if (trackDetailState?.Track.User is { Id: > 0 } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, "Исполнитель", user.AvatarUrl, User: user))); },
+            () => { if (trackDetailState?.Track.User is { Id: > 0 } user) Run(() => OpenLibraryItemAsync(new("user:" + user.Id, user.Username, UiText.Get("common.artist"), user.AvatarUrl, User: user))); },
             TrackButtons.Text, 72).Padding(0);
         ((FrameworkElement)profile.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
         trackDetailStats = new TextBlock(); trackDetailSidebarLikes = new TextBlock(); trackDetailSidebarReposts = new TextBlock();
@@ -32,14 +33,14 @@ internal sealed partial class MainWindow
                 new StackPanel().Vertical().Spacing(5).Children(value, new TextBlock().Text(label).FontSize(10).Foreground(Muted)));
         }
         var stats = new Grid().Columns("1.4*,*,*").Rows("Auto").Spacing(8).Children(
-            Metric(trackDetailStats, "Прослушиваний").Column(0), Metric(trackDetailSidebarLikes, "Лайки").Column(1),
-            Metric(trackDetailSidebarReposts, "Репосты").Column(2));
+            Metric(trackDetailStats, UiText.Get("track.stats.plays")).Column(0), Metric(trackDetailSidebarLikes, UiText.Get("library.likes")).Column(1),
+            Metric(trackDetailSidebarReposts, UiText.Get("profile.reposts.title")).Column(2));
         trackDetailFans = new StackPanel().Vertical().Spacing(8);
         trackDetailPlaylists = new TrackCollectionGrid(2, 0, 16);
         trackDetailAlbums = new StackPanel().Vertical().Spacing(4);
-        trackDetailFansSection = SidebarSection("Фанаты", trackDetailFans);
-        trackDetailPlaylistsSection = SidebarSection("В плейлистах", trackDetailPlaylists, TrackSection.Playlists);
-        trackDetailAlbumsSection = SidebarSection("В альбомах", trackDetailAlbums, TrackSection.Albums);
+        trackDetailFansSection = SidebarSection(UiText.Get("profile.fans"), trackDetailFans);
+        trackDetailPlaylistsSection = SidebarSection(UiText.Get("track.sections.playlists"), trackDetailPlaylists, TrackSection.Playlists);
+        trackDetailAlbumsSection = SidebarSection(UiText.Get("track.sections.albums"), trackDetailAlbums, TrackSection.Albums);
         trackDetailRelatedStatus = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         var related = new StackPanel().Vertical().Spacing(4);
         for (var i = 0; i < 6; i++)
@@ -50,7 +51,7 @@ internal sealed partial class MainWindow
         var artistRow = new Grid().Columns("*,40").Rows("Auto").Spacing(12).Children(profile.Column(0),
             ArtistFollowButton(() => trackDetailState?.Track.User).Column(1).CenterVertical());
         return new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(28).Children(artistRow, stats, trackDetailFansSection,
-            new StackPanel().Vertical().Spacing(14).Children(SidebarHeading("Похожие треки", TrackSection.Related), trackDetailRelatedStatus, related),
+            new StackPanel().Vertical().Spacing(14).Children(SidebarHeading(UiText.Get("track.related.heading"), TrackSection.Related), trackDetailRelatedStatus, related),
             trackDetailPlaylistsSection, trackDetailAlbumsSection);
     }
 
@@ -97,8 +98,8 @@ internal sealed partial class MainWindow
             var row = TrackButtons.Action(new Grid().Columns("36,*,Auto").Rows("Auto").Spacing(10).Children(
                 new Border().CornerRadius(18).ClipToBounds().Child(avatar).Column(0),
                 new TextBlock().Text(fan.User.Username).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Column(1).CenterVertical(),
-                new TextBlock().Text(DetailCount(fan.Plays) + " воспроизведений").FontSize(11).Foreground(Muted).Column(2).CenterVertical()),
-                () => Run(() => OpenLibraryItemAsync(new("user:" + fan.User.Id, fan.User.Username, "Исполнитель", fan.User.AvatarUrl, User: fan.User))),
+                new TextBlock().Text(UiText.Compose($"{DetailCount(fan.Plays)}{UiText.Get("track.stats.playsSuffix")}")).FontSize(11).Foreground(Muted).Column(2).CenterVertical()),
+                () => Run(() => OpenLibraryItemAsync(new("user:" + fan.User.Id, fan.User.Username, UiText.Get("common.artist"), fan.User.AvatarUrl, User: fan.User))),
                 TrackButtons.Text, 44).Padding(0, 0, 16, 0);
             ((FrameworkElement)row.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
             trackDetailFans.Add(row); LoadTrackDetailAvatar(avatar, fan.User.AvatarUrl, state.Track.Id);

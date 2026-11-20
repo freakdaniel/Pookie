@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -26,7 +27,7 @@ internal static partial class ChatMediaCrypto
                 package.Attachments.Select(a => new MediaFile(a.Name, a.MediaType, a.Data.Length, a.AsFile, a.Video, a.Voice)).ToArray(),
                 package.Attachments.Select(Thumbnail).ToArray(), package.GifUrl, SHA256.HashData(payload),package.Reply);
             plain = JsonSerializer.SerializeToUtf8Bytes(preview, ChatPreviewJson.Default.ChatMediaPreview);
-            if (plain.Length > MaxPreviewBytes) throw new InvalidDataException("Слишком большое описание вложения.");
+            if (plain.Length > MaxPreviewBytes) throw new InvalidDataException(UiText.Get("chats.attachment.descriptionTooLong"));
             var result = new byte[PreviewHeaderSize + plain.Length + payload.Length];
             "PKM2"u8.CopyTo(result); BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(4), plain.Length);
             RandomNumberGenerator.Fill(result.AsSpan(8, 12));
@@ -44,22 +45,22 @@ internal static partial class ChatMediaCrypto
         if (prefix.Length < 4 || !prefix[..4].SequenceEqual("PKM2"u8)) return null;
         if (prefix.Length < 8) return null;
         var length = BinaryPrimitives.ReadInt32LittleEndian(prefix[4..]);
-        if (length is <= 0 or > MaxPreviewBytes) throw new CryptographicException("Повреждён заголовок вложения.");
+        if (length is <= 0 or > MaxPreviewBytes) throw new CryptographicException(UiText.Get("chats.attachment.corruptHeader"));
         if (prefix.Length < PreviewHeaderSize + length) return null;
         var plain = new byte[length];
         try
         {
             using var aes = new AesGcm(key, 16);
             aes.Decrypt(prefix.Slice(8, 12), prefix.Slice(PreviewHeaderSize, length), prefix.Slice(20, 16), plain, PreviewContext(sender, recipient));
-            var preview = JsonSerializer.Deserialize(plain, ChatPreviewJson.Default.ChatMediaPreview) ?? throw new InvalidDataException("Нет описания вложения.");
+            var preview = JsonSerializer.Deserialize(plain, ChatPreviewJson.Default.ChatMediaPreview) ?? throw new InvalidDataException(UiText.Get("chats.attachment.descriptionMissing"));
             if (preview.SenderId != sender || preview.RecipientId != recipient || preview.Caption is not { Length: <= 20000 } ||
                 preview.Files is not { Length: <= MaxAttachments } || preview.Images == null || preview.Images.Length != preview.Files.Length ||
                 preview.PayloadHash is not { Length: 32 } || preview.Files.Any(f => f == null || f.Length is < 0 or > MaxFileBytes || f.Name is not { Length: <= 255 } || f.Type is not { Length: <= 128 } || f.Video != null && !f.Video.Valid || f.Voice != null && (!f.Voice.Valid || !f.Type.StartsWith("audio/",StringComparison.Ordinal))) ||
                 preview.GifUrl != null && !KlipyClient.IsMediaUrl(preview.GifUrl) ||
                 preview.Images.Any(i => i != null && (i.Width is <= 0 or > 8192 || i.Height is <= 0 or > 8192 || (long)i.Width * i.Height > 16 * 1024 * 1024 ||
                     i.ThumbWidth is <= 0 or > 32 || i.ThumbHeight is <= 0 or > 32 || i.Pixels == null || i.Pixels.Length != i.ThumbWidth * i.ThumbHeight * 4)))
-                throw new InvalidDataException("Некорректное описание вложения.");
-            if(preview.Reply is {} reply && (reply.PeerId!=recipient || reply.MessageId is not {Length:>0 and <=512} || reply.Preview is not {Length:<=160}))throw new InvalidDataException("Некорректный связанный ответ.");
+                throw new InvalidDataException(UiText.Get("chats.attachment.invalidDescription"));
+            if(preview.Reply is {} reply && (reply.PeerId!=recipient || reply.MessageId is not {Length:>0 and <=512} || reply.Preview is not {Length:<=160}))throw new InvalidDataException(UiText.Get("chats.reply.invalid"));
             return preview;
         }
         finally { CryptographicOperations.ZeroMemory(plain); }
@@ -67,14 +68,14 @@ internal static partial class ChatMediaCrypto
 
     internal static ChatMediaPackage Decrypt(byte[] encrypted, byte[] key, long senderId, long recipientId)
     {
-        if (encrypted.Length > ChatMediaArchive.MaxEncryptedBytes) throw new InvalidDataException("Вложение слишком большое.");
+        if (encrypted.Length > ChatMediaArchive.MaxEncryptedBytes) throw new InvalidDataException(UiText.Get("chats.attachment.tooLarge"));
         if (ReadPreview(encrypted, key, senderId, recipientId) is not { } preview)
             return DecryptLegacy(encrypted, key, senderId, recipientId);
         try
         {
             var offset = PreviewHeaderSize + BinaryPrimitives.ReadInt32LittleEndian(encrypted.AsSpan(4));
             if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(encrypted.AsSpan(offset)), preview.PayloadHash))
-                throw new CryptographicException("Повреждено вложение.");
+                throw new CryptographicException(UiText.Get("chats.attachment.damaged"));
             var payload = encrypted.AsSpan(offset).ToArray();
             try { return DecryptLegacy(payload, key, senderId, recipientId); }
             finally { CryptographicOperations.ZeroMemory(payload); }

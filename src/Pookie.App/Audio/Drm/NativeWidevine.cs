@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -50,7 +51,7 @@ internal sealed unsafe class NativeWidevine : IDisposable
     private static nint LoadModule(string path)
     {
         if (IntPtr.Size != 8 || RuntimeInformation.ProcessArchitecture is not (Architecture.X64 or Architecture.Arm64))
-            throw new DrmPlaybackException("Прямой Widevine interop поддерживает только 64-битные x64/ARM64 платформы.");
+            throw new DrmPlaybackException(UiText.Get("drm.widevine.unsupportedArchitecture"));
         return CdmModule.Load(path);
     }
 
@@ -117,7 +118,7 @@ internal sealed unsafe class NativeWidevine : IDisposable
 
     public void SetServerCertificate(uint promise, byte[] certificate)
     {
-        if (certificate.Length is < 1 or > 65536) throw new DrmPlaybackException("Некорректный сертификат сервера Widevine.");
+        if (certificate.Length is < 1 or > 65536) throw new DrmPlaybackException(UiText.Get("drm.widevine.invalidCertificate"));
         var bytes = certificate.ToArray();
         Post(() =>
         {
@@ -134,7 +135,7 @@ internal sealed unsafe class NativeWidevine : IDisposable
 
     public void Begin(uint promise, byte[] initData)
     {
-        if (initData.Length is < 1 or > 65536) throw new DrmPlaybackException("Некорректные данные инициализации Widevine.");
+        if (initData.Length is < 1 or > 65536) throw new DrmPlaybackException(UiText.Get("drm.widevine.invalidInitData"));
         var bytes = initData.ToArray();
         Post(() =>
         {
@@ -147,7 +148,7 @@ internal sealed unsafe class NativeWidevine : IDisposable
 
     public void Update(uint promise, byte[] license)
     {
-        if (license.Length is < 1 or > 2 * 1024 * 1024) throw new DrmPlaybackException("Слишком большой или пустой ответ лицензии Widevine.");
+        if (license.Length is < 1 or > 2 * 1024 * 1024) throw new DrmPlaybackException(UiText.Get("drm.widevine.invalidLicenseLength"));
         // LicenseAsync clears the HTTP array immediately after enqueueing.
         var bytes = license.ToArray();
         Post(() =>
@@ -167,7 +168,7 @@ internal sealed unsafe class NativeWidevine : IDisposable
     {
         if (cdm == 0 || data.Length is < 1 or > 32 * 1024 * 1024 || kid.Length != 16 || iv.Length is not (8 or 16) || subsamples.Length > 65536 ||
             subsamples.Sum(sample => (long)sample.ClearBytes + sample.CipherBytes) != data.Length)
-            throw new DrmPlaybackException("Некорректные параметры CENC-сэмпла.");
+            throw new DrmPlaybackException(UiText.Get("drm.cenc.invalidSample"));
         var block = (CdmAbi.BlockObject*)NativeMemory.AllocZeroed((nuint)sizeof(CdmAbi.BlockObject));
         block->Vtable = CdmAbi.BlockTable;
         try
@@ -180,11 +181,11 @@ internal sealed unsafe class NativeWidevine : IDisposable
                     Subsamples = samples, SubsampleCount = (uint)subsamples.Length };
                 var status = ((delegate* unmanaged<nint, CdmAbi.InputBuffer*, nint, uint>)CdmAbi.Method(cdm, CdmAbi.Decrypt))(cdm, &input, (nint)block);
                 if (status != 0 || block->Buffer == 0)
-                    throw new DrmPlaybackException(status == 2 ? "Widevine не предоставил разрешённый ключ для этого аудиосэмпла." : "Widevine отклонил расшифровку аудио.");
+                    throw new DrmPlaybackException(status == 2 ? UiText.Get("drm.widevine.sampleKeyMissing") : UiText.Get("drm.widevine.decryptionRejected"));
             }
             var size = ((delegate* unmanaged<nint, uint>)CdmAbi.Method(block->Buffer, 4))(block->Buffer);
             var output = ((delegate* unmanaged<nint, nint>)CdmAbi.Method(block->Buffer, 2))(block->Buffer);
-            if (size != data.Length || output == 0) throw new DrmPlaybackException("Widevine вернул некорректный аудиобуфер.");
+            if (size != data.Length || output == 0) throw new DrmPlaybackException(UiText.Get("drm.widevine.invalidAudioBuffer"));
             return new ReadOnlySpan<byte>((void*)output, (int)size).ToArray();
         }
         finally
@@ -267,7 +268,7 @@ internal static unsafe class CdmModule
                 }
                 catch { NativeLibrary.Free(loaded); throw; }
             }
-            else if (loadedPath != path) throw new DrmPlaybackException("Для смены версии Widevine перезапусти Pookie.");
+            else if (loadedPath != path) throw new DrmPlaybackException(UiText.Get("drm.widevine.restartForVersion"));
             instances++; return create;
         }
     }

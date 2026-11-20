@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -55,7 +56,7 @@ public static class SoundCloudTransportFeatures
 
     public static void Require(this ISoundCloudTransport transport, SoundCloudTransportCapabilities capabilities)
     {
-        if (!transport.Supports(capabilities)) throw new SoundCloudException("Подключённый транспорт SoundCloud не поддерживает это действие.");
+        if (!transport.Supports(capabilities)) throw new SoundCloudException(UiText.Get("soundcloud.transport.actionUnsupported"));
     }
 }
 

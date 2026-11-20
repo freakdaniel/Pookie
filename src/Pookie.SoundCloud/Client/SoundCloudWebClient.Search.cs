@@ -1,3 +1,4 @@
+using Pookie.Localization;
 namespace Pookie.SoundCloud;
 
 public sealed partial class SoundCloudWebClient
@@ -20,7 +21,7 @@ public sealed partial class SoundCloudWebClient
     {
         if (!BrowserRequestCommand.IsReadUrl(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             uri.AbsolutePath is not ("/search" or "/search/tracks" or "/search/users" or "/search/albums" or "/search/playlists" or "/search/playlists_without_albums"))
-            throw new SoundCloudException("Неверный адрес следующей страницы поиска.");
+            throw new SoundCloudException(UiText.Get("search.nextPage.invalidUrl"));
         using var document = await GetJsonAsync(uri, cancellationToken).ConfigureAwait(false);
         return LibraryData.Parse(document.RootElement);
     }

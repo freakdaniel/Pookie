@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Automation;
@@ -15,16 +16,16 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ShortcutSettingsView()
     {
-        var groups = ShortcutBinding.All.GroupBy(binding => binding.Group)
-            .Select(group => SettingsGroup(group.Key, group.Select(ShortcutRow).ToArray())).ToList();
-        groups.Add(SettingsGroup("Сообщения и вложения",
-            SettingsChoiceWithContent("chat_send", "Отправлять сообщение", "При отправке по Enter новая строка — Shift+Enter. Ctrl+Enter также отправляет сообщение",
-                () => preferences.ChatSendOnEnter, value => UpdatePreferences(p => p with { ChatSendOnEnter = value }), key => ShortcutKeycaps.View(key), ("Ctrl+Enter", false), ("Enter", true)),
-            SettingsRow("Результаты поиска в переписке", "", new StackPanel().Horizontal().Spacing(8).Children(
+        var groups = ShortcutBinding.All.GroupBy(binding => binding.GroupKey)
+            .Select(group => SettingsGroup(UiText.Get(group.Key), group.Select(ShortcutRow).ToArray())).ToList();
+        groups.Add(SettingsGroup(UiText.Get("settings.chats.messagesAttachments"),
+            SettingsChoiceWithContent("chat_send", UiText.Get("settings.chats.sendMessage"), UiText.Get("settings.chats.sendKeyDescription"),
+                () => preferences.ChatSendOnEnter, value => UpdatePreferences(p => p with { ChatSendOnEnter = value }), (key, _) => ShortcutKeycaps.View(key), ("Ctrl+Enter", false), ("Enter", true)),
+            SettingsRow(UiText.Get("chats.search.results"), "", new StackPanel().Horizontal().Spacing(8).Children(
                 ShortcutKeycaps.View("Enter"), new TextBlock().Text("/").Foreground(Muted).CenterVertical(), ShortcutKeycaps.View("Shift+Enter"))),
-            SettingsRow("Пауза видео во вложении", "", ShortcutKeycaps.View("Space")),
-            SettingsRow("Переключение вложений", "", new StackPanel().Horizontal().Spacing(6).Children(ShortcutKeycaps.View("Left"), ShortcutKeycaps.View("Right"))),
-            SettingsRow("Закрыть текущую панель или диалог", "", ShortcutKeycaps.View("Escape"))));
+            SettingsRow(UiText.Get("shortcuts.chats.pauseVideo"), "", ShortcutKeycaps.View("Space")),
+            SettingsRow(UiText.Get("shortcuts.chats.switchAttachment"), "", new StackPanel().Horizontal().Spacing(6).Children(ShortcutKeycaps.View("Left"), ShortcutKeycaps.View("Right"))),
+            SettingsRow(UiText.Get("shortcuts.closePanel"), "", ShortcutKeycaps.View("Escape"))));
         return SettingsGroups(groups.ToArray());
     }
 
@@ -32,8 +33,8 @@ internal sealed partial class MainWindow
     {
         var face = new Border().Background(Color.Transparent).BorderThickness(0);
         var edit = TrackButtons.Action(face, () => OpenShortcutRecorder(binding), TrackButtons.Text);
-        var clear = TrackButtons.Action(new TextBlock().Text("Убрать"), () => Run(() => AssignShortcutAsync(binding, "")), TrackButtons.Text);
-        var reset = TrackButtons.Action(new TextBlock().Text("Сбросить"), () => Run(() => AssignShortcutAsync(binding, binding.Default)), TrackButtons.Text);
+        var clear = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.remove")), () => Run(() => AssignShortcutAsync(binding, "")), TrackButtons.Text);
+        var reset = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.reset")), () => Run(() => AssignShortcutAsync(binding, binding.Default)), TrackButtons.Text);
         shortcutButtons.Add(binding, edit);
         string? rendered = null;
         void Refresh()
@@ -42,9 +43,9 @@ internal sealed partial class MainWindow
             if (rendered == value) return;
             rendered = value;
             face.Child = ShortcutKeycaps.View(value);
-            var description = value.Length > 0 ? "Изменить сочетание · " + ShortcutBinding.Display(value) : "Назначить сочетание";
+            var description = value.Length > 0 ? UiText.Compose($"{UiText.Get("shortcuts.changePrefix")}{ShortcutBinding.Display(value)}") : UiText.Get("shortcuts.assignBinding");
             edit.Hint(description);
-            AutomationProperties.SetName(edit, binding.Title + ". " + description);
+            AutomationProperties.SetName(edit, UiText.Compose($"{binding.Title}. {description}"));
             clear.IsEnabled = value.Length > 0;
             reset.IsEnabled = value != binding.Default;
         }
@@ -72,8 +73,8 @@ internal sealed partial class MainWindow
             try
             {
                 var titles = string.Join(", ", conflicts.Select(other => $"«{other.Title}»"));
-                if (!await MessageBox.AskYesNoAsync("Переназначить сочетание?",
-                        detail: $"{ShortcutBinding.Display(value)} используется для {titles}. Передать его команде «{binding.Title}»?", owner: Window)) return;
+                if (!await ConfirmAsync(UiText.Get("shortcuts.confirmReassign"),
+                        detail: UiText.Format("shortcuts.conflict.reassign", ShortcutBinding.Display(value), titles, binding.Title), owner: Window)) return;
             }
             finally { confirmingShortcut = false; }
         }
@@ -95,7 +96,7 @@ internal sealed partial class MainWindow
         void Refresh()
         {
             var parts = bindings.Select(Assigned).Where(value => value.Length > 0).Select(ShortcutBinding.Display);
-            target.Hint(string.Join(" · ", parts.Prepend(title ?? bindings[0].Title)));
+            target.Hint(UiText.Join(" · ", parts.Prepend(title ?? bindings[0].Title)));
         }
         shortcutRefreshers.Add(Refresh);
         Refresh();

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using Pookie.App.Hosting;
 using Pookie.App.Playback;
@@ -35,12 +36,12 @@ internal sealed partial class MainWindow : IDisposable
     private readonly RegionalPlaybackPool? regionalPlayback;
     private readonly SoundCloudStreamResolver playbackResolver;
     private readonly ObservableValue<string> query = new("");
-    private readonly ObservableValue<string> profile = new("SoundCloud: вход не выполнен");
+    private readonly ObservableValue<string> profile = new(UiText.Get("account.status.signedOut"));
     private readonly ObservableValue<bool> signedIn = new(false);
-    private readonly ObservableValue<string> status = new("Загрузка…");
-    private readonly ObservableValue<string> heading = new("Поиск музыки");
-    private readonly ObservableValue<string> title = new("Выбери трек");
-    private readonly ObservableValue<string> artist = new("Музыка из SoundCloud");
+    private readonly ObservableValue<string> status = new(UiText.Get("common.loading"));
+    private readonly ObservableValue<string> heading = new(UiText.Get("search.music.heading"));
+    private readonly ObservableValue<string> title = new(UiText.Get("player.chooseTrack"));
+    private readonly ObservableValue<string> artist = new(UiText.Get("player.soundcloudMusic"));
     private readonly ObservableValue<string> currentTime = new("0:00");
     private readonly ObservableValue<string> totalTime = new("0:00");
     private readonly ObservableValue<string> audioStatus = new("");
@@ -118,11 +119,11 @@ internal sealed partial class MainWindow : IDisposable
                 var native = new SoundFlowPlayer(options.SilentAudio, SoundCloudWebClient.IsPlaybackUri);
                 player = OperatingSystem.IsWindows() ? new WindowsPlayReadyAudioPlayer(native, http, SoundCloudWebClient.IsMediaUri,
                     Path.Combine(new AppDataPaths().Cache, "PlayReady")) : native;
-                audioStatus.Value = OperatingSystem.IsWindows() ? "Аудио: SoundFlow / PlayReady" : "Аудио: SoundFlow";
+                audioStatus.Value = OperatingSystem.IsWindows() ? UiText.Get("audio.backend.playReady") : UiText.Get("audio.backend.soundFlow");
             }
             catch (Exception error) { AppLog.Failure("Pookie.Audio", "Не удалось запустить аудио", error); audioStatus.Value = error.Message; }
         }
-        else audioStatus.Value = "Аудио отключено для проверки интерфейса";
+        else audioStatus.Value = UiText.Get("audio.disabledForTesting");
         if (options.DiscordPresence)
         {
             try { presence = new PresenceService(); }
@@ -283,15 +284,15 @@ internal sealed partial class MainWindow : IDisposable
 
     private async Task InitializeAsync()
     {
-        status.Value = "Для продолжения войди в свой аккаунт SoundCloud.";
+        status.Value = UiText.Get("auth.required.continue");
         if (skipSessionRestore) { StartupLog.Event("session.restore-skipped"); return; }
         if (demo)
         {
-            heading.Value = "Главная";
+            heading.Value = UiText.Get("header.home");
             ReplaceTracks(new TrackPage(Enumerable.Range(1, 3).Select(i => new SoundCloudTrack
-            { Id = i, Title = $"Тестовый звук {i}", Duration = 12000, User = new() { Username = "Pookie audio test" } }).ToArray(), null));
+            { Id = i, Title = UiText.Format("demo.audio.trackTitle", i), Duration = 12000, User = new() { Username = "Pookie audio test" } }).ToArray(), null));
             await LoadHomeAsync();
-            status.Value = "Демо-режим: реальные локальные WAV, без обращения к SoundCloud.";
+            status.Value = UiText.Get("demo.audio.description");
             return;
         }
         try
@@ -329,15 +330,15 @@ internal sealed partial class MainWindow : IDisposable
                     await connected.DisposeAsync();
                     status.Value = error.StatusCode switch
                     {
-                        401 => "Не удалось восстановить сохранённую сессию SoundCloud. Подтверди вход в Pookie.",
-                        403 or 429 => "SoundCloud ограничил доступ Pookie. Попробуй подключиться позже.",
-                        _ => "Не удалось проверить сессию SoundCloud. Попробуй подключиться ещё раз."
+                        401 => UiText.Get("auth.session.restoreSignInRequired"),
+                        403 or 429 => UiText.Get("auth.access.restricted"),
+                        _ => UiText.Get("auth.session.verifyFailed")
                     };
                     loginError.Text = status.Value; loginError.IsVisible = true;
                 }
             }
         }
-        catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += " · Сессия: только в памяти"; }
+        catch (Exception error) when (error is InvalidOperationException or JsonException) { StartupLog.Event("session.restore-unavailable"); audioStatus.Value += UiText.Get("auth.session.memoryOnlySuffix"); }
         if (me != null)
         {
             RestoreLastPlayerTrack();
@@ -348,7 +349,7 @@ internal sealed partial class MainWindow : IDisposable
     private CancellationToken BeginLoad()
     {
         if (page.Value is Page.Home or Page.Feed) homeLoadingView.SetLoading(true);
-        status.Value = "Загрузка…";
+        status.Value = UiText.Get("common.loading");
         return RenewLoadToken();
     }
 
@@ -365,8 +366,8 @@ internal sealed partial class MainWindow : IDisposable
     {
         if (!CanUseWorkspace) return;
         var search = query.Value.Trim();
-        if (search.Length == 0) { status.Value = "Введи название, исполнителя, строку песни или ссылку SoundCloud."; return; }
-        if (demo) { status.Value = "Поиск SoundCloud отключён в демо-режиме."; return; }
+        if (search.Length == 0) { status.Value = UiText.Get("search.input.help"); return; }
+        if (demo) { status.Value = UiText.Get("demo.search.unavailable"); return; }
         var isLink = SoundCloudWebClient.IsSoundCloudUrl(search);
         if (isLink) { await OpenSearchLinkAsync(search); return; }
         if (preferences.LastSearchSection != (int)section)
@@ -374,21 +375,21 @@ internal sealed partial class MainWindow : IDisposable
         await NavigateRouteAsync(new(Page.Search, Search: search, Section: section), async generation =>
         {
             var token = BeginLoad();
-            searchSection.Value = section; searchHeading.Value = $"Результаты для «{search}»";
-            searchStatus.Value = "Ничего не найдено. Попробуй изменить запрос.";
+            searchSection.Value = section; searchHeading.Value = UiText.Format("search.results.query", search);
+            searchStatus.Value = UiText.Get("search.empty.suggestion");
             var regular = api.SearchResultsAsync(search, section, token);
             var matches = section is SearchSection.All or SearchSection.Tracks
                 ? lyricSearch.FindAsync(search, (title, cancellation) => api.SearchResultsAsync(title, SearchSection.Tracks, cancellation), token)
-                : Task.FromResult(Array.Empty<LibraryItem>());
+                : Task.FromResult(Array.Empty<LyricSearchMatch>());
             await ShowSearchResultsAsync(regular, matches, search, section, generation, token);
         });
     }
 
     private Task LikesAsync(bool showAll = false) => NavigateRouteAsync(new(showAll ? Page.LibraryTracks : Page.Library), async _ =>
     {
-        eyebrow.Value = "БИБЛИОТЕКА"; heading.Value = "Мои лайки";
-        if (demo) { RefreshLibraryCards(); status.Value = "В демо-режиме библиотека показывает локальные тестовые звуки."; return; }
-        if (me == null) { BeginLoad(); ReplaceTracks(new([], null)); RefreshLibraryCards(); status.Value = "Войди в SoundCloud через профиль справа сверху, чтобы открыть свои лайки."; return; }
+        eyebrow.Value = UiText.Get("library.eyebrow"); heading.Value = UiText.Get("library.myLikes");
+        if (demo) { RefreshLibraryCards(); status.Value = UiText.Get("demo.library.description"); return; }
+        if (me == null) { BeginLoad(); ReplaceTracks(new([], null)); RefreshLibraryCards(); status.Value = UiText.Get("auth.required.libraryProfileHint"); return; }
         var token = BeginLoad();
         SetLikesLoading(libraryLikes == null);
         if (!showAll) Run(RefreshOverviewDataAsync);
@@ -410,7 +411,7 @@ internal sealed partial class MainWindow : IDisposable
         likedIds.UnionWith(result.Tracks.Select(t => t.Id));
         UpdateLikeState();
         RefreshLibraryCards();
-        status.Value = "Музыка, которую ты сохранил в SoundCloud.";
+        status.Value = UiText.Get("likes.library.description");
         RefreshOverviewSections();
     });
 
@@ -516,7 +517,7 @@ internal sealed partial class MainWindow : IDisposable
         playbackQueue.SetPreparation(queueEntry.EntryId, PlaybackPreparation.Preparing);
         PresentPlayerTrack(track, generation, prepareAudio: true);
         Run(() => queueLoader.EnsureAheadAsync());
-        if (!IsLibrary(page.Value)) status.Value = "Получаем аудиопоток…";
+        if (!IsLibrary(page.Value)) status.Value = UiText.Get("playback.status.loadingStream");
         AppLog.For("Pookie.Playback").Debug("Выбор трека {TrackId}: обновление интерфейса {DurationMs:F1} мс",
             track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(selectionStarted).TotalMilliseconds);
 
@@ -539,7 +540,7 @@ internal sealed partial class MainWindow : IDisposable
             }
             if (generation != playGeneration || disposed) return;
             if (source.Transport == AudioTransport.WidevineHls)
-                status.Value = "Подготавливаем защищённое воспроизведение…";
+                status.Value = UiText.Get("drm.playback.preparing");
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: постоянная поправка по waveform {GainDb:F2} дБ", track.Id, source.NormalizationGainDb);
             var audioStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             await player.PlayAsync(source, token);
@@ -571,8 +572,8 @@ internal sealed partial class MainWindow : IDisposable
             // The user can pause the selected track while it is still loading.
             if (paused) player.Pause(true);
             if (!IsLibrary(page.Value))
-                status.Value = demo ? "Играет локальный тестовый звук." : source.Transport == AudioTransport.WidevineHls
-                    ? "Воспроизведение защищённого потока." : "Воспроизведение полного доступного потока.";
+                status.Value = demo ? UiText.Get("demo.audio.playing") : source.Transport == AudioTransport.WidevineHls
+                    ? UiText.Get("playback.status.protectedStream") : UiText.Get("playback.status.fullStream");
             AppLog.For("Pookie.Playback").Debug("Трек {TrackId}: обновление готового интерфейса {DurationMs:F1} мс",
                 track.Id, System.Diagnostics.Stopwatch.GetElapsedTime(readyStarted).TotalMilliseconds);
         }
@@ -654,7 +655,7 @@ internal sealed partial class MainWindow : IDisposable
     }
     private async Task ConnectSoundCloudAsync()
     {
-        if (demo) { status.Value = "Перезапусти Pookie без --demo для входа."; return; }
+        if (demo) { status.Value = UiText.Get("demo.auth.restart"); return; }
         login?.Cancel(); login?.Dispose();
         login = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         login.CancelAfter(TimeSpan.FromMinutes(10));
@@ -672,7 +673,7 @@ internal sealed partial class MainWindow : IDisposable
             SetLoginButtonState(LoginButtonState.Connecting);
         }
         catch (OperationCanceledException) when (!lifetime.IsCancellationRequested && login?.Token == token)
-        { status.Value = "Подключение отменено или истекло. Нажми «Войти в SoundCloud» ещё раз."; return; }
+        { status.Value = UiText.Get("auth.connection.expired"); return; }
         var connectedBrowser = CreateBrowserSession(session);
         SoundCloudUser connectedProfile;
         try
@@ -707,7 +708,7 @@ internal sealed partial class MainWindow : IDisposable
         token.ThrowIfCancellationRequested();
         await NavigateAsync(preferences.StartupPage == "library" ? Page.Library : Page.Home);
         token.ThrowIfCancellationRequested();
-        status.Value = saved ? "Сессия подключена и сохранена в хранилище паролей." : "Сессия подключена. Хранилище паролей недоступно: вход сохранён только до выхода.";
+        status.Value = saved ? UiText.Get("auth.status.saved") : UiText.Get("auth.session.temporary");
     }
 
     private Task LogoutAsync() => DisconnectSoundCloudAsync(forgetAccount: true);
@@ -741,7 +742,7 @@ internal sealed partial class MainWindow : IDisposable
             ResetNavigationHistory();
             signedIn.Value = false;
             ResetProfileAvatar();
-            profile.Value = "SoundCloud: вход не выполнен";
+            profile.Value = UiText.Get("account.status.signedOut");
             current = null; paused = false; isPlaying.Value = false;
             UpdateSystemMedia();
             audioPreparing = audioReady = false; playbackLoading.Value = false;
@@ -751,17 +752,17 @@ internal sealed partial class MainWindow : IDisposable
             playbackQueue.Clear(); queueLoader.ContextChanged(); RefreshQueue();
             presence?.Clear();
             RunSync(() => player?.Stop());
-            title.Value = "Выбери трек"; artist.Value = "Музыка из SoundCloud";
+            title.Value = UiText.Get("player.chooseTrack"); artist.Value = UiText.Get("player.soundcloudMusic");
             currentTime.Value = "0:00"; totalTime.Value = "0:00";
             progress.Value = 0; progress.Maximum = 1;
             bufferedTrack.Reset();
             expandedBuffer.Reset();
             ResetMiniArtwork();
             playerBackdrop.Reset();
-            page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
+            page.Value = Page.Home; RefreshNavVisuals(); eyebrow.Value = UiText.Get("home.eyebrow"); heading.Value = UiText.Get("header.home");
             ReplaceTracks(new TrackPage([], null));
-            status.Value = forgetAccount ? "Ты вышел из SoundCloud. Войди снова, чтобы продолжить." :
-                "SoundCloud не подтвердил вход. Подключи аккаунт в Pookie.";
+            status.Value = forgetAccount ? UiText.Get("auth.logout.signedOut") :
+                UiText.Get("auth.session.signInUnconfirmed");
             loginError.Text = forgetAccount ? "" : status.Value;
             loginError.IsVisible = !forgetAccount;
             await ShowLoginScreenAsync();
@@ -775,12 +776,12 @@ internal sealed partial class MainWindow : IDisposable
                 try { await Task.Run(vault.Delete, lifetime.Token); }
                 catch (InvalidOperationException)
                 {
-                    if (!disposed) status.Value = "Выход выполнен в Pookie, но сохранённую сессию удалить не удалось: после перезапуска аккаунт может подключиться снова.";
+                    if (!disposed) status.Value = UiText.Get("auth.logout.sessionRemovalFailed");
                     return;
                 }
                 finally { sessionWrites.Release(); }
             }
-            if (!disposed) status.Value = "Ты вышел из SoundCloud. Войди снова, чтобы продолжить.";
+            if (!disposed) status.Value = UiText.Get("auth.logout.signedOut");
         }
         finally { if (!disposed) loginBusy.Value = false; }
     }
@@ -881,7 +882,7 @@ internal sealed partial class MainWindow : IDisposable
         catch (Exception error) { AppLog.Failure("Pookie.UI", "Операция не выполнена", error); status.Value = FriendlyError(error); }
     }
     private static string FriendlyError(Exception error) => error is SoundCloudException or InvalidOperationException ? error.Message :
-        error is HttpRequestException ? "Не удалось подключиться к SoundCloud. Проверь сеть и POOKIE_PROXY." : "Не удалось выполнить действие. Попробуй ещё раз.";
+        error is HttpRequestException ? UiText.Get("soundcloud.connection.networkError") : UiText.Get("common.error.retry");
 
     public void Dispose()
     {
@@ -988,7 +989,7 @@ internal sealed partial class MainWindow : IDisposable
         }
         var account = connected.Account;
         if (user.Id is not (> 0 and <= 9007199254740991) || account.VerifiedUserId is { } expected && expected != user.Id)
-            throw new SoundCloudException("SoundCloud не подтвердил восстановление сохранённого аккаунта.", 401);
+            throw new SoundCloudException(UiText.Get("auth.session.restoreUnconfirmed"), 401);
         if (account.VerifiedUserId == null) connected.UpdateAccount(account with { VerifiedUserId = user.Id });
         return user;
     }
@@ -1024,16 +1025,16 @@ internal sealed partial class MainWindow : IDisposable
             {
                 if (disposed || browser != connected) return;
                 if (message.Kind is "session" or "protection-session") Run(() => PersistBrowserSessionAsync(connected));
-                if (message.Kind == "blocked") status.Value = "SoundCloud временно ограничил доступ к браузеру Pookie. Действие остановлено.";
+                if (message.Kind == "blocked") status.Value = UiText.Get("soundcloud.browser.restrictedStopped");
                 if (message.Kind == "checking" && message.Interactive && connected.Embedded is { } web)
                     Run(() => ShowEmbeddedChallengeAsync(web));
                 if (message.Kind == "checking") status.Value = message.ChallengeType == "hard_block"
-                    ? "SoundCloud заблокировал этот браузер. Подробности — в окне сайта."
+                    ? UiText.Get("soundcloud.browser.blockedDetails")
                     : message.Interactive
-                    ? "Пройди проверку в окне SoundCloud. Действие продолжится автоматически."
-                    : "SoundCloud проверяет браузер. Ожидаем завершения…";
-                if (message.Kind == "passed") status.Value = likeBusy ? "Проверка пройдена. Выполняем действие…" : "Проверка SoundCloud пройдена.";
-                if (message.Kind == "challenge-error") status.Value = "Не удалось показать проверку SoundCloud. Попробуй действие ещё раз.";
+                    ? UiText.Get("auth.verification.sitePrompt")
+                    : UiText.Get("auth.verification.waiting");
+                if (message.Kind == "passed") status.Value = likeBusy ? UiText.Get("auth.verification.finishingAction") : UiText.Get("auth.verification.passed");
+                if (message.Kind == "challenge-error") status.Value = UiText.Get("auth.verification.displayFailed");
             });
         }
         browserNotifications = (connected, Changed);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -92,7 +93,7 @@ internal static class WidevineRuntime
             UnauthorizedAccessException or JsonException or KeyNotFoundException or InvalidOperationException or OperationCanceledException)
         {
             AppLog.Failure("Pookie.Audio.Drm", "Не удалось подготовить модуль Widevine", error);
-            throw new DrmPlaybackException("Не удалось загрузить или проверить модуль защищённого воспроизведения Widevine. Проверь подключение к интернету и повтори попытку.");
+            throw new DrmPlaybackException(UiText.Get("drm.widevine.moduleDownloadFailed"));
         }
     }, token);
 

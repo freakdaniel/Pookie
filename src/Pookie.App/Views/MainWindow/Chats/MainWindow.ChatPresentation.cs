@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -74,7 +75,7 @@ internal sealed partial class MainWindow
         foreach (var pending in chatPending.Values)
             chatOutgoing[pending.RecipientId] = new(new ChatMessage($"pending:{pending.RecipientId}:{pending.CreatedAt.UtcTicks}", chatAccountId, pending.Body, pending.CreatedAt){ClientContent=pending.ClientContent},
                 chatDrafts.GetValueOrDefault(pending.RecipientId, pending.Body), [], null)
-            { State = ChatDelivery.Failed, Error = "Отправка не подтверждена. Нажми, чтобы проверить.", BeforeSendIds = pending.BeforeIds?.ToHashSet() ?? [] };
+            { State = ChatDelivery.Failed, Error = UiText.Get("chats.send.unconfirmedHint"), BeforeSendIds = pending.BeforeIds?.ToHashSet() ?? [] };
     }
     private void RefreshChatInboxPreview(Button button, ChatConversation conversation)
     {
@@ -91,16 +92,16 @@ internal sealed partial class MainWindow
         view.PreviewIcon.IsVisible = false; view.PreviewIcon.Source = null; view.PreviewGlyph = null;
         view.Preview.Foreground = Muted;
         if (chatDrafts.GetValueOrDefault(conversation.Recipient.Id) is {Length:>0} draft && local==null)
-        {view.Preview.Text="Черновик: "+ChatPreview(draft);view.Preview.Foreground=ChatAccent;return;}
+        {view.Preview.Text=UiText.Compose($"{UiText.Get("chats.draft.prefix")}{ChatPreview(draft)}");view.Preview.Foreground=ChatAccent;return;}
         if (last != null && ChatProtocol.Project(last,chatAccountId,conversation.Recipient.Id) is {EventId:not null} projection)
         {view.Preview.Text=ChatPreview(projection.Text);return;}
-        if (last == null) { view.Preview.Text = "Начать переписку"; return; }
+        if (last == null) { view.Preview.Text = UiText.Get("chats.actions.startConversation"); return; }
         if (ChatMediaReference.Parse(last.Body) != null || local?.HasMedia == true)
         {
             var summary = ChatMediaSummaryFor(last, conversation.Recipient.Id);
             var caption = ChatPresentation.Preview(local?.Draft ?? summary?.Caption ?? "");
             if (ChatMediaReference.Parse(caption) != null) caption = "";
-            view.Preview.Text = caption.Length > 0 ? caption : summary?.Label ?? (local?.Gif != null ? "GIF" : local?.Files.FirstOrDefault() is { } path && ChatMediaType(path).StartsWith("image/", StringComparison.Ordinal) ? "Фотография" : "Вложение");
+            view.Preview.Text = caption.Length > 0 ? caption : summary?.Label ?? (local?.Gif != null ? "GIF" : local?.Files.FirstOrDefault() is { } path && ChatMediaType(path).StartsWith("image/", StringComparison.Ordinal) ? UiText.Get("chats.media.photo") : UiText.Get("chats.attachment.label"));
             view.Preview.Foreground = caption.Length > 0 ? Muted : ChatAccent;
             view.Thumbnail.Source = summary?.Thumbnail ?? local?.Thumbnail;
             var files = summary?.Files ?? local?.Files.Select(path => new MediaFile(Path.GetFileName(path), ChatMediaType(path), 0, local.Documents.Contains(path))).ToArray();
@@ -118,7 +119,7 @@ internal sealed partial class MainWindow
             var caption = ChatPresentation.Preview(ChatMusicLink.Caption(last.Body, links));
             foreach (var (start, link) in ChatMusicLink.Occurrences(caption, links).Reverse())
                 if (chatMusicCache.TryGetValue(link, out var item)) caption = caption.Remove(start, link.Length).Insert(start, item.Title);
-            view.Preview.Text = caption.Length > 0 ? caption : chatMusicCache.GetValueOrDefault(links[0])?.Title ?? "Трек или плейлист";
+            view.Preview.Text = caption.Length > 0 ? caption : chatMusicCache.GetValueOrDefault(links[0])?.Title ?? UiText.Get("share.item.trackOrPlaylist");
             if (caption.Length == 0) view.Preview.Foreground = ChatAccent;
             SetChatInboxGlyph(view, "music-notes");
             QueueChatMusicSummary(links[0]);

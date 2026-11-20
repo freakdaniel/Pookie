@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -35,7 +36,7 @@ public static class LibraryData
         {
             var user = item.Deserialize(SoundCloudJson.Default.SoundCloudUser);
             return user is { Id: > 0 } ? new("user:" + user.Id, user.Username,
-                user.FollowersCount is { } followers ? $"{followers:N0} подписчиков" : "Исполнитель", user.AvatarUrl, User: user) : null;
+                user.FollowersCount is { } followers ? UiText.FollowerCount(followers) : UiText.Get("common.artist"), user.AvatarUrl, User: user) : null;
         }
         if (kind is "playlist" or "system-playlist" || item.TryGetProperty("tracks", out _) || item.TryGetProperty("playlist_type", out _))
         {
@@ -75,7 +76,7 @@ public static class LibraryData
         if (owner is { Id: > 0 } && owner.Id == knownOwner?.Id && string.IsNullOrWhiteSpace(owner.AvatarUrl))
             owner = owner with { AvatarUrl = knownOwner.AvatarUrl };
         var tracks = playlist.Tracks ?? [];
-        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? "Подборка", Urn = playlist.Urn ?? "", Tracks = tracks, User = owner,
+        return playlist with { Title = playlist.ShortTitle ?? playlist.Title ?? UiText.Get("collection.label"), Urn = playlist.Urn ?? "", Tracks = tracks, User = owner,
             ArtworkFieldMissing = !item.TryGetProperty("artwork_url", out _),
             TrackPagesComplete = item.TryGetProperty("tracks", out var rows) && rows.ValueKind == JsonValueKind.Array &&
                 tracks.Length == playlist.TrackCount && tracks.All(track => track.Id > 0) };
@@ -83,8 +84,8 @@ public static class LibraryData
 
     public static LibraryItem FromPlaylist(SoundCloudPlaylist playlist) => new(
         "playlist:" + (!string.IsNullOrEmpty(playlist.Urn) ? playlist.Urn : playlist.Id.ToString()), playlist.Title,
-        playlist.ShortDescription ?? playlist.User?.Username ?? (playlist.MadeFor != null ? "Для " + playlist.MadeFor.Username :
-            playlist.PlaylistType?.Contains("STATION", StringComparison.OrdinalIgnoreCase) == true ? "Станция" : "Подборка"),
+        playlist.ShortDescription ?? playlist.User?.Username ?? (playlist.MadeFor != null ? UiText.Compose($"{UiText.Get("mixes.madeForPrefix")}{playlist.MadeFor.Username}") :
+            playlist.PlaylistType?.Contains("STATION", StringComparison.OrdinalIgnoreCase) == true ? UiText.Get("common.station") : UiText.Get("collection.label")),
         playlist.UsesTrackArtwork
             ? playlist.CalculatedArtworkUrl ?? playlist.ArtworkUrl ?? playlist.Tracks?.FirstOrDefault(t => !string.IsNullOrEmpty(t.ArtworkUrl))?.ArtworkUrl
             : NonBlank(playlist.ArtworkUrl) ?? NonBlank(playlist.User?.AvatarUrl) ?? NonBlank(playlist.CalculatedArtworkUrl),

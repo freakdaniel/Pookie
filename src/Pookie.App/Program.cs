@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Hosting;
 using Pookie.App.Browser;
 using Pookie.App;
@@ -10,6 +11,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        var preferredLanguage = args.Contains("--demo") ? null : ConfigurationStore.Read(
+            Path.Combine(AppDataPaths.DefaultRoot(), "Config", ConfigurationStore.FileName)).InterfaceLanguage;
+        SystemLanguage.Initialize(preferredLanguage);
         if (BrowserChildHost.TryRun(args, out var childExitCode)) { Environment.ExitCode = childExitCode; return; }
         try { RunAsync(args).GetAwaiter().GetResult(); }
         catch (Exception error)
@@ -66,7 +70,7 @@ internal static class Program
         }
         if (args.Any(arg => arg.EndsWith("-smoke-test", StringComparison.Ordinal) || arg is "--smoke-test" or "--clipboard-fixture" or "--login-fixture"))
         {
-            Console.Error.WriteLine("Интеграционные проверки запускаются отдельно: dotnet run --project tests/Pookie.App.SmokeTests -- <флаг проверки>");
+            Console.Error.WriteLine(UiText.Get("diagnostics.smoke.separateHost"));
             Environment.ExitCode = 2;
             return;
         }

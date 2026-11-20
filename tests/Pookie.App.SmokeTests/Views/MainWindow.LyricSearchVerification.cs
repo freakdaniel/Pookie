@@ -29,7 +29,7 @@ internal sealed partial class MainWindow
             if (metadata != "Kino Пачка сигарет") throw new InvalidOperationException("Invalid metadata lookup.");
             return Task.FromResult(new LibraryPage(new[] { cover, blocked, version, wrongDuration, correct }.Select(LibraryItem.FromTrack).ToArray(), null));
         }, lifetime.Token);
-        if (matched.Single().Track?.Id != correct.Id || handler.Calls != 2)
+        if (matched.Single().Item.Track?.Id != correct.Id || handler.Calls != 2)
             throw new InvalidOperationException("Lyric lookup did not shorten the phrase or selected the wrong or a duplicate recording.");
 
         var originalSession = api.Session;
@@ -43,14 +43,14 @@ internal sealed partial class MainWindow
             var exact = LibraryItem.FromTrack(new SoundCloudTrack { Id = 42007, Title = phrase });
             var page = new LibraryPage([regular, exact, LibraryItem.FromTrack(correct)],
                 "https://api-v2.soundcloud.com/search/tracks?cursor=lyrics-fixture");
-            var confirmedExact = MergeSearchResults(page, [exact], phrase);
+            var confirmedExact = MergeSearchResults(page, [new(exact, LyricPhraseMatch.Exact)], phrase);
             if (confirmedExact.Items[0] != (exact with { MatchedByLyrics = true }) ||
                 confirmedExact.Items.Count(item => item.MatchedByLyrics) != 1 || confirmedExact.Items.Length != page.Items.Length)
                 throw new InvalidOperationException("A track found by both sources lost its attribution or was duplicated.");
             foreach (var lyricsFirst in new[] { false, true })
             {
                 var ordinary = new TaskCompletionSource<LibraryPage>(TaskCreationOptions.RunContinuationsAsynchronously);
-                var lyrics = new TaskCompletionSource<LibraryItem[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var lyrics = new TaskCompletionSource<LyricSearchMatch[]>(TaskCreationOptions.RunContinuationsAsynchronously);
                 if (lyricsFirst) lyrics.SetResult(matched); else ordinary.SetResult(page);
                 var searchLoad = NavigateRouteAsync(new(Page.Search, Search: phrase, Section: SearchSection.Tracks), generation =>
                 {
@@ -94,7 +94,7 @@ internal sealed partial class MainWindow
             var json = Calls == 1 ? """{"hits":[]}""" :
                 """
                 {"hits":[
-                  {"title":"Пачка сигарет","artist":"Kino","isrc":"RUB421401328","duration":266.018},
+                  {"line":"и билет на самолет с серебристым крылом","title":"Пачка сигарет","artist":"Kino","isrc":"RUB421401328","duration":266.018},
                   {"title":"Пачка сигарет","artist":"Виктор Цой, Кино","isrc":"TCADG1798107","duration":265.32}
                 ]}
                 """;

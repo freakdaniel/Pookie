@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Automation;
 using Aprillz.MewUI.Controls;
@@ -27,17 +28,17 @@ internal static class ShortcutKeycaps
             }
             var (icon, name) = gesture.Key switch
             {
-                Key.Left => ("arrow-left", "Влево"), Key.Right => ("arrow-right", "Вправо"),
-                Key.Up => ("arrow-up", "Вверх"), Key.Down => ("arrow-down", "Вниз"),
+                Key.Left => ("arrow-left", UiText.Get("key.left")), Key.Right => ("arrow-right", UiText.Get("key.right")),
+                Key.Up => ("arrow-up", UiText.Get("key.up")), Key.Down => ("arrow-down", UiText.Get("key.down")),
                 Key.Enter => ("key-return", "Enter"), Key.Backspace => ("backspace", "Backspace"),
-                Key.Space => ("keyboard", "Пробел"), Key.Escape => ("keyboard", "Esc"),
+                Key.Space => ("keyboard", UiText.Get("key.space")), Key.Escape => ("keyboard", "Esc"),
                 _ => ("keyboard", new KeyGesture(gesture.Key).ToDisplayString())
             };
             Add(icon, name);
         }
         else
-            keys.Add(new TextBlock().Text(large ? "—" : "Назначить").Foreground(TextAppearance.Secondary).Center());
-        AutomationProperties.SetName(keys, binding.Length == 0 ? "Без сочетания" : ShortcutBinding.Display(binding));
+            keys.Add(new TextBlock().Text(large ? "—" : UiText.Get("shortcuts.assign")).Foreground(TextAppearance.Secondary).Center());
+        AutomationProperties.SetName(keys, binding.Length == 0 ? UiText.Get("shortcuts.unassigned") : ShortcutBinding.Display(binding));
         return keys;
 
         void Add(string icon, string name)

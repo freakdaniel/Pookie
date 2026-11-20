@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Pookie.App;
 using Pookie.Lyrics;
+using Pookie.SoundCloud;
 using Xunit;
 
 namespace Pookie.Lyrics.Tests;
@@ -147,6 +148,47 @@ public sealed class LyricsTests : IDisposable
         if (ambiguous) Assert.Null(result); else Assert.Equal(LyricsStatus.Synced, result?.Status);
         Assert.Single(calls.Where(path => path.StartsWith("/search.json?in=lyrics")));
         Assert.Equal(ambiguous ? 3 : 4, calls.Count);
+    }
+
+    [Theory]
+    [InlineData("love on the internet world", true)]
+    [InlineData("love in the internet world", false)]
+    public async Task VerifiedLyricCompetesWithExactTitleByPopularity(string query, bool exact)
+    {
+        var song = new SoundCloudTrack { Id = 1, Title = "INTERNET LOVE", Duration = 132900,
+            User = new() { Username = "IVOXYGEN" }, PlaybackCount = 9200000 };
+        var clip = song with { Id = 2, Title = query, Duration = 19000, PlaybackCount = 1600 };
+        var unrelated = song with { Id = 3, Title = "Drop Dead", Duration = 225000, PlaybackCount = 15000000,
+            User = new() { Username = "Olivia Rodrigo" } };
+        var hit = new LrcRedHit("Internet Love", "IVOXYGEN", "QZNMY2341882", 132.923, "A truncated preview…");
+        var weak = new LrcRedHit("Drop Dead", "Olivia Rodrigo", null, 225, "Unrelated lyrics");
+        var queries = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            var uri = request.RequestUri!;
+            if (uri.AbsolutePath == "/s/QZNMY2341882.lrc")
+                return new(HttpStatusCode.OK) { Content = new StringContent("[00:46.00]<00:46.00>Love on the internet world") };
+            Assert.Equal("/search.json", uri.AbsolutePath);
+            var term = Uri.UnescapeDataString(uri.Query.Split("&q=")[1]);
+            queries.Add(term);
+            var hits = new LrcRedResults([term == "love in the internet world" ? weak : hit]);
+            return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(hits, LrcRedJson.Default.LrcRedResults)) };
+        }));
+        var matches = await new LrcRedSearch(http).FindAsync(query, (metadata, _) =>
+        {
+            var track = metadata == "IVOXYGEN Internet Love" ? song : unrelated;
+            return Task.FromResult(new LibraryPage([LibraryItem.FromTrack(track)], null));
+        }, default);
+        Assert.Equal(exact ? LyricPhraseMatch.Exact : LyricPhraseMatch.Near, matches[0].Phrase);
+        Assert.Equal(exact ? new[] { query } : new[] { query, "the internet world" }, queries);
+        var regular = new LibraryPage([LibraryItem.FromTrack(clip), LibraryItem.FromTrack(unrelated), LibraryItem.FromTrack(song)], "cursor");
+        var merged = MainWindow.MergeSearchResults(regular, matches, query);
+        Assert.Equal(new long[] { 1, 2, 3 }, merged.Items.Select(item => item.Track!.Id));
+        Assert.True(merged.Items[0].MatchedByLyrics);
+        Assert.Equal("cursor", merged.NextHref);
+        var popularTitle = LibraryItem.FromTrack(clip with { PlaybackCount = 12000000 });
+        Assert.Equal(popularTitle, MainWindow.MergeSearchResults(new([popularTitle], null), matches, query).Items[0]);
+        Assert.Equal(clip.Id, MainWindow.MergeSearchResults(regular, [new(matches[0].Item, LyricPhraseMatch.Unverified)], query).Items[0].Track!.Id);
     }
 
     [Fact] public void BrokenSyncedDataDoesNotOutrankValidTimestamps()

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -25,9 +26,9 @@ internal sealed class ChatLibraryPreview : Panel
         fade.CompletedCallback = () => { skeleton.IsVisible = false; skeleton.SetActive(false); };
     }
     internal void Start() { Waiting = false; Loading = true; notice.IsVisible = false; skeleton.IsVisible = true; skeleton.Opacity = 1; skeleton.SetActive(true); }
-    internal void Defer() { Waiting = false; skeleton.IsVisible = false; skeleton.SetActive(false); notice.Text = "Загрузить"; notice.IsVisible = true; }
+    internal void Defer() { Waiting = false; skeleton.IsVisible = false; skeleton.SetActive(false); notice.Text = UiText.Get("common.download"); notice.IsVisible = true; }
     internal void Retry() { Manual = Waiting = true; notice.IsVisible = false; skeleton.IsVisible = true; }
-    internal void Fail() { Loading = Waiting = false; skeleton.IsVisible = false; skeleton.SetActive(false); notice.Text = "Не загрузилось\nПовторить"; notice.IsVisible = true; }
+    internal void Fail() { Loading = Waiting = false; skeleton.IsVisible = false; skeleton.SetActive(false); notice.Text = UiText.Get("player.widget.retry"); notice.IsVisible = true; }
     internal void Show(ImageSource source)
     {
         if (ReferenceEquals(picture.Source, source)) return;

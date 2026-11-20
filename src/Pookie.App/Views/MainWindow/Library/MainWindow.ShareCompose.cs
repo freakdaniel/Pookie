@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -29,7 +30,7 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ShareComposeView()
     {
-        var search = shareSearchGlass = new DialogSearchField("Имя или профиль SoundCloud", MutedIcon);
+        var search = shareSearchGlass = new DialogSearchField(UiText.Get("chats.contacts.searchPlaceholder"), MutedIcon);
         shareRecipientSearch.OnTextChanged(_ => { StopShareSearch(); if (shareTab.Value == 1 && shareRecipient == null) shareSearchTimer.Start(); });
         shareRecipientSearch.OnKeyDown(e => { if (e.Key == Key.Enter) { e.Handled = true; shareSearchTimer.Stop(); Run(SearchShareRecipientsAsync); } });
         shareSearchTimer.Tick += () => { shareSearchTimer.Stop(); Run(SearchShareRecipientsAsync); };
@@ -46,16 +47,16 @@ internal sealed partial class MainWindow
         shareRecipientName = new TextBlock().FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Left();
         shareRecipientDetails = new TextBlock().FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis).Left();
         shareSelectedAvatar = ShareAvatar();
-        shareRecipientEdit = TrackButtons.Icon(Icons.View("pencil-simple", 18), () => { SetShareRecipient(null); Run(SearchShareRecipientsAsync); }, TrackButtons.Glass, 36).Hint("Изменить получателя");
+        shareRecipientEdit = TrackButtons.Icon(Icons.View("pencil-simple", 18), () => { SetShareRecipient(null); Run(SearchShareRecipientsAsync); }, TrackButtons.Glass, 36).Hint(UiText.Get("share.recipients.change"));
         ((MaterialTrackButton)shareRecipientEdit).UseLightGlassFinish();
         var selected = new Grid().Columns("40,*,Auto").Rows("56").Spacing(12).Margin(0, 0, 18, 0).Children(ShareAvatarFrame(shareSelectedAvatar),
             new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(shareRecipientName, shareRecipientDetails),
             shareRecipientEdit.Column(2).CenterVertical());
-        shareComposeText = new MultiLineTextBox().Placeholder("Добавить пару слов к треку").Wrap(true).MaxLength(2000).FontSize(14)
+        shareComposeText = new MultiLineTextBox().Placeholder(UiText.Get("share.track.notePlaceholder")).Wrap(true).MaxLength(2000).FontSize(14)
             .BorderThickness(0).Padding(16, 12, 34, 12).Background(Color.Transparent).Foreground(TrackButtons.OnSurface);
         shareMessageField = new ShareMessageField(shareComposeText);
         shareComposeText.OnTextChanged(_ => RefreshShareCompose());
-        shareSendLabel = new TextBlock().Text("Отправить").FontSize(13).SemiBold().Foreground(Color.White);
+        shareSendLabel = new TextBlock().Text(UiText.Get("chats.send.action")).FontSize(13).SemiBold().Foreground(Color.White);
         shareSendBusy = new BusyButtonContent(shareSendLabel).Initialize();
         shareSend = TrackButtons.Action(shareSendBusy, () => Run(SendShareMessageAsync), TrackButtons.Glass, 44).Margin(0, 0, 18, 0);
         ((MaterialTrackButton)shareSend).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
@@ -73,7 +74,7 @@ internal sealed partial class MainWindow
     private void SetShareRecipient(SoundCloudUser? user)
     {
         StopShareSearch(); shareRecipient = user; if (user != null) LoadShareAvatar(shareSelectedAvatar, user); RefreshShareCompose();
-        SetShareMessage(user != null && chatPending.ContainsKey(user.Id) ? "Есть неподтверждённая отправка этому получателю. Проверь её в чатах перед повтором." : ""); FitShareContent();
+        SetShareMessage(user != null && chatPending.ContainsKey(user.Id) ? UiText.Get("chats.send.pendingForRecipient") : ""); FitShareContent();
         if (shareDialog.IsOpen && Window.FocusManager.FocusedElement is TextBox or MultiLineTextBox) shareFocusAnchor.Focus();
     }
 
@@ -83,7 +84,7 @@ internal sealed partial class MainWindow
         shareRecipientPicker.IsVisible = shareRecipient == null;
         shareComposeFields.IsVisible = shareRecipient != null;
         shareRecipientName.Text = shareRecipient?.Username ?? "";
-        shareRecipientDetails.Text = string.IsNullOrWhiteSpace(shareRecipient?.FullName) ? "Получатель сообщения" : shareRecipient.FullName;
+        shareRecipientDetails.Text = string.IsNullOrWhiteSpace(shareRecipient?.FullName) ? UiText.Get("share.recipients.label") : shareRecipient.FullName;
 
         var busy = shareSending || shareSendBusyHeld;
         shareSendBusy.SetBusy(busy, !snap);
@@ -105,7 +106,7 @@ internal sealed partial class MainWindow
         if (session == null || account == null)
         {
             ClearShareRecipientChoices();
-            SetShareMessage("Войди в SoundCloud, чтобы выбрать получателя.");
+            SetShareMessage(UiText.Get("auth.required.chooseRecipient"));
             return;
         }
         shareSearch = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
@@ -121,7 +122,7 @@ internal sealed partial class MainWindow
             {
                 var avatar = ShareAvatar();
                 var subtitle = !string.IsNullOrWhiteSpace(user.FullName) && user.FullName != user.Username ? user.FullName
-                    : chatConversations.Any(c => c.Recipient.Id == user.Id) ? "Недавний диалог" : "Профиль SoundCloud";
+                    : chatConversations.Any(c => c.Recipient.Id == user.Id) ? UiText.Get("chats.recentConversation") : UiText.Get("profile.soundcloudTitle");
                 var row = new Grid().Columns("40,*,20").Rows("*").Spacing(12).Children(ShareAvatarFrame(avatar),
                     new StackPanel().Vertical().Spacing(4).CenterVertical().Column(1).Children(
                         new TextBlock().Text(user.Username).FontSize(14).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).Left(),
@@ -139,8 +140,8 @@ internal sealed partial class MainWindow
             {
                 shareRecipientResults.IsVisible = false; shareRecipientEmpty.IsVisible = true;
                 shareRecipientEmptyArt.IsVisible = noMatches;
-                shareRecipientEmptyTitle.Text = noMatches ? "А тут тупик" : "Кому отправим?";
-                shareRecipientEmptyText.Text = noMatches ? "Я искал вдоль и поперек, но никого не нашел..." : "Найди получателя по имени — введи хотя бы два символа.";
+                shareRecipientEmptyTitle.Text = noMatches ? UiText.Get("share.recipients.empty") : UiText.Get("share.recipients.prompt");
+                shareRecipientEmptyText.Text = noMatches ? UiText.Get("share.recipients.noMatchDescription") : UiText.Get("share.recipients.searchHelp");
             }
         }
         ShowUsers(local);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Platform;
@@ -106,14 +107,14 @@ internal sealed partial class MainWindow
         var combined = chatSelectedFiles.Concat(files).Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal).ToArray();
         await Task.Run(() =>
         {
-            if (combined.Length > ChatMediaCrypto.MaxAttachments) throw new InvalidOperationException("За раз можно прикрепить до четырёх файлов.");
+            if (combined.Length > ChatMediaCrypto.MaxAttachments) throw new InvalidOperationException(UiText.Get("chats.attachments.countLimit"));
             long total = 0;
             foreach (var path in combined)
             {
-                if (!Path.IsPathFullyQualified(path) || !File.Exists(path)) throw new InvalidOperationException("Можно прикрепить только существующие файлы.");
+                if (!Path.IsPathFullyQualified(path) || !File.Exists(path)) throw new InvalidOperationException(UiText.Get("chats.attachments.missingFile"));
                 var length = new FileInfo(path).Length;
                 if (length > ChatMediaCrypto.MaxFileBytes || (total += length) > ChatMediaCrypto.MaxPayloadBytes - 65536)
-                    throw new InvalidOperationException("Максимум 16 МБ на файл и 32 МБ на сообщение.");
+                    throw new InvalidOperationException(UiText.Get("chats.attachments.sizeLimits"));
             }
         });
         if (disposed || revision != chatRevision || generation != chatAttachmentGeneration || chatRecipient == null || !chatInput.IsEnabled) return;

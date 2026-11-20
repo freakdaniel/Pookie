@@ -1,3 +1,4 @@
+using Pookie.Localization;
 namespace Pookie.Audio;
 
 // Counts consumed response bodies across one wave session; shared by sequential preview batches.
@@ -12,7 +13,7 @@ internal sealed class PreviewDownloadBudget(long maximumBytes)
         while (true)
         {
             var available = Remaining;
-            if (available == 0) throw new IOException("Исчерпан бюджет фонового аудиоанализа.");
+            if (available == 0) throw new IOException(UiText.Get("audio.analysis.limit"));
             var count = (int)Math.Min(requested, available);
             if (Interlocked.CompareExchange(ref remaining, available - count, available) == available) return count;
         }
@@ -24,7 +25,7 @@ internal sealed class PreviewBudgetHandler(PreviewDownloadBudget budget, HttpMes
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (budget.Remaining == 0) throw new IOException("Исчерпан бюджет фонового аудиоанализа.");
+        if (budget.Remaining == 0) throw new IOException(UiText.Get("audio.analysis.limit"));
         var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.Content = new BudgetContent(response.Content, budget);
         return response;

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -10,7 +11,8 @@ namespace Pookie.App;
 internal sealed class MaterialSelect : GlassCard
 {
     private readonly string[] options;
-    private readonly Func<string, FrameworkElement>? optionContent;
+    private readonly Func<bool> smoothScrolling;
+    private readonly Func<int, string, FrameworkElement>? optionContent;
     private readonly Border? selectedContent;
     private readonly AnimationClock stateMotion = new(TimeSpan.FromMilliseconds(150), Easing.CubicBezier(.2, 0, 0, 1));
     private MaterialSelectMenu? menu;
@@ -30,7 +32,7 @@ internal sealed class MaterialSelect : GlassCard
     internal event Action<int>? SelectionChanged;
     internal double MenuReveal => popup?.Reveal ?? 0;
     internal MaterialSelectMenu? Menu => menu;
-    internal string SelectedText => selectedIndex >= 0 ? options[selectedIndex] : "";
+    internal string SelectedText => selectedIndex >= 0 ? UiText.Refresh(options[selectedIndex]) : "";
     internal int SelectedIndex
     {
         get => selectedIndex;
@@ -39,14 +41,15 @@ internal sealed class MaterialSelect : GlassCard
             if (value < -1 || value >= options.Length) throw new ArgumentOutOfRangeException(nameof(value));
             if (selectedIndex == value) return;
             selectedIndex = value;
-            if (selectedContent != null) selectedContent.Child = value < 0 ? null : optionContent!(SelectedText);
+            if (selectedContent != null) selectedContent.Child = value < 0 ? null : optionContent!(value, SelectedText);
             menu?.Select(value); InvalidateVisual(); SelectionChanged?.Invoke(value);
         }
     }
 
-    internal MaterialSelect(string[] options, Func<string, FrameworkElement>? optionContent = null)
+    internal MaterialSelect(string[] options, Func<bool> smoothScrolling, Func<int, string, FrameworkElement>? optionContent = null)
     {
         this.options = options.ToArray();
+        this.smoothScrolling = smoothScrolling;
         this.optionContent = optionContent;
         ShadowEnabled = false;
         Transitions = [];
@@ -111,11 +114,13 @@ internal sealed class MaterialSelect : GlassCard
                 popup.Dismissing = () => IsDropDownOpen = false;
             }
             menu.Width = ActualWidth; menu.MaxHeight = MaxDropDownHeight;
+            menu.Motion.Enabled = smoothScrolling();
             menu.Select(SelectedIndex);
             popup!.ShowPopup(this, menu.FocusTarget(SelectedIndex));
         }
         else
         {
+            menu?.Motion.Stop();
             popup?.Close();
             KeyboardFocusFeedback.Set(this, keyboardInteraction);
         }
@@ -190,8 +195,9 @@ internal sealed class MaterialSelectMenu : Panel
     private int focusedIndex;
     internal IReadOnlyList<Button> Options => buttons;
     internal GlassCard Card => card;
+    internal SmoothScroll Motion { get; }
 
-    internal MaterialSelectMenu(string[] options, Action<int> choose, Action dismiss, Action<bool> interaction, Func<string, FrameworkElement>? optionContent = null)
+    internal MaterialSelectMenu(string[] options, Action<int> choose, Action dismiss, Action<bool> interaction, Func<int, string, FrameworkElement>? optionContent = null)
     {
         this.dismiss = dismiss;
         this.interaction = interaction;
@@ -201,7 +207,8 @@ internal sealed class MaterialSelectMenu : Panel
         {
             var item = index;
             var check = checks[index] = Icons.View("check", 20, TrackButtons.OnSurface);
-            var option = optionContent?.Invoke(options[index]) ?? new TextBlock().Text(options[index]).FontSize(14)
+            var title = UiText.Refresh(options[index]);
+            var option = optionContent?.Invoke(index, title) ?? new TextBlock().Text(title).FontSize(14)
                 .Foreground(TrackButtons.OnSurface).TextTrimming(TextTrimming.CharacterEllipsis);
             var content = new Grid().Columns("*,20").Rows("*").Spacing(12).Children(
                 option.Left().CenterVertical().Column(0), check.CenterVertical().Column(1));
@@ -212,11 +219,15 @@ internal sealed class MaterialSelectMenu : Panel
             button.KeyDown += e => { if (e.Key != Key.Escape) interaction(true); };
             buttons[index] = button; rows.Add(button);
         }
+        var scroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0)
+            .Content(rows.Margin(MenuInset, 0));
+        Motion = new SmoothScroll(scroll);
         card = new GlassCard(PopupAppearance.AppBackground) { HoverEnabled = false }
-            .Background(PopupAppearance.Surface).CornerRadius(PopupAppearance.Radius).Padding(MenuInset)
-            .Child(new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Content(rows));
+            .Background(PopupAppearance.Surface).CornerRadius(PopupAppearance.Radius).Padding(0, MenuInset).Child(scroll);
         Add(card);
     }
+
+    protected override void OnDispose() { Motion.Dispose(); base.OnDispose(); }
 
     internal UIElement FocusTarget(int selected)
     { focusedIndex = Math.Clamp(selected, 0, buttons.Length - 1); return buttons[focusedIndex]; }

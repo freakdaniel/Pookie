@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -27,6 +28,6 @@ internal sealed class PlaylistEditorChoice : ContentControl
         PopupAppearance.Attach(button, menu); button.OnClick(() => menu.Toggle(button)); Content = button;
     }
     internal void Select(string value)
-    { Value = value; label.Text = options.FirstOrDefault(option => option.Value == value).Label ?? value; }
+    { Value = value; label.Text = UiText.Refresh(options.FirstOrDefault(option => option.Value == value).Label ?? value); }
     internal void CloseMenu() => menu.Close(true, false);
 }

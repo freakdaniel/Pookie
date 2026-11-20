@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -25,7 +26,7 @@ internal sealed class WidevineConsent(string root)
 
     internal void RequireAccepted(string licenseText)
     {
-        if (!IsAccepted(licenseText)) throw new DrmPlaybackException("Для использования Widevine сначала прими условия в окне запуска Pookie.");
+        if (!IsAccepted(licenseText)) throw new DrmPlaybackException(UiText.Get("drm.consent.required"));
     }
 
     internal async Task AcceptAsync(string licenseText, CancellationToken token)
@@ -75,7 +76,7 @@ internal sealed class WidevineSetup(WidevineConsent consent,
     // complete synchronously even behind an async API. Never run them on UI.
     internal Task<string> PrepareAsync(CancellationToken token) => Task.Run(async () =>
     {
-        var candidate = Candidate ?? throw new DrmPlaybackException("Сначала нужно получить актуальные условия Widevine.");
+        var candidate = Candidate ?? throw new DrmPlaybackException(UiText.Get("drm.consent.termsRequired"));
         Consent.RequireAccepted(candidate.LicenseText);
         var library = await prepare(candidate, token).ConfigureAwait(false);
         Candidate = candidate with { Archive = null };

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Storage;
 
 namespace Pookie.App.Messages;
@@ -11,10 +12,10 @@ internal sealed class ChatAttachmentStaging : IDisposable
     internal string AddImage(byte[] bytes, string extension)
     {
         if (bytes.Length > ChatMediaCrypto.MaxFileBytes || !ChatMediaCrypto.IsRasterImage(bytes))
-            throw new InvalidOperationException("Не удалось вставить изображение: максимум 16 МБ на файл.");
-        if (owned.Count >= 32) throw new InvalidOperationException("Слишком много неотправленных вложений. Отправь или убери предыдущие.");
+            throw new InvalidOperationException(UiText.Get("clipboard.image.pasteSizeLimit"));
+        if (owned.Count >= 32) throw new InvalidOperationException(UiText.Get("chats.attachments.tooManyPending"));
         AppDataPaths.CreatePrivateDirectory(directory);
-        var path = Path.Combine(directory, $"Изображение {++nextImage}" + (extension is ".jpg" or ".gif" or ".webp" ? extension : ".png"));
+        var path = Path.Combine(directory, UiText.Format("chats.attachments.imageName", ++nextImage) + (extension is ".jpg" or ".gif" or ".webp" ? extension : ".png"));
         var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         using (var output = new FileStream(path, options)) output.Write(bytes);

@@ -1,0 +1,48 @@
+<Project>
+  <ItemGroup>
+    <EmojiAnnotation Include="$(MSBuildThisFileDirectory)Assets/Emoji/Annotations/*.json" />
+    <UpToDateCheckInput Include="@(EmojiAnnotation)" />
+  </ItemGroup>
+
+  <UsingTask TaskName="GzipEmojiAnnotation" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFile ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var temporary = OutputFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var input = File.OpenRead(SourceFile))
+            using (var output = File.Create(temporary))
+            using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+                input.CopyTo(gzip);
+
+            if (File.Exists(OutputFile))
+                File.Replace(temporary, OutputFile, null);
+            else
+                File.Move(temporary, OutputFile);
+        }
+        finally { File.Delete(temporary); }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="CompressEmojiAnnotations"
+          Inputs="@(EmojiAnnotation)"
+          Outputs="@(EmojiAnnotation->'$(IntermediateOutputPath)EmojiAnnotations/%(Filename).json.gz')">
+    <MakeDir Directories="$(IntermediateOutputPath)EmojiAnnotations" />
+    <GzipEmojiAnnotation SourceFile="%(EmojiAnnotation.FullPath)"
+                         OutputFile="$(IntermediateOutputPath)EmojiAnnotations/%(EmojiAnnotation.Filename).json.gz" />
+  </Target>
+
+  <Target Name="EmbedEmojiAnnotations" BeforeTargets="AssignTargetPaths" DependsOnTargets="CompressEmojiAnnotations">
+    <ItemGroup>
+      <FileWrites Include="@(EmojiAnnotation->'$(IntermediateOutputPath)EmojiAnnotations/%(Filename).json.gz')" />
+      <EmbeddedResource Include="@(EmojiAnnotation->'$(IntermediateOutputPath)EmojiAnnotations/%(Filename).json.gz')"
+                        WithCulture="false" LogicalName="Pookie.App.Emoji.%(EmojiAnnotation.Filename).json.gz" />
+    </ItemGroup>
+  </Target>
+</Project>

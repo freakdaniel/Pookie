@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,7 +11,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<LibraryItem> ResolveChatMusicAsync(string url, CancellationToken token = default)
     {
         var item = await ResolveLinkAsync(url, token);
-        return item is { Track: not null } or { Playlist: not null } ? item : throw new SoundCloudException("Нужна ссылка на трек или плейлист.");
+        return item is { Track: not null } or { Playlist: not null } ? item : throw new SoundCloudException(UiText.Get("share.link.trackOrPlaylistRequired"));
     }
 
     public static bool IsSoundCloudUrl(string url) => url.Length <= 4096 &&
@@ -21,7 +22,7 @@ public sealed partial class SoundCloudWebClient
         var uri = await ExpandSoundCloudUrlAsync(url, token);
         using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), token);
         var item = LibraryData.ParseItem(document.RootElement)
-            ?? throw new SoundCloudException("Эта ссылка SoundCloud не ведёт на трек, пользователя или подборку.");
+            ?? throw new SoundCloudException(UiText.Get("links.soundcloud.unsupportedResource"));
         if (item.Playlist is { IsPrivate: true } playlist && PlaylistSharing.Token(playlist) == null &&
             PlaylistSharing.TokenFromUri(uri) is { } secret)
             item = item with { Playlist = playlist with { SecretToken = secret } };
@@ -34,22 +35,22 @@ public sealed partial class SoundCloudWebClient
     private async Task<Uri> ExpandSoundCloudUrlAsync(string url, CancellationToken token)
     {
         if (url.Length > 4096 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || !IsSoundCloudLink(uri))
-            throw new SoundCloudException("Нужна ссылка SoundCloud.");
+            throw new SoundCloudException(UiText.Get("links.soundcloud.required"));
         var visited = new HashSet<string>(StringComparer.Ordinal);
         // The API does not expand mobile share links. Read only their redirect
         // headers, without sending the account's API credentials or loading a page.
         while (uri.Host == "on.soundcloud.com")
         {
-            if (visited.Count >= 5 || !visited.Add(uri.AbsoluteUri)) throw new SoundCloudException("Не удалось раскрыть короткую ссылку SoundCloud.");
+            if (visited.Count >= 5 || !visited.Add(uri.AbsoluteUri)) throw new SoundCloudException(UiText.Get("links.short.expandFailed"));
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.UserAgent.ParseAdd(DefaultUserAgent);
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             var location = response.Headers.Location;
             if (response.StatusCode is not (System.Net.HttpStatusCode.MovedPermanently or System.Net.HttpStatusCode.Found or
                 System.Net.HttpStatusCode.SeeOther or System.Net.HttpStatusCode.TemporaryRedirect or System.Net.HttpStatusCode.PermanentRedirect) || location == null)
-                throw new SoundCloudException("Не удалось раскрыть короткую ссылку SoundCloud.", (int)response.StatusCode);
+                throw new SoundCloudException(UiText.Get("links.short.expandFailed"), (int)response.StatusCode);
             uri = new Uri(uri, location);
-            if (uri.AbsoluteUri.Length > 4096 || !IsSoundCloudLink(uri)) throw new SoundCloudException("Короткая ссылка ведёт за пределы SoundCloud.");
+            if (uri.AbsoluteUri.Length > 4096 || !IsSoundCloudLink(uri)) throw new SoundCloudException(UiText.Get("links.short.externalDestination"));
         }
         return new UriBuilder(uri) { Fragment = "" }.Uri;
     }
@@ -68,7 +69,7 @@ public sealed partial class SoundCloudWebClient
     public async Task<ChatConversation> SendMessageAsync(long userId, long recipientId, string body, CancellationToken token = default)
     {
         using var json = await RequestChatAsync(new("send", userId, recipientId, body), token);
-        return ParseConversation(json.RootElement, userId) ?? throw new SoundCloudException("SoundCloud не подтвердил отправку сообщения. Обнови переписку перед повтором.");
+        return ParseConversation(json.RootElement, userId) ?? throw new SoundCloudException(UiText.Get("chats.send.refreshBeforeRetry"));
     }
 
     public async Task MarkConversationReadAsync(long userId, long recipientId, CancellationToken token = default)
@@ -76,9 +77,9 @@ public sealed partial class SoundCloudWebClient
 
     private Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken token)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректный запрос переписки.");
-        if (Session?.IsValid() != true) throw new SoundCloudException("Войди в SoundCloud, чтобы открыть чаты.");
-        return (BrowserTransport ?? throw new SoundCloudException("Соединение с SoundCloud ещё не готово.")).RequestChatAsync(request, token);
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("chats.request.invalid"));
+        if (Session?.IsValid() != true) throw new SoundCloudException(UiText.Get("auth.required.chats"));
+        return (BrowserTransport ?? throw new SoundCloudException(UiText.Get("soundcloud.connection.notReady"))).RequestChatAsync(request, token);
     }
 
     public static ChatConversationPage ParseConversations(JsonElement root, long userId)

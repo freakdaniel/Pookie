@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -58,10 +59,10 @@ internal static class DrmLicenseFailure
                 Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug(
                     "DRM-лицензия отклонена: HTTP {HttpStatus}; протокол {HttpVersion}; причина {Reason}; код {Code}; проверено байт {InspectedBytes}; CloudFront {CloudFront}",
                     (int)response.StatusCode, response.Version, category, NumericCode(buffer.AsMemory(0, count)), count, response.Headers.Contains("x-amz-cf-id"));
-            return category == "host-verification" ? " Сервер сообщил об ошибке проверки DRM-хоста (VMP)." :
-                category == "expired-authorization" ? " Сервер сообщил об истечении авторизации лицензии." :
-                category == "invalid-authorization" ? " Сервер сообщил о некорректной авторизации лицензии." :
-                category == "browser-verification" ? " Сервер запросил браузерную проверку." : "";
+            return category == "host-verification" ? UiText.Get("drm.license.hostVerification") :
+                category == "expired-authorization" ? UiText.Get("drm.license.expiredAuthorization") :
+                category == "invalid-authorization" ? UiText.Get("drm.license.invalidAuthorization") :
+                category == "browser-verification" ? UiText.Get("drm.license.browserCheck") : "";
         }
         finally { CryptographicOperations.ZeroMemory(buffer); }
     }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -66,13 +67,13 @@ internal sealed partial class MainWindow
         UserSection.Tracks => userTrackList.FindVisualChild<ScrollViewer>() as ScrollViewer,
         _ => userCardGrid.FindVisualChild<ScrollViewer>() as ScrollViewer
     };
-    private static LibraryItem UserItem(SoundCloudUser user) => new("user:" + user.Id, user.Username, "Профиль", user.AvatarUrl, User: user);
+    private static LibraryItem UserItem(SoundCloudUser user) => new("user:" + user.Id, user.Username, UiText.Get("header.profile"), user.AvatarUrl, User: user);
     private static readonly UserSection[] UserOverviewSources = [UserSection.Overview, UserSection.Tracks, UserSection.Likes, UserSection.Followers, UserSection.Following, UserSection.Comments];
     private static string UserSectionTitle(UserSection section) => section switch
     {
-        UserSection.Overview => "Обзор", UserSection.Tracks => "Треки", UserSection.Albums => "Альбомы",
-        UserSection.Playlists => "Плейлисты", UserSection.Reposts => "Репосты", UserSection.Likes => "Лайки",
-        UserSection.About => "О пользователе", UserSection.Comments => "Комментарии", UserSection.Followers => "Подписчики", _ => "Подписки"
+        UserSection.Overview => UiText.Get("library.overview"), UserSection.Tracks => UiText.Get("common.tracks"), UserSection.Albums => UiText.Get("library.albums"),
+        UserSection.Playlists => UiText.Get("library.playlists"), UserSection.Reposts => UiText.Get("profile.reposts.title"), UserSection.Likes => UiText.Get("library.likes"),
+        UserSection.About => UiText.Get("profile.about"), UserSection.Comments => UiText.Get("track.comments.heading"), UserSection.Followers => UiText.Get("profile.followers"), _ => UiText.Get("library.following")
     };
     private static string UserSectionApi(UserSection section) => section switch
     {
@@ -97,7 +98,7 @@ internal sealed partial class MainWindow
             userProfileState = cachedProfile.State with { Loading = new(missing) };
             RenderUserProfile();
             var token = loading!.Token;
-            if (demo && api.Session == null) { userProfileState = userProfileState with { Loading = [], MetadataLoading = false, MetadataError = "Профили доступны после входа в SoundCloud" }; RenderUserProfile(); return; }
+            if (demo && api.Session == null) { userProfileState = userProfileState with { Loading = [], MetadataLoading = false, MetadataError = UiText.Get("profile.signInPrompt") }; RenderUserProfile(); return; }
             var tasks = new List<Task>();
             if (userProfileState.MetadataLoading || userProfileState.MetadataError.Length > 0 || !userProfileState.LinksLoaded) tasks.Add(LoadUserMetadataAsync(user.Id, generation, token));
             foreach (var source in missing) tasks.Add(LoadUserSectionAsync(source, generation, token, scheduled: true));
@@ -262,7 +263,7 @@ internal sealed partial class MainWindow
         var source = userSection.Value; var key = $"user:{state.User.Id}:{UserSectionApi(source)}";
         if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         var items = UserMusicPage;
-        StartQueueContext(new(key, state.User.Username, "Сейчас играет из профиля", items?.NextHref,
+        StartQueueContext(new(key, state.User.Username, UiText.Get("queue.source.profile"), items?.NextHref,
             LibraryCursor: true, Kind: PlaybackContextKind.Artist), items?.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() ?? [track], track);
         await PlayAsync(track);
     }

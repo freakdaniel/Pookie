@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -23,10 +24,10 @@ internal sealed partial class MainWindow
         var tabs = new StackPanel().Horizontal().Spacing(22);
         var body = new Grid().Columns("*").Rows("Auto");
         foreach (var (section, title, content) in new (SettingsSection, string, Func<FrameworkElement>)[] {
-            (SettingsSection.General, "Общие", GeneralSettingsView), (SettingsSection.Interface, "Интерфейс", InterfaceSettingsView),
-            (SettingsSection.Playback, "Воспроизведение", PlaybackSettingsView),
-            (SettingsSection.Chats, "Чаты", ChatSettingsView), (SettingsSection.Shortcuts, "Сочетания клавиш", ShortcutSettingsView), (SettingsSection.Data, "Данные", DataSettingsView),
-            (SettingsSection.About, "О приложении", AboutSettingsView) })
+            (SettingsSection.General, UiText.Get("settings.general.title"), GeneralSettingsView), (SettingsSection.Interface, UiText.Get("settings.interface.title"), InterfaceSettingsView),
+            (SettingsSection.Playback, UiText.Get("settings.playback.title"), PlaybackSettingsView),
+            (SettingsSection.Chats, UiText.Get("header.chats"), ChatSettingsView), (SettingsSection.Shortcuts, UiText.Get("settings.shortcuts.title"), ShortcutSettingsView), (SettingsSection.Data, UiText.Get("settings.data.title"), DataSettingsView),
+            (SettingsSection.About, UiText.Get("settings.about.title"), AboutSettingsView) })
         {
             var tab = SectionTab(title, settingsSection, section, () => Run(() => ShowSettingsAsync(section)));
             settingsTabs[section] = tab; tabs.Add(tab);
@@ -36,7 +37,7 @@ internal sealed partial class MainWindow
             .Content(body.Padding(0, 0, 0, 24));
         return new DockPanel().LastChildFill().Spacing(24).Children(
             new StackPanel().Vertical().Spacing(22).DockTop().Children(
-                new TextBlock().Text("Настройки").FontSize(30).Bold(), tabs,
+                new TextBlock().Text(UiText.Get("header.settings")).FontSize(30).Bold(), tabs,
                 new TextBlock().BindText(settingsMessage).FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap)
                     .BindIsVisible(settingsMessage, value => value.Length > 0)), settingsScroll);
     }
@@ -84,6 +85,13 @@ internal sealed partial class MainWindow
             .Child(new Grid().Columns("*,Auto").Rows("Auto").Spacing(24).Children(text.Column(0), control.CenterVertical().Column(1)));
     }
 
+    private static async Task<bool> ConfirmAsync(string message, string detail, Window owner) =>
+        await MessageBox.PromptAsync(new MessageBoxOptions
+        {
+            Owner = owner, Title = "Pookie", Message = message, Detail = detail, Icon = PromptIconKind.Question,
+            Buttons = [new(UiText.Get("common.yes"), MessageButtonRole.Accept), new(UiText.Get("common.no"), MessageButtonRole.Reject)]
+        }) == true;
+
     private FrameworkElement SettingsToggle(string key, string title, string description, Func<bool> read, Action<bool> write)
     {
         var control = MaterialSwitch.Create(read(), value => { if (!refreshingSettings) write(value); });
@@ -96,9 +104,10 @@ internal sealed partial class MainWindow
         params (string Title, T Value)[] options) => SettingsChoiceWithContent(key, title, description, read, write, null, options);
 
     private FrameworkElement SettingsChoiceWithContent<T>(string key, string title, string description, Func<T> read, Action<T> write,
-        Func<string, FrameworkElement>? optionContent, params (string Title, T Value)[] options)
+        Func<string, T, FrameworkElement>? optionContent, params (string Title, T Value)[] options)
     {
-        var control = new MaterialSelect(options.Select(option => option.Title).ToArray(), optionContent).Width(220);
+        var control = new MaterialSelect(options.Select(option => option.Title).ToArray(), () => preferences.SmoothScrolling,
+            optionContent == null ? null : (index, title) => optionContent(title, options[index].Value)).Width(220);
         void Refresh() => control.SelectedIndex = Array.FindIndex(options, option => EqualityComparer<T>.Default.Equals(option.Value, read()));
         Refresh();
         control.SelectionChanged += _ =>

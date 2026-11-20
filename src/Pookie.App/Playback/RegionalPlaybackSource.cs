@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using Pookie.SoundCloud;
 
@@ -20,7 +21,7 @@ internal sealed class RegionalPlaybackSource : ISoundCloudPlaybackSource, IDispo
     {
         if (!proxy.IsAbsoluteUri || proxy.Scheme is not ("http" or "https" or "socks5") ||
             proxy.Host.Length == 0 || proxy.Fragment.Length != 0 || proxy.Query.Length != 0)
-            throw new ArgumentException("Региональный прокси должен быть HTTP, HTTPS или SOCKS5 адресом.", nameof(proxy));
+            throw new ArgumentException(UiText.Get("network.proxy.invalidScheme"), nameof(proxy));
         var target = new WebProxy(proxy);
         if (proxy.UserInfo.Length > 0)
         {

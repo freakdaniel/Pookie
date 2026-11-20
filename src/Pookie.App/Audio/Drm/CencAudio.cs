@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
@@ -36,7 +37,7 @@ internal sealed record CencAudioInitialization(uint TrackId, uint DefaultSampleS
         var frma = Mp4.One(bytes, sinf.Payload, sinf.End, "frma");
         if (Mp4.Type(bytes, frma.Payload, frma.End) != "mp4a") throw Mp4.Invalid();
         var schm = Mp4.One(bytes, sinf.Payload, sinf.End, "schm");
-        if (Mp4.Type(bytes, schm.Payload + 4, schm.End) != "cenc") throw new DrmPlaybackException("Поддерживается Widevine CENC; CBCS/FairPlay пока не подключён.");
+        if (Mp4.Type(bytes, schm.Payload + 4, schm.End) != "cenc") throw new DrmPlaybackException(UiText.Get("drm.encryption.unsupported"));
         var schi = Mp4.One(bytes, sinf.Payload, sinf.End, "schi");
         var tenc = Mp4.One(bytes, schi.Payload, schi.End, "tenc");
         if (tenc.End - tenc.Payload != 24 || bytes[tenc.Payload] != 0 || bytes[tenc.Payload + 6] != 1 ||
@@ -50,7 +51,7 @@ internal sealed record CencAudioInitialization(uint TrackId, uint DefaultSampleS
         var channelConfig = asc[1] >> 3 & 15;
         int[] rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
         if (objectType != 2 || frequency >= rates.Length || rate != rates[frequency] || channels != channelConfig || channels is < 1 or > 6)
-            throw new DrmPlaybackException("Этот вариант защищённого AAC не поддерживается; ожидается AAC-LC.");
+            throw new DrmPlaybackException(UiText.Get("drm.aac.unsupportedProfile"));
         var mvex = Mp4.One(bytes, moov.Payload, moov.End, "mvex");
         var trex = Mp4.One(bytes, mvex.Payload, mvex.End, "trex");
         if (Mp4.U32(bytes, trex.Payload + 4, trex.End) != trackId || Mp4.U32(bytes, trex.Payload + 8, trex.End) != 1) throw Mp4.Invalid();
@@ -106,7 +107,7 @@ internal static class CencAudioFragment
         var boxes = Mp4.Boxes(bytes, traf.Payload, traf.End);
         // The AAC roll group describes decoder pre-roll, not encryption.
         if (boxes.Any(b => b.Type is ("sgpd" or "sbgp") && Mp4.Type(bytes, b.Payload + 4, b.End) != "roll"))
-            throw new DrmPlaybackException("Смена DRM-параметров внутри MP4-фрагмента пока не поддерживается.");
+            throw new DrmPlaybackException(UiText.Get("drm.mp4.parametersChanged"));
         var tfhd = Mp4.One(bytes, traf.Payload, traf.End, "tfhd");
         var flags = Mp4.Flags(bytes, tfhd);
         if (Mp4.U32(bytes, tfhd.Payload + 4, tfhd.End) != initialization.TrackId) throw Mp4.Invalid();
@@ -244,5 +245,5 @@ internal static class Mp4
     public static int I32(byte[] bytes, int position, int end) => BinaryPrimitives.ReadInt32BigEndian(Read(bytes, position, 4, end));
     public static ulong U64(byte[] bytes, int position, int end) => BinaryPrimitives.ReadUInt64BigEndian(Read(bytes, position, 8, end));
     public static string Type(byte[] bytes, int position, int end) => System.Text.Encoding.ASCII.GetString(Read(bytes, position, 4, end));
-    public static DrmPlaybackException Invalid() => new("Неподдерживаемый или повреждённый защищённый MP4-аудиопоток.");
+    public static DrmPlaybackException Invalid() => new(UiText.Get("drm.mp4.invalidProtectedAudio"));
 }

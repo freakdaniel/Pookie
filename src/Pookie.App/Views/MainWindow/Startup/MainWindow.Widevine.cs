@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.Audio;
@@ -27,30 +28,30 @@ internal sealed partial class MainWindow
     private FrameworkElement WidevineSetupView()
     {
         if (widevineSetup == null) return new Grid().IsVisible(false);
-        widevineContinueLabel = new TextBlock().Text("Принять и продолжить").FontSize(14).SemiBold().Foreground(Color.White);
+        widevineContinueLabel = new TextBlock().Text(UiText.Get("drm.consent.accept")).FontSize(14).SemiBold().Foreground(Color.White);
         widevineContinue = TrackButtons.Action(widevineContinueLabel,
             () => { if (!widevineBusy) widevineAction?.TrySetResult(); },
             TrackButtons.Glass, 44).Width(WidevineActionWidth);
         ((MaterialTrackButton)widevineContinue).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
         ((MaterialTrackButton)widevineContinue).UseGlassAccentStateLayer();
-        widevineExit = TrackButtons.Action(new TextBlock().Text("Выйти").FontSize(14).SemiBold().Foreground(Color.White),
+        widevineExit = TrackButtons.Action(new TextBlock().Text(UiText.Get("account.signOut")).FontSize(14).SemiBold().Foreground(Color.White),
             () => Window.Close(), TrackButtons.Glass, 44).Width(WidevineActionWidth);
         ((MaterialTrackButton)widevineExit).UseLightGlassFinish();
         widevineConsentError = new TextBlock().FontSize(13).Foreground(Color.FromRgb(255, 177, 193)).TextWrapping(TextWrapping.Wrap).IsVisible(false);
         widevineLicense = new DescriptionTextBlock { Text = "", FontSize = 14, Foreground = TrackButtons.OnSurface };
         widevineLicenseLinks = new DescriptionLinks(widevineLicense, uri => OpenExternalUrl(uri.AbsoluteUri, () =>
         {
-            widevineConsentError.Text = "Не удалось открыть ссылку в системном браузере.";
+            widevineConsentError.Text = UiText.Get("links.system.openFailed");
             widevineConsentError.IsVisible = true;
         }), showIcons: false);
         widevineLicenseScroll = new ScrollViewer().Height(250).Padding(18).Background(Color.FromArgb(100, 10, 10, 14)).BorderThickness(0)
             .Content(widevineLicense);
         widevineBrand = new WidevineBrand().Left();
-        widevineHeading = new TextBlock().Text("Защищённое\nвоспроизведение").FontSize(32).Foreground(Color.White).TextWrapping(TextWrapping.Wrap);
+        widevineHeading = new TextBlock().Text(UiText.Get("drm.consent.heading")).FontSize(32).Foreground(Color.White).TextWrapping(TextWrapping.Wrap);
         var introduction = new StackPanel().Vertical().Spacing(24).Children(
             widevineBrand,
             widevineHeading,
-            new TextBlock().Text("Для воспроизведения контента защищенного авторским правом необходим DRM модуль. Ознакомьтесь и примите условия поставщика чтобы продолжить")
+            new TextBlock().Text(UiText.Get("drm.consent.description"))
                 .FontSize(15).Foreground(Muted).TextWrapping(TextWrapping.Wrap), widevineConsentError);
         var buttons = new StackPanel().Horizontal().Spacing(WidevineActionGap).Children(widevineExit, widevineContinue);
         var licenseColumn = new StackPanel().Vertical().Spacing(28).Children(widevineLicenseScroll, buttons);
@@ -70,7 +71,7 @@ internal sealed partial class MainWindow
     {
         if (widevineSetup == null) return new Grid().IsVisible(false);
         widevineStartupError = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap).TextAlignment(TextAlignment.Center);
-        widevineStartupRetry = TrackButtons.Action(new TextBlock().Text("Повторить загрузку").FontSize(14).SemiBold(),
+        widevineStartupRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retryDownload")).FontSize(14).SemiBold(),
             () => widevineRetryAction?.TrySetResult(), TrackButtons.Glass, 44).Width(220).CenterHorizontal();
         widevineStartupFailure = new StackPanel().Vertical().Spacing(16).MaxWidth(480).CenterHorizontal().IsVisible(false)
             .Children(widevineStartupError, widevineStartupRetry);
@@ -119,7 +120,7 @@ internal sealed partial class MainWindow
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception error)
             {
-                await RetryWidevineStartupAsync(error, "Не удалось получить актуальные условия Widevine. Проверь подключение к интернету и повтори попытку.");
+                await RetryWidevineStartupAsync(error, UiText.Get("drm.consent.fetchFailed"));
             }
         }
         // Reflow vendor line wraps without changing words or paragraph boundaries.
@@ -141,7 +142,7 @@ internal sealed partial class MainWindow
             catch (Exception error)
             {
                 AppLog.Failure("Pookie.UI", "Не удалось сохранить принятие условий Widevine", error);
-                widevineConsentError.Text = "Не удалось сохранить принятие условий. Проверь доступ к папке данных Pookie и повтори попытку.";
+                widevineConsentError.Text = UiText.Get("drm.consent.persistFailed");
                 widevineConsentError.IsVisible = true;
             }
         }
@@ -156,7 +157,7 @@ internal sealed partial class MainWindow
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception error)
             {
-                await RetryWidevineStartupAsync(error, "Не удалось загрузить или проверить Widevine. Проверь подключение к интернету и повтори попытку.");
+                await RetryWidevineStartupAsync(error, UiText.Get("drm.widevine.downloadFailed"));
             }
         }
     }

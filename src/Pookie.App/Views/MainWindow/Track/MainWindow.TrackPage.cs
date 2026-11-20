@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -280,12 +281,12 @@ internal sealed partial class MainWindow
         if (codec.StartsWith("PCM_") && codec.Length > 5 && "SUF".Contains(codec[4]))
         {
             var bits = new string(codec.Skip(5).TakeWhile(char.IsAsciiDigit).ToArray());
-            if (bits.Length > 0) codec = $"PCM {bits} бит";
+            if (bits.Length > 0) codec = UiText.Format("audio.format.pcm", bits);
         }
         var details = new List<string> { codec };
-        if (upload.SampleRate is > 0) details.Add((upload.SampleRate.Value / 1000d).ToString("0.###", CultureInfo.GetCultureInfo("ru-RU")) + " кГц");
-        if (upload.Channels is > 0) details.Add(upload.Channels == 1 ? "моно" : upload.Channels == 2 ? "стерео" : $"{upload.Channels} кан.");
-        trackDetailHd.Hint("Загружено без потерь (lossless)\n" + string.Join(" · ", details));
+        if (upload.SampleRate is > 0) details.Add(UiText.Compose($"{(upload.SampleRate.Value / 1000d).ToString("0.###", CultureInfo.CurrentCulture)}{UiText.Get("audio.sampleRate.unit")}"));
+        if (upload.Channels is > 0) details.Add(upload.Channels == 1 ? UiText.Get("audio.channels.mono") : upload.Channels == 2 ? UiText.Get("audio.channels.stereo") : UiText.Format("audio.format.channels", upload.Channels));
+        trackDetailHd.Hint(UiText.Compose($"{UiText.Get("track.audio.losslessUpload")}{UiText.Join(" · ", details)}"));
     }
 
     private async Task LoadTrackDetailCommentsAsync(long id, long generation, CancellationToken token, string? cursor = null)
@@ -395,7 +396,7 @@ internal sealed partial class MainWindow
         }
         RenderTrackCommentComposer();
         trackDetailTitle.Text = track.Title; trackDetailAuthor.Text = trackDetailAuthorName.Text = track.Author;
-        trackDetailMeta.Text = "· " + string.Join(" · ", new[] { track.Genre, DetailAge(track.CreatedAt) }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        trackDetailMeta.Text = UiText.Compose($"· {UiText.Join(" · ", new[] { track.Genre, DetailAge(track.CreatedAt) }.Where(value => !string.IsNullOrWhiteSpace(value)))}");
         RenderTrackDetailQuality();
         trackDetailMetadataLine.SetMetadataReady(track.Id, !state.MetadataLoading);
         trackDetailStats.Text = DetailCompactCount(track.PlaybackCount);
@@ -407,8 +408,8 @@ internal sealed partial class MainWindow
         trackDetailLicense.Text = TrackLicense(track.License);
         trackDetailLicense.IsVisible = trackDetailLicense.Text.Length > 0;
         trackDetailAuthorStats.Text = string.Join("  ·  ", new[] {
-            track.User?.FollowersCount is { } followers ? $"{DetailCount(followers)} подписчиков" : null,
-            track.User?.TrackCount is { } trackCount ? $"{DetailCount(trackCount)} треков" : null }.Where(value => value != null));
+            track.User?.FollowersCount is { } followers ? UiText.FollowerCount(followers) : null,
+            track.User?.TrackCount is { } trackCount ? UiText.TrackCount(trackCount) : null }.Where(value => value != null));
         trackDetailDuration.Text = FormatTime(track.DurationSeconds);
         trackDetailError.Text = state.MetadataError;
         trackDetailError.IsVisible = state.MetadataError.Length > 0;
@@ -420,7 +421,7 @@ internal sealed partial class MainWindow
         if (page.Value != Page.Track || trackDetailState is not { } state) return;
         var track = state.Track; var selected = track.Id == current?.Id;
         trackDetailPlayIcon.Source = Icons.Source(selected && isPlaying.Value ? "pause-solid" : "play-solid", TrackButtons.OnSurface);
-        trackDetailPlay.Hint(selected && isPlaying.Value ? "Приостановить" : "Воспроизвести");
+        trackDetailPlay.Hint(selected && isPlaying.Value ? UiText.Get("playback.pause") : UiText.Get("playback.play"));
         trackDetailWaveform.IsPlaying = selected && isPlaying.Value;
         RefreshTrackDetailPosition();
         var liked = IsTrackLiked(track);
@@ -428,7 +429,7 @@ internal sealed partial class MainWindow
         TrackButtons.SetTextColor(trackDetailLikeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface);
         TrackButtons.SetLiked(trackDetailLike, liked, TrackButtons.Glass);
         RefreshRepostState();
-        trackDetailLike.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+        trackDetailLike.Hint(liked ? UiText.Get("likes.actions.remove") : UiText.Get("likes.actions.add"));
         trackDetailLikeCount.Text = DetailCount(track.LikesCount);
         TrackButtons.SetAvailability(trackDetailLike, CanLikeTrack(track), IsLikePending(track));
     }
@@ -472,7 +473,7 @@ internal sealed partial class MainWindow
             var row = trackDetailRelatedRows[i]; row.Root.IsVisible = i < related.Length;
             BindCompactTrackRow(row, i < related.Length ? related[i] : null);
         }
-        trackDetailRelatedStatus.Text = state.RelatedLoading ? "Загружаем похожие треки…" : state.RelatedError.Length > 0 ? state.RelatedError : related.Length == 0 ? "Похожих треков пока нет." : "";
+        trackDetailRelatedStatus.Text = state.RelatedLoading ? UiText.Get("track.related.loading") : state.RelatedError.Length > 0 ? state.RelatedError : related.Length == 0 ? UiText.Get("track.related.empty") : "";
         trackDetailRelatedStatus.IsVisible = trackDetailRelatedStatus.Text.Length > 0;
     }
 
@@ -481,7 +482,7 @@ internal sealed partial class MainWindow
         if (trackDetailState is not { } state) return;
         trackCommentSortLabel.Text = CommentSortLabel(state.CommentSort);
         trackDetailCommentsTitle.Text = CommentHeading(state.Track.CommentCount ?? state.Comments.Comments.Length);
-        trackDetailCommentsStatus.Text = state.CommentsLoading ? "" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? "К этому треку ещё нет комментариев." : "";
+        trackDetailCommentsStatus.Text = state.CommentsLoading ? "" : state.CommentsError.Length > 0 ? state.CommentsError : state.Comments.Comments.Length == 0 ? UiText.Get("track.comments.empty") : "";
         trackDetailCommentsStatus.IsVisible = trackDetailCommentsStatus.Text.Length > 0;
         var comments = state.Comments.Comments;
         var changed = renderedCommentsTrack != state.Track.Id || renderedCommentsDuration != state.Track.DurationSeconds || !comments.SequenceEqual(renderedComments);
@@ -501,7 +502,7 @@ internal sealed partial class MainWindow
         else trackDetailComments.InvalidateVisual();
         UpdateTrackCommentLoading(state);
         if (changed) RenderTrackCommentMarkers();
-        ((TextBlock)trackDetailMoreComments.Content!).Text = state.CommentsError.Length > 0 ? "Повторить загрузку" : "Ещё комментарии";
+        ((TextBlock)trackDetailMoreComments.Content!).Text = state.CommentsError.Length > 0 ? UiText.Get("common.retryDownload") : UiText.Get("comments.loadMore");
     }
 
     private void AppendTrackCommentBatch()
@@ -542,14 +543,13 @@ internal sealed partial class MainWindow
             (state.Comments.NextHref != null || state.CommentsError.Length > 0);
     }
 
-    private static string CommentHeading(long count) => DetailCount(count) + " " +
-        (count % 100 is >= 11 and <= 14 ? "комментариев" : (count % 10) switch { 1 => "комментарий", 2 or 3 or 4 => "комментария", _ => "комментариев" });
+    private static string CommentHeading(long count) => UiText.Compose($"{DetailCount(count)} {UiText.Plural(count, "comments.count")}");
 
-    private static string DetailCount(long? count) => count is { } value ? value.ToString("N0", CultureInfo.GetCultureInfo("ru-RU")) : "—";
+    private static string DetailCount(long? count) => count is { } value ? value.ToString("N0", CultureInfo.CurrentCulture) : "—";
     private static string DetailCompactCount(long? count) => count switch
     {
-        >= 1_000_000 => (count.Value / 1_000_000d).ToString("0.##", CultureInfo.InvariantCulture) + "M",
-        >= 10_000 => (count.Value / 1_000d).ToString("0.#", CultureInfo.InvariantCulture) + "K",
+        >= 1_000_000 => (count.Value / 1_000_000d).ToString("0.##", CultureInfo.CurrentCulture) + "M",
+        >= 10_000 => (count.Value / 1_000d).ToString("0.#", CultureInfo.CurrentCulture) + "K",
         _ => DetailCount(count)
     };
 

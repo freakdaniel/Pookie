@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -64,7 +65,7 @@ internal sealed partial class MainWindow
         });
         view.Name.Text = actor?.Username ?? entry.Item.Subtitle;
         view.Repost.IsVisible = entry.IsRepost;
-        view.Publication.Text = entry.IsRepost ? "сделал репост" : "опубликовал";
+        view.Publication.Text = entry.IsRepost ? UiText.Get("feed.activity.reposted") : UiText.Get("feed.activity.posted");
         view.Date.Text = FeedDate(entry.CreatedAt);
         FrameworkElement? body = null;
         if (entry.Item.Track is { } track)
@@ -121,7 +122,7 @@ internal sealed partial class MainWindow
         if (authors.Length > 0)
         {
             var releases = new StackPanel().Vertical().Spacing(12).Children(
-                new TextBlock().Text("Недавно выпустили").FontSize(17).SemiBold());
+                new TextBlock().Text(UiText.Get("home.newReleases")).FontSize(17).SemiBold());
             foreach (var author in authors)
             {
                 var person = new Grid().Columns("40,*").Rows("Auto").Spacing(12).Children(
@@ -136,13 +137,13 @@ internal sealed partial class MainWindow
         if (history.Length > 0)
         {
             var recent = new StackPanel().Vertical().Spacing(8).Children(
-                SectionHeader("Недавно слушал", () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory)), 17));
+                SectionHeader(UiText.Get("home.recentlyPlayed"), () => Run(() => ShowLibrarySectionAsync(Page.LibraryHistory)), 17));
             foreach (var track in history)
             {
                 var row = CreateCompactTrackRow(value => Run(async () =>
                 {
                     if (IsCurrentTrack(value)) { await ToggleAsync(); return; }
-                    StartQueueContext(new("recent", "Недавно прослушанное", "Сейчас играет из истории", Kind: Playback.PlaybackContextKind.Recent), history, value);
+                    StartQueueContext(new("recent", UiText.Get("history.recentlyPlayed"), UiText.Get("queue.source.history"), Kind: Playback.PlaybackContextKind.Recent), history, value);
                     await PlayAsync(value);
                 }), dense: true);
                 row.Root.Margin = new Thickness(-8, 0, -8, 0);
@@ -156,8 +157,8 @@ internal sealed partial class MainWindow
     {
         if (!DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var date)) return "";
         var age = DateTimeOffset.UtcNow - date;
-        return age.TotalMinutes < 1 ? "Только что" : age.TotalHours < 1 ? $"{Math.Max(1, (int)age.TotalMinutes)} мин. назад" :
-            age.TotalDays < 1 ? $"{(int)age.TotalHours} ч. назад" : UserPublicationDate(value);
+        return age.TotalMinutes < 1 ? UiText.Get("time.justNow") : age.TotalHours < 1 ? UiText.Format("time.ago.minutes", Math.Max(1, (int)age.TotalMinutes)):
+            age.TotalDays < 1 ? UiText.Format("time.ago.hours", (int)age.TotalHours): UserPublicationDate(value);
     }
 
     private void RefreshFeedPlayback()

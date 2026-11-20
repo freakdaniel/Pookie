@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -27,7 +28,7 @@ internal sealed class CommentTextBlock : TextBlock
     private ITextLayout Paragraph(double width, bool measuring = false)
     {
         var next = new ParagraphKey(width, GetDpi(), new TextRunStyle(FontFamily, FontSize, FontWeight, FontStyle == FontStyle.Italic),
-            Wrapping, TextTrimming, TextAlignment, LineSpacing, LineBoxTrim, CultureInfo.CurrentUICulture.Name, Text);
+            Wrapping, TextTrimming, TextAlignment, LineSpacing, LineBoxTrim, UiText.Language.Name, Text);
         var graphics = GetGraphicsFactory();
         if (factory != graphics) { layout = naturalLine = null; factory = graphics; }
         if (Wrapping == TextWrapping.NoWrap && TextAlignment == TextAlignment.Left)
@@ -63,7 +64,7 @@ internal sealed class CommentTextBlock : TextBlock
             {
                 MaxWidth = next.Width, MaxHeight = double.PositiveInfinity, Wrapping = next.Wrapping,
                 Trimming = next.Trimming, Alignment = next.Alignment,
-                LineSpacing = LineSpacing, LineBoxTrim = LineBoxTrim, Culture = CultureInfo.CurrentUICulture
+                LineSpacing = LineSpacing, LineBoxTrim = LineBoxTrim, Culture = UiText.Language
             }
         }, TextLayoutCachePolicy.Owner, this);
 

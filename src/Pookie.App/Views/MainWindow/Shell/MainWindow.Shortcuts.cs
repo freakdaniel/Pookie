@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Input;
@@ -81,7 +82,7 @@ internal sealed partial class MainWindow
         else if (e.Key is Key.Enter or Key.ContextMenu || e.Key == Key.F10 && e.ShiftKey)
         {
             PreviewShortcut(null);
-            shortcutNotice.Text = "Эта клавиша используется интерфейсом. Нажми другое сочетание.";
+            shortcutNotice.Text = UiText.Get("shortcuts.recorder.reserved");
             shortcutNotice.IsVisible = true;
         }
         else PreviewShortcut(new KeySequence(new KeyGesture(e.Key, e.Modifiers)).ToString());
@@ -115,7 +116,7 @@ internal sealed partial class MainWindow
             ShortcutAction.Forward when canGoForward.Value => () => Run(() => MoveNavigationAsync(1)),
             ShortcutAction.Settings => () => Run(() => ShowSettingsAsync(settingsSection.Value)),
             ShortcutAction.Search => OpenTopSearch,
-            ShortcutAction.Find when page.Value == Page.Chats && chatRecipient == null && !chatFavoritesOpen => () => chatSearch.Focus(),
+            ShortcutAction.Find when page.Value == Page.Chats && chatRecipient == null => () => chatSearch.Focus(),
             ShortcutAction.Find when page.Value == Page.Chats => OpenChatThreadSearch,
             ShortcutAction.Find when page.Value == Page.LibraryTracks => () => likedFilter.Focus(),
             ShortcutAction.Find when page.Value == Page.LibraryCollection && playlistCollectionVisible.Value => () => collectionFilter.Focus(),

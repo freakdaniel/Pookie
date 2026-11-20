@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -10,12 +11,12 @@ internal sealed partial class MainWindow
     private TextBox playlistEditName = null!;
     private MultiLineTextBox playlistEditDescription = null!;
     private PlaylistPrivacySelector playlistEditPrivacy = null!;
-    private TextBlock playlistEditHeading = null!, playlistEditMessage = null!;
+    private TextBlock playlistEditMessage = null!;
     private StackPanel playlistEditFields = null!;
-    private Button playlistEditSave = null!, playlistEditDeleteConfirm = null!;
+    private Button playlistEditSave = null!;
     private LibraryItem? playlistEditTarget;
     private WebSession? playlistEditSession;
-    private bool playlistEditPrivate, playlistEditDeleting;
+    private bool playlistEditPrivate;
     private readonly HashSet<(WebSession Session, long Playlist)> pendingPlaylistEdits = [];
 
     private bool CanEditDisplayedPlaylist() => !demo && page.Value == Page.LibraryCollection && me is { } user &&
@@ -38,18 +39,13 @@ internal sealed partial class MainWindow
         playlistEditor?.Close(immediate: true); playlistEditTarget = null; playlistEditSession = null;
     }
 
-    private void OpenPlaylistEditor(bool deleting = false)
+    private void OpenPlaylistEditor()
     {
         if (!CanEditDisplayedPlaylist()) return;
         playlistEditTarget = displayedCollection; playlistEditSession = api.Session;
         var playlist = playlistEditTarget!.Playlist!;
-        playlistEditDeleting = deleting;
         playlistEditLoadingFields = true;
         ClearPlaylistEditArtwork();
-        playlistEditTabs.IsVisible = !deleting; playlistEditHeading.IsVisible = deleting;
-        playlistEditDeleteText.IsVisible = deleting;
-        ((TextBlock)playlistEditDeleteText).Text = $"Плейлист «{playlist.Title}» будет удалён из SoundCloud.";
-        playlistEditFields.IsVisible = !deleting;
         playlistEditName.Text = playlist.Title; playlistEditDescription.Text = playlist.Description ?? "";
         playlistEditPrivate = playlist.Sharing == "private";
         playlistEditOriginalPermalink = playlist.Permalink ?? playlist.PermalinkUrl?.Split('/').LastOrDefault() ?? "";
@@ -74,7 +70,7 @@ internal sealed partial class MainWindow
         });
         SetPlaylistEditMessage(""); playlistEditLoadingFields = false;
         RefreshPlaylistEditor();
-        if (!deleting) PreparePlaylistEditAccess();
+        PreparePlaylistEditAccess();
         playlistEditor.Show();
     }
 
@@ -89,11 +85,9 @@ internal sealed partial class MainWindow
         var request = target == null ? null : PlaylistEditorRequest(target);
         ValidatePlaylistEdit(request);
         var dirty = target != null && request != null && PlaylistEditorDirty(target, request);
-        playlistEditSaveReveal.Show(!playlistEditDeleting && dirty, animate: playlistEditor.IsOpen && !playlistEditor.Running);
-        playlistEditDeleteConfirm.IsVisible = playlistEditDeleting;
+        playlistEditSaveReveal.Show(dirty, animate: playlistEditor.IsOpen && !playlistEditor.Running);
         var available = !busy && target != null && api.Session == playlistEditSession;
-        TrackButtons.SetAvailability(playlistEditSave, !playlistEditDeleting && dirty && request?.IsValid() == true && available, busy);
-        TrackButtons.SetAvailability(playlistEditDeleteConfirm, playlistEditDeleting && available, busy);
+        TrackButtons.SetAvailability(playlistEditSave, dirty && request?.IsValid() == true && available, busy);
         FitPlaylistEditor();
     }
 
@@ -112,64 +106,44 @@ internal sealed partial class MainWindow
 
     private async Task SavePlaylistEditorAsync()
     {
-        var confirm = playlistEditDeleting ? playlistEditDeleteConfirm : playlistEditSave;
-        if (!confirm.IsEnabled || playlistEditTarget is not { Playlist: { } playlist } item || playlistEditSession is not { } session || api.Session != session || me is not { } user ||
+        if (!playlistEditSave.IsEnabled || playlistEditTarget is not { Playlist: { } playlist } item || playlistEditSession is not { } session || api.Session != session || me is not { } user ||
             !pendingPlaylistEdits.Add((session, playlist.Id))) return;
-        var deleting = playlistEditDeleting;
         var request = PlaylistEditorRequest(playlist);
         var artwork = playlistEditArtworkBytes;
         var confirmed = false;
         SetPlaylistEditMessage(""); RefreshPlaylistEditor();
         try
         {
-            SoundCloudPlaylist? updated = null;
-            if (deleting) await api.DeletePlaylistAsync(user.Id, playlist.Id, lifetime.Token);
-            else updated = await api.UpdatePlaylistAsync(request, lifetime.Token);
+            var updated = await api.UpdatePlaylistAsync(request, lifetime.Token);
             confirmed = true;
             if (disposed || api.Session != session) return;
             InvalidatePlaylistLibrary(playlist.Id);
-            if (updated != null)
+            ApplyEditedPlaylist(item, updated);
+            // Keep confirmed metadata as the new baseline if a subsequent
+            // artwork upload fails. Retrying must not restore old metadata.
+            playlistEditTarget = item with { Playlist = updated };
+            playlistEditOriginalPermalink = updated.Permalink ?? updated.PermalinkUrl?.Split('/').LastOrDefault() ?? "";
+            playlistEditPermalink.Placeholder = playlistEditOriginalPermalink;
+            playlistEditOriginalDate = PlaylistEditDateValue(updated);
+            playlistEditOriginalType = updated.PlaylistType ?? (updated.IsAlbum ? "album" : "playlist");
+            if (artwork != null)
             {
-                ApplyEditedPlaylist(item, updated);
-                // Keep confirmed metadata as the new baseline if a subsequent
-                // artwork upload fails. Retrying must not restore old metadata.
-                playlistEditTarget = item with { Playlist = updated };
-                playlistEditOriginalPermalink = updated.Permalink ?? updated.PermalinkUrl?.Split('/').LastOrDefault() ?? "";
-                playlistEditPermalink.Placeholder = playlistEditOriginalPermalink;
-                playlistEditOriginalDate = PlaylistEditDateValue(updated);
-                playlistEditOriginalType = updated.PlaylistType ?? (updated.IsAlbum ? "album" : "playlist");
-                if (artwork != null)
-                {
-                    var withArtwork = await api.SetPlaylistArtworkAsync(user.Id, playlist.Id, artwork, lifetime.Token);
-                    if (disposed || api.Session != session) return;
-                    ApplyEditedPlaylist(item, withArtwork);
-                }
+                var withArtwork = await api.SetPlaylistArtworkAsync(user.Id, playlist.Id, artwork, lifetime.Token);
+                if (disposed || api.Session != session) return;
+                ApplyEditedPlaylist(item, withArtwork);
             }
             playlistEditor.Close(); playlistEditTarget = null; playlistEditSession = null;
-            if (deleting)
-            {
-                likedPlaylistIds.Remove(playlist.Id); repostedPlaylistIds.Remove(playlist.Id);
-                if (page.Value == Page.LibraryCollection && displayedCollection?.Playlist?.Id == playlist.Id)
-                    await ShowLibrarySectionAsync(Page.LibraryPlaylists);
-                for (var i = navigationHistory.Count - 1; i >= 0; i--)
-                {
-                    if (i == navigationIndex || navigationHistory[i].Route.Item?.Playlist?.Id != playlist.Id) continue;
-                    navigationHistory.RemoveAt(i);
-                    if (i < navigationIndex) navigationIndex--;
-                }
-                RefreshHistoryButtons();
-            }
             await RefreshEditedPlaylistLibraryAsync(session);
-            if (!disposed && api.Session == session) status.Value = deleting ? "Плейлист удалён." : "Плейлист сохранён.";
+            if (!disposed && api.Session == session) status.Value = UiText.Get("playlist.status.saved");
         }
         catch (Exception error)
         {
             if (!disposed && api.Session == session)
             {
                 InvalidatePlaylistLibrary(playlist.Id, details: !confirmed);
-                status.Value = confirmed ? "Основные изменения сохранены. " + FriendlyError(error) : FriendlyError(error);
+                status.Value = confirmed ? UiText.Compose($"{UiText.Get("playlist.edit.mainChangesSaved")}{FriendlyError(error)}") : FriendlyError(error);
                 if (playlistEditTarget?.Playlist?.Id == playlist.Id) SetPlaylistEditMessage(confirmed
-                    ? "Основные изменения сохранены. " + FriendlyError(error) : FriendlyError(error));
+                    ? UiText.Compose($"{UiText.Get("playlist.edit.mainChangesSaved")}{FriendlyError(error)}") : FriendlyError(error));
             }
         }
         finally
@@ -177,6 +151,39 @@ internal sealed partial class MainWindow
             pendingPlaylistEdits.Remove((session, playlist.Id));
             if (!disposed) RefreshPlaylistEditor();
         }
+    }
+
+    private async Task DeletePlaylistAsync(long playlistId, WebSession session)
+    {
+        if (!CanEditDisplayedPlaylist() || displayedCollection?.Playlist?.Id != playlistId ||
+            api.Session != session || me is not { } user || !pendingPlaylistEdits.Add((session, playlistId))) return;
+        try
+        {
+            await api.DeletePlaylistAsync(user.Id, playlistId, lifetime.Token);
+            if (disposed || api.Session != session) return;
+            InvalidatePlaylistLibrary(playlistId);
+            likedPlaylistIds.Remove(playlistId); repostedPlaylistIds.Remove(playlistId);
+            if (page.Value == Page.LibraryCollection && displayedCollection?.Playlist?.Id == playlistId)
+                await ShowLibrarySectionAsync(Page.LibraryPlaylists);
+            for (var i = navigationHistory.Count - 1; i >= 0; i--)
+            {
+                if (i == navigationIndex || navigationHistory[i].Route.Item?.Playlist?.Id != playlistId) continue;
+                navigationHistory.RemoveAt(i);
+                if (i < navigationIndex) navigationIndex--;
+            }
+            RefreshHistoryButtons();
+            await RefreshEditedPlaylistLibraryAsync(session);
+            if (!disposed && api.Session == session) status.Value = UiText.Get("playlist.status.deleted");
+        }
+        catch (Exception error)
+        {
+            if (!disposed && api.Session == session)
+            {
+                InvalidatePlaylistLibrary(playlistId);
+                status.Value = FriendlyError(error);
+            }
+        }
+        finally { pendingPlaylistEdits.Remove((session, playlistId)); }
     }
 
     private void ApplyEditedPlaylist(LibraryItem previous, SoundCloudPlaylist playlist)
@@ -221,11 +228,11 @@ internal sealed partial class MainWindow
             var command = PopupAppearance.MenuCommand("pookie.playlist." + id, label, icon);
             root.Commands.Register(command, action, enabled); menu.Item(command);
         }
-        Item("remove", "Удалить из плейлиста", "x", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 0)); },
+        Item("remove", UiText.Get("playlist.edit.removeTrack"), "x", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 0)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder());
-        Item("up", "Выше в плейлисте", "caret-up", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), -1)); },
+        Item("up", UiText.Get("playlist.actions.moveUp"), "caret-up", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), -1)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder() && position() > 0);
-        Item("down", "Ниже в плейлисте", "caret-down", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 1)); },
+        Item("down", UiText.Get("playlist.actions.moveDown"), "caret-down", () => { if (track() is { } selected) Run(() => EditPlaylistTrackAsync(selected, position(), 1)); },
             () => track() != null && CanEditDisplayedPlaylist() && HasCompletePlaylistOrder() && position() >= 0 && position() < activeCollection!.Items.Length - 1);
     }
 
@@ -250,7 +257,7 @@ internal sealed partial class MainWindow
             if (updated != null) ApplyEditedPlaylist(item, updated);
             else await ReloadEditedPlaylistAsync(item, session);
             await RefreshEditedPlaylistLibraryAsync(session);
-            if (!disposed && api.Session == session) status.Value = direction == 0 ? "Трек удалён из плейлиста." : "Порядок треков сохранён.";
+            if (!disposed && api.Session == session) status.Value = direction == 0 ? UiText.Get("playlist.status.trackRemoved") : UiText.Get("playlist.status.orderSaved");
         }
         catch
         {
@@ -263,13 +270,13 @@ internal sealed partial class MainWindow
     private async Task PickPlaylistArtworkAsync()
     {
         if (!CanEditDisplayedPlaylist() || displayedCollection is not { Playlist: { } playlist } item || api.Session is not { } session || me is not { } user) return;
-        var files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = "Обложка плейлиста", Multiselect = false,
-            Filters = [new FileFilter("JPEG до 5 МБ", "*.jpg", "*.jpeg")] }, lifetime.Token);
+        var files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = UiText.Get("playlist.artwork.label"), Multiselect = false,
+            Filters = [new FileFilter(UiText.Get("artwork.limit.large"), "*.jpg", "*.jpeg")] }, lifetime.Token);
         if (files is not { Length: > 0 } || disposed || api.Session != session || !pendingPlaylistEdits.Add((session, playlist.Id))) return;
         try
         {
             var file = new FileInfo(files[0]);
-            if (file.Length > 5 * 1024 * 1024) throw new ArgumentException("Нужна обложка JPEG размером до 5 МБ.");
+            if (file.Length > 5 * 1024 * 1024) throw new ArgumentException(UiText.Get("artwork.validation.largeJpeg"));
             var bytes = await File.ReadAllBytesAsync(file.FullName, lifetime.Token);
             await Task.Run(() => Storage.ArtworkImage.Prepare(bytes), lifetime.Token);
             if (disposed || api.Session != session) return;
@@ -277,7 +284,7 @@ internal sealed partial class MainWindow
             if (disposed || api.Session != session) return;
             InvalidatePlaylistLibrary(playlist.Id); ApplyEditedPlaylist(item, updated);
             await RefreshEditedPlaylistLibraryAsync(session);
-            if (!disposed && api.Session == session) status.Value = "Обложка плейлиста обновлена.";
+            if (!disposed && api.Session == session) status.Value = UiText.Get("playlist.artwork.updated");
         }
         finally { pendingPlaylistEdits.Remove((session, playlist.Id)); }
     }

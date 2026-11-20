@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -13,7 +14,7 @@ internal sealed class PlaylistAddressField : GlassCard
     private readonly TextBox input;
     private bool invalid;
     private double amount;
-    internal TextBlock Label { get; } = new TextBlock().Text("Адрес").FontSize(14).CenterVertical();
+    internal TextBlock Label { get; } = new TextBlock().Text(UiText.Get("common.address")).FontSize(14).CenterVertical();
     internal bool Animating => motion.IsRunning;
     internal double InvalidAmount => amount;
 

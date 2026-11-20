@@ -65,21 +65,22 @@ public sealed class ChatPresentationTests
     [Fact]
     public void InboxUsesTodayThenCurrentCalendarWeekThenDate()
     {
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
         var sunday = Local(18);
         Assert.Equal("09:04", ChatPresentation.InboxTime(Local(18, 9, 4), sunday));
         Assert.Equal("Пн", ChatPresentation.InboxTime(Local(12), sunday));
         Assert.Equal("Сб", ChatPresentation.InboxTime(Local(17), sunday));
-        Assert.Equal("11.10.26", ChatPresentation.InboxTime(Local(11), sunday));
-        Assert.Equal("18.10.26", ChatPresentation.InboxTime(Local(18), Local(19)));
+        Assert.Equal("11.10.2026", ChatPresentation.InboxTime(Local(11), sunday));
+        Assert.Equal("18.10.2026", ChatPresentation.InboxTime(Local(18), Local(19)));
         Assert.Equal("18 октября", ChatPresentation.Day(sunday));
         Assert.Equal("12:30", ChatPresentation.Time(sunday));
     }
     [Fact]
     public void MediaPreviewsUseHumanLabelsAndPlainTextCollapsesWhitespace()
     {
-        Assert.Equal("Фотография", ChatPresentation.MediaLabel(new(42, 90, "", [new("image.png", "image/png", [])])));
+        Assert.Equal(Pookie.Localization.UiText.Get("chats.media.photo"), ChatPresentation.MediaLabel(new(42, 90, "", [new("image.png", "image/png", [])])));
         Assert.Equal("GIF", ChatPresentation.MediaLabel(new(42, 90, "", [new("image.gif", "image/gif", [])])));
-        Assert.Equal("Видео", ChatPresentation.MediaLabel(new(42, 90, "", [new("clip.mp4", "video/mp4", [])])));
+        Assert.Equal(Pookie.Localization.UiText.Get("chats.media.video"), ChatPresentation.MediaLabel(new(42, 90, "", [new("clip.mp4", "video/mp4", [])])));
         Assert.Equal("hello world", ChatPresentation.Preview("hello\r\n   world"));
     }
 }

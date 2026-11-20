@@ -10,6 +10,7 @@
     <PookieVlcRuntime Condition="'$(PookieVlcRuntime)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PookieVlcRuntime>
   </PropertyGroup>
   <Import Project="Pookie.App.Platform.props" />
+  <Import Project="EmojiAnnotations.targets" />
   <PropertyGroup Condition="'$(PublishAot)' == 'true'">
     <DefineConstants>$(DefineConstants);POOKIE_NATIVE_AOT</DefineConstants>
   </PropertyGroup>

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -25,8 +26,8 @@ internal sealed partial class MainWindow
         var count = playlist.TrackCount;
         var statistics = new StackPanel().Vertical().Spacing(2).Right().CenterVertical().Children(
             new StackPanel().Horizontal().Spacing(4).Right().Children(Icons.View("list-bullets", 12, Muted),
-                new TextBlock().Text(item.IsAlbum ? "Альбом" : "Плейлист").FontSize(10).Foreground(Muted)),
-            new TextBlock().Text(count + " " + RussianPlural(count, "трек", "трека", "треков")).FontSize(11).Foreground(Muted).Right());
+                new TextBlock().Text(item.IsAlbum ? UiText.Get("common.album") : UiText.Get("common.playlist")).FontSize(10).Foreground(Muted)),
+            new TextBlock().Text(UiText.Compose($"{count} {UiText.Plural(count, "collection.track")}")).FontSize(11).Foreground(Muted).Right());
         var action = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(new Grid().Columns($"{CompactCoverSize},*").Rows("*").Spacing(12).Children(frame.CenterVertical(),
                 new StackPanel().Vertical().CenterVertical().Column(1).Children(title, author)))

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -28,7 +29,7 @@ internal sealed partial class MainWindow
         {
             try { await save; }
             catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
-            { if (!disposed && chatWorkspaceStore == store) chatThreadStatus.Value = "Не удалось сохранить локальные данные чатов."; }
+            { if (!disposed && chatWorkspaceStore == store) chatThreadStatus.Value = UiText.Get("chats.storage.saveFailed"); }
         });
     }
     private async Task RestoreChatHistoryAsync()
@@ -42,7 +43,6 @@ internal sealed partial class MainWindow
             if (chatHistory != store || chatAccountId != account) return;
             chatConversations.AddRange(dialogs.Where(d => !chatConversations.Any(c => c.Recipient.Id == d.Recipient.Id)));
             RenderChatInbox();
-            if (chatWorkspace.SavedOpen) { await OpenChatFavoritesAsync(); return; }
             if (chatRecipient == null && chatWorkspace.LastPeer is { } peer && chatConversations.FirstOrDefault(c => c.Recipient.Id == peer) is { } last)
             {
                 var position = chatWorkspace.Positions.GetValueOrDefault(peer);
@@ -56,7 +56,7 @@ internal sealed partial class MainWindow
         }
         catch (OperationCanceledException) { }
         catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or InvalidOperationException)
-        { if (chatHistory == store) RetireChatHistory(); chatsStatus.Value = "Кеш истории недоступен. Переписка загрузится из SoundCloud."; }
+        { if (chatHistory == store) RetireChatHistory(); chatsStatus.Value = UiText.Get("chats.history.cacheFallback"); }
     }
     private async Task RestoreChatWindowAsync(SoundCloudUser peer)
     {
@@ -94,7 +94,7 @@ internal sealed partial class MainWindow
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException or InvalidOperationException)
-        { if (chatHistory == store) RetireChatHistory(); chatThreadStatus.Value = "Кеш истории недоступен."; }
+        { if (chatHistory == store) RetireChatHistory(); chatThreadStatus.Value = UiText.Get("chats.cache.historyUnavailable"); }
     }
     private (string Id, double Y, double Offset)? ReadChatReadingAnchor(ScrollViewer? viewer)
     {

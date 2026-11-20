@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.Lyrics;
@@ -8,7 +9,7 @@ namespace Pookie.App;
 internal sealed partial class MainWindow
 {
     private readonly ObservableValue<SearchSection> searchSection = new(SearchSection.All);
-    private readonly ObservableValue<string> searchHeading = new("Поиск"), searchStatus = new("");
+    private readonly ObservableValue<string> searchHeading = new(UiText.Get("header.search")), searchStatus = new("");
     private readonly ObservableValue<bool> searchLoading = new(false), searchEmpty = new(false);
     private readonly ObservableValue<bool> searchLyricsCredit = new(false);
     private LibraryPage? searchResults;
@@ -55,13 +56,13 @@ internal sealed partial class MainWindow
             new StackPanel().Vertical().Spacing(18).DockTop().Children(
                 new Grid().Columns("*,Auto").Rows("Auto").Spacing(12).Children(
                     new TextBlock().BindText(searchHeading).FontSize(22).Bold().TextTrimming(TextTrimming.CharacterEllipsis).Column(0),
-                    LyricsProviderCredit("Поиск по тексту предоставлен", LrcRedSearch.Name, LrcRedProviderMark(),
+                    LyricsProviderCredit(UiText.Get("search.lyrics.credit"), LrcRedSearch.Name, LrcRedProviderMark(),
                         () => OpenSettingsUrl(LrcRedSearch.Source))
                         .BindIsVisible(searchLyricsCredit).Column(1)),
                 new StackPanel().Horizontal().Spacing(24).Children(
-                    SearchTab("Всё", SearchSection.All), SearchTab("Треки", SearchSection.Tracks),
-                    SearchTab("Люди", SearchSection.People), SearchTab("Альбомы", SearchSection.Albums),
-                    SearchTab("Плейлисты", SearchSection.Playlists))),
+                    SearchTab(UiText.Get("search.tabs.all"), SearchSection.All), SearchTab(UiText.Get("common.tracks"), SearchSection.Tracks),
+                    SearchTab(UiText.Get("search.people"), SearchSection.People), SearchTab(UiText.Get("library.albums"), SearchSection.Albums),
+                    SearchTab(UiText.Get("library.playlists"), SearchSection.Playlists))),
             new Grid().Columns("*").Rows("*").Children(searchLoadingView.Root,
                 new TextBlock().BindText(searchStatus).Foreground(Muted).FontSize(14).Top().Margin(0, 18)
                     .TextWrapping(TextWrapping.Wrap).BindIsVisible(searchEmpty)));
@@ -90,11 +91,11 @@ internal sealed partial class MainWindow
         if (searchSection.Value == SearchSection.All)
         {
             blocks.Add(new(SearchBlockKind.Hero, Item: items[0], Items: items.Where(item => item.Track != null).Take(4).ToArray()));
-            Cards("Исполнители", items.Where(item => item.User != null));
-            Cards("Альбомы", items.Where(item => item.IsAlbum));
-            Cards("Плейлисты", items.Where(item => item.Playlist != null && !item.IsAlbum));
+            Cards(UiText.Get("search.artists"), items.Where(item => item.User != null));
+            Cards(UiText.Get("library.albums"), items.Where(item => item.IsAlbum));
+            Cards(UiText.Get("library.playlists"), items.Where(item => item.Playlist != null && !item.IsAlbum));
             var remaining = items.Where(item => item.Track != null).Skip(4).ToArray();
-            if (remaining.Length > 0) blocks.Add(new(SearchBlockKind.Heading, "Ещё треки"));
+            if (remaining.Length > 0) blocks.Add(new(SearchBlockKind.Heading, UiText.Get("search.moreTracks")));
             blocks.AddRange(remaining.Select(item => new SearchBlock(SearchBlockKind.Track, Item: item)));
         }
         else if (searchSection.Value == SearchSection.Tracks)
@@ -144,7 +145,7 @@ internal sealed partial class MainWindow
         RefreshSearchViews();
     }
 
-    private async Task ShowSearchResultsAsync(Task<LibraryPage> regular, Task<LibraryItem[]> lyrics, string query,
+    private async Task ShowSearchResultsAsync(Task<LibraryPage> regular, Task<LyricSearchMatch[]> lyrics, string query,
         SearchSection section, long generation, CancellationToken token)
     {
         var session = api.Session;
@@ -169,23 +170,28 @@ internal sealed partial class MainWindow
         SetSearchResults(result);
     }
 
-    private static LibraryPage MergeSearchResults(LibraryPage regular, LibraryItem[] matches, string query)
+    internal static LibraryPage MergeSearchResults(LibraryPage regular, LyricSearchMatch[] matches, string query)
     {
         if (matches.Length == 0) return regular;
         var normalized = LyricsMatcher.Normalize(query);
-        bool Exact(LibraryItem item)
+        bool ExplicitArtistOrEntity(LibraryItem item)
         {
-            if (LyricsMatcher.Normalize(item.Title) == normalized) return true;
-            if (item.Track is not { } track) return false;
+            if (item.Track is not { } track) return LyricsMatcher.Normalize(item.Title) == normalized;
             var artist = track.PublisherMetadata?.Artist ?? track.Author;
             return LyricsMatcher.Normalize(artist + " " + track.Title) == normalized ||
                 LyricsMatcher.Normalize(track.Title + " " + artist) == normalized;
         }
 
         var byKey = regular.Items.DistinctBy(item => item.Key).ToDictionary(item => item.Key);
-        var lyricKeys = matches.Select(item => item.Key).ToHashSet();
-        var merged = regular.Items.Where(Exact)
-            .Concat(matches.Select(item => byKey.GetValueOrDefault(item.Key) ?? item))
+        var lyricItems = matches.Select(match => byKey.GetValueOrDefault(match.Item.Key) ?? match.Item).ToArray();
+        var lyricKeys = lyricItems.Select(item => item.Key).ToHashSet();
+        var topTracks = regular.Items.Where(item => item.Track != null && LyricsMatcher.Normalize(item.Title) == normalized);
+        // A verified lyric and an exact track title are both plausible intents. Only those
+        // compete on plays, so a popular incidental keyword hit cannot take the top slot.
+        if (matches[0].Phrase != LyricPhraseMatch.Unverified)
+            topTracks = topTracks.Append(lyricItems[0]).OrderByDescending(item => item.Track!.PlaybackCount);
+        var merged = regular.Items.Where(ExplicitArtistOrEntity)
+            .Concat(topTracks).Concat(lyricItems)
             .Concat(regular.Items).DistinctBy(item => item.Key)
             .Select(item => lyricKeys.Contains(item.Key) ? item with { MatchedByLyrics = true } : item).ToArray();
         return new(merged, regular.NextHref);

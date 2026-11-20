@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -24,6 +25,7 @@ internal sealed partial class MainWindow
         public InkBorder Actions { get; init; } = null!;
         public CompactTrackTail Trailing { get; init; } = null!;
         public StackPanel? ExtraActions { get; set; }
+        public StackPanel PlayCountLine { get; init; } = null!;
         public TextBlock Plays { get; init; } = null!;
         public Button? Repost { get; set; }
         public Image? RepostIcon { get; set; }
@@ -32,6 +34,10 @@ internal sealed partial class MainWindow
         public (string? Url, string Fallback, int Side)? ArtworkRequest { get; set; }
         public long ArtworkGeneration { get; set; }
     }
+    private static StackPanel PlayCountLine(TextBlock count, double iconSize, Color color) =>
+        new StackPanel().Horizontal().Spacing(3).Right().CenterVertical().Children(
+            Icons.View("play-solid", iconSize, color).CenterVertical(), count.CenterVertical());
+
     private CompactTrackRow CreateCompactTrackRow(Action<SoundCloudTrack>? select = null, Color? secondary = null, bool queueRow = false, bool collectionRow = false, Action? open = null, bool dense = false, bool miniature = false)
     {
         var coverSize = miniature ? 20 : dense ? 32 : CompactCoverSize;
@@ -44,8 +50,9 @@ internal sealed partial class MainWindow
         var title = new TextBlock().FontSize(dense ? 12 : 14).SemiBold().Left().Height(dense ? 18 : 21).TextTrimming(TextTrimming.CharacterEllipsis);
         var author = new TextBlock().FontSize(dense ? 11 : 12).Foreground(secondary ?? Muted).Height(dense ? 16 : 19).TextTrimming(TextTrimming.CharacterEllipsis).IsVisible(!miniature);
         var duration = new TextBlock { TextAlignment = TextAlignment.Right }.Width(CompactTrackTail.StatisticsWidth).FontSize(12).Foreground(secondary ?? Muted).Right();
-        var plays = new TextBlock().FontSize(10).Foreground(secondary ?? Muted).Right().IsVisible(!miniature);
-        var statistics = new StackPanel().Vertical().Spacing(2).Right().CenterVertical().Children(duration, plays);
+        var plays = new TextBlock().FontSize(10).Foreground(secondary ?? Muted).Right();
+        var playLine = PlayCountLine(plays, 10, secondary ?? MutedIcon).IsVisible(!miniature);
+        var statistics = new StackPanel().Vertical().Spacing(2).Right().CenterVertical().Children(duration, playLine);
         var heart = Icons.View("heart", 17, MutedIcon).CenterHorizontal().CenterVertical();
         var like = TrackButtons.Icon(heart, () => { }, TrackButtons.Text, 32).CenterVertical().IsVisible(!miniature);
         if (collectionRow && OperatingSystem.IsWindows() && like is MaterialTrackButton material) material.BakeGlyphOpacity = true;
@@ -69,7 +76,7 @@ internal sealed partial class MainWindow
         root.Children(hoverFill, action.Column(0), trailing.Column(1));
         row = new CompactTrackRow(root, cover, overlay, like, heart, title, author, duration, hoverFill)
         { CollectionRow = collectionRow, Summary = summary, Actions = actions, Trailing = trailing,
-            Plays = plays, Miniature = miniature };
+            Plays = plays, PlayCountLine = playLine, Miniature = miniature };
         SetCompactActionReveal(row, false, animate: false);
         root.SizeChanged += e =>
         {
@@ -123,7 +130,7 @@ internal sealed partial class MainWindow
         }
         row.Title.Text = track.Title; row.Author.Text = track.Author; row.Duration.Text = FormatTime(track.DurationSeconds);
         row.Plays.Text = track.PlaybackCount is { } count ? LikedTrackRow.ShortCount(count) : "—";
-        row.Plays.IsVisible = !row.Miniature && track.Id > 0;
+        row.PlayCountLine.IsVisible = !row.Miniature && track.Id > 0;
         row.Like.IsVisible = !row.Miniature && track.Id > 0;
         row.Actions.IsVisible = !row.Miniature && track.Id > 0;
         var artwork = track.ArtworkUrl ?? track.User?.AvatarUrl;
@@ -170,7 +177,7 @@ internal sealed partial class MainWindow
         var showActions = hovered || row.Root.IsFocusWithin && Window.FocusManager.FocusedElement is Control focused && KeyboardFocusFeedback.IsVisible(focused);
         if (!showActions && row.Actions.IsFocusWithin) Window.FocusManager.ClearFocus();
         if (showActions && !row.Miniature && track.Id > 0) EnsureCompactTrackActions(row);
-        if (row.RepostMenu != null) row.RepostMenu.Text = repostedIds.Contains(track.Id) ? "Убрать репост" : "Сделать репост";
+        if (row.RepostMenu != null) row.RepostMenu.Text = repostedIds.Contains(track.Id) ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost");
         // Explicit queue occurrences remain independently selectable; content
         // rows everywhere else show the globally active recording.
         var selected = row.EntryId is { } entryId ? playbackQueue.Current?.EntryId == entryId : IsCurrentTrack(track);
@@ -180,13 +187,13 @@ internal sealed partial class MainWindow
         var liked = IsTrackLiked(track);
         TrackButtons.SetGlyph(row.Heart, liked ? "heart-filled" : "heart", liked ? LikedHeart : hovered ? Color.White : MutedIcon);
         TrackButtons.SetAvailability(row.Like, CanLikeTrack(track), IsLikePending(track));
-        row.Like.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+        row.Like.Hint(liked ? UiText.Get("likes.actions.remove") : UiText.Get("likes.actions.add"));
         if (row.Repost is { } repost && row.RepostIcon is { } repostIcon)
         {
             var reposted = repostedIds.Contains(track.Id);
             TrackButtons.SetGlyph(repostIcon, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(repost, CanRepostTrack(track), IsRepostPending(track));
-            repost.Hint(reposted ? "Убрать репост" : "Сделать репост");
+            repost.Hint(reposted ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost"));
         }
         SetCompactActionReveal(row, showActions, animate: !scrolling);
     }

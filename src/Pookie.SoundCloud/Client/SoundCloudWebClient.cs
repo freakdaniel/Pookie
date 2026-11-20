@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -16,7 +17,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public SoundCloudWebClient(HttpClient http, string publicClientId) : this(http)
     {
         if (string.IsNullOrEmpty(publicClientId) || publicClientId.Length > 128 || !publicClientId.All(char.IsAsciiLetterOrDigit))
-            throw new ArgumentException("Некорректный публичный client ID.", nameof(publicClientId));
+            throw new ArgumentException(UiText.Get("soundcloud.client.invalidId"), nameof(publicClientId));
         anonymousClientId = publicClientId;
     }
     public WebSession? Session { get; set; }
@@ -51,9 +52,9 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://soundcloud.com/");
             request.Headers.UserAgent.ParseAdd(DefaultUserAgent);
             using var response = await http.SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode) throw new SoundCloudException("SoundCloud не открыл главную страницу. Проверь сеть или прокси.", (int)response.StatusCode);
+            if (!response.IsSuccessStatusCode) throw new SoundCloudException(UiText.Get("soundcloud.home.networkError"), (int)response.StatusCode);
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
-            anonymousClientId = ExtractClientId(html) ?? throw new SoundCloudException("Изменилась страница SoundCloud. Подключи браузерную сессию.");
+            anonymousClientId = ExtractClientId(html) ?? throw new SoundCloudException(UiText.Get("soundcloud.page.changed"));
             return anonymousClientId;
         }
         finally { discoveryGate.Release(); }
@@ -61,13 +62,13 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     private async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken, HttpMethod? method = null)
     {
-        if (!IsApiUri(uri)) throw new SoundCloudException("Отклонён адрес вне SoundCloud API.");
+        if (!IsApiUri(uri)) throw new SoundCloudException(UiText.Get("soundcloud.api.externalUrl"));
         var session = Session;
-        if (session != null && !session.IsValid()) throw new SoundCloudException("Некорректная сессия SoundCloud. Войди ещё раз.");
+        if (session != null && !session.IsValid()) throw new SoundCloudException(UiText.Get("auth.session.invalidSignIn"));
         if (session != null && BrowserTransport is { } browser && (method == null || method == HttpMethod.Get))
             return await browser.GetJsonAsync(uri, cancellationToken).ConfigureAwait(false);
         if (session != null && RequireBrowserTransport)
-            throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+            throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         var clientId = session?.ClientId ?? await GetClientIdAsync(cancellationToken);
         // Replace rather than accumulate a stale client_id from next_href/transcoding URLs.
         var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
@@ -97,14 +98,14 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         if (!response.IsSuccessStatusCode)
         {
             if (response.StatusCode == HttpStatusCode.Forbidden && await IsBrowserChallengeAsync(response.Content, cancellationToken))
-                throw new SoundCloudException("SoundCloud запросил браузерную проверку. Повтори действие после проверки на сайте.", 403, requiresBrowserVerification: true);
+                throw new SoundCloudException(UiText.Get("soundcloud.browser.verifyOnSite"), 403, requiresBrowserVerification: true);
             var message = response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.",
-                HttpStatusCode.Forbidden => "SoundCloud запретил доступ к этому ресурсу.",
-                HttpStatusCode.NotFound => "Трек или ресурс SoundCloud не найден.",
-                HttpStatusCode.TooManyRequests => "SoundCloud ограничил частоту запросов. Повтори позже.",
-                _ => "SoundCloud временно не отвечает."
+                HttpStatusCode.Unauthorized => UiText.Get("soundcloud.auth.requestUnauthorized"),
+                HttpStatusCode.Forbidden => UiText.Get("soundcloud.access.requestDenied"),
+                HttpStatusCode.NotFound => UiText.Get("soundcloud.track.notFound"),
+                HttpStatusCode.TooManyRequests => UiText.Get("soundcloud.request.rateLimited"),
+                _ => UiText.Get("soundcloud.service.unavailable")
             };
             throw new SoundCloudException(message, (int)response.StatusCode);
         }
@@ -139,9 +140,9 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<SoundCloudUser> GetMeAsync(CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Сначала войди в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.signInFirst"));
         using var document = await GetJsonAsync(Api("me"), cancellationToken).ConfigureAwait(false);
-        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser) ?? throw new SoundCloudException("Не удалось прочитать профиль.");
+        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudUser) ?? throw new SoundCloudException(UiText.Get("profile.readFailed"));
     }
 
     public async Task<TrackPage> SearchAsync(string query, CancellationToken cancellationToken = default)
@@ -152,7 +153,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<TrackPage> GetLikesAsync(long userId, CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.likes"));
 
         using var document = await GetJsonAsync(Api($"users/{userId}/likes?limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return ParsePage(document.RootElement);
@@ -160,7 +161,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<LibraryPage> GetLibraryAsync(string section, long userId, CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Для библиотеки нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.library"));
 
         var path = section switch {
             "collections" => "me/library/all", "stations" => "me/library/stations",
@@ -173,7 +174,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<LibraryPage> GetLibraryNextAsync(string url, CancellationToken cancellationToken = default)
     {
-        if (!BrowserRequestCommand.IsReadUrl(url)) throw new SoundCloudException("Неверный адрес страницы библиотеки.");
+        if (!BrowserRequestCommand.IsReadUrl(url)) throw new SoundCloudException(UiText.Get("library.page.invalidUrl"));
         using var document = await GetJsonAsync(new Uri(url), cancellationToken).ConfigureAwait(false);
         return await ParseLibraryAsync(document.RootElement, cancellationToken).ConfigureAwait(false);
     }
@@ -215,14 +216,14 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
         {
             path = (playlist.Urn ?? "").StartsWith("soundcloud:system-playlists:", StringComparison.Ordinal)
                 ? "system-playlists/" + Uri.EscapeDataString(playlist.Urn!)
-                : playlist.Id > 0 ? $"playlists/{playlist.Id}" : throw new SoundCloudException("Подборка недоступна.");
+                : playlist.Id > 0 ? $"playlists/{playlist.Id}" : throw new SoundCloudException(UiText.Get("collection.unavailable"));
             if (playlist.IsPrivate && playlist.Id > 0 && PlaylistSharing.Token(playlist) is { } token)
             {
                 secret = token;
                 path += "?secret_token=" + Uri.EscapeDataString(token);
             }
         }
-        else throw new SoundCloudException("Нет треков для этой карточки.");
+        else throw new SoundCloudException(UiText.Get("collection.card.noTracks"));
         using var document = await GetJsonAsync(Api(path), cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tracks", out _)) return new(item, ParsePage(root));
@@ -243,14 +244,14 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task<TrackPage> GetFeedAsync(CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы открыть ленту подписок.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.feed"));
         using var document = await GetJsonAsync(Api("stream?limit=30&linked_partitioning=1"), cancellationToken).ConfigureAwait(false);
         return ParsePage(document.RootElement);
     }
 
     public async Task<HashSet<long>> GetLikedIdsAsync(CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Для лайков нужен вход в SoundCloud.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.likes"));
         var ids = new HashSet<long>();
         Uri? target = Api("me/track_likes/ids?limit=200&linked_partitioning=1");
         var seen = new HashSet<string>();
@@ -272,14 +273,14 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
 
     public async Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken cancellationToken = default)
     {
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы поставить лайк.");
+        if (Session == null) throw new SoundCloudException(UiText.Get("auth.required.like"));
         if (userId <= 0 || trackId <= 0) throw new ArgumentOutOfRangeException(nameof(trackId));
         if (BrowserTransport is { } browser)
         {
             await browser.SetLikedAsync(userId, trackId, liked, cancellationToken);
             return;
         }
-        if (RequireBrowserTransport) throw new SoundCloudException("Браузерное соединение SoundCloud ещё не подключено.");
+        if (RequireBrowserTransport) throw new SoundCloudException(UiText.Get("soundcloud.browser.disconnected"));
         // Compatibility for standalone HTTP consumers; Pookie always attaches its browser.
         using var document = await GetJsonAsync(Api($"users/{userId}/track_likes/{trackId}"), cancellationToken, liked ? HttpMethod.Put : HttpMethod.Delete).ConfigureAwait(false);
     }
@@ -287,7 +288,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<TrackPage> GetNextPageAsync(string nextHref, CancellationToken cancellationToken = default)
     {
 
-        if (!Uri.TryCreate(nextHref, UriKind.Absolute, out var uri) || !IsApiUri(uri)) throw new SoundCloudException("Неверный адрес следующей страницы.");
+        if (!Uri.TryCreate(nextHref, UriKind.Absolute, out var uri) || !IsApiUri(uri)) throw new SoundCloudException(UiText.Get("pagination.next.invalidUrl"));
         using var document = await GetJsonAsync(uri, cancellationToken);
         return ParsePage(document.RootElement);
     }
@@ -312,7 +313,7 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     public async Task<SoundCloudTrack> GetTrackAsync(long id, CancellationToken cancellationToken = default)
     {
         using var document = await GetJsonAsync(Api($"tracks/{id}"), cancellationToken).ConfigureAwait(false);
-        var track = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
+        var track = document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException(UiText.Get("track.readFailed"));
         return track;
     }
 
@@ -320,8 +321,8 @@ public sealed partial class SoundCloudWebClient(HttpClient http) : ISoundCloudPl
     {
         var uri = await ExpandSoundCloudUrlAsync(url, cancellationToken);
         using var document = await GetJsonAsync(Api("resolve?url=" + Uri.EscapeDataString(uri.AbsoluteUri)), cancellationToken).ConfigureAwait(false);
-        if (!document.RootElement.TryGetProperty("kind", out var kind) || kind.GetString() != "track") throw new SoundCloudException("Открой ссылку на отдельный трек.");
-        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException("Не удалось прочитать трек.");
+        if (!document.RootElement.TryGetProperty("kind", out var kind) || kind.GetString() != "track") throw new SoundCloudException(UiText.Get("search.links.individualTrack"));
+        return document.RootElement.Deserialize(SoundCloudJson.Default.SoundCloudTrack) ?? throw new SoundCloudException(UiText.Get("track.readFailed"));
     }
 
     public static IEnumerable<Transcoding> PlayableTranscodings(SoundCloudTrack track) => (track.Media?.Transcodings ?? [])

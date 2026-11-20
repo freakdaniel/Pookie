@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Text;
 using StbImageSharp;
@@ -29,7 +30,7 @@ internal static partial class LinuxDesktopIdentity
     private static void SetIcon(nint display, nuint window)
     {
         using var stream = typeof(LinuxDesktopIdentity).Assembly.GetManifestResourceStream("Pookie.App.Assets.Branding.app-icon-128.png")
-            ?? throw new InvalidOperationException("Встроенная иконка приложения не найдена.");
+            ?? throw new InvalidOperationException(UiText.Get("startup.appIconMissing"));
         var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
         // Xlib uses native unsigned longs even for a 32-bit CARDINAL property.
         var pixels = new nuint[2 + image.Width * image.Height];

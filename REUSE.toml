@@ -262,3 +262,10 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 Daniel Freak"
 SPDX-License-Identifier = "BSD-3-Clause"
 SPDX-FileComment = "Original geometric icons for the native chat interface."
+
+[[annotations]]
+path = "src/Pookie.App/Assets/Emoji/Annotations/*.json"
+precedence = "override"
+SPDX-FileCopyrightText = "1991-2026 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-3.0"
+SPDX-FileComment = "Emoji names and search keywords from CLDR release-48 common/annotations and common/annotationsDerived, filtered to the bundled emoji catalog. See licenses/Unicode-3.0.txt."

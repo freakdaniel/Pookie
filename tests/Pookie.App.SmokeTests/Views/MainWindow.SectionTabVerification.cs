@@ -98,6 +98,24 @@ internal sealed partial class MainWindow
         Console.WriteLine("UI_SECTION_TABS_OK: active tabs remain white without hover/click changes, reject mouse and keyboard activation, preserve scroll and navigation generation, and allow library overview from child pages; inactive hover remains available");
     }
 
+    private async Task VerifyTabHoverFadeAsync(Button tab)
+    {
+        var label = (TextBlock)tab.FindVisualChild<TextBlock>()!;
+        MoveActionPointer(new(2, 2));
+        await WaitForLikedLayoutAsync(() => label.Foreground == Muted);
+        var intermediate = false;
+        void Sample() => intermediate |= label.Foreground.A > Muted.A && label.Foreground.A < 255;
+        Window.FrameRendered += Sample;
+        try
+        {
+            MoveActionPointer(SettingsCenter(tab));
+            await WaitForLikedLayoutAsync(() => label.Foreground == Color.White);
+            if (!intermediate || tab.Background.A != 0)
+                throw new InvalidOperationException("The inactive tab must brighten gradually on a transparent background.");
+        }
+        finally { Window.FrameRendered -= Sample; MoveActionPointer(new(2, 2)); }
+    }
+
     private byte[] CaptureSectionButton(FrameworkElement button)
     {
         var scale = Window.DpiScale;

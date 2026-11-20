@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Storage;
 
 namespace Pookie.App.Browser;
@@ -15,7 +16,7 @@ internal sealed class BrowserProfile : IDisposable
         Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); this.temporary = temporary; this.isolated = isolated;
         AppDataPaths.CreatePrivateDirectory(Path);
         try { lease = new FileStream(System.IO.Path.Combine(Path, LeaseFile), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-        catch (IOException error) { throw new InvalidOperationException("Профиль SoundCloud уже открыт другим окном Pookie. Закрой его и повтори действие.", error); }
+        catch (IOException error) { throw new InvalidOperationException(UiText.Get("auth.browser.profileInUse"), error); }
     }
 
     public static BrowserProfile Open(string? fixture = null, string? path = null) => new(
@@ -44,7 +45,7 @@ internal sealed class BrowserProfile : IDisposable
                         var target = System.IO.Path.GetFullPath(entry);
                         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
                         if (!string.Equals(System.IO.Path.GetDirectoryName(target), Path, comparison))
-                            throw new InvalidOperationException("Очистка вышла за пределы профиля Pookie.");
+                            throw new InvalidOperationException(UiText.Get("cache.pathOutsideProfile"));
                         if (Directory.Exists(target)) Directory.Delete(target, recursive: true); else File.Delete(target);
                     }
                 }, token).ConfigureAwait(false);
@@ -66,7 +67,7 @@ internal sealed class BrowserProfile : IDisposable
         // The synchronous entry point is for filesystem fixtures/CLI callers.
         // An owned macOS website store needs an asynchronous UI callback.
         if (OperatingSystem.IsMacOS() && ProfilePaths(paths).Any(MacEmbeddedBrowser.OwnsProfileData))
-            throw new InvalidOperationException("Для очистки профиля WebKit используй ClearAsync.");
+            throw new InvalidOperationException(UiText.Get("browser.webkit.clearAsyncRequired"));
         ClearAsync(paths).GetAwaiter().GetResult();
     }
 

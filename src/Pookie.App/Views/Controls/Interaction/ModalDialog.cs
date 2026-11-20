@@ -112,6 +112,12 @@ internal sealed class ModalDialog : Panel, IVisualTreeHost
         CaptureCard();
     }
 
+    internal void InvalidateTranslationSnapshot()
+    {
+        stamp?.Dispose();
+        stamp = null;
+    }
+
     internal void Show()
     {
         if (FindVisualRoot() is not Window source) return;

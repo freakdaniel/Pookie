@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.CompilerServices;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Playback;
@@ -41,13 +42,13 @@ internal sealed partial class MainWindow
                 () => card.Item?.Playlist != null && (enabled?.Invoke() ?? true));
             menu.Item(command);
         }
-        Item("open", "Открыть страницу подборки", "books", item => Run(() => OpenLibraryItemAsync(item)));
-        Item("play", "Воспроизвести подборку", "play", item => Run(() => PlayLibraryCollectionAsync(item)));
-        Item("queue", "Добавить подборку в очередь", "queue", item => Run(() => EnqueueLibraryCollectionAsync(item)),
+        Item("open", UiText.Get("collection.openPage"), "books", item => Run(() => OpenLibraryItemAsync(item)));
+        Item("play", UiText.Get("collection.actions.play"), "play", item => Run(() => PlayLibraryCollectionAsync(item)));
+        Item("queue", UiText.Get("queue.actions.addCollection"), "queue", item => Run(() => EnqueueLibraryCollectionAsync(item)),
             () => !demo && api.Session != null);
-        Item("share", "Поделиться", "arrow-square-out", OpenShare);
-        Item("copy", "Скопировать ссылку", "copy", _ => { if (Link() is { } link) CopyText(link.AbsoluteUri); }, () => Link() != null);
-        Item("soundcloud", "Открыть в SoundCloud", "globe", item => OpenSoundCloudPage(item.Playlist?.PermalinkUrl), () => Link() != null);
+        Item("share", UiText.Get("common.share"), "arrow-square-out", OpenShare);
+        Item("copy", UiText.Get("share.link.copy"), "copy", _ => { if (Link() is { } link) CopyText(link.AbsoluteUri); }, () => Link() != null);
+        Item("soundcloud", UiText.Get("links.openInSoundCloud"), "globe", item => OpenSoundCloudPage(item.Playlist?.PermalinkUrl), () => Link() != null);
         return menu;
     }
 
@@ -63,7 +64,7 @@ internal sealed partial class MainWindow
         var cursors = new HashSet<string>(StringComparer.Ordinal);
         while (page.NextHref is { } cursor)
         {
-            if (!cursors.Add(cursor)) throw new SoundCloudException("Не удалось загрузить все треки подборки.");
+            if (!cursors.Add(cursor)) throw new SoundCloudException(UiText.Get("collection.tracks.loadFailed"));
             page = await api.GetNextPageAsync(cursor, lifetime.Token);
             if (disposed || api.Session != session || playbackQueue.SourceVersion != sourceVersion) return;
             tracks.AddRange(page.Tracks);
@@ -76,7 +77,7 @@ internal sealed partial class MainWindow
         var added = false;
         foreach (var track in tracks) { playbackQueue.Enqueue(track, false); added = true; }
         if (added) RefreshQueue();
-        status.Value = added ? "Треки добавлены в очередь." : "В подборке пока нет треков.";
+        status.Value = added ? UiText.Get("queue.status.tracksAdded") : UiText.Get("collection.tracks.empty");
     }
 
     private async Task PlayLibraryCollectionAsync(LibraryItem item)
@@ -90,13 +91,13 @@ internal sealed partial class MainWindow
             sourceVersion != playbackQueue.SourceVersion || generation != playGeneration) return;
         collectionDetails[item.Key] = detail;
         var tracks = detail.Tracks.Tracks;
-        if (tracks.Length == 0) { status.Value = "В этом плейлисте пока нет треков."; return; }
+        if (tracks.Length == 0) { status.Value = UiText.Get("playlist.tracks.empty"); return; }
         StartQueueContext(CollectionPlaybackContext(detail), tracks, tracks[0], 0);
         await PlayAsync(tracks[0], queueAdvance: true);
     }
 
     private static PlaybackContext CollectionPlaybackContext(CollectionDetail detail) => new(detail.Item.Key, detail.Item.Title,
-        detail.Item.IsAlbum ? "Сейчас играет альбом" : "Сейчас играет плейлист", detail.Tracks.NextHref,
+        detail.Item.IsAlbum ? UiText.Get("queue.source.album") : UiText.Get("queue.source.playlist"), detail.Tracks.NextHref,
         Kind: detail.Item.IsAlbum ? PlaybackContextKind.Album : PlaybackContextKind.Playlist,
         ResourceUrn: PlaybackHistoryContextUrn(detail.Item));
 }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Diagnostics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -35,34 +36,34 @@ internal sealed partial class MainWindow
 
     private Task ClearSettingsCacheAsync() => SettingsOperationAsync(async () =>
     {
-        if (!await MessageBox.AskYesNoAsync("Очистить кэш?", detail: "Обложки, звуковые волны и тексты песен будут загружены повторно; аккаунт и персональные данные сохранятся", owner: Window)) return "";
+        if (!await ConfirmAsync(UiText.Get("cache.confirmClear"), detail: UiText.Get("settings.cache.clearConfirmation"), owner: Window)) return "";
         var result = await new CacheMaintenance(dataPaths).ClearAsync(lifetime.Token);
         RefreshSettingsData();
-        return result.RemainingBytes == 0 ? $"Освобождено {FormatSettingsBytes(result.DeletedBytes)}" :
-            $"Освобождено {FormatSettingsBytes(result.DeletedBytes)}; часть файлов используется или уже загружена повторно";
+        return result.RemainingBytes == 0 ? UiText.Format("cache.freed", FormatSettingsBytes(result.DeletedBytes)):
+            UiText.Format("cache.freedPartial", FormatSettingsBytes(result.DeletedBytes));
     });
 
     private Task ConfirmChatClearAsync(bool drafts) => SettingsOperationAsync(async () =>
     {
         var account = me?.Id;
-        if (!await MessageBox.AskYesNoAsync(drafts ? "Удалить черновики?" : "Освободить временные данные чатов?",
-            detail: drafts ? "Текст и вложения черновиков этого аккаунта будут удалены; незавершённые отправки сохранятся" :
-                "Просмотренные диалоги и вложения будут убраны из памяти; черновики и незавершённые отправки сохранятся", owner: Window)) return "";
-        if (me?.Id != account) return "Аккаунт изменился; повтори действие";
+        if (!await ConfirmAsync(drafts ? UiText.Get("settings.chats.confirmDeleteDrafts") : UiText.Get("settings.chats.confirmClearTemporary"),
+            detail: drafts ? UiText.Get("settings.chats.deleteDraftsConfirmation") :
+                UiText.Get("settings.chats.clearTemporaryConfirmation"), owner: Window)) return "";
+        if (me?.Id != account) return UiText.Get("account.retryAfterChange");
         if (drafts) await ClearChatDraftsAsync(); else ClearChatMemoryCache();
-        return drafts ? "Черновики удалены" : "Временные данные чатов очищены";
+        return drafts ? UiText.Get("settings.chats.draftsDeleted") : UiText.Get("chats.cache.cleared");
     });
 
     private Task ResetSettingsAsync() => SettingsOperationAsync(async () =>
     {
-        if (!await MessageBox.AskYesNoAsync("Сбросить настройки приложения?", detail: "Восстановятся исходные предпочтения интерфейса, воспроизведения и чатов; аккаунт, очередь и обучение сохранятся; сохранённые черновики не удаляются", owner: Window)) return "";
+        if (!await ConfirmAsync(UiText.Get("settings.reset.confirmation"), detail: UiText.Get("settings.reset.description"), owner: Window)) return "";
         UpdatePreferences(_ => new AppConfiguration());
         discordEnabled.Value = true; if (presence != null) presence.Enabled = true;
         likesMode.Value = TrackViewMode.Cards; collectionMode.Value = TrackViewMode.List;
         shuffle.Value = false; volume.Value = previousVolume = 70;
         playbackQueue.SetRepeat(Pookie.App.Playback.RepeatMode.Off); RefreshRepeatState(); RefreshQueue();
         SaveConfiguration(); RefreshSettingsControls();
-        return "Исходные настройки восстановлены";
+        return UiText.Get("settings.reset.success");
     });
 
     private static string FormatSettingsBytes(long bytes) => CacheUsageView.FormatBytes(bytes);
@@ -71,19 +72,19 @@ internal sealed partial class MainWindow
     {
         try
         {
-            if (!Directory.Exists(path) && !File.Exists(path)) { settingsMessage.Value = "Папка пока не создана"; return; }
+            if (!Directory.Exists(path) && !File.Exists(path)) { settingsMessage.Value = UiText.Get("files.folder.notCreated"); return; }
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        { settingsMessage.Value = "Не удалось открыть папку"; }
+        { settingsMessage.Value = UiText.Get("files.folder.openFailed"); }
     }
 
     private void OpenSettingsUrl(string url) =>
-        OpenExternalUrl(url, () => settingsMessage.Value = "Не удалось открыть сайт");
+        OpenExternalUrl(url, () => settingsMessage.Value = UiText.Get("links.website.openFailed"));
 
     private void CopySettingsDiagnostics()
     {
         CopyText($"Pookie {typeof(MainWindow).Assembly.GetName().Version}\n{System.Runtime.InteropServices.RuntimeInformation.OSDescription}\n{System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n{audioStatus.Value}");
-        settingsMessage.Value = "Сведения скопированы";
+        settingsMessage.Value = UiText.Get("settings.diagnostics.copied");
     }
 }

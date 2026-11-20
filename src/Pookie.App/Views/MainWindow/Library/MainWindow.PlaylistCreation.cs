@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -17,13 +18,13 @@ internal sealed partial class MainWindow
 
     private FrameworkElement PlaylistCreationView()
     {
-        playlistCreateName = new TextBox().Placeholder("Название плейлиста").MaxLength(255)
+        playlistCreateName = new TextBox().Placeholder(UiText.Get("playlist.edit.title")).MaxLength(255)
             .Background(Color.Transparent).BorderThickness(0).Padding(0).Height(28).FontSize(14);
         playlistCreateName.OnTextChanged(_ => RefreshPlaylistCreation());
         var name = new GlassCard { HoverEnabled = false }.CornerRadius(14).Padding(16, 10).Height(48).Child(playlistCreateName);
         playlistCreatePrivacy = new PlaylistPrivacySelector(SetPlaylistPrivacy);
         playlistCreatePublic = playlistCreatePrivacy.Public; playlistCreatePrivate = playlistCreatePrivacy.Private;
-        playlistCreateSave = TrackButtons.Action(new TextBlock().Text("Создать и добавить").FontSize(14).SemiBold(),
+        playlistCreateSave = TrackButtons.Action(new TextBlock().Text(UiText.Get("playlist.actions.createAndAdd")).FontSize(14).SemiBold(),
             () => Run(CreatePickerPlaylistAsync), TrackButtons.Glass, 44);
         ((MaterialTrackButton)playlistCreateSave).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
         ((MaterialTrackButton)playlistCreateSave).UseGlassAccentStateLayer();
@@ -110,7 +111,7 @@ internal sealed partial class MainWindow
             playlistCreateName.Text = "";
             ShowPlaylistCreation(false);
             FitPlaylistList();
-            status.Value = "Плейлист создан, трек добавлен.";
+            status.Value = UiText.Get("playlist.status.createdWithTrack");
         }
         catch (Exception error)
         {
@@ -118,7 +119,7 @@ internal sealed partial class MainWindow
             // A lost response is not proof of a failed write. Never replay POST.
             playlistCreateUnconfirmed = error is not SoundCloudException { StatusCode: >= 400 and < 500 };
             SetPlaylistCreationMessage(playlistCreateUnconfirmed
-                ? "Не удалось подтвердить создание. Проверь свои плейлисты перед повторной попыткой."
+                ? UiText.Get("playlist.create.checkBeforeRetry")
                 : FriendlyError(error));
         }
         finally

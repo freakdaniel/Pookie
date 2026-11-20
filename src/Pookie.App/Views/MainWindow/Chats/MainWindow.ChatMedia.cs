@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -45,7 +46,10 @@ internal sealed partial class MainWindow
     private long chatMediaBytes, chatMediaCacheGeneration;
 
     private sealed record ChatMediaPhoto(Size Size, ImageSource Source, ImageSource Blurred);
-    private sealed record ChatMediaSummary(string Label, IImageSource? Thumbnail, Size? ImageSize, string Caption, ChatMediaPhoto?[]? Photos = null, MediaFile[]? Files = null,ChatReplyReference? Reply=null);
+    private sealed record ChatMediaSummary(string Label, IImageSource? Thumbnail, Size? ImageSize, string Caption, ChatMediaPhoto?[]? Photos = null, MediaFile[]? Files = null,ChatReplyReference? Reply=null)
+    {
+        public string Label { get => UiText.Refresh(field); init; } = Label;
+    }
     private readonly Dictionary<string, ChatMediaSummary> chatMediaSummaries = [];
     private readonly Queue<string> chatMediaSummaryOrder = [];
     private readonly HashSet<string> chatMediaAutoRequested = [];
@@ -281,9 +285,9 @@ internal sealed partial class MainWindow
         row.FollowMediaResize = ChatIsAtBottom(); CaptureChatPanelAnchor(); row.Content.AnimateMediaChange();
         StopChatAnimations(row.Attachments); row.Attachments.Clear(); row.Attachments.IsVisible = true;
         row.ResetMediaLayout(); row.Open.IsVisible = false; row.MediaResolved = false;
-        var descriptions = files is { Length: > 0 } ? files : [new MediaFile("Вложение", "application/octet-stream", 0)];
+        var descriptions = files is { Length: > 0 } ? files : [new MediaFile(UiText.Get("chats.attachment.label"), "application/octet-stream", 0)];
         foreach (var file in descriptions)
-            row.Attachments.Add(new ChatFileCard(file.Name, "Не удалось загрузить · повторить", message.SenderId == me?.Id, false,
+            row.Attachments.Add(new ChatFileCard(file.Name, UiText.Get("chats.media.downloadRetry"), message.SenderId == me?.Id, false,
                 () => { if (row.Message?.Id == message.Id) Run(() => OpenChatMediaAsync(row)); }));
         InvalidateChatMediaLayout(row); chatMessagesView.InvalidateMeasure();
     }
@@ -295,7 +299,7 @@ internal sealed partial class MainWindow
         row.MediaResolved = false; row.MediaLoading = false; row.Open.IsVisible = false;
         row.Body.Text = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0)?.Caption ?? "";
         row.Body.IsVisible = row.Body.Text.Length > 0;
-        row.Attachments.Add(new ChatFileCard("Вложение", prompt, message.SenderId == me?.Id, false,
+        row.Attachments.Add(new ChatFileCard(UiText.Get("chats.attachment.label"), prompt, message.SenderId == me?.Id, false,
             () => { if (row.Message?.Id == message.Id) Run(() => OpenChatMediaAsync(row)); }));
         row.RefreshDelivery(); row.Root.InvalidateMeasure();
     }
@@ -306,7 +310,7 @@ internal sealed partial class MainWindow
         var local = ChatOutgoing(message);
         if (local == null && !AllowAutomaticChatMedia(message) && !chatManualMediaRequests.Contains(ChatMediaCacheId(message, chatRecipient?.Id ?? 0)))
         {
-            RenderChatMediaAction(row, "Автозагрузка отключена · загрузить");
+            RenderChatMediaAction(row, UiText.Get("chats.media.downloadManually"));
             return;
         }
         var summary = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0);
@@ -340,7 +344,7 @@ internal sealed partial class MainWindow
                 else
                 {
                     var slot = index;
-                    var pendingFile = new ChatFileCard(file.Voice!=null?"Голосовое сообщение":file.Name, summary == null && local != null ? "Подготовка…" : FormatChatFileSize(file.Length), message.SenderId == me?.Id,
+                    var pendingFile = new ChatFileCard(file.Voice!=null?UiText.Get("chats.voice.label"):file.Name, summary == null && local != null ? UiText.Get("common.preparing") : FormatChatFileSize(file.Length), message.SenderId == me?.Id,
                         !file.AsFile && file.Type.StartsWith("video/", StringComparison.Ordinal), () => Run(() => ActivateChatAttachmentAsync(message.Id, slot)));
                     row.Attachments.Add(pendingFile);
                 }
@@ -407,7 +411,7 @@ internal sealed partial class MainWindow
         if (row.MediaKey == mediaKey && row.MediaResolved) { row.RefreshDelivery(); return; }
         if (preferences.KlipyEnabled && package.Attachments.Length == 0 && package.GifUrl != null &&
             !AllowAutomaticChatMedia(row.Message!) && !chatManualMediaRequests.Contains(mediaKey) && ChatDecoded(mediaKey, 0) == null)
-        { RenderChatMediaAction(row, "Автозагрузка отключена · загрузить"); return; }
+        { RenderChatMediaAction(row, UiText.Get("chats.media.downloadManually")); return; }
         var follow = ChatIsAtBottom();
         row.FollowMediaResize = follow; if (row.MediaKey != null) { CaptureChatPanelAnchor(); row.Content.AnimateMediaChange(); }
         row.MediaKey = mediaKey; row.MediaResolved = true; ++row.MediaGeneration;
@@ -429,7 +433,7 @@ internal sealed partial class MainWindow
             var attachment = package.Attachments[index];
             var slot = index;
             var body = new StackPanel().Vertical().Spacing(8);
-            ChatFileCard FileCard() => new(attachment.Voice!=null?"Голосовое сообщение":attachment.Name, attachment.Voice is {} voice?$"{(int)voice.Duration/60}:{(int)voice.Duration%60:00} · ▶ Прослушать":FormatChatFileSize(attachment.Data.Length), row.Message!.SenderId == me?.Id,
+            ChatFileCard FileCard() => new(attachment.Voice!=null?UiText.Get("chats.voice.label"):attachment.Name, attachment.Voice is {} voice?UiText.Format("chats.voice.preview", (int)voice.Duration/60, (int)voice.Duration%60):FormatChatFileSize(attachment.Data.Length), row.Message!.SenderId == me?.Id,
                 !attachment.AsFile && attachment.MediaType.StartsWith("video/", StringComparison.Ordinal), () => Run(() => ActivateChatAttachmentAsync(messageId, slot)));
             if(attachment.Voice is {} voice)body.Add(CreateChatVoiceCard(messageId,index,voice));
             else if (!attachment.AsFile && attachment.MediaType.StartsWith("video/", StringComparison.Ordinal))
@@ -459,8 +463,8 @@ internal sealed partial class MainWindow
             var frame = CreateChatPhoto(summary?.ImageSize ?? new(260, 190));
             if (summary?.Thumbnail is ImageSource thumbnail) frame.ShowPreview(ArtworkBackdrop.Create(thumbnail, 1) ?? thumbnail, ArtworkBackdrop.Create(thumbnail, .6));
             if (!preferences.KlipyEnabled)
-                row.Attachments.Add(new ChatFileCard("GIF · KLIPY", "KLIPY отключён в настройках", row.Message!.SenderId == me?.Id, false,
-                    () => chatThreadStatus.Value = "Включи KLIPY в настройках чатов, чтобы загрузить этот GIF."));
+                row.Attachments.Add(new ChatFileCard("GIF · KLIPY", UiText.Get("chats.gifs.disabled"), row.Message!.SenderId == me?.Id, false,
+                    () => chatThreadStatus.Value = UiText.Get("chats.gifs.enableProvider")));
             else
             {
                 row.Attachments.Add(frame);
@@ -588,9 +592,9 @@ internal sealed partial class MainWindow
             if (chatRecipient?.Id != peer || !chatMessageItems.Any(m => m.Id == messageId)) return;
         }
         if (message == null || CachedChatMedia(message) is not { } package || index < 0 || index >= package.Attachments.Length)
-        { chatThreadStatus.Value = "Открой медиа заново перед сохранением."; return; }
+        { chatThreadStatus.Value = UiText.Get("media.save.reopen"); return; }
         var attachment = package.Attachments[index]; var revision = chatRevision;
-        var destination = await FileDialog.SaveFileAsync(new SaveFileDialogOptions { Owner = Window, Title = "Сохранить вложение", FileName = attachment.Name }, lifetime.Token);
+        var destination = await FileDialog.SaveFileAsync(new SaveFileDialogOptions { Owner = Window, Title = UiText.Get("chats.attachment.save"), FileName = attachment.Name }, lifetime.Token);
         if (destination == null || disposed || revision != chatRevision || CachedChatMedia(message) != package) return;
         await File.WriteAllBytesAsync(destination, attachment.Data, lifetime.Token);
         
@@ -620,7 +624,7 @@ internal sealed partial class MainWindow
     }
     private static void ClearMediaPackage(ChatMediaPackage package)
     { foreach (var attachment in package.Attachments) System.Security.Cryptography.CryptographicOperations.ZeroMemory(attachment.Data); }
-    private static string FormatChatFileSize(long size) => size >= 1024 * 1024 ? $"{size / (1024d * 1024):0.#} МБ" : size >= 1024 ? $"{size / 1024d:0.#} КБ" : $"{size} Б";
+    private static string FormatChatFileSize(long size) => size >= 1024 * 1024 ? UiText.Format("units.megabytes", size / (1024d * 1024)): size >= 1024 ? UiText.Format("units.kilobytes", size / 1024d): UiText.Format("units.bytes", size);
     private void StartChatAnimation(Image image, byte[] bytes)
     {
         if (!preferences.ChatAnimateGifs || !ChatGifAnimation.CanAnimate(bytes)) return;

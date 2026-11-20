@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Diagnostics;
 
 namespace Pookie.App.Platform;
@@ -8,7 +9,7 @@ internal static class ExternalBrowser
     {
         token.ThrowIfCancellationRequested();
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http") || uri.UserInfo.Length != 0)
-            throw new ArgumentException("Некорректная ссылка", nameof(value));
+            throw new ArgumentException(UiText.Get("links.invalid"), nameof(value));
         await OpenUriAsync(uri, token);
     }
 
@@ -21,12 +22,12 @@ internal static class ExternalBrowser
         token.ThrowIfCancellationRequested();
         var start = OperatingSystem.IsLinux() ? LinuxStartInfo(uri) :
             new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true };
-        using var process = Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить системный браузер");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException(UiText.Get("browser.system.launchFailed"));
         if (!OperatingSystem.IsLinux()) return;
         // Cancellation only releases our wait. The user's browser must outlive Pookie.
         await process.WaitForExitAsync(token);
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"Системный обработчик ссылок завершился с кодом {process.ExitCode}");
+            throw new InvalidOperationException(UiText.Format("links.system.exitCode", process.ExitCode));
     }
 
     internal static ProcessStartInfo LinuxStartInfo(Uri uri)

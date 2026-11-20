@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -24,7 +25,7 @@ internal sealed partial class MainWindow
     {
         trackCommentOwnAvatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(28).Height(28).StretchMode(Stretch.UniformToFill).Source(Icons.Source("user", MutedIcon));
         trackCommentInput = new TextBox().Background(Color.Transparent).BorderThickness(0).Padding(0).FontSize(13)
-            .Placeholder("Твой комментарий").CenterVertical().OnTextChanged(text =>
+            .Placeholder(UiText.Get("comments.input.placeholder")).CenterVertical().OnTextChanged(text =>
             {
                 if (renderingCommentDraft || trackDetailState is not { } state) return;
                 trackDetailState = state with { CommentDraft = text };
@@ -94,7 +95,7 @@ internal sealed partial class MainWindow
     }
 
     private static string CommentSortLabel(string sort) => sort switch
-    { "OLDEST" => "Сначала старые", "TIMESTAMP" => "По времени в треке", _ => "Сначала новые" };
+    { "OLDEST" => UiText.Get("comments.sort.oldest"), "TIMESTAMP" => UiText.Get("comments.sort.trackTime"), _ => UiText.Get("comments.sort.newest") };
 
     private async Task ChangeTrackCommentSortAsync(string sort)
     {
@@ -131,8 +132,8 @@ internal sealed partial class MainWindow
         renderingCommentDraft = true;
         try { trackCommentInput.Text = state.CommentDraft; }
         finally { renderingCommentDraft = false; }
-        trackCommentInput.Placeholder = state.Track.Commentable == false ? "Комментарии отключены" : me == null || api.Session == null
-            ? "Войди, чтобы оставить комментарий" : "Твой комментарий";
+        trackCommentInput.Placeholder = state.Track.Commentable == false ? UiText.Get("comments.disabled") : me == null || api.Session == null
+            ? UiText.Get("comments.signInToComment") : UiText.Get("comments.input.placeholder");
         RefreshCommentSendAvailability();
         var userId = me?.Id ?? 0;
         if (trackCommentAvatarUser == userId) return;
@@ -162,7 +163,7 @@ internal sealed partial class MainWindow
             if (disposed || api.Session != session) return;
             UpdateProfileComment(me!.Id, state.Track, comment, posted: true);
             if (CommitTrackCommentState(state.Track.Id, latest => AddPostedComment(latest, comment, state.CommentDraft)))
-                status.Value = "Комментарий отправлен";
+                status.Value = UiText.Get("comments.posted");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException or ArgumentException)
@@ -210,7 +211,7 @@ internal sealed partial class MainWindow
     {
         if (!CanDeleteTrackComment(track.Id, comment)) return;
         var generation = navigationGeneration; var session = api.Session;
-        if (await MessageBox.AskYesNoAsync("Удалить этот комментарий?", detail: comment.Body, owner: Window) &&
+        if (await ConfirmAsync(UiText.Get("comments.delete.confirmation"), detail: comment.Body, owner: Window) &&
             api.Session == session && IsTrackDetailCurrent(track.Id, generation)) await DeleteTrackCommentAsync(track, comment);
     }
 
@@ -233,7 +234,7 @@ internal sealed partial class MainWindow
                     ReplyCount = Math.Max(0, c.ReplyCount - 1), RepliesCursor = c.RepliesCursor } }).ToArray();
                 return state with { Comments = state.Comments with { Comments = comments }, CommentsLoading = false,
                     Track = state.Track with { CommentCount = Math.Max(0, (state.Track.CommentCount ?? state.Comments.Comments.Length) - 1) } };
-            })) status.Value = "Комментарий удалён";
+            })) status.Value = UiText.Get("comments.deleted");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested || api.Session != session) { return; }
         catch (Exception error) when (error is SoundCloudException or HttpRequestException or System.Text.Json.JsonException or NotSupportedException)

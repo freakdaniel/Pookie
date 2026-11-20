@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using Pookie.App.Messages;
 using Aprillz.MewUI;
@@ -37,10 +38,10 @@ internal static class AppHost
             eventArgs.Handled = true;
         };
         using var fontStream = typeof(AppHost).Assembly.GetManifestResourceStream("Pookie.App.Assets.Fonts.GoogleSans.ttf")
-            ?? throw new InvalidOperationException("Встроенный шрифт Google Sans не найден.");
+            ?? throw new InvalidOperationException(UiText.Get("startup.font.googleSansMissing"));
         using var appFont = FontResources.Register(fontStream, ".ttf", "Google Sans");
         using var brandStream = typeof(AppHost).Assembly.GetManifestResourceStream("Pookie.App.Assets.Fonts.Bungee-Regular.ttf")
-            ?? throw new InvalidOperationException("Встроенный шрифт Bungee не найден.");
+            ?? throw new InvalidOperationException(UiText.Get("startup.font.bungeeMissing"));
         using var brandFont = FontResources.Register(brandStream, ".ttf", "Bungee");
         ThemeManager.DefaultDarkSeed = ThemeSeed.DefaultDark with
         {

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -11,10 +12,10 @@ internal sealed partial class MainWindow
     {
         var button = new Button().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .CornerRadius(10).Content(new Border().CornerRadius(10).ClipToBounds().Child(ArtworkLayer(cover)))
-            .Hint("Посмотреть обложку");
+            .Hint(UiText.Get("artwork.view"));
         button.Cursor = CursorType.Hand;
         ArtworkMenuImage? Current() => cover.Source is ImageSource source
-            ? new(source, title() ?? "Обложка", TryArtworkUri(url(), out var uri) ? uri : null) : null;
+            ? new(source, title() ?? UiText.Get("artwork.label"), TryArtworkUri(url(), out var uri) ? uri : null) : null;
         menu = AttachArtworkMenu(button, Current);
         button.OnClick(() =>
         {

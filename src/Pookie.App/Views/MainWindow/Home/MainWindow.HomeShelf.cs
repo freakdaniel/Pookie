@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -31,8 +32,8 @@ internal sealed partial class MainWindow
                 { bar.Opacity = 0; bar.IsHitTestVisible = false; }
                 return true;
             });
-            previous = Arrow("arrow-left", "Предыдущие карточки", -1).Left();
-            next = Arrow("arrow-right", "Следующие карточки", 1).Right();
+            previous = Arrow("arrow-left", UiText.Get("home.cards.previous"), -1).Left();
+            next = Arrow("arrow-right", UiText.Get("home.cards.next"), 1).Right();
             Root = new Grid().Columns("*").Rows("Auto").Children(Scroll, previous, next);
             Scroll.ScrollChanged += RefreshArrows;
             RefreshArrows();
@@ -80,13 +81,16 @@ internal sealed partial class MainWindow
         }
     }
 
-    private CollectionCardView CreateHomeShelfCard(LibraryItem item)
+    private CollectionCardView CreateHomeShelfCard(LibraryItem item, bool responsive = false)
     {
-        var card = CreateCollectionCardView();
+        var card = CreateCollectionCardView(responsive);
         card.Item = item;
         card.SetArtist(false);
-        card.SetSize(HomeShelf.CoverSize);
-        card.Root.Width = HomeShelf.CoverSize;
+        if (!responsive)
+        {
+            card.SetSize(HomeShelf.CoverSize);
+            card.Root.Width = HomeShelf.CoverSize;
+        }
         card.Title.Text = item.Title;
         card.Author.Text = item.Subtitle;
         card.Root.Click += () => Run(() => OpenLibraryItemAsync(item));

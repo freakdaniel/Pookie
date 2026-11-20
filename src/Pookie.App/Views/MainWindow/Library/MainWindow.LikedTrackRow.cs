@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -62,9 +63,9 @@ internal sealed partial class MainWindow
             likeButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(heart.CenterVertical(), likeCount),
                 () => { if (Track is { } track) like(track); }, actionVariant, TrackRowLayout.ActionSize);
             repostButton = TrackButtons.Action(new StackPanel().Horizontal().Spacing(6).Children(repostIcon.CenterVertical(), repostCount),
-                () => { if (Track is { } track) repost(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Сделать репост");
+                () => { if (Track is { } track) repost(track); }, actionVariant, TrackRowLayout.ActionSize).Hint(UiText.Get("reposts.action.repost"));
             var playlistButton = TrackButtons.Icon(Icons.View("playlist-plus", 18, TrackButtons.OnSurface),
-                () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Добавить в плейлист");
+                () => { if (Track is { } track) playlist(track); }, actionVariant, TrackRowLayout.ActionSize).Hint(UiText.Get("playlist.actions.addTrack"));
             playsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
                 Icons.View("play-solid", 12, MutedIcon).CenterVertical(), playsCount);
             commentsStat = new StackPanel().Horizontal().Spacing(4).CenterVertical().Children(
@@ -77,7 +78,7 @@ internal sealed partial class MainWindow
             artworkFrame = new Border().CornerRadius(TrackRowLayout.CornerRadius).ClipToBounds().Width(TrackRowLayout.CoverSize).Height(TrackRowLayout.CoverSize).Child(zoom);
             metadata = new StackPanel().Vertical().Spacing(3).Right().CenterVertical().Children(posted, genreBadge);
             actionButtons = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Children(TrackButtons.Connected(likeButton, repostButton),
-                TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Track is { } track) share?.Invoke(track); }, actionVariant, TrackRowLayout.ActionSize).Hint("Поделиться").IsVisible(share != null), playlistButton);
+                TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Track is { } track) share?.Invoke(track); }, actionVariant, TrackRowLayout.ActionSize).Hint(UiText.Get("common.share")).IsVisible(share != null), playlistButton);
             actions = new Grid().Columns("Auto,*").Rows("*").Children(
                 actionButtons.Column(0),
                 new StackPanel().Horizontal().Spacing(12).Right().CenterVertical().Column(1).Children(playsStat, commentsStat));
@@ -174,7 +175,7 @@ internal sealed partial class MainWindow
         {
             var button = TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface),
                 () => { if (Track is { } track) enqueue(track); }, actionVariant,
-                embedded ? 40 : TrackRowLayout.ActionSize).Hint("Добавить в очередь");
+                embedded ? 40 : TrackRowLayout.ActionSize).Hint(UiText.Get("queue.actions.add"));
             ((MaterialTrackButton)button).UseCardGlassFallback();
             ((MaterialTrackButton)button).RetainDecorationOnDetach = recycleBuffers;
             actionButtons.Add(button);
@@ -201,7 +202,7 @@ internal sealed partial class MainWindow
             Title.Text = track.Title; Author.Text = track.Author;
             posted.Text = PostedAt(track.CreatedAt);
             genre.Text = track.Genre ?? "";
-            likeCount.Text = track.LikesCount is { } likes ? ShortCount(likes) : "Лайк";
+            likeCount.Text = track.LikesCount is { } likes ? ShortCount(likes) : UiText.Get("likes.label");
             TrackButtons.SetCounter(repostButton, repostCount, track.RepostsCount is { } reposts && reposts > 0 ? ShortCount(reposts) : "");
             genreBadge.IsVisible = !string.IsNullOrWhiteSpace(track.Genre);
             playsStat.IsVisible = !embedded && track.PlaybackCount != null;
@@ -222,8 +223,8 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(heart, liked ? "heart-filled" : "heart", liked ? TrackButtons.OnSelected : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetTextColor(likeCount, liked ? TrackButtons.OnSelected : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetLiked(likeButton, liked, actionVariant);
-            PlayButton.Hint(selected && playing ? "Приостановить" : "Воспроизвести");
-            likeButton.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
+            PlayButton.Hint(selected && playing ? UiText.Get("playback.pause") : UiText.Get("playback.play"));
+            likeButton.Hint(liked ? UiText.Get("likes.actions.remove") : UiText.Get("likes.actions.add"));
             TrackButtons.SetAvailability(likeButton, canLike, pending);
             snapActionColors = false;
             Waveform.IsPlaying = selected && playing;
@@ -248,7 +249,7 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(repostIcon, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetTextColor(repostCount, reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface, !snapActionColors);
             TrackButtons.SetAvailability(repostButton, available, pending);
-            repostButton.Hint(reposted ? "Убрать репост" : "Сделать репост");
+            repostButton.Hint(reposted ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost"));
         }
 
         public void SetTrackArt(ImageSource? source)
@@ -286,15 +287,15 @@ internal sealed partial class MainWindow
         }
 
         internal static string ShortCount(long value) => value switch {
-            >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.InvariantCulture) + "M",
-            >= 1000 => (value / 1000d).ToString("0.#", CultureInfo.InvariantCulture) + "K",
+            >= 1000000 => (value / 1000000d).ToString("0.#", CultureInfo.CurrentCulture) + "M",
+            >= 1000 => (value / 1000d).ToString("0.#", CultureInfo.CurrentCulture) + "K",
             _ => value.ToString(CultureInfo.InvariantCulture) };
 
         private static string PostedAt(string? value)
         {
             if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)) return "";
             var days = Math.Max(0, (DateTimeOffset.UtcNow - date).TotalDays);
-            return days switch { < 1 => "Сегодня", < 30 => $"{(int)days} дн. назад", < 365 => $"{(int)(days / 30)} мес. назад", _ => $"{(int)(days / 365)} г. назад" };
+            return days switch { < 1 => UiText.Get("time.today"), < 30 => UiText.Format("time.ago.days", (int)days), < 365 => UiText.Format("time.ago.months", (int)(days / 30)), _ => UiText.Format("time.ago.years", (int)(days / 365))};
         }
     }
 }

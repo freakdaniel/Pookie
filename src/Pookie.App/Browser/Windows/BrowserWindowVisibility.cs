@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using InfiniFrame;
@@ -19,7 +20,7 @@ internal static partial class BrowserWindowVisibility
         if (handle == 0) return;
         if (!services.TryGetValue(window, out _))
         {
-            if (!GetWindowRect(handle, out var rect)) throw new InvalidOperationException("Не удалось подготовить окно браузерного проигрывателя.");
+            if (!GetWindowRect(handle, out var rect)) throw new InvalidOperationException(UiText.Get("audio.browser.windowFailed"));
             services.Add(window, new(rect.Left, rect.Top, GetWindowLongPtr(handle, -20)));
         }
         Set(window, false);

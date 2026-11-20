@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.IO.Compression;
 
 namespace Pookie.App.Messages;
@@ -11,7 +12,7 @@ internal static class ChatMediaArchive
 
     internal static byte[] Wrap(byte[] encrypted)
     {
-        if (encrypted.Length > MaxEncryptedBytes) throw new InvalidDataException("Вложение слишком большое.");
+        if (encrypted.Length > MaxEncryptedBytes) throw new InvalidDataException(UiText.Get("chats.attachment.tooLarge"));
         using var output = new MemoryStream();
         using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -23,16 +24,16 @@ internal static class ChatMediaArchive
 
     internal static byte[] Unwrap(byte[] bytes)
     {
-        if (bytes.Length > MaxArchiveBytes) throw new InvalidDataException("Вложение слишком большое.");
+        if (bytes.Length > MaxArchiveBytes) throw new InvalidDataException(UiText.Get("chats.attachment.tooLarge"));
         using var input = new MemoryStream(bytes, writable: false);
         using var archive = new ZipArchive(input, ZipArchiveMode.Read);
         if (archive.Entries.Count != 1 || archive.Entries[0] is not { FullName: EntryName, Length: >= 36 and <= MaxEncryptedBytes } entry)
-            throw new InvalidDataException("Некорректный архив вложения.");
+            throw new InvalidDataException(UiText.Get("chats.attachment.invalidArchive"));
         // Never extract paths to disk, and bound the decompressed size before allocating.
         using var stream = entry.Open();
         var encrypted = new byte[(int)entry.Length];
         stream.ReadExactly(encrypted);
-        if (stream.ReadByte() != -1) throw new InvalidDataException("Некорректный размер вложения.");
+        if (stream.ReadByte() != -1) throw new InvalidDataException(UiText.Get("chats.attachment.invalidSize"));
         return encrypted;
     }
 }

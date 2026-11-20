@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
@@ -19,7 +20,7 @@ internal sealed class ChatVoiceCard : ContentControl
     internal ChatVoiceCard(string key, ChatVoiceMetadata metadata, Action activate, Action<double> seek)
     {
         Key = key; duration = metadata.Duration; Padding = new Thickness(0); BorderThickness = 0; Background = Color.Transparent;
-        play = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(playGlyph,pauseGlyph), activate, TrackButtons.Glass, 44).Hint("Прослушать / пауза");
+        play = TrackButtons.Icon(new Grid().Columns("*").Rows("*").Children(playGlyph,pauseGlyph), activate, TrackButtons.Glass, 44).Hint(UiText.Get("chats.voice.playPause"));
         ((MaterialTrackButton)play).UseCardGlassFallback();
         time = new TextBlock().Text(Clock(duration)).FontSize(11).Foreground(Color.FromArgb(178,255,255,255));
         wave = new ChatVoiceWave { Peaks = metadata.Peaks, Seek = seek };

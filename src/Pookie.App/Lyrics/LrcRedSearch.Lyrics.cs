@@ -83,6 +83,16 @@ internal sealed partial class LrcRedSearch
 
     private async Task<LyricsDocument?> ReadLyricsAsync(string isrc, LyricsIdentity identity, bool allowPlain, CancellationToken token)
     {
+        var document = await ReadDocumentAsync(isrc, identity.Title, identity.Artist, token).ConfigureAwait(false);
+        if (document == null) return null;
+        if (identity.TimingAvailable && document.Status == LyricsStatus.Synced &&
+            (!double.IsFinite(identity.Duration) || identity.Duration <= 0 || document.Lines[^1].Start <= identity.Duration + 2))
+            return document;
+        return allowPlain && !string.IsNullOrWhiteSpace(document.PlainText) ? document with { Lines = [] } : null;
+    }
+
+    private async Task<LyricsDocument?> ReadDocumentAsync(string isrc, string title, string artist, CancellationToken token)
+    {
         using var response = await SendAsync($"s/{isrc}.lrc", token).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone or HttpStatusCode.NoContent) return null;
         response.EnsureSuccessStatusCode();
@@ -90,11 +100,7 @@ internal sealed partial class LrcRedSearch
             throw new HttpRequestException("lrc.red returned an HTML page instead of an LRC file.");
         await response.Content.LoadIntoBufferAsync(MaxResponseBytes, token).ConfigureAwait(false);
         var text = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
-        var document = LrcParser.Parse(text, null, Name, null, identity.Title, identity.Artist);
-        if (identity.TimingAvailable && document.Status == LyricsStatus.Synced &&
-            (!double.IsFinite(identity.Duration) || identity.Duration <= 0 || document.Lines[^1].Start <= identity.Duration + 2))
-            return document;
-        return allowPlain && !string.IsNullOrWhiteSpace(document.PlainText) ? document with { Lines = [] } : null;
+        return LrcParser.Parse(text, null, Name, null, title, artist);
     }
 
     internal static string? NormalizeIsrc(string? value)

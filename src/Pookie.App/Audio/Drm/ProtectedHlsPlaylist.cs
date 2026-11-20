@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 
 namespace Pookie.Audio;
@@ -17,7 +18,7 @@ internal sealed record ProtectedHlsPlaylist(Uri Initialization, byte[] InitData,
         foreach (var line in text.Split('\n').Select(line => line.Trim()))
         {
             if (line.StartsWith("#EXT-X-STREAM-INF:") || line.StartsWith("#EXT-X-BYTERANGE:"))
-                throw new DrmPlaybackException("Нужен отдельный конечный DRM HLS-поток без master-плейлиста и byte ranges.");
+                throw new DrmPlaybackException(UiText.Get("drm.hls.singleStreamRequired"));
             if (line.StartsWith("#EXT-X-MAP:"))
             {
                 var attributes = Attributes(line[11..]);
@@ -62,5 +63,5 @@ internal sealed record ProtectedHlsPlaylist(Uri Initialization, byte[] InitData,
         try { return HlsAttributes.Parse(line); }
         catch (InvalidOperationException) { throw Invalid(); }
     }
-    private static DrmPlaybackException Invalid() => new("SoundCloud вернул неподдерживаемый или некорректный защищённый HLS-плейлист.");
+    private static DrmPlaybackException Invalid() => new(UiText.Get("drm.hls.invalidProtectedPlaylist"));
 }

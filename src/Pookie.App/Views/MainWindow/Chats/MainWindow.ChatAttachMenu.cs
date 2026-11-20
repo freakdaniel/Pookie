@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -20,9 +21,9 @@ internal sealed partial class MainWindow
             return MenuChoice(icon, text, () => { CloseChatAttachMenu(true); action(); });
         }
         chatAttachMenuPanel = FloatingMenuLayer.CreateCard(new StackPanel().Vertical().Children(
-                Choice("music-notes", "Трек или плейлист", () => Run(OpenChatMusicPickerAsync)),
-                Choice("file", "Документ", () => Run(() => PickChatFilesAsync(documents: true))),
-                Choice("image", "Фото или видео", () => Run(() => PickChatFilesAsync(mediaOnly: true)))), 238).Background(ChatGlassSurface);
+                Choice("music-notes", UiText.Get("share.item.trackOrPlaylist"), () => Run(OpenChatMusicPickerAsync)),
+                Choice("file", UiText.Get("chats.attachment.document"), () => Run(() => PickChatFilesAsync(documents: true))),
+                Choice("image", UiText.Get("chats.attachments.photoOrVideo"), () => Run(() => PickChatFilesAsync(mediaOnly: true)))), 238).Background(ChatGlassSurface);
         chatAttachMenu = new FloatingMenuLayer(chatComposer, chatAttachMenuPanel, gap: 11).Initialize();
         chatAttachInteraction = new FloatingMenuHover(chatAttach, chatAttachMenuPanel, ShowChatAttachMenu, () => CloseChatAttachMenu());
         chatAttach.OnKeyDown(e => { if (e.Key is Key.Up or Key.Down) { e.Handled = true; ShowChatAttachMenu(); } });

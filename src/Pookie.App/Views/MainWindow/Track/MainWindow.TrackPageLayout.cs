@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -48,11 +49,11 @@ internal sealed partial class MainWindow
             () => { if (trackDetailState is { } state) Run(() => ToggleTrackLikeAsync(state.Track)); }, TrackButtons.Glass, height: 44);
         var comment = TrackCommentComposerView();
         var queue = TrackButtons.Icon(Icons.View("queue", 20).Center(),
-            () => { if (trackDetailState is { } state) EnqueueTrack(state.Track, false); }, TrackButtons.Glass, size: 44).Hint("Добавить в очередь");
+            () => { if (trackDetailState is { } state) EnqueueTrack(state.Track, false); }, TrackButtons.Glass, size: 44).Hint(UiText.Get("queue.actions.add"));
         trackDetailRepostIcon = Icons.View("repeat", 20, TrackButtons.OnSurface);
         trackDetailRepostCount = new TextBlock().FontSize(14).Bold().CenterVertical();
         trackDetailRepost = TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(trackDetailRepostIcon.CenterVertical(), trackDetailRepostCount),
-            () => { if (trackDetailState is { } state) Run(() => ToggleTrackRepostAsync(state.Track)); }, TrackButtons.Glass, height: 44).Hint("Сделать репост");
+            () => { if (trackDetailState is { } state) Run(() => ToggleTrackRepostAsync(state.Track)); }, TrackButtons.Glass, height: 44).Hint(UiText.Get("reposts.action.repost"));
         AttachTrackQueueMenu(queue, () => trackDetailState?.Track);
         var playlist = AddToPlaylistButton(() => trackDetailState?.Track, TrackButtons.Glass, 44);
         var actions = trackCommentActions = new TrackCommentActionRow(TrackButtons.Connected(trackDetailLike, trackDetailRepost), comment,
@@ -83,7 +84,7 @@ internal sealed partial class MainWindow
             trackCommentsLoadingView.Skeleton.SetActive(page.Value == Page.Track && trackCommentsLoadingView.Loading);
             if (page.Value != Page.Track) ResetTrackCommentPreview();
         };
-        trackDetailMoreComments = TrackButtons.Action(new TextBlock().Text("Ещё комментарии").FontSize(14).SemiBold()
+        trackDetailMoreComments = TrackButtons.Action(new TextBlock().Text(UiText.Get("comments.loadMore")).FontSize(14).SemiBold()
             .Foreground(TrackButtons.OnSurface), () => Run(MoreTrackCommentsAsync), TrackButtons.Text).Left();
         var content = new ViewportStackPanel { Viewport = () => trackDetailScroll.Bounds, ArrangeVisibleOnly = false }.Vertical().Spacing(24).Column(0).Children(trackDetailDescription, trackDetailLicense,
             new Border().Height(1).Background(Raised),

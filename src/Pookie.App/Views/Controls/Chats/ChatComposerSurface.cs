@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -29,7 +30,7 @@ internal sealed class ChatComposerSurface : Panel
         hint = new Border().BorderThickness(0).Background(Color.Transparent)
             .Child(new StackPanel().Horizontal().Spacing(10).Center().Children(
                 Icons.View("paperclip", 24, TrackButtons.OnSurface).CenterVertical(),
-                new TextBlock().Text("Отпусти файлы здесь").FontSize(14).Foreground(TrackButtons.OnSurface).CenterVertical()));
+                new TextBlock().Text(UiText.Get("chats.attachments.dropHere")).FontSize(14).Foreground(TrackButtons.OnSurface).CenterVertical()));
         hint.Opacity = 0; hint.IsHitTestVisible = false;
         hint.Transitions = [Transition.Create(UIElement.OpacityProperty, 170)];
         content.Transitions = [Transition.Create(UIElement.OpacityProperty, 170)];

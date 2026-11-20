@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Rendering;
@@ -72,7 +73,7 @@ internal sealed class DescriptionTextBlock : SelectableTextBlock
         {
             Text = Text.AsMemory(), Dpi = dpi, DefaultStyle = style, Inlines = Links?.Inlines ?? [],
             Paragraph = new() { MaxWidth = width, Wrapping = TextWrapping.Wrap, LineSpacing = LineSpacing,
-                Alignment = TextAlignment, LineBoxTrim = LineBoxTrim, Culture = System.Globalization.CultureInfo.CurrentUICulture }
+                Alignment = TextAlignment, LineBoxTrim = LineBoxTrim, Culture = UiText.Language }
         });
     }
     protected override Size MeasureContent(Size availableSize)

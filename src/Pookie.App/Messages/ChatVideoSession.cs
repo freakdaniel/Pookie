@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Aprillz.MewUI;
@@ -77,7 +78,7 @@ internal sealed unsafe class ChatVideoSession : IAsyncDisposable
             if (!OperatingSystem.IsMacOS()) session.media.AddOption(":demux=avformat");
             session.media.AddOption(":no-sub-autodetect-file");
             if (silent) session.media.AddOption(":no-audio");
-            if (!session.player.Play(session.media)) throw new InvalidDataException("Видео не удалось открыть.");
+            if (!session.player.Play(session.media)) throw new InvalidDataException(UiText.Get("chats.video.openFailed"));
             return session;
         }
         catch { session.LogNativeErrors(); session.DisposeCore(); throw; }

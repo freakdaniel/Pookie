@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.CompilerServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -11,6 +12,7 @@ internal class InAppPopup : Panel
     private static readonly ConditionalWeakTable<Window, List<InAppPopup>> open = new();
     private readonly List<(ScrollViewer Scroll, Action Handler)> scrollOwners = [];
     private ChatPopupLayer? layer;
+    internal System.Globalization.CultureInfo LabelLanguage { get; set; } = UiText.Language;
     private Panel? host;
     private Window? window;
     private UIElement? owner;
@@ -35,6 +37,7 @@ internal class InAppPopup : Panel
     {
         if (trigger.FindVisualRoot() is not Window source || source.Content is not Panel root || layer == null) return;
         if (window != null && window != source) Close(true);
+        if (!LabelLanguage.Equals(UiText.Language)) LocalizedViews.Refresh(this);
         window = source; owner = trigger; host = root;
         ownerKeyboard = trigger is Control control && KeyboardFocusFeedback.IsVisible(control);
         parentPopup = null;

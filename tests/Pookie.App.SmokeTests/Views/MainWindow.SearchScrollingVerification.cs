@@ -88,6 +88,13 @@ internal sealed partial class MainWindow
             await PrepareCollectionArtworkAsync(items, lifetime.Token, rows: true);
             SetSearchResults(new(items, null));
         });
+        await SearchFixture(SearchSection.All, [results[1]]);
+        await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero &&
+            view.Hero?.Item?.User == user));
+        var artistHero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero!;
+        if (artistHero.Play.Parent is not Button { StyleName: TrackButtons.Glass } ||
+            !ReferenceEquals(artistHero.Play.Source, Icons.Source("arrow-right", TrackButtons.OnSurface)))
+            throw new InvalidOperationException("The top artist result lost its glass navigation button.");
         await SearchFixture(SearchSection.All, results);
         await WaitForLikedLayoutAsync(() => searchViews.Values.Any(view => view.Block?.Kind == SearchBlockKind.Hero && view.Hero!.Card.ActualWidth > 100));
         var hero = searchViews.Values.Single(view => view.Block?.Kind == SearchBlockKind.Hero).Hero!;
@@ -122,12 +129,12 @@ internal sealed partial class MainWindow
         try
         {
             current = track; isPlaying.Value = true; likedIds.Add(track.Id); RefreshSearchPlayback();
-            if (!ReferenceEquals(hero.Play.Source, Icons.Source("pause-solid", Surface)) ||
+            if (!ReferenceEquals(hero.Play.Source, Icons.Source("pause-solid", TrackButtons.OnSurface)) ||
                 !hero.Tracks[0].Overlay.ShowsPause)
                 throw new InvalidOperationException("Search playback icons did not react immediately");
             await WaitForLikedLayoutAsync(() => ReferenceEquals(hero.Tracks[0].Heart.Source, Icons.Source("heart-filled", LikedHeart)));
             isPlaying.Value = false; RefreshSearchPlayback();
-            if (hero.Tracks[0].Overlay.ShowsPause)
+            if (!ReferenceEquals(hero.Play.Source, Icons.Source("play-solid", TrackButtons.OnSurface)) || hero.Tracks[0].Overlay.ShowsPause)
                 throw new InvalidOperationException("Search pause did not restore its play icon");
         }
         finally { current = savedTrack; isPlaying.Value = savedPlaying; likedIds.Remove(track.Id); RefreshSearchPlayback(); timer.Start(); }

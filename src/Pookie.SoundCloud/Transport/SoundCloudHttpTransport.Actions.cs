@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text;
 using System.Text.Json;
 
@@ -7,7 +8,7 @@ public sealed partial class SoundCloudHttpTransport
 {
     public async Task<JsonDocument> CreatePlaylistAsync(PlaylistCreateRequest request, CancellationToken cancellationToken = default)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректные данные плейлиста.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("playlist.invalidData"));
         var account = Account();
 
         // The web client serializes tracks to IDs and wraps attributes in playlist.
@@ -18,7 +19,7 @@ public sealed partial class SoundCloudHttpTransport
             writer.WriteStartArray("tracks"); writer.WriteNumberValue(request.TrackId); writer.WriteEndArray();
             writer.WriteEndObject(); writer.WriteEndObject();
         }), verification == null ? null : ct => verification.CreatePlaylistAsync(request, ct), cancellationToken,
-            validate: root => { if (!request.Confirms(root)) throw new SoundCloudException("SoundCloud не подтвердил создание плейлиста."); }).ConfigureAwait(false);
+            validate: root => { if (!request.Confirms(root)) throw new SoundCloudException(UiText.Get("soundcloud.playlist.createUnconfirmed")); }).ConfigureAwait(false);
     }
 
     public Task SetSystemPlaylistPublicAsync(string urn, bool isPublic, CancellationToken token = default) =>
@@ -69,16 +70,16 @@ public sealed partial class SoundCloudHttpTransport
     public async Task SetFollowingAsync(long userId, long artistId, bool following, CancellationToken cancellationToken = default)
     {
         ValidateId(userId); ValidateId(artistId);
-        if (userId == artistId) throw new ArgumentException("Нельзя подписаться на свой профиль.");
+        if (userId == artistId) throw new ArgumentException(UiText.Get("profile.follow.selfUnsupported"));
         var path = $"/me/followings/{artistId}";
         if (following)
         {
-            if (verification == null) throw new SoundCloudException("Подпись подписки SoundCloud ещё не подключена.");
+            if (verification == null) throw new SoundCloudException(UiText.Get("soundcloud.subscription.notConnected"));
             // The site's signing helper is an authorization operation. The actual
             // follow request remains native and carries the current session.
             var signature = await GetFollowSignatureAsync(userId, artistId, cancellationToken).ConfigureAwait(false);
             if (signature is not { Length: > 0 and <= 4096 } || signature.Any(char.IsControl))
-                throw new SoundCloudException("SoundCloud не предоставил подпись подписки.");
+                throw new SoundCloudException(UiText.Get("soundcloud.subscription.signatureUnavailable"));
             path += "?signature=" + Uri.EscapeDataString(signature);
         }
         await ActionAsync(following ? HttpMethod.Post : HttpMethod.Delete, path, null,
@@ -102,11 +103,11 @@ public sealed partial class SoundCloudHttpTransport
         var playlist = current.RootElement;
         if (!MatchesResource(playlist, "playlists", playlistId) || !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", userId) ||
             playlist.TryGetProperty("is_album", out var album) && album.ValueKind == JsonValueKind.True)
-            throw new SoundCloudException("Этот плейлист нельзя редактировать.");
+            throw new SoundCloudException(UiText.Get("playlist.edit.readOnly"));
         playlist.TryGetProperty("tracks", out var tracks);
         if (tracks.ValueKind == JsonValueKind.Array && tracks.EnumerateArray().Any(track => MatchesResource(track, "tracks", trackId))) return;
         if (playlist.TryGetProperty("track_count", out var count) && count.ValueKind == JsonValueKind.Number && count.TryGetInt32(out var total) && total >= 500)
-            throw new SoundCloudException("Плейлист заполнен.");
+            throw new SoundCloudException(UiText.Get("playlist.full"));
         // SoundCloud's playlist model saves its complete numeric track order.
         // Do not replace the list unless the fresh full snapshot is intact.
         var ids = ReadPlaylistOrder(playlist, tracks);
@@ -117,7 +118,7 @@ public sealed partial class SoundCloudHttpTransport
 
     public async Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректное изменение плейлиста.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("playlist.edit.invalid"));
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         var token = cancellation.Token;
         await playlistEdits.WaitAsync(token).ConfigureAwait(false);
@@ -131,12 +132,12 @@ public sealed partial class SoundCloudHttpTransport
             if (!MatchesResource(playlist, "playlists", request.PlaylistId) ||
                 !playlist.TryGetProperty("user", out var user) || !MatchesResource(user, "users", request.UserId) ||
                 playlist.TryGetProperty("is_system_playlist", out var system) && system.ValueKind == JsonValueKind.True)
-                throw new SoundCloudException("Этот плейлист нельзя редактировать.");
+                throw new SoundCloudException(UiText.Get("playlist.edit.readOnly"));
 
             if (request.Kind == "reset-secret")
             {
                 var before = LibraryData.ParsePlaylist(playlist);
-                if (!before.IsPrivate) throw new SoundCloudException("Секретная ссылка есть только у приватных плейлистов.");
+                if (!before.IsPrivate) throw new SoundCloudException(UiText.Get("share.playlist.secretPrivateOnly"));
                 var browserReset = false;
                 using var reset = await ExecuteAsync(HttpMethod.Post, Api($"/soundcloud:playlists:{request.PlaylistId}/secret_token/reset"), null,
                     verification == null ? null : async ct =>
@@ -149,7 +150,7 @@ public sealed partial class SoundCloudHttpTransport
                 var after = LibraryData.ParsePlaylist(resetResult.RootElement);
                 if (after.Id != before.Id || after.User?.Id != request.UserId || !after.IsPrivate ||
                     PlaylistSharing.Token(after) is not { } secret || secret == PlaylistSharing.Token(before) || PlaylistSharing.ShareUri(after) == null)
-                { resetResult.Dispose(); throw new SoundCloudException("SoundCloud не подтвердил новую секретную ссылку. Открой окно заново, чтобы проверить её."); }
+                { resetResult.Dispose(); throw new SoundCloudException(UiText.Get("share.link.resetUnconfirmed")); }
                 return resetResult;
             }
 
@@ -160,7 +161,7 @@ public sealed partial class SoundCloudHttpTransport
                 playlist.TryGetProperty("tracks", out var tracks);
                 order = ReadPlaylistOrder(playlist, tracks);
                 if (update?.ExpectedTrackIds is { } expected && !order.SequenceEqual(expected))
-                    throw new SoundCloudException("Порядок треков изменился. Обнови плейлист и повтори действие.");
+                    throw new SoundCloudException(UiText.Get("playlist.tracks.orderChanged"));
             }
 
             var delete = request.Kind == "delete";
@@ -206,13 +207,13 @@ public sealed partial class SoundCloudHttpTransport
         if (tracks.ValueKind != JsonValueKind.Array || !playlist.TryGetProperty("track_count", out var fullCount) ||
             fullCount.ValueKind != JsonValueKind.Number || !fullCount.TryGetInt32(out var expected) ||
             expected < 0 || tracks.GetArrayLength() != expected)
-            throw new SoundCloudException("SoundCloud не подтвердил полный список треков плейлиста.");
+            throw new SoundCloudException(UiText.Get("playlist.tracks.listUnconfirmed"));
         var ids = new List<long>();
         foreach (var track in tracks.EnumerateArray())
         {
             if (track.ValueKind != JsonValueKind.Object || !track.TryGetProperty("id", out var value) ||
                 value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var id) || id is <= 0 or > 9007199254740991)
-                throw new SoundCloudException("SoundCloud не подтвердил полный список треков плейлиста.");
+                throw new SoundCloudException(UiText.Get("playlist.tracks.listUnconfirmed"));
             ids.Add(id);
         }
         return ids;
@@ -260,7 +261,7 @@ public sealed partial class SoundCloudHttpTransport
 
     public Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректный запрос страницы трека.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("track.page.invalidRequest"));
         return GraphAsync(request.Kind switch { "comments" => TrackReadQueries.Comments, "replies" => TrackReadQueries.Replies, "quality" => TrackReadQueries.Quality, _ => TrackReadQueries.Sidebar }, writer =>
         {
             writer.WriteString("trackUrn", $"soundcloud:tracks:{request.TrackId}");
@@ -276,7 +277,7 @@ public sealed partial class SoundCloudHttpTransport
 
     public Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректный комментарий.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("comments.invalid"));
         return GraphAsync(request.Kind == "create" ? CommentWriteQueries.Create : CommentWriteQueries.Delete, writer =>
         {
             writer.WriteStartObject("input");
@@ -300,9 +301,9 @@ public sealed partial class SoundCloudHttpTransport
 
     public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
     {
-        if (!request.IsValid()) throw new ArgumentException("Некорректный запрос переписки.");
+        if (!request.IsValid()) throw new ArgumentException(UiText.Get("chats.request.invalid"));
         if (await UserIdAsync(cancellationToken).ConfigureAwait(false) != request.UserId)
-            throw new SoundCloudException("Переписка принадлежит другой учётной записи.");
+            throw new SoundCloudException(UiText.Get("chats.conversation.wrongAccount"));
         var path = $"/users/{request.UserId}/conversations" + (request.Kind == "list" ? "" : $"/{request.RecipientId}") +
             (request.Kind == "thread" ? "/messages" : "");
         var uri = request.Cursor == null ? Api(path) : new Uri(request.Cursor);
@@ -330,7 +331,7 @@ public sealed partial class SoundCloudHttpTransport
     {
         using var document = await GetJsonAsync(Api("/me"), token).ConfigureAwait(false);
         if (!document.RootElement.TryGetProperty("id", out var id) || !id.TryGetInt64(out var value) || value <= 0)
-            throw new SoundCloudException("SoundCloud не подтвердил учётную запись.");
+            throw new SoundCloudException(UiText.Get("soundcloud.auth.accountUnconfirmed"));
         return value;
     }
 

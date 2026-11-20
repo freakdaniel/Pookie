@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 
@@ -11,9 +12,9 @@ internal sealed partial class MainWindow
     {
         if (row.More != null) return;
         var repostIcon = Icons.View("repeat", 18, MutedIcon).Center();
-        var repost = TrackButtons.Icon(repostIcon, () => { if (row.Track is { } track) Run(() => ToggleTrackRepostAsync(track)); }, TrackButtons.Text, 32).Hint("Сделать репост");
+        var repost = TrackButtons.Icon(repostIcon, () => { if (row.Track is { } track) Run(() => ToggleTrackRepostAsync(track)); }, TrackButtons.Text, 32).Hint(UiText.Get("reposts.action.repost"));
         var share = ShareTrackButton(() => row.Track, TrackButtons.Text, 32);
-        var more = TrackButtons.Icon(Icons.View("dots-three", 20), () => { }, TrackButtons.Text, 32).Hint("Ещё");
+        var more = TrackButtons.Icon(Icons.View("dots-three", 20), () => { }, TrackButtons.Text, 32).Hint(UiText.Get("common.more"));
         more.Click += () => PopupAppearance.MenuFor(row.Root).Toggle(more);
         var extras = new StackPanel().Horizontal().Spacing(4).Children(repost, share).IsVisible(row.Root.ActualWidth >= CompactTrackTail.FullActionsThreshold);
         row.Actions.Content = new StackPanel().Horizontal().Spacing(4).Right().CenterVertical().Children(extras, more);

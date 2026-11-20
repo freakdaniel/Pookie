@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -40,8 +41,8 @@ internal sealed partial class MainWindow
     private string activeLibrarySource = "";
 
     private static string SectionTitle(Page target) => target switch {
-        Page.LibraryPlaylists => "Плейлисты", Page.LibraryAlbums => "Альбомы", Page.LibraryStations => "Станции",
-        Page.LibraryFollowing => "Подписки", Page.LibraryHistory => "История", Page.LibraryMixes => "Миксы", _ => "Библиотека" };
+        Page.LibraryPlaylists => UiText.Get("library.playlists"), Page.LibraryAlbums => UiText.Get("library.albums"), Page.LibraryStations => UiText.Get("library.stations"),
+        Page.LibraryFollowing => UiText.Get("library.following"), Page.LibraryHistory => UiText.Get("header.history"), Page.LibraryMixes => UiText.Get("library.mixes"), _ => UiText.Get("header.library") };
     private static string SectionSource(Page target) => target switch {
         Page.LibraryPlaylists or Page.LibraryAlbums => "collections", Page.LibraryStations => "stations",
         Page.LibraryFollowing => "following", Page.LibraryHistory => "history", Page.LibraryMixes => "mixes", _ => "recent" };
@@ -73,7 +74,7 @@ internal sealed partial class MainWindow
         collectionGrid = CreateCollectionGrid(false);
         var statusPanel = new StackPanel().Vertical().Spacing(10).Children(
             new TextBlock().BindText(librarySectionStatus).FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap),
-            TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), () => Run(RetryLibrarySectionAsync), TrackButtons.Tonal, 36)
+            TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retry")).FontSize(13), () => Run(RetryLibrarySectionAsync), TrackButtons.Tonal, 36)
                 .Left().BindIsVisible(librarySectionRetry)).BindIsVisible(librarySectionStatus, value => !string.IsNullOrWhiteSpace(value));
         var ordinary = new DockPanel().LastChildFill().Spacing(22).Padding(0, 14, 0, 0).Children(
             new StackPanel().Vertical().Spacing(12).Children(new TextBlock().BindText(librarySectionTitle).FontSize(22).Bold(), statusPanel).DockTop(), collectionGrid)
@@ -310,7 +311,7 @@ internal sealed partial class MainWindow
             section.Grid.Height = Math.Max(1, Math.Ceiling(items.Length / (double)libraryColumns)) * (likedArtworkSize + 90);
             section.Grid.IsVisible = items.Length > 0;
             section.Empty.IsVisible = items.Length == 0 && !overviewErrors.ContainsKey(key) && !overviewPending.Contains(source);
-            section.Empty.Text = me == null && !demo ? "Войди в SoundCloud, чтобы открыть этот раздел." : "Здесь пока ничего нет.";
+            section.Empty.Text = me == null && !demo ? UiText.Get("auth.required.section") : UiText.Get("library.empty");
         }
         RefreshCachedCollectionArtwork();
     }
@@ -356,7 +357,7 @@ internal sealed partial class MainWindow
         if (playlistCollectionVisible.Value) RefreshCollectionTracks();
         else ClearCollectionTrackViews();
         RefreshCachedCollectionArtwork();
-        librarySectionStatus.Value = items.Length > 0 ? "" : me == null && !demo ? "Войди в SoundCloud, чтобы открыть этот раздел." : "Здесь пока ничего нет.";
+        librarySectionStatus.Value = items.Length > 0 ? "" : me == null && !demo ? UiText.Get("auth.required.section") : UiText.Get("library.empty");
     }
 
     private async Task LoadMoreLibraryAsync()
@@ -405,7 +406,7 @@ internal sealed partial class MainWindow
             collectionLoadingView.Skeleton.SetGeometry(likedArtworkSize, libraryColumns, playlistCollectionVisible.Value && collectionMode.Value != TrackViewMode.Cards);
             collectionLoadingView.SetLoading(!demo && me != null);
             var token = BeginLoad(); var session = api.Session;
-            if (demo) { librarySectionStatus.Value = "В демо-режиме подборки не загружаются."; return; }
+            if (demo) { librarySectionStatus.Value = UiText.Get("demo.collections.unavailable"); return; }
             var detail = await api.GetCollectionDetailAsync(item, token);
             var result = detail.Tracks;
             await PrepareTrackArtworkAsync(result.Tracks, token, mode: collectionMode.Value);

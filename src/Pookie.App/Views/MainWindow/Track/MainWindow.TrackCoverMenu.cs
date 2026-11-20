@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Platform;
@@ -16,9 +17,9 @@ internal sealed partial class MainWindow
     {
         var menu = PopupAppearance.CreateMenu();
         ArtworkMenuImage? selected = null;
-        var image = PopupAppearance.MenuCommand("pookie.cover.copy-image", "Скопировать изображение", "copy");
-        var link = PopupAppearance.MenuCommand("pookie.cover.copy-link", "Скопировать ссылку", "link");
-        var save = PopupAppearance.MenuCommand("pookie.cover.save-as", "Сохранить как", "download-simple");
+        var image = PopupAppearance.MenuCommand("pookie.cover.copy-image", UiText.Get("clipboard.copyImage"), "copy");
+        var link = PopupAppearance.MenuCommand("pookie.cover.copy-link", UiText.Get("share.link.copy"), "link");
+        var save = PopupAppearance.MenuCommand("pookie.cover.save-as", UiText.Get("files.saveAs"), "download-simple");
         owner.Commands.Register(image, () => { if (selected is { } artwork) Run(() => CopyArtworkAsync(artwork.Source)); }, () => selected != null);
         owner.Commands.Register(link, () => { if (selected?.Link is { } uri) CopyText(uri.AbsoluteUri); }, () => selected?.Link != null);
         owner.Commands.Register(save, () => { if (selected is { } artwork) Run(() => SaveArtworkAsAsync(artwork)); }, () => selected != null);
@@ -48,13 +49,13 @@ internal sealed partial class MainWindow
         var name = new string(artwork.Title.Select(c => char.IsControl(c) || "/\\:*?\"<>|".Contains(c) ? '_' : c).Take(120).ToArray()).Trim(' ', '.');
         var destination = await artworkSaveDialog(new SaveFileDialogOptions
         {
-            Owner = Window, Title = "Сохранить изображение", FileName = (name.Length == 0 ? "Обложка" : name) + ".png",
-            DefaultExtension = "png", Filters = [new FileFilter("Изображение PNG", "*.png")]
+            Owner = Window, Title = UiText.Get("files.image.save"), FileName = (name.Length == 0 ? UiText.Get("artwork.label") : name) + ".png",
+            DefaultExtension = "png", Filters = [new FileFilter(UiText.Get("files.image.png"), "*.png")]
         }, lifetime.Token);
         if (destination == null || disposed) return;
         var png = await EncodeArtworkPngAsync(artwork.Source);
         await File.WriteAllBytesAsync(destination, png, lifetime.Token);
-        if (!disposed) status.Value = "Изображение сохранено.";
+        if (!disposed) status.Value = UiText.Get("files.image.saved");
     }
 
     private async Task CopyArtworkAsync(ImageSource source)
@@ -65,7 +66,7 @@ internal sealed partial class MainWindow
             var encoding = EncodeArtworkPngAsync(source);
             var copied = clipboard.TrySetPng(encoding);
             await encoding;
-            if (!disposed) status.Value = copied ? "Изображение скопировано." : "Не удалось скопировать изображение.";
+            if (!disposed) status.Value = copied ? UiText.Get("clipboard.image.copied") : UiText.Get("clipboard.image.copyFailed");
             return;
         }
         var pixels = await Task.Run(() =>
@@ -74,6 +75,6 @@ internal sealed partial class MainWindow
             source.CopyPixels(buffer, width * 4); return buffer;
         }, lifetime.Token);
         if (disposed) return;
-        status.Value = ImageClipboard.TrySet(pixels, width, height) ? "Изображение скопировано." : "Не удалось скопировать изображение.";
+        status.Value = ImageClipboard.TrySet(pixels, width, height) ? UiText.Get("clipboard.image.copied") : UiText.Get("clipboard.image.copyFailed");
     }
 }

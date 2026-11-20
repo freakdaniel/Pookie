@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using InfiniFrame;
 using InfiniFrame.Security;
@@ -30,7 +31,7 @@ internal static partial class InfiniFrameLoginWindow
         services.AddLogging(logging => logging.ClearProviders());
         var builder = InfiniFrameWindowBuilder.Create(services)
             .SetUserAgent(null) // Preserve the engine's native UA instead of InfiniFrame's default label.
-            .SetTitle("Pookie — проверка SoundCloud").SetSize(900, 760)
+            .SetTitle(UiText.Get("auth.window.verificationTitle")).SetSize(900, 760)
             // A minimized Win32 window gives WebView2 a zero-sized viewport. Hide the full-sized window instead.
             .SetStartPageUrl(fixtureUri ?? "https://soundcloud.com/").SetMinimized(!OperatingSystem.IsWindows())
             .SetTemporaryFilesPath(profilePath).EnableIgnoreCertificateErrors(false).EnableWebSecurity(true)
@@ -107,7 +108,7 @@ internal static partial class InfiniFrameLoginWindow
         services.AddLogging(logging => logging.ClearProviders());
         var builder = InfiniFrameWindowBuilder.Create(services)
             .SetUserAgent(null)
-            .SetTitle("Pookie — вход на soundcloud.com")
+            .SetTitle(UiText.Get("auth.window.domainTitle"))
             .SetSize(900, 760)
             .SetStartPageUrl(fixtureUri ?? "https://soundcloud.com/you/likes")
             .SetTemporaryFilesPath(profilePath)
@@ -192,5 +193,5 @@ internal static partial class InfiniFrameLoginWindow
         }
     }
 
-    internal sealed class BridgeException(Exception error) : Exception("Не удалось подключить браузерную сессию SoundCloud.", error);
+    internal sealed class BridgeException(Exception error) : Exception(UiText.Get("auth.browser.connectFailed"), error);
 }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -6,10 +7,10 @@ public sealed partial class SoundCloudWebClient
 {
     public async Task<FeedPage> GetFeedActivitiesAsync(string? cursor = null, CancellationToken token = default)
     {
-        if (Session == null) throw new SoundCloudException("Войди в SoundCloud, чтобы открыть ленту подписок");
+        if (Session == null) throw new SoundCloudException(UiText.Get("feed.signIn.heading"));
         var uri = Api("stream?limit=30&linked_partitioning=1");
         if (cursor != null && (!BrowserRequestCommand.IsReadUrl(cursor) || !Uri.TryCreate(cursor, UriKind.Absolute, out uri) || uri.AbsolutePath != "/stream"))
-            throw new SoundCloudException("Неверная страница ленты");
+            throw new SoundCloudException(UiText.Get("feed.invalidPage"));
         using var document = await GetJsonAsync(uri!, token).ConfigureAwait(false);
         var enriched = await ParseLibraryAsync(document.RootElement, token).ConfigureAwait(false);
         var items = enriched.Items.ToDictionary(item => item.Key);

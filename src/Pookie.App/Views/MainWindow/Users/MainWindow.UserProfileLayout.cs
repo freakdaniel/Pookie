@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -51,7 +52,7 @@ internal sealed partial class MainWindow
         userName = new TextBlock().FontSize(34).Bold().TextTrimming(TextTrimming.CharacterEllipsis);
         userVerified = new Grid().Columns("*").Rows("*").Width(28).Height(28).Children(
             Icons.View("seal-fill", 28, Color.FromRgb(111, 183, 255)).Center(),
-            Icons.View("check", 13, Color.FromRgb(15, 39, 64)).Center()).Hint("Подтверждённый пользователь");
+            Icons.View("check", 13, Color.FromRgb(15, 39, 64)).Center()).Hint(UiText.Get("profile.verified"));
         userCountryFlagImage = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.StretchMode(Stretch.UniformToFill);
         userCountryFlag = new Border().Width(24).Height(18).CornerRadius(3).ClipToBounds()
             .BorderBrush(Color.FromArgb(48, 255, 255, 255)).BorderThickness(.5).Child(userCountryFlagImage);
@@ -60,7 +61,7 @@ internal sealed partial class MainWindow
             .Background(Color.FromArgb(120, 59, 42, 22)).BorderBrush(Color.FromArgb(45, 255, 205, 143)).BorderThickness(1)
             .Child(new StackPanel().Horizontal().Spacing(5).Children(Icons.View("crown-simple-fill", 13, proColor).CenterVertical(),
                 new TextBlock().Text("Artist Pro").FontSize(11).SemiBold().Foreground(proColor).CenterVertical()))
-            .Hint("Подписка SoundCloud Artist Pro");
+            .Hint(UiText.Get("profile.artistPro.subscription"));
         userFullName = new TextBlock().FontSize(15).Foreground(TrackButtons.OnSurface).TextTrimming(TextTrimming.CharacterEllipsis);
         userFollowerCount = new TextBlock(); userFollowingCount = new TextBlock(); userTrackCount = new TextBlock();
         Button Counter(TextBlock value, string title, UserSection section)
@@ -74,14 +75,14 @@ internal sealed partial class MainWindow
             ((MaterialTrackButton)button).Palette(Raised, TrackButtons.OnSurface);
             return button;
         }
-        userTracksCounter = Counter(userTrackCount, "Треков", UserSection.Tracks).Column(2);
-        userCounters = new Grid().Columns("*,*,*").Rows("Auto").Spacing(8).Children(Counter(userFollowerCount, "Подписчиков", UserSection.Followers).Column(0),
-            Counter(userFollowingCount, "Подписок", UserSection.Following).Column(1), userTracksCounter);
+        userTracksCounter = Counter(userTrackCount, UiText.Get("collection.trackLabel.many"), UserSection.Tracks).Column(2);
+        userCounters = new Grid().Columns("*,*,*").Rows("Auto").Spacing(8).Children(Counter(userFollowerCount, UiText.Get("profile.stats.followers"), UserSection.Followers).Column(0),
+            Counter(userFollowingCount, UiText.Get("profile.stats.following"), UserSection.Following).Column(1), userTracksCounter);
         var follow = ArtistFollowButton(() => userProfileState?.User, TrackButtons.Glass, 42, withLabel: true);
         userCopy = TrackButtons.Icon(Icons.View("copy", 20), () =>
         { if (TrackLink(userProfileState?.User.PermalinkUrl) is { } uri) CopyText(uri.AbsoluteUri); }, TrackButtons.Glass, 42);
         userOpen = TrackButtons.Icon(Icons.View("arrow-square-out", 20), () =>
-        { if (userProfileState?.User.PermalinkUrl is { } url) OpenExternalUrl(url, () => ShowUserProfileError("Не удалось открыть профиль в браузере")); }, TrackButtons.Glass, 42);
+        { if (userProfileState?.User.PermalinkUrl is { } url) OpenExternalUrl(url, () => ShowUserProfileError(UiText.Get("profile.browser.openFailed"))); }, TrackButtons.Glass, 42);
         var actions = new StackPanel().Horizontal().Spacing(10).Children(follow, userCopy, userOpen);
         var identity = new StackPanel().Vertical().Spacing(7).Children(
             new UserIdentityLine(userName.MaxWidth(600), userVerified, userCountryFlag).Initialize().Left(),
@@ -100,17 +101,17 @@ internal sealed partial class MainWindow
                 UserSectionTitle(section), userSection, section, () => Run(() => OpenUserSectionAsync(section)))).ToArray());
         userSectionHeading = new TextBlock().FontSize(22).Bold();
         userNotice = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
-        userRetry = TrackButtons.Action(new TextBlock().Text("Повторить").FontSize(13), RetryUserProfile, TrackButtons.Tonal, 32).Left();
+        userRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.retry")).FontSize(13), RetryUserProfile, TrackButtons.Tonal, 32).Left();
         userEmpty = new TextBlock().FontSize(14).Foreground(Muted).Margin(8, 16).TextWrapping(TextWrapping.Wrap);
         userTrackList = CreateUserTrackList(); userCardGrid = CreateCollectionGrid(false);
-        userActivityEmpty = new TextBlock().Text("Пока нет публикаций и репостов").FontSize(14).Foreground(Muted).IsVisible(false);
+        userActivityEmpty = new TextBlock().Text(UiText.Get("feed.posts.empty")).FontSize(14).Foreground(Muted).IsVisible(false);
         userOverviewBody = new StackPanel().Vertical().Children(UserPublicationListView(), userActivityEmpty);
         userOverviewLoading = CreateLibraryLoadingView(userOverviewBody, preview: true);
         userOverviewLoading.Skeleton.Preview = false;
         var activity = new StackPanel().Vertical().Spacing(36).Children(
-            new TextBlock().Text("Последняя активность").FontSize(21).Bold(), userOverviewLoading.Root);
+            new TextBlock().Text(UiText.Get("profile.recentActivity")).FontSize(21).Bold(), userOverviewLoading.Root);
         var biography = new DescriptionTextBlock { FontSize = 13, Foreground = Muted, MaxHeight = 180 };
-        userBioLinks = new(biography, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError("Не удалось открыть ссылку")))
+        userBioLinks = new(biography, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError(UiText.Get("links.openFailed"))))
         { LoadIcon = demo ? null : (uri, token) => (descriptionFavicons ??= new(imageDiskCache)).LoadAsync(uri, token) };
         userSidebarBiography = biography;
         userSidebarLinks = new StackPanel().Vertical().Spacing(6);
@@ -122,17 +123,17 @@ internal sealed partial class MainWindow
         userFollowingLoading = CreateLibraryLoadingView(userSidebarFollowing, preview: true);
         foreach (var view in new[] { userLikesLoading, userFollowersLoading, userFollowingLoading }) view.Skeleton.Preview = false;
         userFollowersLoading.Skeleton.AvatarStrip = true;
-        userLikesSection = UserSidebarSection("Лайки", userLikesLoading.Root, UserSection.Likes);
-        userFollowersSection = UserSidebarSection("Подписчики", userFollowersLoading.Root, UserSection.Followers);
-        userFollowingSection = UserSidebarSection("Подписки", userFollowingLoading.Root, UserSection.Following);
-        userBioHeading = new TextBlock().Text("О пользователе").FontSize(18).Bold().IsVisible(false);
-        userBioMore = TrackButtons.Action(new TextBlock().Text("Подробнее").FontSize(12), () => Run(() => OpenUserSectionAsync(UserSection.About)), TrackButtons.Text, 28).Padding(0).Left().IsVisible(false);
+        userLikesSection = UserSidebarSection(UiText.Get("library.likes"), userLikesLoading.Root, UserSection.Likes);
+        userFollowersSection = UserSidebarSection(UiText.Get("profile.followers"), userFollowersLoading.Root, UserSection.Followers);
+        userFollowingSection = UserSidebarSection(UiText.Get("library.following"), userFollowingLoading.Root, UserSection.Following);
+        userBioHeading = new TextBlock().Text(UiText.Get("profile.about")).FontSize(18).Bold().IsVisible(false);
+        userBioMore = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.learnMore")).FontSize(12), () => Run(() => OpenUserSectionAsync(UserSection.About)), TrackButtons.Text, 28).Padding(0).Left().IsVisible(false);
         biography.SizeChanged += _ => RefreshUserBiographyOverflow();
         userSidebarAboutSection = new StackPanel().Vertical().Spacing(12).Children(userBioHeading, biography, userBioMore);
         userSidebarComments = new StackPanel().Vertical().Spacing(18);
         userCommentsLoading = CreateLibraryLoadingView(userSidebarComments, preview: true);
         userCommentsLoading.Skeleton.Preview = false; userCommentsLoading.Skeleton.TextOnly = true;
-        userCommentsSection = UserSidebarSection("Последние комментарии", userCommentsLoading.Root, UserSection.Comments);
+        userCommentsSection = UserSidebarSection(UiText.Get("track.comments.latest"), userCommentsLoading.Root, UserSection.Comments);
         userCommentsBody = new ViewportStackPanel { Viewport = () => userCommentsScroll.Bounds }.Vertical().Spacing(24);
         userCommentsScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(8, 0, 8, 0).Content(userCommentsBody);
         var sidebar = new StackPanel().Vertical().Spacing(26).Children(userCounters, userSidebarAboutSection, userSidebarLinks,
@@ -140,7 +141,7 @@ internal sealed partial class MainWindow
         userOverview = new TrackPageColumns(activity, sidebar).Initialize();
         userOverviewScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).Margin(-12, 0, -12, 0).Content(userOverview);
         userDescription = new DescriptionTextBlock { FontSize = 14, FontWeight = FontWeight.Normal, Foreground = Muted };
-        userDescriptionLinks = new(userDescription, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError("Не удалось открыть ссылку")))
+        userDescriptionLinks = new(userDescription, uri => OpenExternalUrl(uri.AbsoluteUri, () => ShowUserProfileError(UiText.Get("links.openFailed"))))
         { LoadIcon = demo ? null : (uri, token) => (descriptionFavicons ??= new(imageDiskCache)).LoadAsync(uri, token) };
         userAboutDetails = new TextBlock().FontSize(14).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
         userAboutLinks = new StackPanel().Vertical().Spacing(10);

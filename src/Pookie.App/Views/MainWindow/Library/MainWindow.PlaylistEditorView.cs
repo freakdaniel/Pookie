@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Globalization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -21,7 +22,7 @@ internal sealed partial class MainWindow
     private (double Width, double Scale) playlistEditPreparedAccess;
     private DialogPageDeck playlistEditPages = null!;
     private PlaylistEditorFrame playlistEditFrame = null!;
-    private FrameworkElement playlistEditTabs = null!, playlistEditDeleteText = null!;
+    private FrameworkElement playlistEditTabs = null!;
     private FrameworkElement playlistEditFooter = null!;
     private FrameworkElement[] playlistEditPageContents = [];
     private readonly ObservableValue<int> playlistEditTab = new(0);
@@ -63,74 +64,69 @@ internal sealed partial class MainWindow
             new TextBlock().Text(title).FontSize(12).Foreground(Muted).Margin(16, 0), PlaylistEditGroup(rows));
     private FrameworkElement PlaylistEditorView()
     {
-        playlistEditName = PlaylistEditInput("Название плейлиста");
-        playlistEditPermalink = PlaylistEditInput(""); playlistEditGenre = PlaylistEditInput("Например, Alternative Rock");
-        playlistEditTags = PlaylistEditInput("Добавить теги", 4000); playlistEditDate = PlaylistEditInput("ДД.ММ.ГГГГ", 10);
-        playlistEditBuy = PlaylistEditInput("https://", 2000); playlistEditLabel = PlaylistEditInput("Название лейбла");
-        playlistEditDescription = new MultiLineTextBox().Placeholder("Расскажи о плейлисте").MaxLength(4000).Wrap(true).FontSize(14)
+        playlistEditName = PlaylistEditInput(UiText.Get("playlist.edit.title"));
+        playlistEditPermalink = PlaylistEditInput(""); playlistEditGenre = PlaylistEditInput(UiText.Get("playlist.edit.genrePlaceholder"));
+        playlistEditTags = PlaylistEditInput(UiText.Get("playlist.edit.addTags"), 4000); playlistEditDate = PlaylistEditInput(CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern, 20);
+        playlistEditBuy = PlaylistEditInput("https://", 2000); playlistEditLabel = PlaylistEditInput(UiText.Get("playlist.edit.labelName"));
+        playlistEditDescription = new MultiLineTextBox().Placeholder(UiText.Get("playlist.edit.descriptionPlaceholder")).MaxLength(4000).Wrap(true).FontSize(14)
             .Background(Color.Transparent).BorderThickness(0).Padding(0, 4, 18, 4).Height(64);
         playlistEditDescription.OnTextChanged(_ => { if (!playlistEditLoadingFields) RefreshPlaylistEditor(); });
         playlistEditPrivacy = new PlaylistPrivacySelector(value => { playlistEditPrivate = value; RefreshPlaylistEditor(); });
-        playlistEditType = new PlaylistEditorChoice("Тип релиза", ("playlist", "Плейлист"), ("album", "Альбом"), ("ep", "EP"), ("single", "Сингл"), ("compilation", "Сборник"));
+        playlistEditType = new PlaylistEditorChoice(UiText.Get("playlist.edit.releaseType"), ("playlist", UiText.Get("common.playlist")), ("album", UiText.Get("common.album")), ("ep", "EP"), ("single", UiText.Get("playlist.releaseType.single")), ("compilation", UiText.Get("playlist.releaseType.compilation")));
         playlistEditType.Changed = RefreshPlaylistEditor;
-        playlistEditLicense = new PlaylistEditorChoice("Лицензия", ("all-rights-reserved", "Все права защищены"),
-            ("cc-by", "CC BY — указание авторства"), ("cc-by-sa", "CC BY-SA — на тех же условиях"),
-            ("cc-by-nd", "CC BY-ND — без производных"), ("cc-by-nc", "CC BY-NC — некоммерческая"),
-            ("cc-by-nc-sa", "CC BY-NC-SA"), ("cc-by-nc-nd", "CC BY-NC-ND"), ("no-rights-reserved", "Общественное достояние"));
+        playlistEditLicense = new PlaylistEditorChoice(UiText.Get("common.license"), ("all-rights-reserved", UiText.Get("license.allRightsReserved")),
+            ("cc-by", UiText.Get("license.cc.attribution")), ("cc-by-sa", UiText.Get("license.cc.shareAlike")),
+            ("cc-by-nd", UiText.Get("license.cc.noDerivatives")), ("cc-by-nc", UiText.Get("license.cc.nonCommercial")),
+            ("cc-by-nc-sa", "CC BY-NC-SA"), ("cc-by-nc-nd", "CC BY-NC-ND"), ("no-rights-reserved", UiText.Get("license.publicDomain")));
         playlistEditLicense.Changed = RefreshPlaylistEditor;
         playlistEditArtwork = new Image().StretchMode(Stretch.UniformToFill);
         playlistEditArtworkOverlay = CreateCoverPlayback(playlistEditArtwork, () => Run(PickPlaylistEditorArtworkAsync),
             size: 44, glyphSize: 22, scrim: Color.FromArgb(100, 0, 0, 0), actionGlyph: "pencil-simple");
-        playlistEditArtworkButton = playlistEditArtworkOverlay.PlaybackButton!.Hint("Изменить обложку");
+        playlistEditArtworkButton = playlistEditArtworkOverlay.PlaybackButton!.Hint(UiText.Get("playlist.actions.changeArtwork"));
         playlistEditCover = new Border().Width(128).Height(128).CornerRadius(18).BorderThickness(0).ClipToBounds().Child(
             ArtworkLayer(playlistEditArtwork).Children(playlistEditArtworkOverlay));
         playlistEditCover.MouseEnter += () => playlistEditArtworkOverlay.SetHovered(true);
         playlistEditCover.MouseLeave += () => playlistEditArtworkOverlay.SetHovered(false);
         var basic = new StackPanel().Vertical().Margin(24, 0, 24, 24).Children(
             new Grid().Columns("128,*").Spacing(16).Children(playlistEditCover.Top(), PlaylistEditGroup(
-                PlaylistEditRow("Название", playlistEditName, compact: true),
-                PlaylistEditRow("Описание", playlistEditDescription, multiline: true, compact: true)).Column(1)));
+                PlaylistEditRow(UiText.Get("common.title"), playlistEditName, compact: true),
+                PlaylistEditRow(UiText.Get("common.description"), playlistEditDescription, multiline: true, compact: true)).Column(1)));
         playlistEditTrackSummary = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
         playlistEditTrackRows = new StackPanel().Vertical().Spacing(6);
         var tracks = new StackPanel().Vertical().Spacing(16).Margin(24, 0, 24, 24).Children(playlistEditTrackSummary, playlistEditTrackRows);
         var release = new StackPanel().Vertical().Spacing(12).Margin(24, 0, 24, 24).Children(
-            PlaylistEditSection("Выпуск", PlaylistEditRow("Тип релиза", playlistEditType), PlaylistEditRow("Дата релиза", playlistEditDate)),
-            PlaylistEditSection("Категории", PlaylistEditRow("Жанр", playlistEditGenre), PlaylistEditRow("Теги", playlistEditTags)),
-            PlaylistEditSection("Публикация", PlaylistEditRow("Лейбл", playlistEditLabel), PlaylistEditRow("Ссылка покупки", playlistEditBuy),
-                PlaylistEditRow("Лицензия", playlistEditLicense)));
+            PlaylistEditSection(UiText.Get("playlist.edit.release"), PlaylistEditRow(UiText.Get("playlist.edit.releaseType"), playlistEditType), PlaylistEditRow(UiText.Get("playlist.edit.releaseDate"), playlistEditDate)),
+            PlaylistEditSection(UiText.Get("playlist.edit.categories"), PlaylistEditRow(UiText.Get("common.genre"), playlistEditGenre), PlaylistEditRow(UiText.Get("playlist.edit.tags"), playlistEditTags)),
+            PlaylistEditSection(UiText.Get("feed.post.label"), PlaylistEditRow(UiText.Get("playlist.edit.label"), playlistEditLabel), PlaylistEditRow(UiText.Get("playlist.edit.buyLink"), playlistEditBuy),
+                PlaylistEditRow(UiText.Get("common.license"), playlistEditLicense)));
         playlistEditPermalinkGlass = new PlaylistAddressField(playlistEditPermalink);
         var access = new StackPanel().Vertical().Spacing(12).Margin(24, 0, 24, 24).Children(
             new StackPanel().Vertical().Spacing(8).Children(playlistEditPermalinkGlass,
-                new TextBlock().Text("soundcloud.com/…/sets/ · адрес плейлиста").FontSize(12).Foreground(Muted).Margin(16, 0)),
-            PlaylistEditGroup(PlaylistEditRow("Видимость", playlistEditPrivacy)));
+                new TextBlock().Text(UiText.Get("playlist.edit.urlHint")).FontSize(12).Foreground(Muted).Margin(16, 0)),
+            PlaylistEditGroup(PlaylistEditRow(UiText.Get("playlist.edit.visibility"), playlistEditPrivacy)));
         FrameworkElement Scroll(FrameworkElement child) => new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0, 0, 4, 0).Content(child);
         playlistEditPageContents = [basic, tracks, release, access];
         playlistEditPages = new DialogPageDeck(PlaylistEditorFrame.MotionEasing, Scroll(basic), Scroll(tracks), Scroll(release), Scroll(access));
         playlistEditTabs = new StackPanel().Horizontal().Spacing(24).Children(
-            SectionTab("Основное", playlistEditTab, 0, () => SelectPlaylistEditTab(0), animate: false),
-            SectionTab("Треки", playlistEditTab, 1, () => SelectPlaylistEditTab(1), animate: false),
-            SectionTab("Релиз", playlistEditTab, 2, () => SelectPlaylistEditTab(2), animate: false),
-            SectionTab("Доступ", playlistEditTab, 3, () => SelectPlaylistEditTab(3), animate: false));
-        playlistEditHeading = TrackDialogChrome.Heading("Удалить плейлист?").IsVisible(false);
+            SectionTab(UiText.Get("playlist.edit.basics"), playlistEditTab, 0, () => SelectPlaylistEditTab(0), animateSelection: false),
+            SectionTab(UiText.Get("common.tracks"), playlistEditTab, 1, () => SelectPlaylistEditTab(1), animateSelection: false),
+            SectionTab(UiText.Get("playlist.releaseType.release"), playlistEditTab, 2, () => SelectPlaylistEditTab(2), animateSelection: false),
+            SectionTab(UiText.Get("common.access"), playlistEditTab, 3, () => SelectPlaylistEditTab(3), animateSelection: false));
         playlistEditMessage = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         playlistEditValidation = new TextBlock().FontSize(12).Foreground(TrackButtons.OnSelected).TextWrapping(TextWrapping.Wrap).MaxHeight(44).IsVisible(false);
         playlistEditSave = TrackButtons.Icon(Icons.View("check", 26, Color.White), () => Run(SavePlaylistEditorAsync), TrackButtons.Glass, 44)
-            .Hint("Сохранить изменения").IsVisible(false);
+            .Hint(UiText.Get("playlist.edit.saveChanges")).IsVisible(false);
         ((MaterialTrackButton)playlistEditSave).GlassAccent(Color.FromArgb(235, 0, 155, 245), Color.White);
         ((MaterialTrackButton)playlistEditSave).UseGlassAccentStateLayer();
         playlistEditSaveReveal = new FadingAction(playlistEditSave).Width(44).Height(44);
         // Reserve the action's column while hidden so editing never moves the tabs or resizes the card.
         playlistEditFocus = new Border { Focusable = true, IsTabStop = false }.Background(Color.Transparent).BorderThickness(0)
             .Height(44).Margin(24, 24, 24, 16).Child(new Grid().Columns("*,44").Spacing(12).Children(
-                new Grid().Columns("*").Rows("*").CenterVertical().Children(playlistEditTabs, playlistEditHeading), playlistEditSaveReveal.Column(1)));
-        playlistEditDeleteConfirm = TrackButtons.Action(new TextBlock().Text("Удалить").FontSize(14).SemiBold(), () => Run(SavePlaylistEditorAsync), TrackButtons.Glass, 44).Right();
-        ((MaterialTrackButton)playlistEditDeleteConfirm).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
-        ((MaterialTrackButton)playlistEditDeleteConfirm).UseGlassAccentStateLayer();
-        playlistEditFooter = new StackPanel().Vertical().Spacing(12).Margin(24, 0, 24, 24).Children(playlistEditValidation, playlistEditMessage, playlistEditDeleteConfirm);
-        playlistEditDeleteText = new TextBlock().FontSize(14).TextWrapping(TextWrapping.Wrap).Margin(24, 0, 24, 24).IsVisible(false);
+                playlistEditTabs.CenterVertical(), playlistEditSaveReveal.Column(1)));
+        playlistEditFooter = new StackPanel().Vertical().Spacing(12).Margin(24, 0, 24, 24).Children(playlistEditValidation, playlistEditMessage);
         playlistEditFields = new StackPanel().Vertical().Children(playlistEditPages);
         var content = new DockPanel().LastChildFill().Children(playlistEditFocus.DockTop(), playlistEditFooter.DockBottom(),
-            new Grid().Columns("*").Rows("*").Children(playlistEditFields, playlistEditDeleteText));
+            playlistEditFields);
         var card = new GlassCard { HoverEnabled = false, ResizeInProgress = () => playlistEditFrame?.Resizing == true }.CornerRadius(24).Padding(0).Child(
             new Border().Background(Color.Transparent).BorderThickness(0).CornerRadius(24).ClipToBounds().Child(content));
         playlistEditFrame = new PlaylistEditorFrame(card);
@@ -179,30 +175,30 @@ internal sealed partial class MainWindow
     private void FitPlaylistEditor(bool animate = true)
     {
         if (playlistEditFrame == null || playlistEditLoadingFields || playlistEditTarget == null) return;
-        playlistEditFooter.IsVisible = playlistEditDeleting || playlistEditValidation.IsVisible || playlistEditMessage.IsVisible;
+        playlistEditFooter.IsVisible = playlistEditValidation.IsVisible || playlistEditMessage.IsVisible;
         var width = Math.Min(PlaylistEditorFrame.PreferredWidth, Math.Max(0, Window.ClientSize.Width - 32));
         playlistEditFocus.Measure(new(width, double.PositiveInfinity));
         playlistEditFooter.Measure(new(width, double.PositiveInfinity));
         var chrome = playlistEditFocus.DesiredSize.Height + playlistEditFooter.DesiredSize.Height;
-        var selected = playlistEditDeleting ? playlistEditDeleteText : playlistEditPageContents[playlistEditTab.Value];
+        var selected = playlistEditPageContents[playlistEditTab.Value];
         selected.Measure(new(Math.Max(0, width - 4), double.PositiveInfinity));
         var pageHeight = Math.Min(selected.DesiredSize.Height,
             Math.Max(0, Math.Min(PlaylistEditorFrame.MaximumHeight, Window.ClientSize.Height - 32) - chrome));
-        if (!playlistEditDeleting) playlistEditPages.SetPageHeight(playlistEditTab.Value, pageHeight);
+        playlistEditPages.SetPageHeight(playlistEditTab.Value, pageHeight);
         playlistEditFrame.Fit(chrome + pageHeight, animate && playlistEditor.IsOpen && !playlistEditor.Running);
     }
     private static string PlaylistEditDateValue(SoundCloudPlaylist playlist)
     {
-        if (DateTimeOffset.TryParse(playlist.ReleaseDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)) return date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        if (DateTimeOffset.TryParse(playlist.ReleaseDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)) return date.ToString("d", CultureInfo.CurrentCulture);
         if (playlist.ReleaseYear is { } year && playlist.ReleaseMonth is { } month && playlist.ReleaseDay is { } day)
-            try { return new DateOnly(year, month, day).ToString("dd.MM.yyyy", CultureInfo.InvariantCulture); } catch (ArgumentOutOfRangeException) { }
+            try { return new DateOnly(year, month, day).ToString("d", CultureInfo.CurrentCulture); } catch (ArgumentOutOfRangeException) { }
         return "";
     }
     private PlaylistMetadataUpdate PlaylistEditMetadata(SoundCloudPlaylist playlist)
     {
         static string? Change(string value, string? original) => value == (original ?? "") ? null : value;
         var date = playlistEditDate.Text.Trim();
-        if (DateOnly.TryParseExact(date, "dd.MM.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)) date = parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        if (DateOnly.TryParseExact(date, CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern, CultureInfo.CurrentCulture, DateTimeStyles.None, out var parsed)) date = parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         return new(Change(playlistEditPermalink.Text.Trim(), playlistEditOriginalPermalink), Change(playlistEditGenre.Text.Trim(), playlist.Genre),
             Change(playlistEditTags.Text.Trim(), playlist.TagList), playlistEditDate.Text.Trim() == playlistEditOriginalDate ? null : date,
             Change(playlistEditType.Value, playlistEditOriginalType), Change(playlistEditBuy.Text.Trim(), playlist.PurchaseUrl),
@@ -214,7 +210,7 @@ internal sealed partial class MainWindow
         foreach (var child in playlistEditTrackRows.Children.ToArray()) { playlistEditTrackRows.Remove(child); (child as IDisposable)?.Dispose(); }
         playlistEditTrackSummary.IsVisible = !playlistEditOrderComplete;
         playlistEditTrackSummary.Text = playlistEditOrderComplete ? ""
-            : "SoundCloud вернул неполный список. Состав треков пока нельзя менять; остальные настройки доступны.";
+            : UiText.Get("playlist.edit.partialTrackList");
         for (var i = 0; i < playlistEditTracks.Count; i++)
         {
             var index = i; var track = playlistEditTracks[i];
@@ -237,11 +233,11 @@ internal sealed partial class MainWindow
             }
             playlistEditTrackRows.Add(new Grid().Columns("44,*,Auto,Auto").Rows("56").Spacing(12).Children(
                 artwork,
-                new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(new TextBlock().Text(track.Title.Length == 0 ? "Недоступный трек" : track.Title).FontSize(14).TextTrimming(TextTrimming.CharacterEllipsis),
+                new StackPanel().Vertical().Spacing(3).Column(1).CenterVertical().Children(new TextBlock().Text(track.Title.Length == 0 ? UiText.Get("track.unavailable") : track.Title).FontSize(14).TextTrimming(TextTrimming.CharacterEllipsis),
                     new TextBlock().Text(track.Author).FontSize(12).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis)),
                 new TextBlock().Text(FormatTime(track.DurationSeconds)).FontSize(12).Foreground(Muted).Column(2).CenterVertical(),
-                new StackPanel().Horizontal().Spacing(2).Column(3).CenterVertical().Children(Action("caret-up", "Поднять", -1, i > 0),
-                    Action("caret-down", "Опустить", 1, i < playlistEditTracks.Count - 1), Action("x", "Убрать из плейлиста", 0, true))));
+                new StackPanel().Horizontal().Spacing(2).Column(3).CenterVertical().Children(Action("caret-up", UiText.Get("common.moveUp"), -1, i > 0),
+                    Action("caret-down", UiText.Get("common.moveDown"), 1, i < playlistEditTracks.Count - 1), Action("x", UiText.Get("playlist.actions.removeFromPlaylist"), 0, true))));
         }
     }
     private void EditPlaylistDraftTrack(int index, int direction)
@@ -264,14 +260,14 @@ internal sealed partial class MainWindow
         playlistEditChoosingArtwork = true; RefreshPlaylistEditor(); var target = playlistEditTarget;
         try
         {
-            var files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = "Обложка плейлиста", Multiselect = false,
-                Filters = [new FileFilter("JPEG до 1 МБ", "*.jpg", "*.jpeg")] }, lifetime.Token);
+            var files = await FileDialog.OpenFilesAsync(new OpenFileDialogOptions { Owner = Window, Title = UiText.Get("playlist.artwork.label"), Multiselect = false,
+                Filters = [new FileFilter(UiText.Get("artwork.limit.small"), "*.jpg", "*.jpeg")] }, lifetime.Token);
             if (files is not { Length: > 0 } || !playlistEditor.IsOpen || playlistEditTarget != target || api.Session != session) return;
             var file = new FileInfo(files[0]);
-            if (file.Length > 1048576) throw new ArgumentException("Нужна обложка JPEG размером до 1 МБ.");
+            if (file.Length > 1048576) throw new ArgumentException(UiText.Get("artwork.validation.smallJpeg"));
             var bytes = await File.ReadAllBytesAsync(file.FullName, lifetime.Token);
             if (!new PlaylistEditRequest("artwork", me?.Id ?? 0, target.Playlist!.Id, Artwork: Convert.ToBase64String(bytes)).IsValid())
-                throw new ArgumentException("Не удалось прочитать JPEG-обложку.");
+                throw new ArgumentException(UiText.Get("artwork.jpeg.readFailed"));
             var image = await Task.Run(() => Storage.ArtworkImage.Prepare(bytes), lifetime.Token);
             if (!playlistEditor.IsOpen || playlistEditTarget != target || api.Session != session) { image.Dispose(); return; }
             StopCardArtwork(playlistEditArtwork); playlistEditArtwork.Source = image; playlistEditArtworkOverlay.ArtworkChanged();
@@ -285,17 +281,17 @@ internal sealed partial class MainWindow
 
     private void ValidatePlaylistEdit(PlaylistUpdateRequest? request)
     {
-        var invalidAddress = !playlistEditDeleting && request?.Metadata?.Permalink is { } slug && !new PlaylistMetadataUpdate(Permalink: slug).IsValid();
+        var invalidAddress = request?.Metadata?.Permalink is { } slug && !new PlaylistMetadataUpdate(Permalink: slug).IsValid();
         playlistEditPermalinkGlass.SetInvalid(invalidAddress, animate: playlistEditor.IsOpen && !playlistEditor.Running);
-        playlistEditPermalink.Hint(invalidAddress ? "В адресе допустимы латинские буквы, цифры, дефис и подчёркивание." : "Адрес плейлиста");
+        playlistEditPermalink.Hint(invalidAddress ? UiText.Get("playlist.edit.permalinkCharacters") : UiText.Get("playlist.edit.url"));
         var message = "";
-        if (!playlistEditDeleting && request != null && !request.IsValid())
+        if (request != null && !request.IsValid())
         {
-            message = request.Title.Length == 0 ? "Укажи название плейлиста." :
+            message = request.Title.Length == 0 ? UiText.Get("playlist.edit.titleRequired") :
                 invalidAddress ? "" :
-                request.Metadata is { ReleaseDate: { } date } && !new PlaylistMetadataUpdate(ReleaseDate: date).IsValid() ? "Проверь дату релиза: ДД.ММ.ГГГГ." :
-                request.Metadata is { PurchaseUrl: { } url } && !new PlaylistMetadataUpdate(PurchaseUrl: url).IsValid() ? "Укажи полную ссылку покупки с https:// или http://." :
-                "Проверь введённые данные: недопустимые символы или слишком длинный текст.";
+                request.Metadata is { ReleaseDate: { } date } && !new PlaylistMetadataUpdate(ReleaseDate: date).IsValid() ? UiText.Format("playlist.edit.invalidReleaseDate", CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern):
+                request.Metadata is { PurchaseUrl: { } url } && !new PlaylistMetadataUpdate(PurchaseUrl: url).IsValid() ? UiText.Get("playlist.edit.purchaseUrlInvalid") :
+                UiText.Get("playlist.edit.invalidFields");
         }
         playlistEditValidation.Text = message; playlistEditValidation.IsVisible = message.Length > 0;
     }

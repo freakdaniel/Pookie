@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -38,13 +39,13 @@ internal sealed partial class MainWindow
         feedSkeleton.ConfigureLoadingRow(likedArtworkSize, libraryColumns, LoadingRowStyle.Waveform);
         feedEmpty = new TextBlock().FontSize(15).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxWidth(560).Top();
         feedNotice = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap);
-        feedRetry = TrackButtons.Action(new TextBlock().Text("Попробовать снова").FontSize(13).SemiBold(),
+        feedRetry = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.tryAgain")).FontSize(13).SemiBold(),
             () => Run(() => LoadFeedAsync(failedFeedAppend)), TrackButtons.Glass, 36).Left();
-        feedMore = TrackButtons.Action(new TextBlock().Text("Загрузить ещё").FontSize(13).SemiBold(),
+        feedMore = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.loadMore")).FontSize(13).SemiBold(),
             () => { failedPageCursor = null; emptyPageStreak = 0; Run(LoadNextVisiblePageAsync); }, TrackButtons.Glass, 36).Left();
         feedFilters = new StackPanel().Horizontal().Spacing(24).Children(
-            SectionTab("Все публикации", feedReposts, true, () => SetFeedReposts(true)),
-            SectionTab("Без репостов", feedReposts, false, () => SetFeedReposts(false)));
+            SectionTab(UiText.Get("feed.filter.allPosts"), feedReposts, true, () => SetFeedReposts(true)),
+            SectionTab(UiText.Get("feed.hideReposts"), feedReposts, false, () => SetFeedReposts(false)));
         var main = new Grid().Columns("*").Rows("*").Children(feedList, feedSkeleton.Top(),
             new StackPanel().Vertical().Spacing(16).Top().Children(feedEmpty, feedMore));
         feedColumns = new FeedColumns(main, feedSidebar, () => shellScroll.Bounds.Y + ShellHeader.HeaderHeight + 16).Initialize();
@@ -119,9 +120,9 @@ internal sealed partial class MainWindow
         feedSkeleton.IsVisible = feedLoading && feedState?.Loaded != true && entries.Length == 0;
         feedSkeleton.SetActive(feedSkeleton.IsVisible);
         feedEmpty.IsVisible = (!feedLoading || feedState?.Loaded == true) && entries.Length == 0 && feedError.Length == 0;
-        feedEmpty.Text = !demo && me == null ? "Войди в SoundCloud, чтобы увидеть публикации и репосты своих подписок" :
-            feedState?.Entries.Length > 0 && !feedReposts.Value ? "Здесь пока только репосты — включи все публикации или загрузи более ранние записи" :
-            "Здесь появятся новые треки и плейлисты твоих подписок";
+        feedEmpty.Text = !demo && me == null ? UiText.Get("feed.signIn.description") :
+            feedState?.Entries.Length > 0 && !feedReposts.Value ? UiText.Get("feed.empty.onlyReposts") :
+            UiText.Get("feed.empty.description");
         feedNotice.Text = feedError; feedNotice.IsVisible = feedRetry.IsVisible = feedError.Length > 0;
         feedRetry.IsEnabled = !feedLoading;
         feedMore.IsVisible = feedEmpty.IsVisible && feedState?.Cursor != null;
@@ -135,7 +136,7 @@ internal sealed partial class MainWindow
         if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         CaptureQueueOrigin();
         var data = VisibleFeedEntries.Select(entry => entry.Item.Track).OfType<SoundCloudTrack>().DistinctBy(value => value.Id).ToArray();
-        StartQueueContext(new(key, "Лента", "Сейчас играет из ленты", feedState?.Cursor,
+        StartQueueContext(new(key, UiText.Get("header.feed"), UiText.Get("queue.source.feed"), feedState?.Cursor,
             Kind: PlaybackContextKind.Feed), data.Length > 0 ? data : [track], track);
         await PlayAsync(track);
     }

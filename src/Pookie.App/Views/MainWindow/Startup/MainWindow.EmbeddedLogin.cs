@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Browser;
@@ -42,7 +43,7 @@ internal sealed partial class MainWindow
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
             await worker.ResetAsync();
-            if (!disposed) status.Value = "Проверка отменена. Действие остановлено.";
+            if (!disposed) status.Value = UiText.Get("auth.verification.canceled");
         }
         catch { await worker.ResetAsync(); throw; }
         finally

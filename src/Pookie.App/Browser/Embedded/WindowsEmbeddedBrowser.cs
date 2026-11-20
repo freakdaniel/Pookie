@@ -1,3 +1,4 @@
+using Pookie.Localization;
 #if WINDOWS
 using Aprillz.MewUI;
 using Microsoft.Web.WebView2.Core;
@@ -82,7 +83,7 @@ internal sealed class WindowsEmbeddedBrowser(EmbeddedBrowserEvents events) : IEm
             finally { pending.Complete(); }
         };
         web.WindowCloseRequested += (_, _) => ClosePopup(controller);
-        web.ProcessFailed += (_, _) => events.Failed(new InvalidOperationException("Браузер входа завершился. Повтори вход."));
+        web.ProcessFailed += (_, _) => events.Failed(new InvalidOperationException(UiText.Get("auth.browser.crashed")));
         await web.AddScriptToExecuteOnDocumentCreatedAsync(script);
         if (disposed) { controller.Close(); return null; }
         if (active != null) active.IsVisible = false;

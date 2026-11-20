@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -47,8 +48,8 @@ internal sealed partial class MainWindow
                     UserSidebarAvatar(user, 40, state.User.Id).Column(0),
                     new StackPanel().Vertical().Spacing(4).CenterVertical().Column(1).Children(
                         new TextBlock().Text(user.Username).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis),
-                        new TextBlock().Text(string.Join(" · ", new[] { user.FollowersCount is { } fans ? $"{fans:N0} подписчиков" : null,
-                            user.TrackCount is { } count ? $"{count:N0} треков" : null }.Where(value => value != null))).FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis))),
+                        new TextBlock().Text(UiText.Join(" · ", new[] { user.FollowersCount is { } fans ? UiText.FollowerCount(fans) : null,
+                            user.TrackCount is { } count ? UiText.TrackCount(count) : null }.Where(value => value != null))).FontSize(11).Foreground(Muted).TextTrimming(TextTrimming.CharacterEllipsis))),
                     () => Run(() => OpenUserProfileAsync(user)), TrackButtons.Text, 52).Padding(0);
                 ((FrameworkElement)row.Content!).HorizontalAlignment = HorizontalAlignment.Stretch;
                 userSidebarFollowing.Add(row);
@@ -126,7 +127,7 @@ internal sealed partial class MainWindow
         var key = $"user:{state.User.Id}:likes";
         if (IsCurrentTrack(track)) { await ToggleAsync(); return; }
         var data = state.Sections.GetValueOrDefault(UserSection.Likes);
-        StartQueueContext(new(key, state.User.Username, "Понравившееся из профиля", data?.NextHref, LibraryCursor: true,
+        StartQueueContext(new(key, state.User.Username, UiText.Get("profile.likes.title"), data?.NextHref, LibraryCursor: true,
             Kind: Playback.PlaybackContextKind.Artist), data?.Items.Select(item => item.Track).OfType<SoundCloudTrack>().ToArray() ?? [track], track);
         await PlayAsync(track);
     }

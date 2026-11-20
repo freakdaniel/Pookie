@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -23,7 +24,7 @@ internal sealed partial class MainWindow
         homeMixStatus = new TextBlock().FontSize(13).Foreground(Muted).CenterHorizontal().IsVisible(false);
         var stage = new Grid().Columns("*").Rows("Auto").Children(
             homeMixCarousel.Top().Margin(0, 2, 0, 0),
-            new TextBlock().Text("Миксы для тебя").FontSize(26).Bold().CenterHorizontal().Top().IsHitTestVisible(false));
+            new TextBlock().Text(UiText.Get("home.mixesForYou")).FontSize(26).Bold().CenterHorizontal().Top().IsHitTestVisible(false));
         return homeMixSection = new StackPanel().Vertical().Spacing(5).Children(
             stage, captionViewport, homeMixStatus).IsVisible(false);
     }
@@ -31,8 +32,8 @@ internal sealed partial class MainWindow
     private void RenderHomeMixCarousel(LibraryItem[] mixes)
     {
         var hasMixes = mixes.Length > 0;
-        var status = hasMixes ? "" : homePending.Contains("mixes") ? "Загружаем миксы…" :
-            homeErrors.Contains("mixes") ? "Не удалось загрузить миксы." : "";
+        var status = hasMixes ? "" : homePending.Contains("mixes") ? UiText.Get("mixes.loading") :
+            homeErrors.Contains("mixes") ? UiText.Get("mixes.loadFailed") : "";
         homeMixStatus.Text = status;
         homeMixStatus.IsVisible = status.Length > 0;
         homeMixSection.IsVisible = hasMixes || homeMixStatus.IsVisible;

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -32,8 +33,8 @@ internal sealed partial class MainWindow
 
     private static string TrackSectionTitle(TrackSection section) => section switch
     {
-        TrackSection.Overview => "Обзор", TrackSection.Reposts => "Репосты", TrackSection.Albums => "Альбомы",
-        TrackSection.Playlists => "Плейлисты", _ => "Похожие треки"
+        TrackSection.Overview => UiText.Get("library.overview"), TrackSection.Reposts => UiText.Get("profile.reposts.title"), TrackSection.Albums => UiText.Get("library.albums"),
+        TrackSection.Playlists => UiText.Get("library.playlists"), _ => UiText.Get("track.related.heading")
     };
     private static string TrackSectionApi(TrackSection section) => section switch
     {
@@ -108,10 +109,10 @@ internal sealed partial class MainWindow
         trackDetailSectionSkeleton.SetGeometry(related ? 160 : 170, 4, related);
         trackDetailSectionSkeleton.Height = related ? TrackRowLayout.Stride * 3 : 240;
         trackDetailSectionSkeleton.IsVisible = state.SectionLoading;
-        trackDetailSectionEmpty.Text = state.SectionError.Length > 0 ? "Не удалось загрузить этот раздел." : section switch
+        trackDetailSectionEmpty.Text = state.SectionError.Length > 0 ? UiText.Get("track.section.loadFailed") : section switch
         {
-            TrackSection.Reposts => "Этот трек ещё не репостили.", TrackSection.Albums => "Этот трек пока не входит в альбомы.",
-            TrackSection.Playlists => "Этот трек пока не добавлен в плейлисты.", _ => "Похожих треков пока нет."
+            TrackSection.Reposts => UiText.Get("track.reposts.empty"), TrackSection.Albums => UiText.Get("track.albums.empty"),
+            TrackSection.Playlists => UiText.Get("track.playlists.empty"), _ => UiText.Get("track.related.empty")
         };
         trackDetailSectionEmpty.IsVisible = !state.SectionLoading && items.Length == 0;
         SetPageItems(trackSectionTrackList, related ? items.Select(item => item.Track).OfType<SoundCloudTrack>() : [], LoadingRowStyle.Waveform);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
@@ -42,6 +43,6 @@ internal sealed partial class MainWindow
         if (chatHeaderCount.Text == count && chatHeaderBadge.IsVisible == (count.Length > 0)) return;
         chatHeaderCount.Text = count;
         chatHeaderBadge.IsVisible = count.Length > 0;
-        chatHeaderButton.Hint(count.Length > 0 ? $"Чаты · Непрочитанные сообщения: {count}" : "Чаты");
+        chatHeaderButton.Hint(count.Length > 0 ? UiText.Format("chats.badge.unread", count): UiText.Get("header.chats"));
     }
 }

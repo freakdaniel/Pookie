@@ -1,3 +1,4 @@
+using Pookie.Localization;
 namespace Pookie.Audio;
 
 internal static class HlsAttributes
@@ -30,5 +31,5 @@ internal static class HlsAttributes
         }
         return result;
     }
-    private static InvalidOperationException Invalid() => new("Некорректные атрибуты HLS.");
+    private static InvalidOperationException Invalid() => new(UiText.Get("audio.hls.invalidAttributes"));
 }

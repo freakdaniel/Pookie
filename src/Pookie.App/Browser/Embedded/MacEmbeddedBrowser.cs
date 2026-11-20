@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using Aprillz.MewUI;
 
@@ -98,11 +99,11 @@ internal sealed unsafe partial class MacEmbeddedBrowser(EmbeddedBrowserEvents ev
         var result = (TaskCompletionSource<byte[]>)GCHandle.FromIntPtr(((SnapshotBlock*)block)->Context).Target!;
         try
         {
-            if (image == 0 || error != 0) throw new InvalidOperationException("WKWebView не смог подготовить кадр анимации входа.");
+            if (image == 0 || error != 0) throw new InvalidOperationException(UiText.Get("browser.mac.animationFrameFailed"));
             var bitmap = SendArg(Class("NSBitmapImageRep"), Sel("imageRepWithData:"), Send(image, Sel("TIFFRepresentation")));
             var data = SendPng(bitmap, Sel("representationUsingType:properties:"), 4, Send(Class("NSDictionary"), Sel("dictionary")));
             var length = (long)Send(data, Sel("length"));
-            if (length is <= 0 or > 33554432) throw new InvalidOperationException("WKWebView вернул некорректный кадр входа.");
+            if (length is <= 0 or > 33554432) throw new InvalidOperationException(UiText.Get("browser.mac.invalidSignInFrame"));
             var bytes = new byte[(int)length]; Marshal.Copy(Send(data, Sel("bytes")), bytes, 0, bytes.Length);
             result.TrySetResult(bytes);
         }
@@ -203,7 +204,7 @@ internal sealed unsafe partial class MacEmbeddedBrowser(EmbeddedBrowserEvents ev
     private static void Terminated(nint self, nint cmd, nint view)
     {
         if (delegates.TryGetValue(self, out var host) && !host.disposed)
-            host.events.Failed(new InvalidOperationException("Браузер входа завершился. Повтори вход."));
+            host.events.Failed(new InvalidOperationException(UiText.Get("auth.browser.crashed")));
     }
 
     private static nint New(nint type) => Send(Send(type, Sel("alloc")), Sel("init"));

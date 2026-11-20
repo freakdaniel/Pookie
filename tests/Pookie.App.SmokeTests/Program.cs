@@ -12,6 +12,13 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Contains("--language-ui-smoke-test")) SystemLanguage.Initialize();
+        else
+        {
+            // Existing UI fixtures assert Russian labels and regional formats.
+            System.Globalization.CultureInfo.DefaultThreadCurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+            SystemLanguage.Initialize("ru-RU");
+        }
         if (Environment.GetEnvironmentVariable("POOKIE_SCROLL_PROFILE") == "1" ||
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("POOKIE_PERF_CAPTURE")))
         {
@@ -40,7 +47,7 @@ internal static class Program
             var chromeUi = args.Contains("--tooltips-ui-smoke-test") || args.Contains("--chrome-ui-smoke-test") || args.Contains("--expanded-glass-ui-smoke-test") ||
                 args.Contains("--track-description-ui-smoke-test") || args.Contains("--track-playback-ui-smoke-test") || args.Contains("--waveform-ui-smoke-test");
             var liveUi = livePlaylistUi || args.Contains("--playlist-editor-live-ui-probe") || args.Contains("--track-page-live-ui-probe") || args.Contains("--chat-video-live-ui-probe");
-            if (!searchLinksUi && !chromeUi && !liveUi && !args.Contains("--mixes-ui-smoke-test") && !args.Any(arg => arg is "--playback-memory-ui-smoke-test" or "--feed-ui-smoke-test" or "--user-profile-ui-smoke-test" or "--settings-ui-smoke-test" or "--chat-media-ui-smoke-test" or "--queue-continuation-ui-smoke-test" or "--menus-ui-smoke-test" or "--chat-music-ui-smoke-test" or "--chat-drawer-ui-smoke-test" or "--chat-navigation-ui-smoke-test" or "--chat-emoji-ui-smoke-test" or "--chats-ui-smoke-test" or "--memory-ui-smoke-test" or "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--likes-filter-ui-smoke-test" or "--likes-edits-ui-smoke-test" or "--playlist-dialog-ui-smoke-test" or "--share-ui-smoke-test" or "--collections-ui-smoke-test" or "--comments-ui-smoke-test" or "--home-ui-smoke-test"))
+            if (!searchLinksUi && !chromeUi && !liveUi && !args.Contains("--mixes-ui-smoke-test") && !args.Any(arg => arg is "--language-ui-smoke-test" or "--playback-memory-ui-smoke-test" or "--feed-ui-smoke-test" or "--user-profile-ui-smoke-test" or "--settings-ui-smoke-test" or "--chat-media-ui-smoke-test" or "--queue-continuation-ui-smoke-test" or "--menus-ui-smoke-test" or "--chat-music-ui-smoke-test" or "--chat-drawer-ui-smoke-test" or "--chat-navigation-ui-smoke-test" or "--chat-emoji-ui-smoke-test" or "--chats-ui-smoke-test" or "--memory-ui-smoke-test" or "--ui-smoke-test" or "--login-ui-smoke-test" or "--smoke-test" or "--browser-shutdown-smoke-test" or "--media-ui-smoke-test" or "--buffer-ui-smoke-test" or "--expanded-ui-smoke-test" or "--lyrics-ui-smoke-test" or "--artwork-ui-smoke-test" or "--scrolling-ui-smoke-test" or "--track-page-ui-smoke-test" or "--likes-filter-ui-smoke-test" or "--likes-edits-ui-smoke-test" or "--playlist-dialog-ui-smoke-test" or "--share-ui-smoke-test" or "--collections-ui-smoke-test" or "--comments-ui-smoke-test" or "--home-ui-smoke-test"))
                 throw new ArgumentException("Укажи --ui-smoke-test, --login-ui-smoke-test или другую проверку из README.md этого проекта.");
             var loginUi = args.Contains("--login-ui-smoke-test");
             var likesEditsUi = args.Contains("--mixes-ui-smoke-test") || args.Contains("--likes-filter-ui-smoke-test") || args.Contains("--playback-memory-ui-smoke-test") || args.Contains("--feed-ui-smoke-test") || args.Contains("--user-profile-ui-smoke-test") || args.Contains("--settings-ui-smoke-test") || args.Contains("--chat-media-ui-smoke-test") || args.Contains("--queue-continuation-ui-smoke-test") || args.Contains("--chat-music-ui-smoke-test") || args.Contains("--chat-drawer-ui-smoke-test") || args.Contains("--chat-navigation-ui-smoke-test") || args.Contains("--chat-emoji-ui-smoke-test") || args.Contains("--chats-ui-smoke-test") || args.Contains("--likes-edits-ui-smoke-test") || args.Contains("--collections-ui-smoke-test") || args.Contains("--playlist-dialog-ui-smoke-test") || args.Contains("--share-ui-smoke-test") || args.Contains("--comments-ui-smoke-test") || args.Contains("--home-ui-smoke-test");

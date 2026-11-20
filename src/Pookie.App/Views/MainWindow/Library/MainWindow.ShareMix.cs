@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Aprillz.MewUI.Animation;
@@ -30,8 +31,8 @@ internal sealed partial class MainWindow
         var mix = shareTarget?.Playlist;
         var system = mix is { IsSystemMix: true };
         mixLinkPlaceholder.IsVisible = system && shareUri == null;
-        mixLinkPlaceholder.Text = mixShareLoading ? "Проверяем доступ…" : mix?.IsPublic == false
-            ? "Публичная ссылка выключена" : "Ссылка недоступна";
+        mixLinkPlaceholder.Text = mixShareLoading ? UiText.Get("share.link.checkingAccess") : mix?.IsPublic == false
+            ? UiText.Get("share.link.publicDisabled") : UiText.Get("share.link.unavailable");
         var canShare = !system || shareUri != null;
         var allowMessages = !system || me != null && api.Session != null;
         shareSectionTabs[1].IsEnabled = canShare && allowMessages && shareTab.Value != 1;

@@ -84,8 +84,10 @@ internal sealed partial class MainWindow
                 !chatIdentityCard.Bounds.Contains(chatOptions.Bounds) || chatName.Bounds.Right > chatOptions.Bounds.X || !chatIdentityCard.Bounds.Contains(chatName.Bounds))
                 throw new InvalidOperationException("Unified chat header has overlapping controls or the composer has no bottom breathing room");
             RouteWaveformClick(SettingsCenter(chatOptions));
-            if (chatOptionsMenu.PlacementTarget != chatOptions || chatOptionsMenu.Items.OfType<MenuItem>().Count() != 6)
-                throw new InvalidOperationException("Chat options did not open its six real actions");
+            if (chatOptionsMenu.PlacementTarget != chatOptions || !chatOptionsMenu.Items.OfType<MenuItem>().Where(item => item.Command?.Icon != null)
+                    .Select(item => item.Command!.Id).SequenceEqual(["pookie.chat.find", "pookie.chat.media", "pookie.chat.profile", "pookie.chat.settings"]) || chatOptionsMenu.Items.Count != 4)
+                throw new InvalidOperationException("Chat options did not open its four illustrated actions");
+            await WaitForLikedLayoutAsync(() => chatOptionsMenu.Reveal == 1);
             CaptureUiPreview("chats-header-options", chatOptionsMenu);
             RouteWaveformClick(SettingsCenter(chatName));
             CloseChatDetails();

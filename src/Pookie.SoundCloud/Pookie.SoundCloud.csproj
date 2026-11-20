@@ -5,4 +5,7 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Localization/Catalogs/*.json" WithCulture="false" LogicalName="Pookie.Localization.%(Filename).json" />
+  </ItemGroup>
 </Project>

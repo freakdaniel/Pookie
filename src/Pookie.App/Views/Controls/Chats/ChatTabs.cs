@@ -18,8 +18,10 @@ internal sealed class ChatTabs : Panel
     private double pillX, pillWidth, offset, total, fromX, fromWidth, fromOffset, targetX, targetWidth, targetOffset;
     private bool initialized;
     private double arrangedWidth;
-    internal ChatTabs()
+    private readonly bool glass;
+    internal ChatTabs(bool glass = false)
     {
+        this.glass = glass;
         ClipToBounds = true;
         motion.TickCallback = t => { pillX = fromX + (targetX - fromX) * t; pillWidth = fromWidth + (targetWidth - fromWidth) * t; offset = fromOffset + (targetOffset - fromOffset) * t; InvalidateArrange(); InvalidateVisual(); };
         KeyDown += e =>
@@ -30,18 +32,36 @@ internal sealed class ChatTabs : Panel
             if (index < 0 || index >= tabs.Count) return;
             Select(index); tabs[index].Focus(); actions[index]();
         };
-        MouseWheel += e => { if (total > ActualWidth) { ScrollBy(-(e.Delta.X + e.Delta.Y)*48); e.Handled = true; } };
+        MouseWheel += e =>
+        {
+            if (total <= ActualWidth || e.Handled) return;
+            if (glass && Math.Abs(e.Delta.X) <= Math.Abs(e.Delta.Y) && !e.Modifiers.HasFlag(ModifierKeys.Shift)) return;
+            ScrollBy(-(e.Delta.X + e.Delta.Y) * 48);
+            e.Handled = true;
+        };
     }
     internal void ScrollBy(double amount)
     { motion.Stop(); if (initialized) { pillX = targetX; pillWidth = targetWidth; } offset = Math.Clamp(offset+amount,0,Math.Max(0,total-ActualWidth)); InvalidateArrange(); InvalidateVisual(); }
     internal void AddTab(string title, Action activate)
     {
         var index = tabs.Count;
-        var label = new TextBlock().Text(title).FontSize(12).SemiBold().Foreground(index == selected ? Color.FromRgb(128,196,249) : TrackButtons.OnSurface);
+        var label = new TextBlock().Text(title).FontSize(12).SemiBold().Foreground(index == selected ? Color.FromRgb(128,196,249) : glass ? TextAppearance.Secondary : TrackButtons.OnSurface);
         labels.Add(label); actions.Add(activate);
         var button = TrackButtons.Action(label, () => { if (index == selected) return; Select(index); activate(); }, TrackButtons.Text, 40).Padding(14, 0).MinWidth(58);
         ((MaterialTrackButton)button).SetPassive(index == selected);
         tabs.Add(button); Add(button);
+        if (glass)
+        {
+            ((MaterialTrackButton)button).SuppressStateLayer();
+            button.MouseEnter += () => RefreshInk(index);
+            button.MouseLeave += () => RefreshInk(index);
+        }
+    }
+    private void RefreshInk(int index, bool animate = true)
+    {
+        var color = index == selected ? Color.FromRgb(128,196,249)
+            : !glass ? TrackButtons.OnSurface : tabs[index].IsMouseOver ? Color.White : TextAppearance.Secondary;
+        TrackButtons.SetTextColor(labels[index], color, animate);
     }
     internal void Select(int index, bool animate = true)
     {
@@ -50,13 +70,15 @@ internal sealed class ChatTabs : Panel
         selected = index;
         for (var i = 0; i < labels.Count; i++)
         {
-            TrackButtons.SetTextColor(labels[i], i == selected ? Color.FromRgb(128,196,249) : TrackButtons.OnSurface);
+            RefreshInk(i, animate);
             ((MaterialTrackButton)tabs[i]).SetPassive(i == selected);
         }
         Retarget(animate);
     }
     internal void SetTabVisible(int index, bool visible)
     { if (index < 0 || index >= tabs.Count || tabs[index].IsVisible == visible) return; tabs[index].IsVisible = visible; initialized = false; InvalidateMeasure(); }
+    internal void InvalidateLabels() { initialized = false; InvalidateMeasure(); }
+
     private void Retarget(bool animate)
     {
         if (tabs.Count == 0 || ActualWidth <= 0) return;
@@ -86,7 +108,7 @@ internal sealed class ChatTabs : Panel
 
     protected override void OnRender(IGraphicsContext context)
     {
-        context.FillRoundedRectangle(Bounds, 24, 24, Color.FromRgb(36, 36, 40));
+        if (!glass) context.FillRoundedRectangle(Bounds, 24, 24, Color.FromRgb(36, 36, 40));
         if (pillWidth > 0)
         {
             context.Save();

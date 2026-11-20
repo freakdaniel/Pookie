@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using SoundFlow.Abstracts.Devices;
 using SoundFlow.Backends.MiniAudio;
@@ -45,26 +46,26 @@ internal sealed class ChatVoiceRecorder : IChatVoiceRecorder
         await operations.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (pcm.Duration >= 300) throw new InvalidOperationException("Максимум 5 минут.");
+            if (pcm.Duration >= 300) throw new InvalidOperationException(UiText.Get("chats.voice.maxDuration"));
             await Task.Run(() =>
             {
                 token.ThrowIfCancellationRequested();
-                if (recorder != null) { if (!recorder.ResumeRecording().IsSuccess) throw new InvalidOperationException("Не удалось продолжить запись."); paused = false; recording = true; return; }
+                if (recorder != null) { if (!recorder.ResumeRecording().IsSuccess) throw new InvalidOperationException(UiText.Get("chats.voice.resumeFailed")); paused = false; recording = true; return; }
                 try
                 {
                     pcm.Reserve();
                     engine = new MiniAudioEngine();
-                    if (engine.CaptureDevices.Length == 0) throw new InvalidOperationException("Микрофон недоступен.");
+                    if (engine.CaptureDevices.Length == 0) throw new InvalidOperationException(UiText.Get("chats.voice.microphoneUnavailable"));
                     device = engine.InitializeCaptureDevice(null, Format);
                     recorder = new Recorder(device, (samples, _) => pcm.Append(samples));
-                    if (!recorder.StartRecording().IsSuccess) throw new InvalidOperationException("Не удалось включить запись."); device.Start(); paused = false; recording = true;
+                    if (!recorder.StartRecording().IsSuccess) throw new InvalidOperationException(UiText.Get("chats.voice.startFailed")); device.Start(); paused = false; recording = true;
                 }
                 catch { device?.Dispose(); device = null; engine?.Dispose(); engine = null; recorder = null; throw; }
             }, token).ConfigureAwait(false);
         }
         finally { operations.Release(); }
     }
-    public void Pause() { if (recorder != null && !recorder.PauseRecording().IsSuccess) throw new InvalidOperationException("Не удалось приостановить запись."); paused = true; }
+    public void Pause() { if (recorder != null && !recorder.PauseRecording().IsSuccess) throw new InvalidOperationException(UiText.Get("chats.voice.pauseFailed")); paused = true; }
     public async Task<ChatVoiceRecording> FinishAsync(CancellationToken token = default)
     {
         await operations.WaitAsync(token).ConfigureAwait(false);
@@ -198,8 +199,8 @@ internal sealed class ChatVoicePcm
             return pcm;
         }
         using var stream = new MemoryStream(bytes, false);
-        using var decoder = new FFmpegCodecFactory().TryCreateDecoder(stream, out var format, ChatVoiceRecorder.Format) ?? throw new InvalidDataException("Не удалось продолжить запись.");
-        if (format.Channels is < 1 or > 2 || format.SampleRate is < 8000 or > 192000) throw new InvalidDataException("Неизвестный формат голосового черновика.");
+        using var decoder = new FFmpegCodecFactory().TryCreateDecoder(stream, out var format, ChatVoiceRecorder.Format) ?? throw new InvalidDataException(UiText.Get("chats.voice.resumeFailed"));
+        if (format.Channels is < 1 or > 2 || format.SampleRate is < 8000 or > 192000) throw new InvalidDataException(UiText.Get("chats.voice.unknownDraftFormat"));
         var result = new List<float>(); var buffer = new float[8192 * format.Channels]; long frame = 0; double next = 0; int read;
         while (result.Count < MaximumSamples && (read = decoder.Decode(buffer)) > 0)
             for (var i = 0; i + format.Channels <= read && result.Count < MaximumSamples; i += format.Channels, frame++)
@@ -211,7 +212,7 @@ internal sealed class ChatVoicePcm
     }
     internal static ChatVoiceRecording Encode(float[] samples, bool preferOpus = true)
     {
-        if (samples.Length is 0 or > MaximumSamples) throw new InvalidDataException("Запись должна длиться от одного сэмпла до 5 минут.");
+        if (samples.Length is 0 or > MaximumSamples) throw new InvalidDataException(UiText.Get("chats.voice.durationLimit"));
         var metadata = new ChatVoiceMetadata(samples.Length / (double)Rate, Wave(samples));
         if (preferOpus)
         {

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -22,10 +23,10 @@ internal sealed partial class MainWindow
         var like = TrackButtons.Icon(heart, () => { if (Current() is { Playlist: { } playlist }) Run(() => TogglePlaylistActionAsync(playlist, false)); }, TrackButtons.Glass, size);
         var repost = TrackButtons.Icon(repeat, () => { if (Current() is { Playlist: { } playlist }) Run(() => TogglePlaylistActionAsync(playlist, true)); }, TrackButtons.Glass, size);
         var queue = TrackButtons.Icon(Icons.View("queue", 18, TrackButtons.OnSurface),
-            () => { if (Current() is { } value) Run(() => EnqueueUserPlaylistAsync(value)); }, TrackButtons.Glass, size).Hint("Добавить в очередь");
+            () => { if (Current() is { } value) Run(() => EnqueueUserPlaylistAsync(value)); }, TrackButtons.Glass, size).Hint(UiText.Get("queue.actions.add"));
         var social = TrackButtons.Connected(like, repost).IsVisible(item.Playlist?.IsPrivate != true);
         var root = new StackPanel().Horizontal().Spacing(TrackButtons.ActionSpacing).Height(size).Left()
-            .Children(social, TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Current() is { } value) OpenShare(value); }, TrackButtons.Glass, size).Hint("Поделиться"), queue);
+            .Children(social, TrackButtons.Icon(Icons.View("arrow-square-out", 18), () => { if (Current() is { } value) OpenShare(value); }, TrackButtons.Glass, size).Hint(UiText.Get("common.share")), queue);
         (views ?? userPlaylistActionViews).Add(new(root, like, repost, heart, repeat, queue, social) { Item = item });
         RefreshUserPlaylistActions();
         return root;
@@ -47,8 +48,8 @@ internal sealed partial class MainWindow
             TrackButtons.SetGlyph(view.Repeat, "repeat", reposted ? TrackButtons.OnReposted : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(view.Like, available && !likePending, likePending);
             TrackButtons.SetAvailability(view.Repost, available && playlist.User?.Id != me?.Id && !repostPending, repostPending);
-            view.Like.Hint(liked ? "Убрать из понравившегося" : "Добавить в понравившееся");
-            view.Repost.Hint(reposted ? "Убрать репост" : "Сделать репост");
+            view.Like.Hint(liked ? UiText.Get("likes.actions.remove") : UiText.Get("likes.actions.add"));
+            view.Repost.Hint(reposted ? UiText.Get("reposts.actions.undo") : UiText.Get("reposts.action.repost"));
         }
     }
 

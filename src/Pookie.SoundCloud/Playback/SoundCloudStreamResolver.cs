@@ -1,3 +1,4 @@
+using Pookie.Localization;
 namespace Pookie.SoundCloud;
 
 // A source owns its API transport. A regional source fetches its own metadata;
@@ -41,7 +42,7 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
                 try { track = await source.GetTrackAsync(trackId, cancellationToken); }
                 catch (SoundCloudException error) when (!error.RequiresBrowserVerification && error.StatusCode is 404 or 410)
                 { throw new SoundCloudException(error.Message, error.StatusCode, trackUnavailable: true); }
-                if (track.Id != trackId) throw new SoundCloudException("Резольвер вернул другой трек.");
+                if (track.Id != trackId) throw new SoundCloudException(UiText.Get("audio.resolver.trackMismatch"));
                 if (track.Access == "blocked" || track.Policy == "BLOCK") { blocked = true; continue; }
                 if (track.Access == "preview" || track.Policy == "SNIP")
                 { preview = true; continue; }
@@ -74,7 +75,7 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
             {
                 var result = await RegionalResolver.ResolveAsync(trackId, cancellationToken, protocols).ConfigureAwait(false);
                 if (result.Track.Id != trackId || result.Track.Access is "blocked" or "preview" || result.Track.Policy is "BLOCK" or "SNIP" ||
-                    !IsPlayable(result.Stream, protocols)) throw new SoundCloudException("Региональный источник не подтвердил полный поток.");
+                    !IsPlayable(result.Stream, protocols)) throw new SoundCloudException(UiText.Get("audio.region.unconfirmedStream"));
                 cancellationToken.ThrowIfCancellationRequested();
                 return result with { UsedRegionalSource = true };
             }
@@ -83,11 +84,11 @@ public sealed class SoundCloudStreamResolver(ISoundCloudPlaybackSource primary, 
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { regionalFailed = true; }
         }
         cancellationToken.ThrowIfCancellationRequested();
-        throw new SoundCloudException(regionalFailed ? "Не удалось получить полный поток: региональное соединение SoundCloud временно недоступно. Повтори попытку позже."
-            : preview ? "SoundCloud предоставил только отрывок во всех доступных подключениях."
-            : blocked ? "SoundCloud ограничил доступ к треку для доступных подключений."
-            : protectedAvailable ? "SoundCloud не предоставил доступную ссылку и авторизацию защищённого потока."
-            : "SoundCloud не предоставил доступный полный аудиопоток.", trackUnavailable: (blocked || preview) && !regionalFailed);
+        throw new SoundCloudException(regionalFailed ? UiText.Get("audio.region.connectionUnavailable")
+            : preview ? UiText.Get("audio.stream.previewOnly")
+            : blocked ? UiText.Get("audio.region.trackRestricted")
+            : protectedAvailable ? UiText.Get("drm.stream.missingAuthorization")
+            : UiText.Get("audio.stream.fullUnavailable"), trackUnavailable: (blocked || preview) && !regionalFailed);
     }
 
     private static bool IsPlayable(SoundCloudStream? stream, string[] protocols) => stream != null && SoundCloudWebClient.IsPlaybackUri(stream.Uri) &&

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -9,7 +10,7 @@ public sealed partial class SoundCloudHttpTransport
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
         var token = cancellation.Token;
         ValidateId(trackId);
-        if (!BrowserRequestCommand.IsHistoryContextUrn(contextUrn)) throw new ArgumentException("Некорректный контекст прослушивания.");
+        if (!BrowserRequestCommand.IsHistoryContextUrn(contextUrn)) throw new ArgumentException(UiText.Get("history.invalidContext"));
         try { await RecordNativePlaybackAsync(trackId, contextUrn, token).ConfigureAwait(false); }
         catch (SoundCloudException error) when (error.RequiresBrowserVerification && error.ChallengeKind != SoundCloudChallengeKind.HardBlock && verification != null)
         {
@@ -26,7 +27,7 @@ public sealed partial class SoundCloudHttpTransport
         var track = metadata.RootElement;
         if (!track.TryGetProperty("id", out var id) || !id.TryGetInt64(out var actual) || actual != trackId ||
             !track.TryGetProperty("duration", out var duration) || !duration.TryGetDouble(out var length) || length <= 0 || !double.IsFinite(length))
-            throw new SoundCloudException("SoundCloud не подтвердил прослушанный трек.");
+            throw new SoundCloudException(UiText.Get("soundcloud.history.playUnconfirmed"));
         if (track.TryGetProperty("full_duration", out var fullDuration) && fullDuration.ValueKind == JsonValueKind.Number &&
             fullDuration.TryGetDouble(out var fullLength) && double.IsFinite(fullLength) && fullLength >= length) length = fullLength;
         var owner = track.TryGetProperty("user_id", out var ownerValue) && ownerValue.TryGetInt64(out var ownerId) ? ownerId :

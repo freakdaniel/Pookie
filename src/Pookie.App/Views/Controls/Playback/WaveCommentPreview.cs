@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -68,7 +69,7 @@ internal sealed class WaveCommentPreview : Panel, IVisualTreeHost
         if (value != null)
         {
             if (from < .001) glass.Reset();
-            author.Text = value.User?.Username ?? "Пользователь SoundCloud";
+            author.Text = value.User?.Username ?? UiText.Get("profile.soundcloudUser");
             var seconds = Math.Max(0, (value.Timestamp ?? 0) / 1000);
             time.Text = $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
             body.Text = value.Body;

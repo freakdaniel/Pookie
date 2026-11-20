@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Buffers.Binary;
 using System.Text;
 using System.Xml.Linq;
@@ -24,7 +25,7 @@ internal static class PlayReadyLicense
     internal static async Task<byte[]> AcquireAsync(HttpClient http, string authorization, byte[] message, CancellationToken token)
     {
         if (authorization is not { Length: > 0 and <= 16384 } || authorization.Any(char.IsControl))
-            throw new DrmPlaybackException("SoundCloud не предоставил авторизацию DRM-лицензии.");
+            throw new DrmPlaybackException(UiText.Get("drm.license.authorizationMissing"));
         var xml = XDocument.Parse(Encoding.Unicode.GetString(message).Trim('\uFEFF', '\0'));
         var challenge = xml.Descendants().Single(node => node.Name.LocalName == "Challenge");
         using var request = new HttpRequestMessage(HttpMethod.Post,
@@ -42,8 +43,7 @@ internal static class PlayReadyLicense
         }
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            throw new DrmPlaybackException($"SoundCloud не выдал лицензию PlayReady (HTTP {(int)response.StatusCode})." +
-                await DrmLicenseFailure.ReadAsync(response, token).ConfigureAwait(false));
+            throw new DrmPlaybackException(UiText.Format("drm.playReady.licenseHttpError", (int)response.StatusCode) + await DrmLicenseFailure.ReadAsync(response, token).ConfigureAwait(false));
         return await HttpRangeStream.ReadBoundedAsync(response.Content, MaxMessageBytes, token).ConfigureAwait(false);
     }
 }

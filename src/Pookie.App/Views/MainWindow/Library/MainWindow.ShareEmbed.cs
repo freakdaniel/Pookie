@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -26,13 +27,13 @@ internal sealed partial class MainWindow
 
     private FrameworkElement ShareEmbedView()
     {
-        shareEmbedLayout = new SegmentedSelector("list-bullets", "Компактный", "image", "С обложкой", SetShareEmbedLayout, liquidGlass: true);
+        shareEmbedLayout = new SegmentedSelector("list-bullets", UiText.Get("library.layout.compact"), "image", UiText.Get("playlist.widget.withArtwork"), SetShareEmbedLayout, liquidGlass: true);
         shareEmbedCompact = shareEmbedLayout.First; shareEmbedVisualButton = shareEmbedLayout.Second;
         shareEmbedColor = new TextBox().Text("#FF5500").MaxLength(7).FontSize(13).Height(40).Padding(10, 0)
             .CornerRadius(0).BorderThickness(0).Background(Color.Transparent);
         shareEmbedColor.OnTextChanged(_ => RefreshShareEmbed());
         shareWidgetHexField = new WidgetHexField(shareEmbedColor);
-        shareWidgetColorPicker = TrackButtons.Icon(Icons.View("palette", 20, Color.White), () => Run(ToggleShareWidgetColorAsync), TrackButtons.Glass, 40).Hint("Выбрать цвет");
+        shareWidgetColorPicker = TrackButtons.Icon(Icons.View("palette", 20, Color.White), () => Run(ToggleShareWidgetColorAsync), TrackButtons.Glass, 40).Hint(UiText.Get("playlist.edit.chooseColor"));
         ((MaterialTrackButton)shareWidgetColorPicker).UseLightGlassFinish();
         ((MaterialTrackButton)shareWidgetColorPicker).Connect(false);
         var swatches = new Grid().Columns("*,*,*,*,*").Rows("40");
@@ -44,11 +45,11 @@ internal sealed partial class MainWindow
             shareWidgetSwatches.Add((button, swatch)); swatches.Add(button.Column(index));
         }
         shareEmbedColorRow = new Grid().Columns("Auto,*,130").Rows("40").Spacing(10).Children(
-            new TextBlock().Text("Цвет").FontSize(13).Foreground(Color.White).CenterVertical(), swatches.Column(1),
+            new TextBlock().Text(UiText.Get("playlist.widget.color")).FontSize(13).Foreground(Color.White).CenterVertical(), swatches.Column(1),
             new Grid().Columns("*,40").Spacing(2).Children(shareWidgetHexField, shareWidgetColorPicker.Column(1)).Column(2));
         shareEmbedCode = new TextBlock().TextTrimming(TextTrimming.CharacterEllipsis).Height(26).FontSize(12).VerticalTextAlignment(TextAlignment.Center).IsHitTestVisible(false);
-        shareEmbedCopyGlyph = new CopyFeedbackGlyph { Reverted = () => shareEmbedCopy.Hint("Скопировать код") };
-        shareEmbedCopy = TrackButtons.Icon(shareEmbedCopyGlyph, CopyShareEmbed, TrackButtons.Glass, 48).Hint("Скопировать код");
+        shareEmbedCopyGlyph = new CopyFeedbackGlyph { Reverted = () => shareEmbedCopy.Hint(UiText.Get("clipboard.copyCode")) };
+        shareEmbedCopy = TrackButtons.Icon(shareEmbedCopyGlyph, CopyShareEmbed, TrackButtons.Glass, 48).Hint(UiText.Get("clipboard.copyCode"));
         ((MaterialTrackButton)shareEmbedCopy).GlassAccent(TrackButtons.BlueGlassAccent, Color.White);
         ((MaterialTrackButton)shareEmbedCopy).UseGlassAccentStateLayer();
         shareWidgetPreview = new EmbeddedWidgetPreview(() => shareDialog?.IsOpen == true && (!shareClosing || sharePreparingClose) && shareTab.Value == 2 &&
@@ -112,7 +113,7 @@ internal sealed partial class MainWindow
         var embedUri = shareUri == null ? null : shareTarget?.Playlist is { } playlist ? PlaylistSharing.EmbedUri(playlist) : shareUri;
         shareEmbedCode.Text = embedUri == null ? "" : BuildShareEmbed(embedUri, shareEmbedVisual, shareTarget?.Playlist != null, shareEmbedColor.Text);
         shareEmbedCopy.IsEnabled = shareEmbedCode.Text.Length > 0;
-        shareEmbedCopyGlyph.Reset(); shareEmbedCopy.Hint("Скопировать код");
+        shareEmbedCopyGlyph.Reset(); shareEmbedCopy.Hint(UiText.Get("clipboard.copyCode"));
         if (shareEmbedCode.Text.Length > 0)
         {
             var iframe = System.Xml.Linq.XElement.Parse(shareEmbedCode.Text);
@@ -120,8 +121,8 @@ internal sealed partial class MainWindow
         }
         else shareWidgetPreview.Configure(null, shareEmbedVisual ? 450 : 166);
         if (shareTab.Value == 2 && shareDialog?.IsOpen == true) shareWidgetPreview.Activate();
-        if (shareTab.Value == 2) SetShareMessage(shareUri == null ? "У этого трека или плейлиста пока нет ссылки для встраивания." :
-            shareEmbedCopy.IsEnabled ? "" : "Укажи цвет в формате #FF5500.");
+        if (shareTab.Value == 2) SetShareMessage(shareUri == null ? UiText.Get("share.embed.missingLink") :
+            shareEmbedCopy.IsEnabled ? "" : UiText.Get("playlist.edit.colorInvalid"));
     }
 
     private void CopyShareEmbed()
@@ -130,7 +131,7 @@ internal sealed partial class MainWindow
         var clipboard = shareClipboard ?? Application.Current.PlatformServices.Clipboard;
         var copied = clipboard?.TrySetText(shareEmbedCode.Text) == true;
         if (copied) shareEmbedCopyGlyph.ShowCopied(); else shareEmbedCopyGlyph.Reset();
-        shareEmbedCopy.Hint(copied ? "Скопировано" : "Не удалось скопировать. Повторить");
+        shareEmbedCopy.Hint(copied ? UiText.Get("clipboard.copied") : UiText.Get("clipboard.copyRetry"));
     }
 
     private void FitShareWidgetPreview()

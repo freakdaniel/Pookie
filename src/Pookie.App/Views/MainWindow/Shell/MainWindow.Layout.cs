@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Numerics;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
@@ -27,8 +28,8 @@ internal sealed partial class MainWindow
     private ShellPageScroll shellPageScroll = null!;
     private ContentEdgeFade contentTopFade = null!;
     private ContentEdgeFade contentBottomFade = null!;
-    private Grid topNavigation = null!;
-    private const string TopSearchPlaceholder = "Трек, исполнитель или строка песни";
+    private StackPanel topNavigation = null!;
+    private static string TopSearchPlaceholder => UiText.Get("search.input.placeholder");
     private HeaderSearchField topSearchBar = null!;
     private TextBox topSearchInput = null!;
     private TransformDecorator topNavigationMotion = null!;
@@ -175,13 +176,12 @@ internal sealed partial class MainWindow
 
     private ShellHeader Header()
     {
-        var searchTrigger = Nav("magnifying-glass", "Поиск", Page.Search, OpenTopSearch);
+        var searchTrigger = Nav("magnifying-glass", UiText.Get("header.search"), Page.Search, OpenTopSearch);
         ShortcutHint(searchTrigger, ShortcutAction.Search);
-        topNavigation = new Grid().Columns("Auto,*,Auto,*,Auto,*,Auto").Rows("*")
-            .Width(ShellHeader.NavigationWidth).Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
-                Nav("house-simple", "Главная", Page.Home).Column(0), Nav("broadcast", "Лента", Page.Feed).Column(2),
-                Nav("books", "Библиотека", Page.Library).Column(4),
-                searchTrigger.Column(6));
+        topNavigation = new StackPanel().Horizontal().Spacing(8)
+            .Height(ShellHeader.NavigationButtonHeight).ClipToBounds().Children(
+                Nav("house-simple", UiText.Get("header.home"), Page.Home), Nav("broadcast", UiText.Get("header.feed"), Page.Feed),
+                Nav("books", UiText.Get("header.library"), Page.Library), searchTrigger);
         topNavigationMotion = new TransformDecorator { Child = topNavigation };
         topSearchInput = new TextBox().BindText(query).Placeholder(TopSearchPlaceholder)
             .Background(Color.Transparent).BorderThickness(0).FontSize(13).Focusable(false)
@@ -189,7 +189,7 @@ internal sealed partial class MainWindow
             .OnLostFocus(() => { if (searching.Value) CloseTopSearch(clear: true); });
         topSearchInput.IsTabStop = false;
         topSearchBar = new HeaderSearchField(topSearchInput, shellTrigger: searchTrigger)
-            .Width(ShellHeader.NavigationWidth).IsHitTestVisible(false);
+            .IsHitTestVisible(false);
         query.Changed += RefreshSearchLinkPreview;
 
         profileButton = new HeaderButton(new CornerRadius(ShellHeader.AccountButtonSize / 2)).Content(new Grid().Columns("*").Rows("*").Width(30).Height(30).Children(
@@ -213,8 +213,7 @@ internal sealed partial class MainWindow
             new StackPanel().Horizontal().Spacing(12).CenterVertical().Children(
                 Icons.LogoView(26, 25).CenterVertical(),
                 NavigationPill()),
-            new Grid().Columns("*").Rows("*").CenterHorizontal().CenterVertical().ClipToBounds().Children(
-                topNavigationMotion.CenterHorizontal().CenterVertical(), topSearchBar.CenterHorizontal().CenterVertical()),
+            new ShellHeader.NavigationContent(topNavigationMotion, topSearchBar).CenterVertical().ClipToBounds(),
             new StackPanel().Horizontal().Spacing(5).CenterVertical().Children(ChatHeaderButton(), settingsButton, profileButton),
             () => OperatingSystem.IsWindows() && page.Value == Page.Track,
             () => OperatingSystem.IsWindows() && page.Value == Page.Track && TrackScrollInMotion(),
@@ -337,7 +336,7 @@ internal sealed partial class MainWindow
             listBody);
     }
 
-    private static TextBlock LikedSectionTitle() => new TextBlock().Text("Понравившиеся треки").FontSize(22).Bold().CenterVertical();
+    private static TextBlock LikedSectionTitle() => new TextBlock().Text(UiText.Get("library.likedTracks")).FontSize(22).Bold().CenterVertical();
 
     private FrameworkElement LibraryOverview()
     {
@@ -345,16 +344,16 @@ internal sealed partial class MainWindow
         libraryGrid.Height = likedArtworkSize + 90;
         overviewLikesLoadingView = CreateLibraryLoadingView(libraryGrid, preview: true);
         var overview = new StackPanel().Vertical().Spacing(32).Padding(0, 14).Children(
-            OverviewSection("Недавно прослушанное", "recent", Page.LibraryHistory),
+            OverviewSection(UiText.Get("history.recentlyPlayed"), "recent", Page.LibraryHistory),
             LibraryMixOverview(),
             new StackPanel().Vertical().Spacing(18).Children(
-                SectionHeader("Понравившиеся треки", ShowLibraryTracks), overviewLikesLoadingView.Root,
-                overviewLikesEmpty = new TextBlock().Text("Здесь пока ничего нет.")
+                SectionHeader(UiText.Get("library.likedTracks"), ShowLibraryTracks), overviewLikesLoadingView.Root,
+                overviewLikesEmpty = new TextBlock().Text(UiText.Get("library.empty"))
                     .Foreground(Muted).FontSize(13).TextWrapping(TextWrapping.Wrap).BindIsVisible(hasLibraryTracks, value => !value && !likesLoading)),
-            OverviewSection("Плейлисты", "playlists", Page.LibraryPlaylists),
-            OverviewSection("Альбомы", "albums", Page.LibraryAlbums),
-            OverviewSection("Понравившиеся станции", "stations", Page.LibraryStations),
-            OverviewSection("Подписки", "following", Page.LibraryFollowing));
+            OverviewSection(UiText.Get("library.playlists"), "playlists", Page.LibraryPlaylists),
+            OverviewSection(UiText.Get("library.albums"), "albums", Page.LibraryAlbums),
+            OverviewSection(UiText.Get("library.likedStations"), "stations", Page.LibraryStations),
+            OverviewSection(UiText.Get("library.following"), "following", Page.LibraryFollowing));
         return overviewScroll = new ScrollViewer().Content(overview).Background(Color.Transparent).BorderThickness(0).Padding(0);
     }
 
@@ -365,8 +364,8 @@ internal sealed partial class MainWindow
         BeginNavigation(new(Page.LibraryTracks));
         if (libraryLikes != null) ReplaceTracks(libraryLikes);
         RefreshNavVisuals();
-        eyebrow.Value = "ТВОЯ КОЛЛЕКЦИЯ";
-        heading.Value = "Понравившиеся треки";
+        eyebrow.Value = UiText.Get("library.collection.eyebrow");
+        heading.Value = UiText.Get("library.likedTracks");
         RefreshLikedViews();
         RestoreNavigationScroll(0);
     }
@@ -413,22 +412,22 @@ internal sealed partial class MainWindow
                         profileMenuAvatar.BindIsVisible(hasAvatar))),
                 new StackPanel().Vertical().Spacing(5).CenterVertical().Column(1).Children(
                     new TextBlock().BindText(profile).TextTrimming(TextTrimming.CharacterEllipsis).SemiBold().FontSize(14),
-                    new TextBlock().BindText(signedIn, value => value ? "Аккаунт SoundCloud" : "Войди, чтобы слушать свою библиотеку и ленту подписок.")
+                    new TextBlock().BindText(signedIn, value => value ? UiText.Get("account.soundcloud") : UiText.Get("auth.prompt.libraryFeed"))
                         .Foreground(Muted).FontSize(12).TextWrapping(TextWrapping.Wrap))),
-            MenuChoice("user-circle", "Мой профиль", () => { profileOpen.Value = false; if (me != null) Run(() => OpenUserProfileAsync(me)); }).BindIsVisible(signedIn),
-            MenuChoice("user-circle", "Войти в SoundCloud", () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
-            MenuChoice("sign-out", "Выйти из SoundCloud", () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
+            MenuChoice("user-circle", UiText.Get("profile.myProfile"), () => { profileOpen.Value = false; if (me != null) Run(() => OpenUserProfileAsync(me)); }).BindIsVisible(signedIn),
+            MenuChoice("user-circle", UiText.Get("auth.signIn"), () => { profileOpen.Value = false; Run(LoginAsync); }).BindIsVisible(signedIn, value => !value),
+            MenuChoice("sign-out", UiText.Get("account.signOut.action"), () => { profileOpen.Value = false; Run(LogoutAsync); }).BindIsVisible(signedIn)), 300),
         profileOpen, FloatingMenuPlacement.BelowRight);
 
     private void OpenIllustrationCredits() =>
-        OpenExternalUrl("https://icons8.com", () => status.Value = "Не удалось открыть сайт Icons8");
+        OpenExternalUrl("https://icons8.com", () => status.Value = UiText.Get("settings.about.iconsSiteFailed"));
 
     private FrameworkElement QueuePanel()
     {
         var close = TrackButtons.Icon(Icons.View("caret-down", 20, PlayerSecondaryText), () => queueOpen.Value = false, TrackButtons.Text, 32);
         var heading = new Grid().Columns("*,32").Rows("*").Spacing(12).Margin(24, 4, 20, 8).DockTop().Children(
             new StackPanel().Vertical().Spacing(5).CenterVertical().Column(0).Children(
-                new TextBlock().Text("Очередь").FontSize(20).SemiBold(),
+                new TextBlock().Text(UiText.Get("header.queue")).FontSize(20).SemiBold(),
                 new TextBlock().BindText(queueStatus).Foreground(PlayerSecondaryText).FontSize(12)
                     .TextTrimming(TextTrimming.CharacterEllipsis)), close.CenterVertical().Column(1));
         var card = new Border().Background(Color.Transparent).BorderThickness(0).Padding(0, 16, 0, 12)

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -152,13 +153,13 @@ internal sealed partial class MainWindow
         if (entry.Route.Page == Page.UserProfile) { userSection.Value = entry.Route.UserSection; failedUserCursor = null; RenderUserProfile(); }
         trackDetailState = state.Detail is { } detail ? detail with { CommentsLoading = false, RelatedLoading = false, SidebarLoading = false, MetadataLoading = false, SectionLoading = false } : null;
         if (entry.Route.Page == Page.Track) { trackDetailSection.Value = entry.Route.TrackSection; failedTrackSectionCursor = null; RenderTrackDetail(); }
-        heading.Value = state.Heading; eyebrow.Value = state.Eyebrow; status.Value = state.Status;
+        heading.Value = UiText.Refresh(state.Heading); eyebrow.Value = UiText.Refresh(state.Eyebrow); status.Value = UiText.Refresh(state.Status);
         activeCollection = state.Collection; activeLibrarySource = state.Source;
-        librarySectionTitle.Value = state.CollectionTitle; librarySectionStatus.Value = state.CollectionStatus;
+        librarySectionTitle.Value = UiText.Refresh(state.CollectionTitle); librarySectionStatus.Value = UiText.Refresh(state.CollectionStatus);
         query.Value = entry.Route.Search ?? "";
         searchSection.Value = entry.Route.Section;
         searchResults = state.SearchResults;
-        searchHeading.Value = $"Результаты для «{entry.Route.Search}»";
+        searchHeading.Value = UiText.Format("search.results.query", entry.Route.Search);
         RefreshSearchViews();
         likedFilter.Text = state.Filter; likedFilterDebounce.Flush();
         likedActionError.Value = "";
@@ -173,7 +174,7 @@ internal sealed partial class MainWindow
                 collectionDetails.TryGetValue(item.Key, out var latest) && latest.Tracks.NextHref == null)
                 activeCollection = new(latest.Tracks.Tracks.Select(LibraryItem.FromTrack).ToArray(), null);
             RenderLibrarySection(); collectionFilter.Text = state.CollectionFilter; collectionFilterDebounce.Flush();
-            librarySectionStatus.Value = state.CollectionStatus;
+            librarySectionStatus.Value = UiText.Refresh(state.CollectionStatus);
             librarySectionRetry.Value = state.CollectionRetry;
         }
         RestoreNavigationScroll(state.Scroll);
@@ -241,7 +242,7 @@ internal sealed partial class MainWindow
         page.Value = Page.Home;
         query.Value = ""; likedFilter.Text = "";
         ReplaceTracks(new([], null));
-        eyebrow.Value = "ГЛАВНАЯ"; heading.Value = "Главная";
+        eyebrow.Value = UiText.Get("home.eyebrow"); heading.Value = UiText.Get("header.home");
         RestoreNavigationScroll(0);
         RefreshNavVisuals(); RefreshHistoryButtons();
     }

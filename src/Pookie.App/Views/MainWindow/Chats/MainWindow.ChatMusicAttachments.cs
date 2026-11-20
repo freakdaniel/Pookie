@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.CompilerServices;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
@@ -37,7 +38,7 @@ internal sealed partial class MainWindow
     {
         if (bubble.Body.UpdateMusic(urls.Where(url => bubble.Body.Text.Contains(url, StringComparison.Ordinal)).Select(url =>
         {
-            if (!chatMusicCache.TryGetValue(url, out var item)) return new LinkPreviewData(url, "Трек", null);
+            if (!chatMusicCache.TryGetValue(url, out var item)) return new LinkPreviewData(url, UiText.Get("collection.trackLabel.one"), null);
             var view = bubble.Attachments.Children.OfType<ChatCompactMusicView>().FirstOrDefault(view => view.Url == url);
             return new LinkPreviewData(url, item.Title, view?.Row.Cover.Source as ImageSource ?? CachedCollectionArtwork(item));
         }).ToArray()))
@@ -72,7 +73,7 @@ internal sealed partial class MainWindow
                 if (item.Playlist is { } playlist)
                 {
                     row.Title.Text = item.Title;
-                    row.Author.Text = $"{(item.IsAlbum ? "Альбом" : "Плейлист")} · {playlist.TrackCount} {RussianPlural(playlist.TrackCount, "трек", "трека", "треков")}";
+                    row.Author.Text = UiText.Compose($"{(item.IsAlbum ? UiText.Get("common.album") : UiText.Get("common.playlist"))} · {playlist.TrackCount} {UiText.Plural(playlist.TrackCount, "collection.track")}");
                     row.Duration.Text = ""; row.Like.IsVisible = false;
                 }
                 UpdateChatMusicMentions(bubble, group.Urls);
@@ -95,7 +96,7 @@ internal sealed partial class MainWindow
                 catch
                 {
                     if (!view.IsCurrent()) return null;
-                    row.Title.Text = "Трек или плейлист"; row.Author.Text = "Не удалось загрузить предпросмотр";
+                    row.Title.Text = UiText.Get("share.item.trackOrPlaylist"); row.Author.Text = UiText.Get("media.preview.loadFailed");
                     SetCardArtwork(row.Cover, null, null, finished: true);
                 }
                 finally { if (view.IsCurrent()) view.Loading.Show(); }
@@ -150,7 +151,7 @@ internal sealed partial class MainWindow
             if (playbackQueue.Current?.EntryId == entry.EntryId) return (selected, true);
             if (playbackQueue.Select(entry.EntryId) != null) { RefreshQueue(); return (selected, false); }
         }
-        StartQueueContext(new(view.Group.Key, "Вложения из чата с " + view.Group.Name, "Сейчас играют вложения сообщения"), tracks, selected, selectedIndex);
+        StartQueueContext(new(view.Group.Key, UiText.Compose($"{UiText.Get("chats.attachments.fromContact")}{view.Group.Name}"), UiText.Get("queue.source.messageAttachments")), tracks, selected, selectedIndex);
         return (selected, false);
     }
 }

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -134,7 +135,7 @@ internal sealed partial class MainWindow
         finally { chatImagePreviewGate.Release(); }
         if (disposed || chatClosing || token.IsCancellationRequested || chatRevision != revision ||
             request != chatImagePreviewRequest || page.Value != Page.Chats) return;
-        if (source == null) { chatThreadStatus.Value = "Не удалось открыть изображение."; return; }
+        if (source == null) { chatThreadStatus.Value = UiText.Get("media.image.openFailed"); return; }
         var row = ChatRows.FirstOrDefault(row => row.Bound && row.Message?.Id == messageId);
         UIElement? trigger = index >= 0 && row != null && index < row.Attachments.Children.Count
             ? row.Attachments.Children[index].FindVisualChild<ChatPhotoFrame>() as ChatPhotoFrame : null;
@@ -196,7 +197,7 @@ internal sealed partial class MainWindow
         {
             ChatVideoRuntime.LogFailure(error);
             if (!disposed && generation == chatVideoGeneration)
-                chatVideoStatus.Text = "Не удалось открыть видео. Подробности записаны в журнал.";
+                chatVideoStatus.Text = UiText.Get("chats.video.decodeFailed");
         }
     }
     private void RefreshChatVideo()
@@ -207,7 +208,7 @@ internal sealed partial class MainWindow
         RefreshChatVideoControlVisibility();
         var state = session.Snapshot();
         if (state.Failed || chatVideoVersion == 0 && (state.Ended || DateTimeOffset.UtcNow - chatVideoStarted > TimeSpan.FromSeconds(15)))
-        { session.LogPlaybackFailure(); chatVideoStatus.Text = "Не удалось прочитать видеодорожку. Файл можно сохранить из меню сообщения."; chatVideoTimer.Stop(); }
+        { session.LogPlaybackFailure(); chatVideoStatus.Text = UiText.Get("chats.video.saveInstead"); chatVideoTimer.Stop(); }
         chatVideoPlayIcon.Source = Icons.Source(state.Playing ? "pause-solid" : "play-solid", Color.White);
         static string Time(long ms) => TimeSpan.FromMilliseconds(Math.Max(0, ms)).ToString(ms >= 3600000 ? @"h\:mm\:ss" : @"m\:ss");
         chatVideoTime.Text = Time(state.Ended ? state.Length : state.Time); chatVideoRemaining.Text = "−" + Time(state.Ended ? 0 : Math.Max(0, state.Length - state.Time));

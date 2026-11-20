@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using Aprillz.MewUI;
 
@@ -45,7 +46,7 @@ internal sealed partial class WebKitLoginWindow
             parentWindow = parent;
             this.script = script;
             Native.gdk_set_allowed_backends("x11");
-            if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException("Не удалось запустить встроенный WebKitGTK. Нужен libwebkit2gtk-4.1-0 и X11/XWayland.");
+            if (Native.gtk_init_check(0, 0) == 0) throw new InvalidOperationException(UiText.Get("browser.linux.webKitRequirements"));
             filter = new WebKitContentFilter(profile);
             var data = Path.Combine(profile, "Data"); var cache = Path.Combine(profile, "Cache");
             Storage.AppDataPaths.CreatePrivateDirectory(data); Storage.AppDataPaths.CreatePrivateDirectory(cache);
@@ -238,8 +239,8 @@ internal sealed partial class WebKitLoginWindow
             try
             {
                 surface = Native.webkit_web_view_get_snapshot_finish(view, operation, out var error);
-                if (error != 0) { Native.g_error_free(error); throw new InvalidOperationException("WebKitGTK не смог подготовить кадр анимации входа."); }
-                if (surface == 0) throw new InvalidOperationException("WebKitGTK вернул пустой кадр входа.");
+                if (error != 0) { Native.g_error_free(error); throw new InvalidOperationException(UiText.Get("browser.linux.animationFrameFailed")); }
+                if (surface == 0) throw new InvalidOperationException(UiText.Get("browser.linux.emptySignInFrame"));
                 using var buffer = new MemoryStream();
                 Native.PngWriteCallback write = (_, bytes, length) =>
                 {
@@ -248,7 +249,7 @@ internal sealed partial class WebKitLoginWindow
                 };
                 var status = Native.cairo_surface_write_to_png_stream(surface, write, 0);
                 GC.KeepAlive(write);
-                if (status != 0) throw new InvalidOperationException("Не удалось сохранить кадр WebKitGTK в памяти.");
+                if (status != 0) throw new InvalidOperationException(UiText.Get("browser.linux.frameSaveFailed"));
                 result.TrySetResult(buffer.ToArray());
             }
             catch (Exception error) { result.TrySetException(error); }

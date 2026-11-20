@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Playback;
@@ -82,8 +83,8 @@ internal sealed partial class MainWindow
             Page.Search => PlaybackContextKind.Search,
             _ => PlaybackContextKind.Track
         };
-        if (page.Value == Page.Track) { queueOriginTitle = first.Title; queueOriginKind = "Сейчас играет отдельный трек"; }
-        if (filter != null) { queueOriginTitle += $" · «{filter}»"; queueOriginKind = "Сейчас играет из результатов фильтра"; }
+        if (page.Value == Page.Track) { queueOriginTitle = first.Title; queueOriginKind = UiText.Get("queue.source.track"); }
+        if (filter != null) { queueOriginTitle = UiText.Compose($"{queueOriginTitle} · «{filter}»"); queueOriginKind = UiText.Get("queue.source.filtered"); }
         if (page.Value == Page.LibraryCollection && selectedIndex is { } cardIndex && activeCollection != null)
             selectedIndex = activeCollection.Items.Take(cardIndex).Count(item => item.Track != null);
         StartQueueContext(new(key, queueOriginTitle, queueOriginKind, cursor, Kind: kind,
@@ -115,7 +116,7 @@ internal sealed partial class MainWindow
         if (entry != null) return playbackQueue.Select(entry.EntryId)!;
         // Direct selection outside the current source must never copy the page
         // that happens to be open while a stream is being prepared.
-        StartQueueContext(new($"track:{track.Id}", track.Title, "Сейчас играет отдельный трек"), [track], track);
+        StartQueueContext(new($"track:{track.Id}", track.Title, UiText.Get("queue.source.track")), [track], track);
         return playbackQueue.Current!;
     }
 
@@ -138,21 +139,21 @@ internal sealed partial class MainWindow
         var data = new List<QueueBlock>();
         if (state.Current is { } selected)
         {
-            data.Add(new("now", QueueBlockKind.Upcoming, Title: "Сейчас играет"));
+            data.Add(new("now", QueueBlockKind.Upcoming, Title: UiText.Get("player.nowPlaying")));
             data.Add(TrackBlock(selected));
         }
-        if (state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: "Добавлено тобой"));
+        if (state.ManualUpcoming.Count > 0) data.Add(new("manual", QueueBlockKind.Upcoming, Title: UiText.Get("queue.addedByYou")));
         data.AddRange(state.ManualUpcoming.Select(TrackBlock));
         if (state.Forward.Count + state.ContextUpcoming.Count > 0)
-            data.Add(new("next", QueueBlockKind.Context, Title: "Далее"));
+            data.Add(new("next", QueueBlockKind.Context, Title: UiText.Get("common.next")));
         data.AddRange(state.Forward.Concat(state.ContextUpcoming).Select(TrackBlock));
         if (state.Recommendations.Count > 0)
         {
-            data.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? "Далее на радио" : "Похожие дальше"));
+            data.Add(new("recommendations", QueueBlockKind.Context, Title: state.Context?.Kind == PlaybackContextKind.Radio ? UiText.Get("radio.upNext") : UiText.Get("queue.related.upNext")));
             data.AddRange(state.Recommendations.Select(TrackBlock));
         }
         RefreshPopupQueue(data.ToArray());
-        queueStatus.Value = state.Context?.Title ?? "Очередь воспроизведения";
+        queueStatus.Value = UiText.Refresh(state.Context?.Title ?? UiText.Get("queue.heading"));
         RefreshExpandedQueue(); UpdateSystemMedia();
     }
 
@@ -252,26 +253,26 @@ internal sealed partial class MainWindow
             root.Commands.Register(command, execute, enabled);
             menu.Item(command);
         }
-        Item("open", "Открыть страницу трека", "music-notes", () => { if (track() is { } item) Run(() => OpenTrackFromRowAsync(item, root)); }, () => track() != null);
-        Item("radio", "Запустить радио по треку", "broadcast", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
+        Item("open", UiText.Get("track.openPage"), "music-notes", () => { if (track() is { } item) Run(() => OpenTrackFromRowAsync(item, root)); }, () => track() != null);
+        Item("radio", UiText.Get("radio.startFromTrack"), "broadcast", () => { if (track() is { } item) Run(() => StartTrackRadioAsync(item)); },
             () => track() is { } item && CanStartTrackRadio(item));
-        Item("next", "Воспроизвести следующим", "skip-forward", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
-        Item("add", "Добавить в очередь", "queue", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
-        Item("playlist", "Добавить в плейлист", "playlist-plus", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
-        Item("share", "Поделиться", "arrow-square-out", () => { if (track() is { } item) ShareTrack(item); }, () => track() != null);
+        Item("next", UiText.Get("queue.actions.playNext"), "skip-forward", () => { if (track() is { } item) EnqueueTrack(item, true); }, () => track() != null);
+        Item("add", UiText.Get("queue.actions.add"), "queue", () => { if (track() is { } item) EnqueueTrack(item, false); }, () => track() != null);
+        Item("playlist", UiText.Get("playlist.actions.addTrack"), "playlist-plus", () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, () => track() != null && me != null && !demo);
+        Item("share", UiText.Get("common.share"), "arrow-square-out", () => { if (track() is { } item) ShareTrack(item); }, () => track() != null);
         if (extraActions)
         {
-            Item("copy", "Скопировать ссылку", "copy", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);
-            Item("repost", "Сделать репост", "repeat", () => { if (track() is { } item) Run(() => ToggleTrackRepostAsync(item)); },
+            Item("copy", UiText.Get("share.link.copy"), "copy", () => { if (track() is { } item) CopyTrackLink(item); }, () => track() != null);
+            Item("repost", UiText.Get("reposts.action.repost"), "repeat", () => { if (track() is { } item) Run(() => ToggleTrackRepostAsync(item)); },
                 () => track() is { } item && CanRepostTrack(item));
         }
         if (entryId != null)
         {
             int Index() => playbackQueue.Snapshot.ManualUpcoming.ToList().FindIndex(entry => entry.EntryId == entryId());
-            Item("up", "Выше в очереди", "caret-up", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() - 1)), () => Index() > 0);
-            Item("down", "Ниже в очереди", "caret-down", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() + 1)),
+            Item("up", UiText.Get("queue.actions.moveUp"), "caret-up", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() - 1)), () => Index() > 0);
+            Item("down", UiText.Get("queue.actions.moveDown"), "caret-down", () => ChangeManualQueue(() => playbackQueue.MoveManual(entryId()!.Value, Index() + 1)),
                 () => Index() >= 0 && Index() < playbackQueue.Snapshot.ManualUpcoming.Count - 1);
-            Item("remove", "Убрать из очереди", "x", () => ChangeManualQueue(() => playbackQueue.RemoveManual(entryId()!.Value)), () => Index() >= 0);
+            Item("remove", UiText.Get("queue.actions.remove"), "x", () => ChangeManualQueue(() => playbackQueue.RemoveManual(entryId()!.Value)), () => Index() >= 0);
         }
         PopupAppearance.Attach(root, menu);
         return menu;

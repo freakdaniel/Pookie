@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text.Json;
 
 namespace Pookie.SoundCloud;
@@ -10,8 +11,8 @@ public sealed partial class SoundCloudWebClient
     }
     private async Task<SoundCloudPlaylist> EditWebPlaylistAsync(PlaylistEditRequest edit, CancellationToken token)
     {
-        if (!edit.IsValid()) throw new ArgumentException("Некорректное изменение плейлиста.");
-        if (Session == null || BrowserTransport == null) throw new SoundCloudException("Войди в SoundCloud, чтобы изменить плейлист.");
+        if (!edit.IsValid()) throw new ArgumentException(UiText.Get("playlist.edit.invalid"));
+        if (Session == null || BrowserTransport == null) throw new SoundCloudException(UiText.Get("auth.required.editPlaylist"));
         try
         {
             using var result = await BrowserTransport.EditPlaylistAsync(edit, token);
@@ -23,7 +24,7 @@ public sealed partial class SoundCloudWebClient
                     update.Metadata is { } metadata && !MetadataConfirmed(playlist, metadata)) ||
                 edit.Kind == "remove" && playlist.Tracks.Any(track => track.Id == edit.TrackId) ||
                 edit.Kind == "reset-secret" && (!playlist.IsPrivate || PlaylistSharing.ShareUri(playlist) == null))
-                throw new SoundCloudException("SoundCloud не подтвердил изменение плейлиста.");
+                throw new SoundCloudException(UiText.Get("soundcloud.playlist.editUnconfirmed"));
             return playlist;
         }
         finally { InvalidatePlaylistMetadata(edit.PlaylistId); }
@@ -50,7 +51,7 @@ public sealed partial class SoundCloudWebClient
         ValidateDetailTrackId(playlistId);
         using var result = await GetJsonAsync(Api($"playlists/{playlistId}" + (secretToken == null ? "" : "?secret_token=" + Uri.EscapeDataString(secretToken))), token);
         var playlist = LibraryData.ParsePlaylist(result.RootElement);
-        if (playlist.Id != playlistId) throw new SoundCloudException("SoundCloud вернул другой плейлист.");
+        if (playlist.Id != playlistId) throw new SoundCloudException(UiText.Get("soundcloud.playlist.mismatchedId"));
         return playlist.IsPrivate && PlaylistSharing.Token(playlist) == null ? playlist with { SecretToken = secretToken } : playlist;
     }
     public Task<SoundCloudPlaylist> ResetPlaylistSecretAsync(long userId, long playlistId, CancellationToken token = default) =>

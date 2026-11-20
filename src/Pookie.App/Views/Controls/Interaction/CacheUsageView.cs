@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -8,14 +9,14 @@ namespace Pookie.App;
 
 internal sealed class CacheUsageView : Panel
 {
-    private static readonly string[] Names = ["Обложки", "Звуковые волны", "Тексты"];
+    private static readonly string[] NameKeys = ["cache.artwork", "cache.waveforms", "cache.lyrics"];
     internal static readonly Color[] Colors = [Color.FromRgb(170, 199, 255), Color.FromRgb(206, 182, 255), Color.FromRgb(255, 192, 160)];
     private readonly Border card;
     private readonly TextBlock total = new TextBlock().Text("—").FontSize(24).SemiBold().CenterHorizontal();
-    private readonly TextBlock caption = new TextBlock().Text("считаем объём").FontSize(12).Foreground(TrackButtons.OnSurface).CenterHorizontal();
+    private readonly TextBlock caption = new TextBlock().Text(UiText.Get("cache.calculatingSize")).FontSize(12).Foreground(TrackButtons.OnSurface).CenterHorizontal();
     private readonly TextBlock[] amounts = new TextBlock[3], shares = new TextBlock[3];
     private readonly CacheUsageLegend[] legends = new CacheUsageLegend[3];
-    internal TextBlock Title { get; } = new TextBlock().Text("Кэш на устройстве").FontSize(20).SemiBold();
+    internal TextBlock Title { get; } = new TextBlock().Text(UiText.Get("cache.device.title")).FontSize(20).SemiBold();
     internal CacheUsageChart Chart { get; } = new();
     internal CacheUsage? Usage { get; private set; }
     internal string TotalText => total.Text;
@@ -32,7 +33,7 @@ internal sealed class CacheUsageView : Panel
             amounts[index] = new TextBlock().Text("—").FontSize(19).SemiBold();
             shares[index] = new TextBlock().Text("—").FontSize(12).Foreground(TextAppearance.Secondary);
             var item = index;
-            legends[index] = new CacheUsageLegend(Names[index], Colors[index], amounts[index], shares[index],
+            legends[index] = new CacheUsageLegend(UiText.Get(NameKeys[index]), Colors[index], amounts[index], shares[index],
                 hovered => Chart.Hover(hovered ? item : -1));
             categories.Add(legends[index].Column(index));
         }
@@ -65,11 +66,11 @@ internal sealed class CacheUsageView : Panel
         if (Usage == null) return;
         var sizes = new[] { Usage.ImagesBytes, Usage.WaveformsBytes, Usage.LyricsBytes };
         total.Text = FormatBytes(index >= 0 ? sizes[index] : Usage.TotalBytes);
-        caption.Text = index >= 0 ? Names[index].ToLowerInvariant() : "всего в кэше";
+        caption.Text = index >= 0 ? UiText.Get(NameKeys[index]).ToLowerInvariant() : UiText.Get("cache.totalCaption");
     }
 
-    internal static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024 ? $"{bytes / (1024d * 1024 * 1024):0.#} ГиБ" :
-        bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024):0.#} МиБ" : bytes >= 1024 ? $"{bytes / 1024d:0.#} КиБ" : $"{bytes} Б";
+    internal static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024 ? UiText.Format("units.gibibytes", bytes / (1024d * 1024 * 1024)):
+        bytes >= 1024 * 1024 ? UiText.Format("units.mebibytes", bytes / (1024d * 1024)): bytes >= 1024 ? UiText.Format("units.kibibytes", bytes / 1024d): UiText.Format("units.bytes", bytes);
 
     protected override Size MeasureContent(Size availableSize) { card.Measure(availableSize); return card.DesiredSize; }
     protected override Size ArrangeOverride(Size finalSize)

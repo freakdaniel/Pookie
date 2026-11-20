@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -36,14 +37,14 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
 
     public void UpdateAccount(WebSession updated)
     {
-        if (!updated.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.");
+        if (!updated.IsValid()) throw new ArgumentException(UiText.Get("auth.session.invalid"));
         lock (sync)
         {
             lifetime.Token.ThrowIfCancellationRequested();
             if (account.ClientId != updated.ClientId || account.UserAgent != updated.UserAgent ||
                 account.SessionId != null && account.SessionId != updated.SessionId ||
                 account.VerifiedUserId != null && account.VerifiedUserId != updated.VerifiedUserId)
-                throw new InvalidOperationException("Обновление принадлежит другой сессии SoundCloud.");
+                throw new InvalidOperationException(UiText.Get("auth.session.updateMismatch"));
             account = updated;
             worker?.UpdateAccount(updated);
             embedded?.UpdateAccount(updated);
@@ -64,10 +65,10 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<SoundCloudUser> GetMeAsync(CancellationToken token = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "me"), token);
-        if (result.User is not { Id: > 0 and <= 9007199254740991 } user) throw new InvalidOperationException("SoundCloud не вернул профиль.");
+        if (result.User is not { Id: > 0 and <= 9007199254740991 } user) throw new InvalidOperationException(UiText.Get("soundcloud.profile.missing"));
         var current = Account;
         if (current.VerifiedUserId is { } expected && expected != user.Id)
-            throw new SoundCloudException("Аккаунт в браузере Pookie изменился. Подтверди вход в SoundCloud.", 401) { SessionRejected = true };
+            throw new SoundCloudException(UiText.Get("auth.browser.accountChanged"), 401) { SessionRejected = true };
         return user;
     }
 
@@ -79,7 +80,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         {
             if (current.VerifiedUserId is not { } expected || result.User?.Id != expected || updated.VerifiedUserId != expected ||
                 updated.ClientId != current.ClientId || updated.UserAgent != current.UserAgent || updated.SessionId != current.SessionId)
-                throw new SoundCloudException("SoundCloud не подтвердил обновление сохранённого аккаунта.", 401);
+                throw new SoundCloudException(UiText.Get("auth.session.refreshUnconfirmed"), 401);
             UpdateAccount(current with { AccessToken = updated.AccessToken });
         }
         else if (current.VerifiedUserId == null && result.User is { Id: > 0 and <= 9007199254740991 } user)
@@ -87,8 +88,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     }
 
     private static SoundCloudException RequestUnauthorized(BrowserRequestEvent result) => new(
-        result.SessionRejected ? "SoundCloud не подтвердил вход. Подключи аккаунт в Pookie." :
-            "SoundCloud не авторизовал этот запрос. Попробуй ещё раз.", 401) { SessionRejected = result.SessionRejected };
+        result.SessionRejected ? UiText.Get("auth.session.signInUnconfirmed") :
+            UiText.Get("soundcloud.auth.requestUnauthorized"), 401) { SessionRejected = result.SessionRejected };
 
     internal async Task ResetBlockedBrowserAsync(CancellationToken token)
     {
@@ -104,8 +105,8 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<string> GetFollowSignatureAsync(long userId, long artistId, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "follow-signature", UserId: userId, ArtistId: artistId), cancellationToken);
-        using var json = JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал подпись подписки."));
-        return json.RootElement.GetProperty("signature").GetString() ?? throw new SoundCloudException("SoundCloud не передал подпись подписки.");
+        using var json = JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("soundcloud.subscription.missingSignature")));
+        return json.RootElement.GetProperty("signature").GetString() ?? throw new SoundCloudException(UiText.Get("soundcloud.subscription.missingSignature"));
     }
 
     public async Task SetLikedAsync(long userId, long trackId, bool liked, CancellationToken token = default) =>
@@ -131,7 +132,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<JsonDocument> CreatePlaylistAsync(PlaylistCreateRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "playlist-create", Playlist: request), cancellationToken);
-        return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал созданный плейлист."));
+        return JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("soundcloud.playlist.missingCreatedPlaylist")));
     }
 
     public async Task<JsonDocument> EditPlaylistAsync(PlaylistEditRequest request, CancellationToken cancellationToken = default)
@@ -149,34 +150,34 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     public async Task<JsonDocument> GetJsonAsync(Uri uri, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "api-get", Url: uri.AbsoluteUri), cancellationToken).ConfigureAwait(false);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
-        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("browser.response.missing"))); }
+        catch (JsonException) { throw new SoundCloudException(UiText.Get("soundcloud.response.invalidJson")); }
     }
 
     public async Task<JsonDocument> ReadTrackAsync(TrackReadRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "track-read", Detail: request), cancellationToken).ConfigureAwait(false);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал страницу трека.")); }
-        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("browser.trackPage.missing"))); }
+        catch (JsonException) { throw new SoundCloudException(UiText.Get("soundcloud.response.invalidJson")); }
     }
 
     public async Task<JsonDocument> WriteCommentAsync(CommentWriteRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "comment-write", Comment: request), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("WebView не передал ответ SoundCloud.")); }
-        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректный JSON."); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("browser.response.missing"))); }
+        catch (JsonException) { throw new SoundCloudException(UiText.Get("soundcloud.response.invalidJson")); }
     }
 
     public async Task<JsonDocument> RequestChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
     {
         var result = await RequestAsync(new(Guid.NewGuid().ToString("N"), "chat", Chat: request), cancellationToken);
-        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException("SoundCloud не передал переписку.")); }
-        catch (JsonException) { throw new SoundCloudException("SoundCloud вернул некорректную переписку."); }
+        try { return JsonDocument.Parse(result.Json ?? throw new SoundCloudException(UiText.Get("soundcloud.chat.missingConversation"))); }
+        catch (JsonException) { throw new SoundCloudException(UiText.Get("soundcloud.chat.invalidConversation")); }
     }
 
     private Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
     {
-        if (!command.IsValid()) throw new ArgumentException("Некорректная команда браузера.");
+        if (!command.IsValid()) throw new ArgumentException(UiText.Get("browser.command.invalid"));
         return requestLog.RunAsync(command, embedded != null ? "embedded-browser" : "browser-process",
             () => RequestCoreAsync(command, token));
     }
@@ -234,11 +235,11 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
                     {
                         401 => RequestUnauthorized(result),
                         403 when current.Blocked => BrowserBlocked(),
-                        403 => new SoundCloudException("SoundCloud отклонил запрос в браузере. Проверка могла не завершиться или ресурс недоступен.", 403),
-                        404 => new SoundCloudException("Трек или ресурс SoundCloud не найден.", 404),
-                        429 => new SoundCloudException("SoundCloud ограничил частоту запросов. Повтори позже.", 429),
-                        0 => new SoundCloudException("WebView не завершил запрос. Проверь соединение и окно проверки SoundCloud."),
-                        _ => new SoundCloudException($"SoundCloud не выполнил действие (HTTP {result.Status}).", result.Status)
+                        403 => new SoundCloudException(UiText.Get("soundcloud.browser.requestRejected"), 403),
+                        404 => new SoundCloudException(UiText.Get("soundcloud.track.notFound"), 404),
+                        429 => new SoundCloudException(UiText.Get("soundcloud.request.rateLimited"), 429),
+                        0 => new SoundCloudException(UiText.Get("browser.request.incomplete")),
+                        _ => new SoundCloudException(UiText.Format("soundcloud.action.httpError", result.Status), result.Status)
                     };
                 }
                 finally { current.Pending.TryRemove(command.Id, out _); }
@@ -273,16 +274,16 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             if (result.Status == 401) throw RequestUnauthorized(result);
             throw new SoundCloudException(result.Status switch
             {
-                403 => "SoundCloud отклонил действие в браузере.",
-                429 => "SoundCloud ограничил частоту запросов. Повтори позже.",
-                _ => "Браузер SoundCloud не подтвердил действие."
+                403 => UiText.Get("soundcloud.browser.actionRejected"),
+                429 => UiText.Get("soundcloud.request.rateLimited"),
+                _ => UiText.Get("browser.action.unconfirmed")
             }, result.Status);
         }
         finally { if (ordered) requests.Release(); }
     }
 
     internal static SoundCloudException BrowserBlocked() => new(
-        "SoundCloud временно ограничил доступ для браузера Pookie. Попробуй загрузить раздел снова позже.", 403)
+        UiText.Get("soundcloud.browser.restrictedRetry"), 403)
         { ChallengeKind = SoundCloudChallengeKind.HardBlock };
 
     public void Dispose()
@@ -341,7 +342,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
     private static void ValidateFixture(string? fixture)
     {
         if (fixture != null && (!Uri.TryCreate(fixture, UriKind.Absolute, out var uri) || !uri.IsLoopback || uri.Scheme != "http" || uri.UserInfo != ""))
-            throw new ArgumentException("Тестовый WebView допускает только локальный HTTP адрес.");
+            throw new ArgumentException(UiText.Get("auth.test.webViewLocalOnly"));
     }
 
     private sealed class Worker
@@ -362,7 +363,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
         {
             StartupLog.EnsureInitialized();
             ValidateFixture(fixture);
-            if (!account.IsValid()) throw new ArgumentException("Некорректная сессия SoundCloud.");
+            if (!account.IsValid()) throw new ArgumentException(UiText.Get("auth.session.invalid"));
             var profile = StartupLog.Run("browser.profile-open", () => BrowserProfile.Open(fixture, profilePath));
             this.account = account;
             protection = new BrowserProtectionStore(profile.Path);
@@ -371,14 +372,14 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
             try
             {
-                var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException("Не найден исполняемый файл Pookie."))
+                var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new InvalidOperationException(UiText.Get("startup.executableMissing")))
                 { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
                 if (Path.GetFileNameWithoutExtension(start.FileName) == "dotnet")
                     start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(NativeBrowserSession).Assembly.GetName().Name + ".dll"));
                 foreach (var argument in new[] { "--web-requests", pipe.GetClientHandleAsString(), "--login-profile", profile.Path }) start.ArgumentList.Add(argument);
                 if (fixture != null) { start.ArgumentList.Add("--login-fixture"); start.ArgumentList.Add(fixture); }
                 AppLog.ConfigureChild(start);
-                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException("Не удалось запустить WebView."));
+                Process = StartupLog.Run("browser.process-start", () => Process.Start(start) ?? throw new InvalidOperationException(UiText.Get("browser.webView.startFailed")));
                 pipe.DisposeLocalCopyOfClientHandle();
                 Process.StandardInput.WriteLine(JsonSerializer.Serialize(account.BrowserSnapshot(), SoundCloudJson.Default.WebSession));
                 Process.StandardInput.Flush();
@@ -508,7 +509,7 @@ internal sealed class NativeBrowserSession(WebSession account, string? fixtureUr
             {
                 Stop();
                 changed(new("audio-closed"));
-                var error = new InvalidOperationException("Окно SoundCloud закрыто или WebView завершился. Повтори действие, чтобы открыть его снова.");
+                var error = new InvalidOperationException(UiText.Get("browser.window.reopen"));
                 Ready.TrySetException(error);
                 foreach (var pending in Pending.Values) pending.TrySetException(error);
                 await Process.WaitForExitAsync().ConfigureAwait(false);

@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -31,7 +32,7 @@ internal sealed partial class MainWindow
 
     private Button AddToPlaylistButton(Func<SoundCloudTrack?> track, string style = TrackButtons.Tonal, double size = 40) =>
         TrackButtons.Icon(Icons.View("playlist-plus", 20, TrackButtons.OnSurface),
-            () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, style, size).Hint("Добавить в плейлист");
+            () => { if (track() is { } item) Run(() => OpenPlaylistPickerAsync(item)); }, style, size).Hint(UiText.Get("playlist.actions.addTrack"));
 
     private FrameworkElement PlaylistPickerView()
     {
@@ -42,7 +43,7 @@ internal sealed partial class MainWindow
         playlistPickerDuration = new TextBlock().FontSize(13).Foreground(Muted).Right();
         playlistPickerPlays = new TextBlock().FontSize(12).Foreground(Muted).Right();
         playlistPickerPreview = TrackDialogChrome.Preview(ArtworkLayer(playlistPickerCover), playlistPickerTrack, playlistPickerArtist,
-            new StackPanel().Vertical().Spacing(5).Children(playlistPickerDuration, playlistPickerPlays));
+            new StackPanel().Vertical().Spacing(5).Children(playlistPickerDuration, PlayCountLine(playlistPickerPlays, 12, MutedIcon)));
         playlistPickerMessage = new TextBlock().FontSize(13).Foreground(Muted).TextWrapping(TextWrapping.Wrap).MaxHeight(40).Margin(24, 0, 24, 0).IsVisible(false);
         var scroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0)
             .Content(playlistChoices);
@@ -52,8 +53,8 @@ internal sealed partial class MainWindow
         playlistPickerLoading.Root.Margin = new Thickness(16, 0, 8, 20);
         playlistPickerClose = TrackButtons.Icon(Icons.View("x", 20), ClosePlaylistPicker, TrackButtons.Glass).Top();
         ((MaterialTrackButton)playlistPickerClose).UseLightGlassFinish();
-        playlistPickerAdd = SectionTab("Добавить", playlistPickerSection, false, () => ShowPlaylistCreation(false), animate: false);
-        playlistPickerCreate = SectionTab("Создать", playlistPickerSection, true, () => ShowPlaylistCreation(true), animate: false);
+        playlistPickerAdd = SectionTab(UiText.Get("common.add"), playlistPickerSection, false, () => ShowPlaylistCreation(false), animateSelection: false);
+        playlistPickerCreate = SectionTab(UiText.Get("common.create"), playlistPickerSection, true, () => ShowPlaylistCreation(true), animateSelection: false);
         playlistPickerFocus = new Border { Focusable = true, IsTabStop = false }.Height(32).Margin(24, 24, 24, 0)
             .Background(Color.Transparent).BorderThickness(0).Child(new StackPanel().Horizontal().Spacing(24).Children(playlistPickerAdd, playlistPickerCreate));
         var list = new DockPanel().LastChildFill().Spacing(12).Children(
@@ -157,13 +158,13 @@ internal sealed partial class MainWindow
         if (alreadyOpen) playlistDialogContent.RevealTrack();
         Run(() => LoadPlaylistPickerArtworkAsync(artwork, generation, token));
         if (demo || me is not { } user || api.Session is not { } session)
-        { SetPlaylistPickerMessage("Войди в SoundCloud, чтобы добавить трек в свой плейлист."); FitPlaylistList(); return; }
+        { SetPlaylistPickerMessage(UiText.Get("auth.required.ownPlaylist")); FitPlaylistList(); return; }
         playlistPickerLoading.SetLoading(true);
         try
         {
             var playlists = await api.GetPlaylistChoicesForTrackAsync(user.Id, track.Id, token);
             if (disposed || generation != playlistPickerGeneration || api.Session != session) return;
-            SetPlaylistPickerMessage(playlists.Length == 0 ? "Пока нет плейлистов. Создай первый во вкладке «Создать»." : "");
+            SetPlaylistPickerMessage(playlists.Length == 0 ? UiText.Get("playlist.picker.createFirst") : "");
             foreach (var item in playlists)
                 if (playlistPickerIds.Add(item.Playlist!.Id)) playlistChoices.Add(PlaylistChoice(item, user.Id, track, session, generation));
             FitPlaylistList();
@@ -194,7 +195,7 @@ internal sealed partial class MainWindow
         button = TrackButtons.Action(new Grid().Columns("44,*").Rows("Auto").Spacing(12).Children(
             new Border().CornerRadius(6).ClipToBounds().Child(ArtworkLayer(cover)).Column(0),
             new StackPanel().Vertical().Spacing(4).Column(1).CenterVertical().Children(title,
-                new TextBlock().Text(playlist.TrackCount + " треков").FontSize(12).Foreground(Muted))),
+                new TextBlock().Text(UiText.TrackCount(playlist.TrackCount)).FontSize(12).Foreground(Muted))),
             () => Run(() => AddPickerTrackAsync(userId, playlist.Id, track, session, generation, button)), TrackButtons.Text, 64);
         button.CornerRadius = 10; button.Padding = new Thickness(8, 0);
         ((MaterialTrackButton)button).UseListStateLayer();
@@ -229,13 +230,13 @@ internal sealed partial class MainWindow
             if (api.Session != session || disposed) return;
             succeeded = true;
             InvalidatePlaylistLibrary(playlistId);
-            status.Value = "Трек добавлен в плейлист.";
+            status.Value = UiText.Get("playlist.status.trackAdded");
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
         catch
         {
             if (!disposed && generation == playlistPickerGeneration && api.Session == session)
-                status.Value = "Не удалось добавить трек в плейлист. Попробуй ещё раз.";
+                status.Value = UiText.Get("playlist.addTrack.failed");
         }
         finally
         {

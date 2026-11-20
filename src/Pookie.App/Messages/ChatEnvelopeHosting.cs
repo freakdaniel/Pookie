@@ -1,3 +1,4 @@
+using Pookie.Localization;
 // SPDX-License-Identifier: BSD-3-Clause
 using System.Security.Cryptography;
 using System.Text;
@@ -35,7 +36,7 @@ internal sealed class ChatEnvelopeHosting
     internal async Task<string> UploadAsync(ChatMediaHosting hosting,string content,long account,long peer,CancellationToken token)
     {
         var probe=new ChatMessage("extension",account,"p3:p:x:AAAAAAAAAAAAAAAAAAAAAA",DateTimeOffset.UtcNow){ClientContent=content};
-        if(ChatProtocol.Project(probe,account,peer).EventId==null)throw new InvalidDataException("Некорректное сообщение Pookie.");
+        if(ChatProtocol.Project(probe,account,peer).EventId==null)throw new InvalidDataException(UiText.Get("chats.message.invalid"));
         var bytes=Utf8.GetBytes(content);
         try
         {
@@ -43,7 +44,7 @@ internal sealed class ChatEnvelopeHosting
             try
             {
                 var code="p3:"+reference.Code[3..];
-                if(code.Length>MaxWireLength)throw new InvalidDataException("Код сообщения превышает 36 символов.");
+                if(code.Length>MaxWireLength)throw new InvalidDataException(UiText.Get("chats.message.codeTooLong"));
                 resolved[(account,peer,account,code)]=Task.FromResult<string?>(content);
                 return code;
             }
@@ -78,9 +79,9 @@ internal sealed class ChatEnvelopeHosting
             try
             {
                 if(package.Caption!="" || package.GifUrl!=null || package.Reply!=null || package.Attachments is not [{Name:"message.pookie",MediaType:ContentType,AsFile:true} file] || file.Data.Length>ChatProtocol.MaxHostedContent)
-                    throw new InvalidDataException("Некорректное сообщение Pookie.");
+                    throw new InvalidDataException(UiText.Get("chats.message.invalid"));
                 var content=Utf8.GetString(file.Data);
-                if(ChatProtocol.Project(message with{ClientContent=content},account,peer).EventId==null)throw new InvalidDataException("Некорректное сообщение Pookie.");
+                if(ChatProtocol.Project(message with{ClientContent=content},account,peer).EventId==null)throw new InvalidDataException(UiText.Get("chats.message.invalid"));
                 return content;
             }
             finally{foreach(var file in package.Attachments)CryptographicOperations.ZeroMemory(file.Data);}

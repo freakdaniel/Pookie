@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -24,7 +25,7 @@ internal sealed partial class MainWindow
         var icon = Icons.View("user-plus", 20, TrackButtons.OnSurface);
         Action action = () => { if (user() is { } artist) Run(() => ToggleArtistFollowAsync(artist)); };
         var button = withLabel ? TrackButtons.Action(new StackPanel().Horizontal().Spacing(8).Children(icon.CenterVertical(),
-            new TextBlock().Text("Подписаться").FontSize(14).SemiBold().CenterVertical()), action, inactive, size) : TrackButtons.Icon(icon, action, inactive, size);
+            new TextBlock().Text(UiText.Get("profile.follow")).FontSize(14).SemiBold().CenterVertical()), action, inactive, size) : TrackButtons.Icon(icon, action, inactive, size);
         artistFollowButtons.Add((button, icon, user, inactive));
         return button;
     }
@@ -57,9 +58,9 @@ internal sealed partial class MainWindow
             TrackButtons.SetConfirmed(button, following, inactive);
             TrackButtons.SetGlyph(icon, following ? "user-check" : "user-plus", following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface);
             TrackButtons.SetAvailability(button, !demo && user is { Id: > 0 } && me != null && api.Session != null && !pending, pending);
-            button.Hint(following ? "Отписаться" : "Подписаться");
+            button.Hint(following ? UiText.Get("profile.unfollow") : UiText.Get("profile.follow"));
             if (button.Content is StackPanel content && content.Children.OfType<TextBlock>().FirstOrDefault() is { } label)
-            { label.Text = following ? "Вы подписаны" : "Подписаться"; label.Foreground = following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface; }
+            { label.Text = following ? UiText.Get("profile.following.active") : UiText.Get("profile.follow"); label.Foreground = following ? TrackButtons.OnConfirmed : TrackButtons.OnSurface; }
         }
     }
 
@@ -87,7 +88,7 @@ internal sealed partial class MainWindow
             ++feedFollowingRevision;
             if (feedState != null) feedState = feedState with { Checked = DateTimeOffset.MinValue };
             if (page.Value == Page.Feed) Run(RefreshVisibleDataAsync);
-            status.Value = following ? $"Теперь ты подписан на {artist.Username}." : $"Подписка на {artist.Username} отменена.";
+            status.Value = following ? UiText.Format("profile.follow.added", artist.Username): UiText.Format("profile.follow.removed", artist.Username);
         }
         finally { pendingFollows.Remove((session, artist.Id)); if (!disposed) RefreshFollowingButtons(); }
     }

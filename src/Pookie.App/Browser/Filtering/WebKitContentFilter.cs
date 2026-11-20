@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Pookie.App.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -20,13 +21,13 @@ internal sealed partial class WebKitContentFilter : IDisposable
         var path = Path.Combine(profilePath, "ContentFilters");
         AppDataPaths.CreatePrivateDirectory(path);
         var store = webkit_user_content_filter_store_new(path);
-        if (store == 0) throw new InvalidOperationException("Не удалось открыть кеш фильтра браузера.");
+        if (store == 0) throw new InvalidOperationException(UiText.Get("browser.filter.cacheOpenFailed"));
         try
         {
             var identifier = "pookie-network-" + Convert.ToHexStringLower(SHA256.HashData(rules));
             filter = Complete(store, identifier, null);
             if (filter == 0) filter = Complete(store, identifier, rules);
-            if (filter == 0) throw new InvalidOperationException("Не удалось скомпилировать фильтр браузера.");
+            if (filter == 0) throw new InvalidOperationException(UiText.Get("browser.filter.compileFailed"));
             StartupLog.Event("browser.content-filter-ready");
         }
         finally { g_object_unref(store); }
@@ -66,7 +67,7 @@ internal sealed partial class WebKitContentFilter : IDisposable
             if (expired)
             {
                 if (result != 0) webkit_user_content_filter_unref(result);
-                throw new TimeoutException("Фильтр браузера не завершил подготовку вовремя.");
+                throw new TimeoutException(UiText.Get("browser.filter.setupTimeout"));
             }
             return result;
         }

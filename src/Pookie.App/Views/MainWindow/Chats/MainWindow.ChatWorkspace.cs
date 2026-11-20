@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.App.Messages;
@@ -7,8 +8,7 @@ namespace Pookie.App;
 
 internal sealed partial class MainWindow
 {
-    private FrameworkElement chatFoldersSurface = null!;
-    private StackPanel chatFolderTabs = null!, chatDetailsBody = null!, chatSelectionBar = null!;
+    private StackPanel chatDetailsBody = null!, chatSelectionBar = null!;
     private TextBlock chatDetailsTitle = null!, chatSelectionLabel = null!;
     private GlassCard chatDetailsCard = null!;
     private ChatProfileBackdrop chatProfileBackdrop = null!;
@@ -28,38 +28,15 @@ internal sealed partial class MainWindow
     private TextBlock? chatHistoryProgress;
     private bool chatHistoryLoading;
     private TextBox chatMessageSearch = null!;
-    private string? chatFolder;
     private long chatDetailsGeneration;
     private bool chatFindMessages;
-    private string? chatMediaLibraryKind;
+    private enum ChatMediaKind { Music, Photos, Video, Files, Links }
+    private ChatMediaKind? chatMediaLibraryKind;
     private long? chatFindPeer;
     private CancellationTokenSource? chatHistorySearch;
     private readonly HashSet<string> chatSelected = [];
     private ChatReplyReference? chatReply;
     private long chatAvatarGeneration;
-    private FrameworkElement ChatFolderView()
-    {
-        chatFolderTabs = new StackPanel().Horizontal().Spacing(5);
-        RefreshChatFolders();
-        return chatFoldersSurface = new ScrollViewer().HorizontalScroll(ScrollMode.Auto).VerticalScroll(ScrollMode.Disabled).Background(Color.Transparent).BorderThickness(0).Padding(0).Content(chatFolderTabs);
-    }
-    private void RefreshChatFolders()
-    {
-        if (chatFolderTabs == null) return;
-        chatFolderTabs.Clear();
-        void Tab(string text, string? id) => chatFolderTabs.Add(TrackButtons.Action(new TextBlock().Text(text).FontSize(12), () => { chatFolder = id; RefreshChatFolders(); RenderChatInbox(); }, chatFolder == id ? TrackButtons.Tonal : TrackButtons.Text, 30).Padding(10, 0));
-        Tab("Все", null);
-        foreach (var folder in chatWorkspace.Folders)
-        {
-            Tab(folder.Name, folder.Id);
-            var tab = (Button)chatFolderTabs.Children.Last();
-            var edit = new Command("chat.folder.edit", "Изменить папку");
-            tab.Commands.Register(edit, () => OpenChatFolderEditor(folder));
-            PopupAppearance.Attach(tab, PopupAppearance.CreateMenu().Item(edit));
-        }
-        chatFolderTabs.Add(TrackButtons.Icon(Icons.View("plus", 16), () => OpenChatFolderEditor(null), TrackButtons.Text, 30).Hint("Создать папку"));
-    }
-
     private FrameworkElement CreateChatDetails()
     {
         // Build reusable controls with the chat workspace, before a header
@@ -74,6 +51,7 @@ internal sealed partial class MainWindow
         // with the slide animation, especially at high DPI.
         chatProfileBackdrop = new ChatProfileBackdrop(ChatGlassSurface) { HoverEnabled = false };
         var scroll = chatDetailsScroll = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(12, 0, 12, 12).Content(chatDetailsTransition);
+        smoothScrolls[scroll] = new SmoothScroll(scroll) { Enabled = preferences.SmoothScrolling };
         scroll.ScrollChanged += () => chatProfileBackdrop.ScrollOffset = scroll.VerticalOffset;
         chatDetailsCard = chatProfileBackdrop.CornerRadius(24).Padding(0).Margin(0, 0, 0, 16).Child(
             new Border().CornerRadius(24).ClipToBounds().BorderThickness(0).Padding(0).Background(Color.Transparent).Child(
@@ -115,48 +93,16 @@ internal sealed partial class MainWindow
         // owns the opening slide/fade; keep section transitions for open panels.
         if (!chatColumns.DetailsOpen && chatColumns.Reveal <= 0) chatDetailsTransition.Reset();
         ++chatDetailsGeneration; chatHistorySearch?.Cancel(); if (chatMediaLibrary is { } oldLibrary) compactTrackRows.RemoveAll(row => oldLibrary.Children.Contains(row.Root)); chatMediaLibrary = null; chatMediaPill = null; chatHistoryProgress = null; chatDetailsTitle.Text = title; chatDetailsBody = body ?? new StackPanel().Vertical().Spacing(12); chatDetailsTransition.Show(chatDetailsBody);
-        if (chatDetailsCard.FindVisualChild<ScrollViewer>() is ScrollViewer scroll) scroll.SetScrollOffsets(0, 0);
+        smoothScrolls[chatDetailsScroll].Stop();
+        chatDetailsScroll.SetScrollOffsets(0, 0);
         chatColumns.DetailsOpen = true;
     }
     private void CloseChatDetails()
     { chatInfoPeer = null; ++chatInfoRevision; ClearChatLibraryPreviews(); ++chatDetailsGeneration; var open = chatColumns.DetailsOpen; if (open) chatHistorySearch?.Cancel(); if (open) CaptureChatPanelAnchor(); chatColumns.DetailsOpen = false; chatFindMessages = chatThreadSearchOpen || chatGlobalMessages && chatSearch.Text.Length > 0; if (open) { if (chatRecipient != null) chatInput.Focus(); else chatSearch.Focus(); } }
-    private void OpenChatFolderEditor(ChatFolder? folder)
-    {
-        OpenChatDetails(folder == null ? "Новая папка" : "Изменить папку");
-        var name = new TextBox().Text(folder?.Name ?? "").Placeholder("Название папки").MaxLength(40);
-        chatDetailsBody.Add(MaterialSearchField.CreateGlass(name));
-        var members = folder?.Peers.ToHashSet() ?? [];
-        var choices = new StackPanel().Vertical().Spacing(4);
-        foreach (var dialog in chatConversations)
-        {
-            var peer = dialog.Recipient.Id; Button button = null!;
-            button = TrackButtons.Action(new TextBlock().Text(dialog.Recipient.Username).FontSize(13).TextTrimming(TextTrimming.CharacterEllipsis), () =>
-            { if (!members.Add(peer)) members.Remove(peer); TrackButtons.SetVariant(button, members.Contains(peer) ? TrackButtons.Tonal : TrackButtons.Text); }, members.Contains(peer) ? TrackButtons.Tonal : TrackButtons.Text, 38).Padding(10, 0);
-            choices.Add(button);
-        }
-        chatDetailsBody.Add(TrackButtons.Action(new TextBlock().Text("Сохранить"), () =>
-        {
-            if (string.IsNullOrWhiteSpace(name.Text)) return;
-            var next = new ChatFolder(folder?.Id ?? Guid.NewGuid().ToString("N"), name.Text.Trim(), members.ToArray());
-            chatWorkspace = chatWorkspace with { Folders = chatWorkspace.Folders.Where(f => f.Id != next.Id).Append(next).Take(30).ToArray() };
-            SaveChatWorkspace(); RefreshChatFolders(); RenderChatInbox(); CloseChatDetails();
-        }, TrackButtons.Tonal, 36));
-        if (folder != null) chatDetailsBody.Add(TrackButtons.Action(new TextBlock().Text("Удалить папку"), () =>
-        { chatWorkspace = chatWorkspace with { Folders = chatWorkspace.Folders.Where(f => f.Id != folder.Id).ToArray() }; if (chatFolder == folder.Id) chatFolder = null; SaveChatWorkspace(); RefreshChatFolders(); RenderChatInbox(); CloseChatDetails(); }, TrackButtons.Text, 36));
-        chatDetailsBody.Add(choices); name.Focus();
-    }
     private void ToggleChatPin(long peer)
     {
         chatWorkspace = chatWorkspace with { Pins = chatWorkspace.Pins.Contains(peer) ? chatWorkspace.Pins.Where(p => p != peer).ToArray() : chatWorkspace.Pins.Append(peer).ToArray() };
         SaveChatWorkspace(); RenderChatInbox();
-    }
-    private void ChatFavoriteMessage(ChatMessage message)
-    {
-        if (chatRecipient == null || ChatOutgoing(message) != null) return;
-        var peer = chatRecipient.Id;
-        var exists = chatWorkspace.Favorites.Any(f => f.PeerId == peer && f.Message.Id == message.Id);
-        chatWorkspace = chatWorkspace with { Favorites = exists ? chatWorkspace.Favorites.Where(f => f.PeerId != peer || f.Message.Id != message.Id).ToArray() : chatWorkspace.Favorites.Append(new(peer, message, DateTimeOffset.UtcNow)).ToArray() };
-        SaveChatWorkspace(); RefreshChatFavoriteMedia(); RefreshChatSaved();
     }
     private static TextBlock ChatDetailText(string text) => new TextBlock().Text(text).FontSize(13).TextWrapping(TextWrapping.Wrap).MaxHeight(40).TextTrimming(TextTrimming.CharacterEllipsis);
     private string ChatCopyText(ChatMessage message)
@@ -164,7 +110,7 @@ internal sealed partial class MainWindow
         if (ChatMediaReference.Parse(message.Body) != null)
         {
             var summary = ChatMediaSummaryFor(message, chatRecipient?.Id ?? 0);
-            return !string.IsNullOrEmpty(summary?.Caption) ? summary.Caption : summary?.Label ?? "Вложение";
+            return !string.IsNullOrEmpty(summary?.Caption) ? summary.Caption : summary?.Label ?? UiText.Get("chats.attachment.label");
         }
         return ChatProtocol.Project(message, chatAccountId, chatRecipient?.Id ?? 0).Text;
     }
@@ -172,8 +118,7 @@ internal sealed partial class MainWindow
     {
         chatSelectionLabel = new TextBlock().FontSize(13).CenterVertical();
         chatSelectionBar = new StackPanel().Horizontal().Spacing(6).Children(chatSelectionLabel,
-            TrackButtons.Icon(Icons.View("copy", 18), () => CopyText(string.Join(Environment.NewLine, chatMessageItems.Where(m => chatSelected.Contains(m.Id)).Select(m => ChatCopyText(m.Message)))), TrackButtons.Glass, 34).Hint("Копировать по порядку"),
-            TrackButtons.Icon(Icons.View("heart", 18), () => { foreach (var item in chatMessageItems.Where(m => chatSelected.Contains(m.Id))) if (!chatWorkspace.Favorites.Any(f => f.PeerId == chatRecipient?.Id && f.Message.Id == item.Id)) ChatFavoriteMessage(item.Message); ClearChatSelection(); }, TrackButtons.Glass, 34).Hint("В избранное"),
+            TrackButtons.Icon(Icons.View("copy", 18), () => CopyText(string.Join(Environment.NewLine, chatMessageItems.Where(m => chatSelected.Contains(m.Id)).Select(m => ChatCopyText(m.Message)))), TrackButtons.Glass, 34).Hint(UiText.Get("chats.selection.copyInOrder")),
             TrackButtons.Icon(Icons.View("x-mark", 18), ClearChatSelection, TrackButtons.Text, 34));
         chatSelectionBar.IsVisible = false; return chatSelectionBar;
     }
@@ -183,7 +128,7 @@ internal sealed partial class MainWindow
     private void RefreshChatSelection()
     {
         if (chatSelectionBar == null) return;
-        chatSelectionBar.IsVisible = chatSelected.Count > 0; chatSelectionLabel.Text = $"Выбрано: {chatSelected.Count}";
+        chatSelectionBar.IsVisible = chatSelected.Count > 0; chatSelectionLabel.Text = UiText.Format("chats.selection.count", chatSelected.Count);
         foreach (var row in ChatRows) row.Root.Background = chatSelected.Contains(row.Message?.Id ?? "") ? Color.FromArgb(35, 128, 196, 249) : Color.Transparent;
     }
     private async Task DownloadChatSearchHistoryAsync()
@@ -194,7 +139,7 @@ internal sealed partial class MainWindow
         var progressControl = chatHistoryProgress;
         chatHistoryLoading = true;
         RefreshChatSearchActivity(chatFindMessages);
-        if (chatHistoryProgress != null) { chatHistoryProgress.Text = chatFindMessages ? "Поиск…" : "Загрузка вложений…"; chatHistoryProgress.IsVisible = true; }
+        if (chatHistoryProgress != null) { chatHistoryProgress.Text = chatFindMessages ? UiText.Get("search.loading") : UiText.Get("chats.attachments.loading"); chatHistoryProgress.IsVisible = true; }
         try
         {
             var scope = chatFindPeer;
@@ -227,7 +172,7 @@ internal sealed partial class MainWindow
                     var page = await GetChatMessagesAsync(account, peer, cursor, token);
                     await store.SavePageAsync(account, peer, page, cursor, token); total += page.Messages.Length;
                     if (chatHistory != store) return;
-                    if (chatHistoryProgress != null) chatHistoryProgress.Text = $"Проверено сообщений: {total}";
+                    if (chatHistoryProgress != null) chatHistoryProgress.Text = UiText.Format("chats.search.messagesChecked", total);
                     if (chatFindMessages) await SearchChatMessagesAsync(scanning: true); else if (chatMediaLibraryKind is { } kind) await RenderChatMediaLibraryAsync(kind);
                     cursor = page.NextHref;
                 } while (cursor != null && visited.Add(cursor));
@@ -237,15 +182,15 @@ internal sealed partial class MainWindow
             }
             if (chatHistory == store && chatHistorySearch?.Token == token)
             {
-                if(progressControl!=null)progressControl.Text=incomplete ? "Часть сообщений недоступна" : "Поиск завершён";
+                if(progressControl!=null)progressControl.Text=incomplete ? UiText.Get("chats.search.incomplete") : UiText.Get("search.status.complete");
                 if(incomplete)
                 {
-                    const string detail="Часть сообщений Pookie не загрузилась. Повтори поиск позже.";
+                    var detail=UiText.Get("chats.search.partialHistory");
                     if(chatThreadSearchOpen)chatThreadStatus.Value=detail;else chatsStatus.Value=detail;
                 }
             }
         }
-        catch (OperationCanceledException) { if (chatHistory == store && chatHistorySearch?.Token == token) { if (chatHistoryProgress != null) chatHistoryProgress.Text = "Поиск остановлен"; } }
+        catch (OperationCanceledException) { if (chatHistory == store && chatHistorySearch?.Token == token) { if (chatHistoryProgress != null) chatHistoryProgress.Text = UiText.Get("search.status.stopped"); } }
         catch (Exception error) { if (chatHistory == store && chatHistorySearch?.Token == token) { if (chatThreadSearchOpen) chatThreadStatus.Value = ChatActionError(error); else chatsStatus.Value = ChatActionError(error); chatScanKey = null; } }
         finally
         {
@@ -264,7 +209,7 @@ internal sealed partial class MainWindow
         if (user == null)
         {
             try { user = await api.GetUserAsync(peer, ChatReadToken()); }
-            catch (Exception error) when (error is HttpRequestException or SoundCloudException) { chatThreadStatus.Value = "Собеседник пока недоступен. Избранное сохранено на устройстве."; return; }
+            catch (Exception error) when (error is HttpRequestException or SoundCloudException) { chatThreadStatus.Value = UiText.Get("chats.contact.unavailable"); return; }
         }
         if (account != chatAccountId) return;
         await SelectChatAsync(user);
@@ -274,7 +219,7 @@ internal sealed partial class MainWindow
             var cached = await chatHistory.LoadWindowAsync(peer, id, token: ChatReadToken());
             if (!cached.Messages.Any(m => m.Id == id))
             {
-                chatThreadStatus.Value = "Загружаем оригинал сообщения…";
+                chatThreadStatus.Value = UiText.Get("chats.message.loadingOriginal");
                 var cursor = (string?)null; var visited = new HashSet<string>();
                 do
                 {
@@ -287,7 +232,7 @@ internal sealed partial class MainWindow
                 cached = await chatHistory.LoadWindowAsync(peer, id, token: ChatReadToken());
             }
             if (chatRecipient?.Id != peer) return;
-            if (!cached.Messages.Any(m => m.Id == id)) { chatThreadStatus.Value = "Оригинал пока недоступен. Сохранённая цитата остаётся в ответе."; return; }
+            if (!cached.Messages.Any(m => m.Id == id)) { chatThreadStatus.Value = UiText.Get("chats.reply.originalUnavailable"); return; }
             chatMessages.Clear(); chatMessages.AddRange(cached.Messages); RefreshChatTimeline();
         }
         if (!keepDetails) CloseChatDetails();
@@ -300,23 +245,29 @@ internal sealed partial class MainWindow
     {
         chatInfoAvatar = new Image().Width(96).Height(96).StretchMode(Stretch.UniformToFill);
         chatInfoName = new TextBlock().FontSize(20).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis).CenterHorizontal();
-        chatInfoTabs = new ChatTabs();
-        foreach (var kind in new[] { "Музыка", "Фото", "Видео", "Файлы", "Ссылки" })
-            chatInfoTabs.AddTab(kind, () => Run(() => RenderChatMediaLibraryAsync(kind)));
+        chatInfoTabs = new ChatTabs(glass: true);
+        foreach (var (kind, label) in new[] {
+            (ChatMediaKind.Music, UiText.Get("chats.media.music")),
+            (ChatMediaKind.Photos, UiText.Get("chats.media.photos")),
+            (ChatMediaKind.Video, UiText.Get("chats.media.video")),
+            (ChatMediaKind.Files, UiText.Get("chats.media.files")),
+            (ChatMediaKind.Links, UiText.Get("chats.media.links")) })
+            chatInfoTabs.AddTab(label, () => Run(() => RenderChatMediaLibraryAsync(kind)));
         chatInfoMediaTransition = new ChatPanelTransition();
         chatInfoProgress = new TextBlock().FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).IsVisible(false);
         return new StackPanel().Vertical().Spacing(12).Children(
             new StackPanel().Vertical().Spacing(10).Margin(0, 8, 0, 16).Children(
                 new Border().Width(96).Height(96).CornerRadius(48).ClipToBounds().Child(chatInfoAvatar).CenterHorizontal(),
                 chatInfoName,
-                TrackButtons.Action(new TextBlock().Text("Открыть профиль").FontSize(12).Foreground(ChatAccent),
+                TrackButtons.Action(new TextBlock().Text(UiText.Get("profile.open")).FontSize(12).Foreground(ChatAccent),
                     () => { if (chatInfoUser is { } user) Run(() => OpenUserProfileAsync(user)); }, TrackButtons.Text, 30).CenterHorizontal()),
-            chatInfoTabs, chatInfoMediaTransition, chatInfoProgress);
+            new GlassCard { HoverEnabled = false, ShadowEnabled = false }.CornerRadius(24).Padding(0).Child(chatInfoTabs),
+            chatInfoMediaTransition, chatInfoProgress);
     }
     private void OpenChatInfo()
     {
         if (chatColumns.DetailsOpen && chatRecipient != null && chatInfoPeer == chatRecipient.Id) return;
-        CloseChatSearch(); chatFindMessages = false; OpenChatDetails("Информация",chatInfoBody);
+        CloseChatSearch(); chatFindMessages = false; OpenChatDetails(UiText.Get("chats.info.heading"),chatInfoBody);
         if (chatRecipient is not { } peer) return;
         chatInfoPeer = peer.Id; chatInfoUser = peer;
         chatInfoAvatar.Source = chatHeaderAvatar.Source; chatInfoName.Text = peer.Username;
@@ -336,21 +287,20 @@ internal sealed partial class MainWindow
             if (!disposed && account == chatAccountId && revision == chatInfoRevision && chatInfoPeer == peer.Id) chatProfileBackdrop.SetPalette(palette);
         });
         chatFindPeer = peer.Id;
-        Run(async () => { await RenderChatMediaLibraryAsync("Музыка"); await DownloadChatSearchHistoryAsync(); });
+        Run(async () => { await RenderChatMediaLibraryAsync(ChatMediaKind.Music); await DownloadChatSearchHistoryAsync(); });
     }
 
-    private async Task RenderChatMediaLibraryAsync(string kind, int offset = 0)
+    private async Task RenderChatMediaLibraryAsync(ChatMediaKind kind, int offset = 0)
     {
         if (chatRecipient == null || chatHistory == null || chatMediaLibrary is not { } library) return;
-        var kinds = new[] { "Музыка", "Фото", "Видео", "Файлы", "Ссылки" };
         var oldKind = chatMediaLibraryKind; chatMediaLibraryKind = kind;
-        chatMediaPill?.Select(Array.IndexOf(kinds, kind));
+        chatMediaPill?.Select((int)kind);
         if (offset == 0)
         {
             ClearChatLibraryPreviews();
             compactTrackRows.RemoveAll(row => library.Children.Contains(row.Root));
             library = chatMediaLibrary = new StackPanel().Vertical().Spacing(4);
-            chatMediaTransition.Show(library, Array.IndexOf(kinds, kind) >= Array.IndexOf(kinds, oldKind) ? 1 : -1);
+            chatMediaTransition.Show(library, (int)kind >= ((int?)oldKind ?? -1) ? 1 : -1);
         }
         var peer = chatRecipient.Id; var revision = chatRevision; var generation = ++chatDetailsGeneration;
         if (offset == 0) { compactTrackRows.RemoveAll(row => library.Children.Contains(row.Root)); library.Clear(); }
@@ -375,7 +325,7 @@ internal sealed partial class MainWindow
         foreach (var message in messages)
         {
             var text = ChatProtocol.Project(message, chatAccountId, peer).Text;
-            if (kind == "Музыка")
+            if (kind == ChatMediaKind.Music)
             {
                 foreach (var url in ChatMusicLink.Find(text).Distinct())
                 {
@@ -393,17 +343,17 @@ internal sealed partial class MainWindow
                         library.Add(TrackButtons.Action(new Grid().Columns("32,*").Rows("*").Spacing(10).Children(
                             Icons.View("queue", 25, MutedIcon).Center().Column(0), new StackPanel().Vertical().Spacing(3).CenterVertical().Column(1).Children(
                                 new TextBlock().Text(item.Title).FontSize(13).SemiBold().TextTrimming(TextTrimming.CharacterEllipsis),
-                                new TextBlock().Text("Плейлист").FontSize(11).Foreground(Muted))),
+                                new TextBlock().Text(UiText.Get("common.playlist")).FontSize(11).Foreground(Muted))),
                             () => Run(() => OpenChatMusicUrlAsync(url)), TrackButtons.Text, 58).Padding(8, 0));
                     }
                 }
             }
-            else if (kind == "Ссылки")
+            else if (kind == ChatMediaKind.Links)
             {
                 foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"https?://[^\s<>]+"))
                 {
                     var link = match.Value;
-                    library.Add(TrackButtons.Action(ChatDetailText(link), () => OpenExternalUrl(link, () => chatThreadStatus.Value = "Не удалось открыть ссылку"), TrackButtons.Text, 48).Padding(8, 0));
+                    library.Add(TrackButtons.Action(ChatDetailText(link), () => OpenExternalUrl(link, () => chatThreadStatus.Value = UiText.Get("links.openFailed")), TrackButtons.Text, 48).Padding(8, 0));
                 }
             }
             else if (ChatMediaReference.Parse(message.Body) != null)
@@ -412,20 +362,20 @@ internal sealed partial class MainWindow
                 var files = summary?.Files ?? metadata.GetValueOrDefault(message.Id);
                 if (files == null)
                 {
-                    tiles.Add(CreateChatLibraryPreview(message,peer,-1,null,"Вложение",library));
+                    tiles.Add(CreateChatLibraryPreview(message,peer,-1,null,UiText.Get("chats.attachment.label"),library));
                     continue;
                 }
                 for (var index = 0; index < files.Length; index++)
                 {
                     var file = files[index];
-                    if (!(kind == "Фото" ? !file.AsFile && file.Type.StartsWith("image/") : kind == "Видео" ? !file.AsFile && file.Type.StartsWith("video/") : file.AsFile || !file.Type.StartsWith("image/") && !file.Type.StartsWith("video/"))) continue;
-                    if (kind is "Фото" or "Видео")
+                    if (!(kind == ChatMediaKind.Photos ? !file.AsFile && file.Type.StartsWith("image/") : kind == ChatMediaKind.Video ? !file.AsFile && file.Type.StartsWith("video/") : file.AsFile || !file.Type.StartsWith("image/") && !file.Type.StartsWith("video/"))) continue;
+                    if (kind == ChatMediaKind.Photos || kind == ChatMediaKind.Video)
                     {
                         var photo = ChatDecoded(ChatMediaCacheId(message, peer), index)?.Source ?? summary?.Photos?.ElementAtOrDefault(index)?.Source;
                         tiles.Add(CreateChatLibraryPreview(message,peer,index,photo,file.Name,library)); continue;
                     }
                     library.Add(TrackButtons.Action(new Grid().Columns("32,*").Rows("*").Spacing(10).Children(
-                        Icons.View(kind == "Фото" ? "image" : kind == "Видео" ? "play" : "file", 24, MutedIcon).Center().Column(0),
+                        Icons.View(kind == ChatMediaKind.Photos ? "image" : kind == ChatMediaKind.Video ? "play" : "file", 24, MutedIcon).Center().Column(0),
                         ChatDetailText(file.Name).Column(1).CenterVertical()), () => Run(() => JumpChatMessageAsync(peer, message.Id)), TrackButtons.Text, 56).Padding(8, 0));
                 }
             }
@@ -438,10 +388,10 @@ internal sealed partial class MainWindow
         }
         if (library.Children.Count == 0)
             library.Add(chatMediaEmpty = new StackPanel().Vertical().Spacing(12).Margin(8, 30).Children(
-                Icons.View(kind == "Музыка" ? "music-notes" : kind == "Фото" ? "image" : "file", 36, MutedIcon).CenterHorizontal(),
-                new TextBlock().Text("Пока пусто").FontSize(15).SemiBold().CenterHorizontal(),
-                new TextBlock().Text("Здесь появятся " + (kind == "Музыка" ? "треки и плейлисты" : kind.ToLowerInvariant()) + " из переписки").FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).CenterHorizontal()));
-        if (messages.Length == 50) library.Add(chatMediaMore = TrackButtons.Action(new TextBlock().Text("Показать ещё").FontSize(12), () => Run(() => RenderChatMediaLibraryAsync(kind, offset + 50)), TrackButtons.Text, 34));
+                Icons.View(kind == ChatMediaKind.Music ? "music-notes" : kind == ChatMediaKind.Photos ? "image" : "file", 36, MutedIcon).CenterHorizontal(),
+                new TextBlock().Text(UiText.Get("common.empty")).FontSize(15).SemiBold().CenterHorizontal(),
+                new TextBlock().Text(UiText.Get("chats.attachments.emptyDescription")).FontSize(12).Foreground(Muted).TextWrapping(TextWrapping.Wrap).CenterHorizontal()));
+        if (messages.Length == 50) library.Add(chatMediaMore = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.showMore")).FontSize(12), () => Run(() => RenderChatMediaLibraryAsync(kind, offset + 50)), TrackButtons.Text, 34));
 
     }
     private async Task PlayChatLibraryMusicAsync(string selected, IEnumerable<ChatMessage> messages)
@@ -459,7 +409,7 @@ internal sealed partial class MainWindow
         }
         if (revision != chatRevision) return;
         var index = items.FindIndex(p => p.Url == selected); if (index < 0) return;
-        StartQueueContext(new($"chat-library:{peer.Id}", "Музыка из чата с " + peer.Username, "Вложения переписки"), items.Select(p => p.Track).ToArray(), items[index].Track, index);
+        StartQueueContext(new($"chat-library:{peer.Id}", UiText.Compose($"{UiText.Get("chats.music.fromContact")}{peer.Username}"), UiText.Get("chats.attachments.heading")), items.Select(p => p.Track).ToArray(), items[index].Track, index);
         await PlayAsync(items[index].Track);
     }
     private async Task UpdateChatAvatarAsync(SoundCloudUser peer)

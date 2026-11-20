@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
 using Pookie.SoundCloud;
@@ -19,7 +20,7 @@ internal sealed class EmbeddedWebWorker(Window window, WebSession account, strin
     private WebSession currentAccount = account;
     private TaskCompletionSource challenge = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal event Action<BrowserRequestEvent>? Changed;
-    internal EmbeddedLoginView View => view ?? throw new InvalidOperationException("Браузер ещё не открыт.");
+    internal EmbeddedLoginView View => view ?? throw new InvalidOperationException(UiText.Get("browser.status.notOpen"));
     internal Task Challenge => challenge.Task;
     internal string DiagnosticInstance { get; private set; } = "uninitialized";
     internal bool IsBlocked => blocked;

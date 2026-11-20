@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Animation;
 using Aprillz.MewUI.Controls;
@@ -24,13 +25,13 @@ internal sealed partial class MainWindow
         var size = reply ? 28 : 44;
         var avatar = new Image { VectorCacheMode = ImageVectorCacheMode.Direct }.Width(size).Height(size).StretchMode(Stretch.UniformToFill);
         avatar.Source = Icons.Source("user", MutedIcon);
-        var name = new CommentTextBlock().Text(comment.User?.Username ?? "Пользователь SoundCloud").FontSize(14).Bold().CenterVertical()
+        var name = new CommentTextBlock().Text(comment.User?.Username ?? UiText.Get("profile.soundcloudUser")).FontSize(14).Bold().CenterVertical()
             .MaxWidth(200).TextTrimming(TextTrimming.CharacterEllipsis);
         AttachUserLink(name, () => comment.User); AttachUserLink(avatar, () => comment.User);
         var top = new StackPanel().Horizontal().Spacing(6).Children(name);
         if (ValidCommentTime(comment, track) is { } timestamp)
         {
-            top.Add(new CommentTextBlock().Text("на").FontSize(12).Foreground(Muted).CenterVertical());
+            top.Add(new CommentTextBlock().Text(UiText.Get("comments.track.preposition")).FontSize(12).Foreground(Muted).CenterVertical());
             var time = TrackButtons.Action(new CommentTextBlock().Text(FormatTime(timestamp / 1000)).FontSize(12).Bold()
                 .Foreground(TrackButtons.OnCommentTime).IsHitTestVisible(false), () => Run(() => SeekLikedTrackAsync(track, timestamp / 1000 / track.DurationSeconds)),
                 TrackButtons.CommentTime, 24).Padding(6, 0);
@@ -40,21 +41,21 @@ internal sealed partial class MainWindow
         if (age.Length > 0) top.Add(new CommentTextBlock().Text("· " + age).FontSize(12).Foreground(Muted).CenterVertical());
         var more = TrackButtons.Icon(Icons.View("dots-three", 20).Center(), () => { }, TrackButtons.Text, 28);
         var menu = PopupAppearance.CreateMenu(MenuPlacement.Below);
-        var copy = PopupAppearance.MenuCommand("pookie.comment.copy", "Скопировать текст", "copy");
+        var copy = PopupAppearance.MenuCommand("pookie.comment.copy", UiText.Get("clipboard.copyText"), "copy");
         more.Commands.Register(copy, () => CopyText(comment.Body));
         menu.Item(copy);
-        var open = PopupAppearance.MenuCommand("pookie.comment.open", "Открыть в SoundCloud", "arrow-square-out");
+        var open = PopupAppearance.MenuCommand("pookie.comment.open", UiText.Get("links.openInSoundCloud"), "arrow-square-out");
         more.Commands.Register(open, () => OpenSoundCloudPage(track.PermalinkUrl)); menu.Item(open);
         if (me is { } viewer && comment.User?.Id == viewer.Id)
         {
-            var delete = PopupAppearance.MenuCommand("pookie.comment.delete", "Удалить", "trash");
+            var delete = PopupAppearance.MenuCommand("pookie.comment.delete", UiText.Get("common.delete"), "trash");
             more.Commands.Register(delete, () => Run(() => ConfirmDeleteTrackCommentAsync(track, comment)),
                 () => CanDeleteTrackComment(track.Id, comment));
             menu.Item(delete);
         }
         more.OnClick(() => menu.Toggle(more)); PopupAppearance.Attach(more, menu);
         var actions = new StackPanel().Horizontal().Spacing(12).Children(
-            TrackButtons.Action(new CommentTextBlock().Text("Ответить").FontSize(13).SemiBold(),
+            TrackButtons.Action(new CommentTextBlock().Text(UiText.Get("chats.reply.action")).FontSize(13).SemiBold(),
                 () => OpenSoundCloudPage(track.PermalinkUrl), TrackButtons.Text, 28).Padding(0), more);
         var text = new StackPanel().Vertical().Spacing(4).Column(1).Children(top,
             new CommentTextBlock().Text(comment.Body).FontSize(14).FontWeight(FontWeight.Normal).TextWrapping(TextWrapping.Wrap), actions);
@@ -64,7 +65,7 @@ internal sealed partial class MainWindow
             foreach (var item in comment.Replies) replies.Add(TrackCommentView(item, track, reply: true));
             if (comment.RepliesCursor != null)
             {
-                var moreReplies = TrackButtons.Action(new TextBlock().Text("Ещё ответы").FontSize(13).SemiBold(), () => { }, TrackButtons.Text, 28).Left();
+                var moreReplies = TrackButtons.Action(new TextBlock().Text(UiText.Get("comments.replies.loadMore")).FontSize(13).SemiBold(), () => { }, TrackButtons.Text, 28).Left();
                 moreReplies.IsEnabled = !pendingTrackReplies.Contains((track.Id, comment.Id, navigationGeneration));
                 moreReplies.OnClick(() => Run(async () =>
                 {
@@ -226,18 +227,18 @@ internal sealed partial class MainWindow
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.Host is not ("soundcloud.com" or "www.soundcloud.com") || uri.UserInfo != "") return;
-        OpenExternalUrl(uri.AbsoluteUri, () => status.Value = "Не удалось открыть SoundCloud");
+        OpenExternalUrl(uri.AbsoluteUri, () => status.Value = UiText.Get("links.soundcloud.openFailed"));
     }
 
     private static string DetailAge(string? value)
     {
         if (!DateTimeOffset.TryParse(value, out var date)) return "";
         var elapsed = DateTimeOffset.UtcNow - date;
-        if (elapsed.TotalMinutes < 1) return "только что";
-        if (elapsed.TotalHours < 1) return $"{Math.Max(1, (int)elapsed.TotalMinutes)} мин. назад";
-        if (elapsed.TotalDays < 1) return $"{(int)elapsed.TotalHours} ч. назад";
-        if (elapsed.TotalDays < 30) return $"{(int)elapsed.TotalDays} дн. назад";
-        if (elapsed.TotalDays < 365) return $"{(int)(elapsed.TotalDays / 30)} мес. назад";
-        return $"{(int)(elapsed.TotalDays / 365)} г. назад";
+        if (elapsed.TotalMinutes < 1) return UiText.Get("time.justNowInline");
+        if (elapsed.TotalHours < 1) return UiText.Format("time.ago.minutes", Math.Max(1, (int)elapsed.TotalMinutes));
+        if (elapsed.TotalDays < 1) return UiText.Format("time.ago.hours", (int)elapsed.TotalHours);
+        if (elapsed.TotalDays < 30) return UiText.Format("time.ago.days", (int)elapsed.TotalDays);
+        if (elapsed.TotalDays < 365) return UiText.Format("time.ago.months", (int)(elapsed.TotalDays / 30));
+        return UiText.Format("time.ago.years", (int)(elapsed.TotalDays / 365));
     }
 }

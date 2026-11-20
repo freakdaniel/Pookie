@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Text;
 using System.Text.Json;
 using Aprillz.MewUI.Controls;
@@ -32,14 +33,14 @@ internal sealed partial class EmbeddedLoginView
         UpdateBounds();
         await CapturePreviewAsync(window, token);
         token.ThrowIfCancellationRequested();
-        if (stopped) throw new OperationCanceledException("Браузер проверки закрыт.");
+        if (stopped) throw new OperationCanceledException(UiText.Get("auth.verification.browserClosed"));
         preparing = false; browser?.SetVisible(false);
     }
 
     internal async Task<BrowserRequestEvent> RequestAsync(BrowserRequestCommand command, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (stopped) throw new OperationCanceledException("Браузер закрыт.");
+        if (stopped) throw new OperationCanceledException(UiText.Get("browser.status.closed"));
         var result = new TaskCompletionSource<BrowserRequestEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
         pendingRequests.Add(command.Id, result);
         try
@@ -74,13 +75,13 @@ internal sealed partial class EmbeddedLoginView
                     if (!responseBodies.TryGetValue(message.RequestId, out var body)) body = (new(), 0);
                     if (message.ChunkIndex != body.Next || message.Chunk is not { Length: > 0 and <= 1024 } ||
                         body.Text.Length + message.Chunk.Length > 2 * 1024 * 1024 || body.Next >= 4096)
-                        throw new InvalidOperationException("Некорректный ответ браузера.");
+                        throw new InvalidOperationException(UiText.Get("browser.response.invalid"));
                     body.Text.Append(message.Chunk); responseBodies[message.RequestId] = (body.Text, body.Next + 1);
                 }
                 if (message.Kind == "ids" && message.Ids is { } ids)
                 {
                     if (!responseIds.TryGetValue(message.RequestId, out var batch)) responseIds[message.RequestId] = batch = [];
-                    if (batch.Count + ids.Length > 100000) throw new InvalidOperationException("Слишком много идентификаторов в ответе браузера.");
+                    if (batch.Count + ids.Length > 100000) throw new InvalidOperationException(UiText.Get("browser.response.tooManyIds"));
                     batch.AddRange(ids);
                 }
                 if (message.Kind == "complete")

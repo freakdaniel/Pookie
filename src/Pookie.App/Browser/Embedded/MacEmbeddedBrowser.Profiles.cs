@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -44,7 +45,7 @@ internal sealed unsafe partial class MacEmbeddedBrowser
         if (!OperatingSystem.IsMacOS()) return Task.CompletedTask;
         if (!OwnsProfileData(profile)) return Task.CompletedTask;
         var dispatcher = Application.Current.Dispatcher ??
-            throw new InvalidOperationException("Очистке профиля WebKit нужен работающий поток интерфейса macOS.");
+            throw new InvalidOperationException(UiText.Get("browser.mac.clearOnUiThread"));
         var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void Clear()
         {

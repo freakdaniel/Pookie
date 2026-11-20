@@ -1,3 +1,4 @@
+using Pookie.Localization;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -27,7 +28,7 @@ internal sealed class WidevineSession : IDisposable
     public static Task<WidevineSession> OpenAsync(HttpClient http, string authorization, byte[] initData, CancellationToken token, byte[]? serverCertificate = null)
     {
         if (authorization is not { Length: > 0 and <= 16384 } || authorization.Any(c => c < 32 || c == 127))
-            throw new DrmPlaybackException("SoundCloud не предоставил авторизацию DRM-лицензии.");
+            throw new DrmPlaybackException(UiText.Get("drm.license.authorizationMissing"));
         // Endpoint and public website application id verified in SoundCloud's player.
         var uri = new Uri("https://license.media-streaming.soundcloud.cloud/playback/widevine?license_token=" + Uri.EscapeDataString(authorization));
         return OpenAsync(http, initData, () =>
@@ -48,18 +49,18 @@ internal sealed class WidevineSession : IDisposable
         NativeWidevine handle;
         try { handle = new(library); }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
-        { throw new DrmPlaybackException("Установленный модуль Widevine отсутствует или несовместим с этой платформой."); }
+        { throw new DrmPlaybackException(UiText.Get("drm.widevine.installationInvalid")); }
         var result = new WidevineSession(handle, http, createLicenseRequest, reportVerification);
         try
         {
             var initialized = await result.NextAsync(token);
-            if (initialized.Kind != 1 || initialized.Code != 0) throw new DrmPlaybackException("Widevine CDM не поддерживает наш нативный интерфейс или отклонил инициализацию.");
+            if (initialized.Kind != 1 || initialized.Code != 0) throw new DrmPlaybackException(UiText.Get("drm.widevine.nativeInitFailed"));
             if (serverCertificate != null)
             {
                 handle.SetServerCertificate(++result.promise, serverCertificate);
                 var installed = await result.NextAsync(token);
                 if (installed.Kind != 3 || installed.Promise != result.promise || installed.Code != 0)
-                    throw new DrmPlaybackException("Widevine CDM отклонил сертификат сервера.");
+                    throw new DrmPlaybackException(UiText.Get("drm.widevine.certificateRejected"));
                 Pookie.Logging.AppLog.For("Pookie.Audio.Drm").Debug("Widevine принял сертификат сервера");
             }
             handle.Begin(++result.promise, initData);
@@ -77,10 +78,10 @@ internal sealed class WidevineSession : IDisposable
         while (true)
         {
             var message = await NextAsync(timeout.Token);
-            if (message.Kind == 4) throw new DrmPlaybackException("Widevine CDM отклонил создание или обновление лицензии.");
+            if (message.Kind == 4) throw new DrmPlaybackException(UiText.Get("drm.widevine.licenseChangeRejected"));
             if (message.Kind == 5 && message.Code == 0) { licensed = true; return; }
             if (message.Kind != 2) continue;
-            if (++exchanges > 8 || message.Code is not (0 or 1)) throw new DrmPlaybackException("Widevine запросил неподдерживаемый тип обмена лицензией.");
+            if (++exchanges > 8 || message.Code is not (0 or 1)) throw new DrmPlaybackException(UiText.Get("drm.widevine.unsupportedExchange"));
             await SendLicenseAsync(message.Payload, timeout.Token);
         }
     }
@@ -94,8 +95,7 @@ internal sealed class WidevineSession : IDisposable
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
             if (!response.IsSuccessStatusCode)
-                throw new DrmPlaybackException($"Сервер не выдал DRM-лицензию (HTTP {(int)response.StatusCode})." +
-                    await DrmLicenseFailure.ReadAsync(response, token));
+                throw new DrmPlaybackException(UiText.Format("drm.license.httpError", (int)response.StatusCode) + await DrmLicenseFailure.ReadAsync(response, token));
             var license = await HttpRangeStream.ReadBoundedAsync(response.Content, 2 * 1024 * 1024, token);
             try
             {
@@ -118,19 +118,19 @@ internal sealed class WidevineSession : IDisposable
         {
             if (message.Kind == 2)
             {
-                if (message.Code is not (0 or 1)) throw new DrmPlaybackException("Неподдерживаемое обновление лицензии Widevine.");
+                if (message.Code is not (0 or 1)) throw new DrmPlaybackException(UiText.Get("drm.widevine.renewalUnsupported"));
                 licensed = false;
                 await SendLicenseAsync(message.Payload, token);
                 await LicenseAsync(token);
             }
             else if (message.Kind == 4 || message.Kind == 6)
-                throw new DrmPlaybackException("Лицензия Widevine истекла или ограничила воспроизведение.");
+                throw new DrmPlaybackException(UiText.Get("drm.widevine.expiredOrRestricted"));
         }
     }
 
     public byte[] Decrypt(byte[] data, byte[] kid, byte[] iv, CencSubsample[] subsamples)
     {
-        if (!licensed) throw new DrmPlaybackException("Нет действующей лицензии Widevine.");
+        if (!licensed) throw new DrmPlaybackException(UiText.Get("drm.widevine.licenseMissing"));
         return handle.Decrypt(data, kid, iv, subsamples);
     }
 

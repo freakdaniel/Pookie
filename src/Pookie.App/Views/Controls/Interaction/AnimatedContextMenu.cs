@@ -1,5 +1,7 @@
+using Pookie.Localization;
 using Aprillz.MewUI;
 using Aprillz.MewUI.Controls;
+using Aprillz.MewUI.Animation;
 
 namespace Pookie.App;
 
@@ -13,7 +15,11 @@ internal sealed class AnimatedContextMenu : InAppPopup
     internal bool HideUnavailableItems { get; set; }
     internal UIElement? PlacementTarget { get; private set; }
     internal GlassCard Card { get { EnsureContent(); return card!; } }
-    internal IReadOnlyList<Button> Buttons => buttons;
+    internal IReadOnlyList<Button> Buttons => confirmationButtons ?? (IReadOnlyList<Button>)buttons;
+    internal Command? ConfirmationCommand { get; set; }
+    private Button[]? confirmationButtons;
+    private AnimationClock? pageMotion;
+    private ScrollViewer? scroller;
     private GlassCard? card;
     private StackPanel? rows;
     private readonly List<Button> buttons = [];
@@ -37,9 +43,10 @@ internal sealed class AnimatedContextMenu : InAppPopup
         // Hundreds of comments can own menus. Allocate rows, glass and animation
         // only when one is actually opened; keep them for that owner's reuse.
         rows = new StackPanel().Vertical().Spacing(0);
+        scroller = new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0).Content(rows);
         card = new GlassCard(PopupAppearance.AppBackground) { HoverEnabled = false }.Background(PopupAppearance.Surface)
             .CornerRadius(PopupAppearance.Radius).Padding(PopupAppearance.Padding).FontSize(14).MinWidth(224).Focusable(true)
-            .Child(new ScrollViewer().Background(Color.Transparent).BorderThickness(0).Padding(0).CornerRadius(0).Content(rows));
+            .Child(scroller);
         card.MaxWidth = 360; card.MaxHeight = 520;
         InitializePopup(card, Anchor, () => pointer != null ? MenuPlacement.Pointer : Model.Placement,
             keepTriggerClear: () => keepTriggerClear);
@@ -62,6 +69,15 @@ internal sealed class AnimatedContextMenu : InAppPopup
         this.pointer = pointer;
         this.keepTriggerClear = keepTriggerClear;
         commandTarget = parent?.commandTarget ?? window.CommandRouter.CaptureTarget(owner);
+        if (confirmationButtons != null || pageMotion?.IsRunning == true)
+        {
+            pageMotion?.Stop();
+            confirmationButtons = null;
+            scroller!.VerticalScroll = ScrollMode.Auto;
+            scroller.Content = rows;
+            Card.Width = Card.Height = double.NaN;
+            rows!.Opacity = 1;
+        }
         BuildRows();
         if (HideUnavailableItems && buttons.Count == 0) { Close(); return; }
         ShowPopup(owner, Card);
@@ -81,6 +97,11 @@ internal sealed class AnimatedContextMenu : InAppPopup
     private void BuildRows()
     {
         EnsureContent();
+        foreach (var item in Items.OfType<MenuItem>())
+        {
+            var translated = UiText.Refresh(item.Text);
+            if (!ReferenceEquals(translated, item.Text)) item.SetCurrentValue(MenuItem.TextProperty, translated);
+        }
         IEnumerable<MenuEntry> entries = HideUnavailableItems ? Items.Where(IsAvailable).ToArray() : Items;
         if (rendered.SequenceEqual(entries)) return;
         foreach (var element in rows!.Children.OfType<Control>().ToArray()) { rows.Remove(element); element.Dispose(); }
@@ -93,7 +114,7 @@ internal sealed class AnimatedContextMenu : InAppPopup
             }
             var label = new TextBlock().FontSize(14).CenterVertical().TextTrimming(TextTrimming.CharacterEllipsis);
             label.SetBinding(TextBlock.TextProperty, item, MenuItem.TextProperty,
-                text => (text.Length == 0 ? item.Command?.Text ?? "" : text).Replace("_", ""));
+                text => UiText.Refresh(text.Length == 0 ? item.Command?.Text ?? "" : text).Replace("_", ""));
             var line = new StackPanel().Horizontal().Spacing(12);
             if ((item.Icon ?? item.Command?.Icon) is { } icon)
                 line.Children(icon.Build(new IconTemplateSize(PopupAppearance.IconSize,
@@ -123,8 +144,67 @@ internal sealed class AnimatedContextMenu : InAppPopup
     {
         var window = sourceWindow; var target = commandTarget; var owner = PlacementTarget;
         var root = this; while (root.parent != null) root = root.parent;
-        root.Close();
+        if (command != ConfirmationCommand) root.Close();
         if (window != null) await window.CommandRouter.ExecuteAsync(command, target, owner);
+    }
+    internal void ShowConfirmation(string title, string detail, string confirmLabel, Action confirm)
+    {
+        if (!IsOpen || confirmationButtons != null) return;
+        var cancel = TrackButtons.Action(new TextBlock().Text(UiText.Get("common.cancel")), () =>
+        {
+            confirmationButtons = null;
+            SwitchContent(rows!);
+            (buttons.FirstOrDefault(b => b.Command == ConfirmationCommand) ?? buttons[0]).Focus();
+        }, TrackButtons.Text, PopupAppearance.RowHeight);
+        var submit = TrackButtons.Action(new TextBlock().Text(confirmLabel), () =>
+        {
+            if (!IsOpen || confirmationButtons == null) return;
+            Close();
+            confirm();
+        }, TrackButtons.Glass, PopupAppearance.RowHeight);
+        confirmationButtons = [cancel, submit];
+        var prompt = new StackPanel().Vertical().Spacing(10).Width(280).Padding(10).Children(
+            new TextBlock().Text(title).FontSize(15).SemiBold().TextAlignment(TextAlignment.Center),
+            new TextBlock().Text(detail).FontSize(13).Foreground(TextAppearance.Secondary)
+                .TextWrapping(TextWrapping.Wrap).TextAlignment(TextAlignment.Center),
+            new StackPanel().Horizontal().Spacing(4).CenterHorizontal().Children(cancel, submit));
+        SwitchContent(prompt);
+        cancel.Focus();
+    }
+
+    private void SwitchContent(FrameworkElement content)
+    {
+        pageMotion ??= new AnimationClock(TimeSpan.FromMilliseconds(230), Easing.CubicBezier(.2, 0, 0, 1));
+        pageMotion.Stop();
+        var from = Card.Bounds.Size;
+        Card.Width = Card.Height = double.NaN;
+        // During the morph the card deliberately clips the incoming page.
+        // Only a settled page that actually exceeds the viewport should scroll.
+        scroller!.HorizontalScroll = ScrollMode.Disabled;
+        scroller.VerticalScroll = ScrollMode.Disabled;
+        scroller.Content = content;
+        scroller.SetScrollOffsets(0, 0);
+        Card.Measure(sourceWindow!.ClientSize);
+        var to = Card.DesiredSize;
+        var reduced = DesktopMotion.PrefersReducedMotion();
+        content.Opacity = 0;
+        if (!reduced) { Card.Width = from.Width; Card.Height = from.Height; }
+        pageMotion.TickCallback = t =>
+        {
+            if (!reduced)
+            {
+                Card.Width = from.Width + (to.Width - from.Width) * t;
+                Card.Height = from.Height + (to.Height - from.Height) * t;
+            }
+            content.Opacity = Math.Min(1, t * 1.45);
+        };
+        pageMotion.CompletedCallback = () =>
+        {
+            Card.Width = Card.Height = double.NaN;
+            scroller.VerticalScroll = ScrollMode.Auto;
+            content.Opacity = 1;
+        };
+        pageMotion.Start();
     }
     private void OpenSubmenu(MenuItem item, Button owner)
     {
@@ -141,7 +221,7 @@ internal sealed class AnimatedContextMenu : InAppPopup
         }
         else if (!e.Handled && e.Key is Key.Up or Key.Down or Key.Home or Key.End)
         {
-            var enabled = buttons.Where(b => b.IsEffectivelyEnabled).ToArray();
+            var enabled = Buttons.Where(b => b.IsEffectivelyEnabled).ToArray();
             if (enabled.Length > 0)
             {
                 var current = Array.FindIndex(enabled, b => b.IsFocused);
@@ -153,5 +233,5 @@ internal sealed class AnimatedContextMenu : InAppPopup
         }
         base.OnKeyDown(e);
     }
-    protected override void OnDispose() { child?.Dispose(); Model.Dispose(); base.OnDispose(); }
+    protected override void OnDispose() { pageMotion?.Stop(); child?.Dispose(); Model.Dispose(); base.OnDispose(); }
 }

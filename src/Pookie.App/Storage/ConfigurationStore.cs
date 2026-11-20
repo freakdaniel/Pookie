@@ -27,6 +27,7 @@ internal sealed record AppConfiguration
     public RepeatMode Repeat { get; set; } = RepeatMode.Off;
     public int SchemaVersion { get; set; } = 2;
     public bool SystemMediaEnabled { get; set; } = true;
+    public string InterfaceLanguage { get; set; } = "";
     public string StartupPage { get; set; } = "home";
     public bool SmoothScrolling { get; set; } = true;
     public bool RememberSearchSection { get; set; }
@@ -62,6 +63,7 @@ internal sealed record AppConfiguration
         MaximumVolume = MaximumVolume is 150 or 200 ? MaximumVolume : 100,
         Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, MaximumVolume is 150 or 200 ? MaximumVolume : 100) : 70,
         PreviousVolume = double.IsFinite(PreviousVolume) && PreviousVolume > 0 ? Math.Clamp(PreviousVolume, 1, MaximumVolume is 150 or 200 ? MaximumVolume : 100) : 70,
+        InterfaceLanguage = Pookie.Localization.UiText.Choices.Any(choice => choice.Code == InterfaceLanguage) ? InterfaceLanguage : "",
         StartupPage = StartupPage is "home" or "library" ? StartupPage : "home",
         LastSearchSection = LastSearchSection is >= 0 and <= 4 ? LastSearchSection : 0,
         CommentSort = CommentSort is "NEWEST" or "OLDEST" or "TIMESTAMP" ? CommentSort : "NEWEST",
@@ -75,11 +77,14 @@ internal sealed record LastPlayerTrack(long AccountId, long Id, string Title, do
 
 internal sealed class ConfigurationStore(AppDataPaths paths)
 {
-    private readonly string file = Path.Combine(paths.Config, "settings.json");
+    internal const string FileName = "settings.json";
+    private readonly string file = Path.Combine(paths.Config, FileName);
     private SnapshotWriter<AppConfiguration>? writer;
     internal Task SaveAsync(AppConfiguration configuration) => (writer ??= new(Save)).SaveAsync(configuration.Normalize());
     internal Task FlushAsync() => writer?.FlushAsync() ?? Task.CompletedTask;
-    public AppConfiguration Load()
+    public AppConfiguration Load() => Read(file);
+
+    internal static AppConfiguration Read(string file)
     {
         try
         {
